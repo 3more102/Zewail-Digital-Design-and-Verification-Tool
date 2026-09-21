@@ -1,4 +1,9 @@
-from zddv.protocols.axi4 import analyze_axi4_trace
+import json
+from pathlib import Path
+
+from zddv.cli import main
+from zddv.config import initialize_project
+from zddv.protocols.axi4 import analyze_axi4_file, analyze_axi4_trace
 
 
 def test_reconstructs_axi4_incr_write_and_read_bursts():
@@ -107,3 +112,47 @@ def test_axi4_error_responses_are_not_protocol_violations():
     )
     assert result["status"] == "PASS"
     assert result["summary"]["read_error_beats"] == 1
+
+
+def test_analyze_axi4_file_and_cli_write_report(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "axi4.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {
+                        "cycle": 0,
+                        "ARVALID": 1,
+                        "ARREADY": 1,
+                        "ARADDR": 0x40,
+                        "ARLEN": 0,
+                        "ARSIZE": 2,
+                        "ARBURST": "INCR",
+                    },
+                    {
+                        "cycle": 1,
+                        "RVALID": 1,
+                        "RREADY": 1,
+                        "RDATA": 0x1234,
+                        "RRESP": "OKAY",
+                        "RLAST": 1,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = analyze_axi4_file(project, trace)
+    report = Path(result["report_path"])
+    assert report.is_file()
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["protocol"] == "AXI4"
+    assert payload["summary"]["completed_reads"] == 1
+
+    rc = main(["--project", str(project.root), "axi4-analyze", str(trace)])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "AXI4 PASS" in output
+    assert "1 completed transaction(s)" in output

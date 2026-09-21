@@ -167,6 +167,21 @@ This contract is AXI4-Lite only. It does not claim support for full AXI4 bursts,
 IDs, reordering, burst types, beat counting, WLAST/RLAST semantics, or
 out-of-order response matching. Those belong to a later full-AXI protocol pack.
 
+## v0.5 AXI4 Burst Trace Foundation
+
+`zddv axi4-analyze` consumes normalized ACLK-edge samples for burst-aware AXI4.
+It tracks AW/AR IDs and burst geometry, pairs W data bursts to write addresses in
+acceptance order because AXI4 has no WID, correlates BID/RID responses by ID, and
+allows read data from different IDs to interleave.
+
+The foundation checks VALID/payload stability under backpressure, WLAST/RLAST
+against AxLEN, FIXED/INCR/WRAP burst geometry, WRAP length/alignment, and the 4KB
+burst-boundary rule. Legal SLVERR/DECERR responses remain transaction outcomes
+rather than protocol violations.
+
+ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive
+exclusive/system-ordering semantics remain outside this first AXI4 contract.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
