@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, assertion correlation, and structural connectivity in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform cross-probing, assertion correlation, and structural connectivity in progress**
 
 ## What Works Today
 
@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Waveform-to-RTL source cross-probing with drivers/loads evidence
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
 
@@ -85,6 +86,8 @@ zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project crossprobe tb_top.dut.count
+zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
@@ -277,7 +280,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
-- [ ] Waveform cross-probing
+- [x] Waveform-to-source cross-probing
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -363,6 +366,18 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Debug Studio Cross-Probing
+
+`zddv crossprobe <signal>` correlates a waveform signal with the normalized
+source hierarchy, resolves its SystemVerilog declaration when evidence is
+unambiguous, and attaches source-level structural driver/load evidence from the
+connectivity index.
+
+Full waveform paths, source-style suffix paths, and unique short signal names
+are supported. Ambiguous short names are rejected rather than silently choosing
+a signal. The JSON report records waveform, hierarchy, source, connectivity,
+and index-artifact evidence in one normalized debug result.
 
 ### Debug Studio Drivers/Loads Navigation
 
