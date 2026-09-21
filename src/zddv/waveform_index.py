@@ -21,7 +21,17 @@ def parse_vcd_header(path: str | Path) -> dict:
     if not vcd_path.exists():
         raise FileNotFoundError(vcd_path)
 
-    text = vcd_path.read_text(encoding="utf-8", errors="replace")
+    header_lines: list[str] = []
+    saw_enddefinitions = False
+    with vcd_path.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            header_lines.append(line)
+            if "$enddefinitions" in line:
+                saw_enddefinitions = True
+            if saw_enddefinitions and "$end" in line:
+                break
+
+    text = "".join(header_lines)
     scopes: list[str] = []
     scope_paths: set[str] = set()
     signals: list[dict] = []
