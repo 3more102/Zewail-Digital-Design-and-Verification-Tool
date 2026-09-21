@@ -632,6 +632,11 @@ def cmd_axi4_analyze(args) -> int:
         f"Error responses: write={summary['write_error_responses']} "
         f"read-beats={summary['read_error_beats']}"
     )
+    print(
+        f"Exclusive R/W/matched: "
+        f"{summary['exclusive_reads']}/{summary['exclusive_writes']}/"
+        f"{summary['matched_exclusive_writes']}"
+    )
     for violation in result["violations"][: args.show]:
         print(
             f"[{violation['code']}] cycle={violation['cycle']} "
@@ -707,6 +712,11 @@ def cmd_axi4_waveform(args) -> int:
     print(
         f"Error responses: write={summary['write_error_responses']} "
         f"read-beats={summary['read_error_beats']}"
+    )
+    print(
+        f"Exclusive R/W/matched: "
+        f"{summary['exclusive_reads']}/{summary['exclusive_writes']}/"
+        f"{summary['matched_exclusive_writes']}"
     )
     stalls = summary["channel_stall_cycles"]
     print(
