@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy and waveform indexing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform indexing, and cross-probing in progress**
 
 ## What Works Today
 
@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
 - Assertion-to-waveform run correlation with conservative signal hints
 
 ## Quick Start
@@ -82,6 +83,8 @@ zddv --project my_project hierarchy
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project crossprobe tb_top.dut.count
+zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
@@ -274,7 +277,8 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
-- [ ] Waveform cross-probing
+- [x] Waveform-to-source cross-probing
+- [ ] Drivers/loads cross-navigation
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -360,6 +364,20 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Debug Studio Cross-Probing
+
+`zddv crossprobe <signal>` correlates a waveform signal with the normalized
+source hierarchy and searches the resolved SystemVerilog design unit for the
+signal declaration. Full waveform paths, source-style suffix paths, and unique
+short signal names are supported. Ambiguous short names are rejected so debug
+navigation does not silently select the wrong signal.
+
+The report records the waveform signal, matched hierarchy path, RTL unit,
+source declaration, match type, and the design/waveform index artifacts used as
+evidence. Source lookup is intentionally conservative: when the scope matches
+but a declaration cannot be identified on a single source line, ZDDV returns a
+partial result instead of claiming an exact source location.
 
 ### Assertion-to-Waveform Debug Correlation
 
