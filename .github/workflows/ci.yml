@@ -23,7 +23,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Unit tests
-        run: pytest tests/test_config.py tests/test_regression.py -q
+        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py -q
 
   verilator-integration:
     runs-on: ubuntu-latest
@@ -54,6 +54,9 @@ jobs:
 
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
+
+      - name: Show run database
+        run: zddv --project examples/counter runs --limit 10
 
       - name: Merge coverage
         run: zddv --project examples/counter coverage
