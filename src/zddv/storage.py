@@ -111,6 +111,54 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_created_at
     ON coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS design_index_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    top TEXT NOT NULL,
+    source_count INTEGER NOT NULL,
+    module_count INTEGER NOT NULL,
+    instance_count INTEGER NOT NULL,
+    index_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_design_index_created_at
+    ON design_index_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS design_modules (
+    snapshot_id TEXT NOT NULL,
+    module_index INTEGER NOT NULL,
+    module_name TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    PRIMARY KEY (snapshot_id, module_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_design_modules_name
+    ON design_modules(module_name);
+
+CREATE TABLE IF NOT EXISTS design_instances (
+    snapshot_id TEXT NOT NULL,
+    instance_index INTEGER NOT NULL,
+    instance_path TEXT NOT NULL,
+    parent_path TEXT NOT NULL,
+    instance_name TEXT NOT NULL,
+    module_name TEXT NOT NULL,
+    parent_module TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    source_line INTEGER NOT NULL,
+    depth INTEGER NOT NULL,
+    recursive INTEGER NOT NULL,
+    PRIMARY KEY (snapshot_id, instance_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_design_instances_path
+    ON design_instances(instance_path);
+
+CREATE INDEX IF NOT EXISTS idx_design_instances_module
+    ON design_instances(module_name);
 """
 
 
@@ -550,5 +598,157 @@ def list_coverage_snapshots(
     for row in rows:
         item = dict(row)
         item["by_type"] = json.loads(item.pop("by_type_json"))
+        result.append(item)
+    return result
+
+
+def record_design_index_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO design_index_snapshots (
+                snapshot_id, created_at, project, top, source_count,
+                module_count, instance_count, index_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["top"],
+                int(record["source_count"]),
+                int(record["module_count"]),
+                int(record["instance_count"]),
+                record["index_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM design_modules WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.execute(
+            "DELETE FROM design_instances WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO design_modules (
+                snapshot_id, module_index, module_name, source_path,
+                start_line, end_line
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    index,
+                    item["module_name"],
+                    item["source_path"],
+                    int(item["start_line"]),
+                    int(item["end_line"]),
+                )
+                for index, item in enumerate(record["modules"])
+            ],
+        )
+        db.executemany(
+            """
+            INSERT INTO design_instances (
+                snapshot_id, instance_index, instance_path, parent_path,
+                instance_name, module_name, parent_module, source_path,
+                source_line, depth, recursive
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    index,
+                    item["instance_path"],
+                    item["parent_path"],
+                    item["instance_name"],
+                    item["module_name"],
+                    item["parent_module"],
+                    item["source_path"],
+                    int(item["source_line"]),
+                    int(item["depth"]),
+                    int(bool(item.get("recursive", False))),
+                )
+                for index, item in enumerate(record["instances"])
+            ],
+        )
+    return path
+
+
+def list_design_index_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, created_at, project, top, source_count,
+                   module_count, instance_count, index_path
+            FROM design_index_snapshots
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_design_modules(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, module_index, module_name, source_path,
+                   start_line, end_line
+            FROM design_modules
+            WHERE snapshot_id = ?
+            ORDER BY module_name, source_path, start_line
+            """,
+            (snapshot_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_design_instances(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    query = """
+        SELECT snapshot_id, instance_index, instance_path, parent_path,
+               instance_name, module_name, parent_module, source_path,
+               source_line, depth, recursive
+        FROM design_instances
+        WHERE snapshot_id = ?
+        ORDER BY instance_index
+    """
+    params: list[Any] = [snapshot_id]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["recursive"] = bool(item["recursive"])
         result.append(item)
     return result
