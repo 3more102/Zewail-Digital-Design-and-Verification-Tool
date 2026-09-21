@@ -28,6 +28,7 @@ class RunResult:
     run_dir: Path
     log_path: Path
     waveform_path: Path | None
+    coverage_path: Path | None = None
     test_name: str | None = None
     seed: int | None = None
 
