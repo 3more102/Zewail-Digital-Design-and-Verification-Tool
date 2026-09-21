@@ -80,6 +80,12 @@ jobs:
           zddv --project examples/counter fcov-history --limit 10 | grep -q counter-example
           zddv --project examples/counter fcov-holes --limit 10 | grep -q wraparound
 
+      - name: Analyze APB trace
+        run: |
+          zddv --project examples/counter apb-analyze ../apb_trace.json
+          test -s examples/counter/.zddv/protocols/apb/latest.json
+          grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/apb/latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
