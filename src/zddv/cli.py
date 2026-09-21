@@ -18,7 +18,9 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import (
+    assertion_statistics,
     database_path,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
@@ -226,6 +228,33 @@ def cmd_coverage_holes(args) -> int:
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
+    return 0
+
+
+def cmd_assertions(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_assertion_events(
+        project,
+        limit=args.limit,
+        status=args.status,
+        assertion_name=args.name,
+    )
+    stats = assertion_statistics(project)
+    print(
+        f"ASSERTIONS: {stats['passed']}/{stats['total']} passed "
+        f"({stats['pass_rate']:.1f}%), {stats['failed']} failed"
+    )
+    if not rows:
+        print("No assertion events found.")
+        return 0
+
+    print(f"{'STATUS':<7} {'ASSERTION':<28} {'RUN ID':<32} MESSAGE")
+    for row in rows:
+        message = row["message"] or "-"
+        print(
+            f"{row['status']:<7} {row['assertion_name'][:28]:<28} "
+            f"{row['run_id'][:32]:<32} {message}"
+        )
     return 0
 
 
@@ -444,6 +473,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+    p_assertions = sub.add_parser(
+        "assertions",
+        help="Show normalized assertion result history",
+    )
+    p_assertions.add_argument("--limit", type=int, default=100)
+    p_assertions.add_argument(
+        "--status",
+        choices=("PASS", "FAIL"),
+        default=None,
+        help="Optional assertion status filter",
+    )
+    p_assertions.add_argument(
+        "--name",
+        default=None,
+        help="Optional exact assertion name filter",
+    )
+    p_assertions.set_defaults(func=cmd_assertions)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
