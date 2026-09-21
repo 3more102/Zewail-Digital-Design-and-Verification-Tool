@@ -48,7 +48,7 @@ Current status: in progress. Static source/module indexing and hierarchy generat
 
 - [x] Design hierarchy.
 - [x] Source indexing.
-- [ ] Waveform index.
+- [x] Waveform index.
 - [ ] Drivers/loads navigation.
 - [ ] Assertion-to-waveform correlation.
 - [ ] Protocol transaction reconstruction.
