@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, and burst-aware AXI4 analysis with direct VCD transaction extraction**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4/VCD analysis, and asynchronous-FIFO CDC invariant analysis**
 
 ## What Works Today
 
