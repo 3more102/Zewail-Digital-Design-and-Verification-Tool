@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, assertion correlation, and structural connectivity in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform indexing, and cross-probing in progress**
 
 ## What Works Today
 
@@ -40,6 +40,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - VCD waveform scope/signal index with FST artifact metadata support
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
+- Hierarchy-aware source-to-waveform cross-probing with explicit fallback confidence
 
 ## Quick Start
 
@@ -82,6 +83,7 @@ zddv --project my_project index
 zddv --project my_project hierarchy
 zddv --project my_project connectivity
 zddv --project my_project connectivity count --unit counter
+zddv --project my_project crossprobe count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
@@ -277,7 +279,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
-- [ ] Waveform cross-probing
+- [x] Waveform cross-probing (source signal → hierarchy-aware VCD matches)
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -381,6 +383,25 @@ metadata where applicable.
 This is deliberately a conservative **source-level** view, not elaborated
 connectivity. Generate choices, macros, binds, interface/modport semantics,
 complex lvalues, and other constructs require later simulator-AST enrichment.
+
+### Source-to-Waveform Cross-Probing
+
+`zddv crossprobe <signal> --unit <unit>` joins three existing v0.4 models:
+the source hierarchy, structural driver/load connectivity, and the waveform index.
+For each source-level instance of the selected unit, ZDDV constructs the expected
+hierarchical signal path and matches it against VCD signals. Simulator wrapper
+scopes are tolerated using hierarchy-suffix matching.
+
+If no hierarchy match exists, ZDDV can return exact-basename matches, but those
+are explicitly labeled `basename-fallback` and reported as unique or ambiguous;
+they are not treated as proven identity. The default report is
+`.zddv/debug/crossprobe.json`.
+
+```bash
+zddv --project my_project crossprobe count --unit counter
+zddv --project my_project crossprobe count --unit counter --run <run-id>
+zddv --project my_project crossprobe count --unit counter --input trace.vcd
+```
 
 ### Assertion-to-Waveform Debug Correlation
 
