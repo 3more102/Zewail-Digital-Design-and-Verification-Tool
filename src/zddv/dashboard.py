@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from html import escape
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_coverage_snapshots, list_run_records, run_statistics
+from zddv.storage import (
+    assertion_statistics,
+    list_assertion_events,
+    list_coverage_snapshots,
+    list_run_records,
+    run_statistics,
+)
 from zddv.triage import group_failure_records
 
 
@@ -14,6 +20,8 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
     groups = group_failure_records(records)
     coverage_rows = list_coverage_snapshots(project, limit=1)
     latest_coverage = coverage_rows[0] if coverage_rows else None
+    assertion_stats = assertion_statistics(project)
+    assertion_events = list_assertion_events(project, limit=20)
 
     out_dir = (project.root / ".zddv" / "reports").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +98,36 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
             + "</tbody></table></section>"
         )
 
+    assertion_rows = []
+    for event in assertion_events:
+        prop = escape(str(event["property_name"] or "-"))
+        scope = escape(str(event["scope"] or "-"))
+        source = "-"
+        if event["source_file"]:
+            source = str(event["source_file"])
+            if event["source_line"] is not None:
+                source += f":{event['source_line']}"
+        test = escape(str(event["test_name"] or "-"))
+        seed = "-" if event["seed"] is None else escape(str(event["seed"]))
+        assertion_rows.append(
+            "<tr>"
+            f"<td class='status {escape(event['status'].lower())}'>{escape(event['status'])}</td>"
+            f"<td><code>{prop}</code></td><td>{scope}</td>"
+            f"<td>{escape(source)}</td><td>{test}</td><td>{seed}</td>"
+            f"<td>{escape(str(event['message'] or '-'))}</td>"
+            "</tr>"
+        )
+
+    assertion_section = (
+        "<section><h2>Assertion events</h2>"
+        "<small>Normalized native Verilator failures and ZDDV assertion markers.</small>"
+        "<table><thead><tr><th>Status</th><th>Property</th><th>Scope</th>"
+        "<th>Source</th><th>Test</th><th>Seed</th><th>Message</th>"
+        "</tr></thead><tbody>"
+        + ("".join(assertion_rows) or '<tr><td colspan="7">No assertion events recorded.</td></tr>')
+        + "</tbody></table></section>"
+    )
+
     generated = datetime.now(timezone.utc).isoformat()
     html = f"""<!doctype html>
 <html lang="en">
@@ -124,10 +162,13 @@ small {{ color: #9ca3af; }}
   <div class="card"><div>Failed</div><div class="metric">{stats['failed']}</div></div>
   <div class="card"><div>Timeouts</div><div class="metric">{stats['timed_out']}</div></div>
   <div class="card"><div>Pass rate</div><div class="metric">{stats['pass_rate']:.1f}%</div></div>
+  <div class="card"><div>Assertion failures</div><div class="metric">{assertion_stats['failed']}</div><small>{assertion_stats['total']} recorded events</small></div>
   {coverage_card}
 </div>
 
 {coverage_section}
+
+{assertion_section}
 
 <section>
 <h2>Per-test summary</h2>
@@ -163,5 +204,7 @@ small {{ color: #9ca3af; }}
         "stats": stats,
         "failure_groups": groups,
         "latest_coverage": latest_coverage,
+        "assertion_stats": assertion_stats,
+        "assertion_events": assertion_events,
         "shown_runs": len(records),
     }
