@@ -17,15 +17,17 @@ Exit criteria:
 
 ## v0.2 — Regression Engine
 
-- Named tests.
-- Seeds and plusargs.
-- Regression YAML/TOML.
-- Parallel execution.
-- Timeouts.
-- Selective rerun.
-- SQLite result database.
-- CLI summary tables.
-- JUnit/JSON export.
+- [x] Named tests.
+- [x] Seeds and plusargs.
+- [x] Regression TOML.
+- [x] Parallel execution.
+- [x] Timeouts.
+- [x] Selective rerun.
+- [x] SQLite result database.
+- [x] CLI summary tables.
+- [x] JUnit/JSON export.
+- [x] Failure-signature grouping.
+- [ ] HTML regression report.
 
 ## v0.3 — Verification Results
 
