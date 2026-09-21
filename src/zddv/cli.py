@@ -7,7 +7,11 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
-from zddv.coverage import merge_verilator_coverage
+from zddv.coverage import (
+    merge_verilator_coverage,
+    parse_verilator_coverage,
+    write_coverage_hole_report,
+)
 from zddv.dashboard import generate_html_report
 from zddv.lint import lint_project
 from zddv.regression import run_regression
@@ -181,6 +185,47 @@ def cmd_coverage_history(args) -> int:
             f"{row['hit_rate']:>8.1f}% {ratio:>15} "
             f"{row['input_count']:>6}  {row['snapshot_id']}"
         )
+    return 0
+
+
+def cmd_coverage_holes(args) -> int:
+    project = load_project(_project_arg(args))
+    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+        )
+
+    points = parse_verilator_coverage(merged_path)
+    if not points:
+        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    report = write_coverage_hole_report(
+        points,
+        output,
+        point_type=args.point_type,
+        limit=args.limit,
+    )
+    filter_label = args.point_type or "all"
+    print(
+        f"Coverage holes ({filter_label}): {report['total_holes']} "
+        f"unhit point(s); {report['reported_holes']} written"
+    )
+    if report["by_type"]:
+        breakdown = ", ".join(
+            f"{kind}={count}" for kind, count in report["by_type"].items()
+        )
+        print(f"By type: {breakdown}")
+
+    for hole in report["holes"][: args.show]:
+        print(f"[{hole['type']}] {hole['name']}")
+    if report["reported_holes"] > args.show:
+        print(f"... {report['reported_holes'] - args.show} more in report")
+    print(f"Report: {report['path']}")
     return 0
 
 
@@ -370,6 +415,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_coverage_history.add_argument("--limit", type=int, default=20)
     p_coverage_history.set_defaults(func=cmd_coverage_history)
+
+    p_coverage_holes = sub.add_parser(
+        "coverage-holes",
+        help="Report normalized unhit coverage points",
+    )
+    p_coverage_holes.add_argument(
+        "--type",
+        dest="point_type",
+        default=None,
+        help="Optional normalized coverage point type filter, e.g. line or toggle",
+    )
+    p_coverage_holes.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Maximum number of holes to write to the report",
+    )
+    p_coverage_holes.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of holes to print in the terminal",
+    )
+    p_coverage_holes.add_argument(
+        "--output",
+        default=".zddv/coverage/holes.json",
+        help="JSON report path",
+    )
+    p_coverage_holes.set_defaults(func=cmd_coverage_holes)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
