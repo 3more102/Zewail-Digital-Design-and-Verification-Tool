@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source index and source-level hierarchy in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy and VCD waveform indexing in progress**
 
 ## What Works Today
 
@@ -36,6 +36,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- Run-linked VCD waveform index with scopes, signals, widths, aliases, timeline, and activity counts
 
 ## Quick Start
 
@@ -76,6 +77,9 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project waveform-index
+zddv --project my_project waveform-index --run <run-id>
+zddv --project my_project waveform-index --path path/to/waveform.vcd
 zddv --project my_project lint
 zddv --project my_project build
 
