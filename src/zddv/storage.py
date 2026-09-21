@@ -56,6 +56,27 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_created_at
     ON coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS assertion_events (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    assertion_name TEXT,
+    scope TEXT,
+    source_file TEXT,
+    source_line INTEGER,
+    source_column INTEGER,
+    simulation_time INTEGER,
+    message TEXT NOT NULL,
+    raw_line TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_run_id
+    ON assertion_events(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_created_at
+    ON assertion_events(created_at DESC);
 """
 
 
@@ -298,3 +319,86 @@ def list_coverage_snapshots(
         item["by_type"] = json.loads(item.pop("by_type_json"))
         result.append(item)
     return result
+
+
+def record_assertion_events(
+    project: ProjectConfig,
+    run_id: str,
+    created_at: str,
+    events: list[dict[str, Any]],
+) -> Path:
+    path = database_path(project)
+    if not events:
+        return path
+
+    with _connect(project) as db:
+        for index, event in enumerate(events, start=1):
+            event_id = f"{run_id}:a{index:04d}"
+            db.execute(
+                """
+                INSERT OR REPLACE INTO assertion_events (
+                    event_id, run_id, created_at, severity, assertion_name,
+                    scope, source_file, source_line, source_column,
+                    simulation_time, message, raw_line
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    run_id,
+                    created_at,
+                    event.get("severity", "ERROR"),
+                    event.get("assertion_name"),
+                    event.get("scope"),
+                    event.get("source_file"),
+                    event.get("source_line"),
+                    event.get("source_column"),
+                    event.get("simulation_time"),
+                    event["message"],
+                    event.get("raw_line", event["message"]),
+                ),
+            )
+    return path
+
+
+def list_assertion_events(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    query = """
+        SELECT event_id, run_id, created_at, severity, assertion_name,
+               scope, source_file, source_line, source_column,
+               simulation_time, message, raw_line
+        FROM assertion_events
+    """
+    params: list[Any] = []
+    if run_id is not None:
+        query += " WHERE run_id = ?"
+        params.append(run_id)
+    query += " ORDER BY created_at DESC, event_id ASC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def assertion_statistics(project: ProjectConfig) -> dict[str, int]:
+    with _connect(project) as db:
+        row = db.execute(
+            """
+            SELECT
+                COUNT(*) AS total_events,
+                COUNT(DISTINCT run_id) AS affected_runs
+            FROM assertion_events
+            """
+        ).fetchone()
+
+    return {
+        "total_events": int(row["total_events"] or 0),
+        "affected_runs": int(row["affected_runs"] or 0),
+    }
