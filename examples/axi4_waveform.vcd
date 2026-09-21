@@ -1,0 +1,112 @@
+$timescale 1ns $end
+$scope module tb $end
+$scope module axi $end
+$var wire 1 aa ACLK $end
+$var wire 1 ab AWVALID $end
+$var wire 1 ac AWREADY $end
+$var wire 2 ad AWID [1:0] $end
+$var wire 12 ae AWADDR [11:0] $end
+$var wire 8 af AWLEN [7:0] $end
+$var wire 3 ag AWSIZE [2:0] $end
+$var wire 2 ah AWBURST [1:0] $end
+$var wire 1 ai WVALID $end
+$var wire 1 aj WREADY $end
+$var wire 16 ak WDATA [15:0] $end
+$var wire 2 al WSTRB [1:0] $end
+$var wire 1 am WLAST $end
+$var wire 1 an BVALID $end
+$var wire 1 ao BREADY $end
+$var wire 2 ap BID [1:0] $end
+$var wire 2 aq BRESP [1:0] $end
+$var wire 1 ar ARVALID $end
+$var wire 1 as ARREADY $end
+$var wire 2 at ARID [1:0] $end
+$var wire 12 au ARADDR [11:0] $end
+$var wire 8 av ARLEN [7:0] $end
+$var wire 3 aw ARSIZE [2:0] $end
+$var wire 2 ax ARBURST [1:0] $end
+$var wire 1 ay RVALID $end
+$var wire 1 az RREADY $end
+$var wire 2 ba RID [1:0] $end
+$var wire 16 bb RDATA [15:0] $end
+$var wire 2 bc RRESP [1:0] $end
+$var wire 1 bd RLAST $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0aa
+0ab
+1ac
+b00 ad
+b000000000000 ae
+b00000000 af
+b000 ag
+b00 ah
+0ai
+1aj
+b0000000000000000 ak
+b00 al
+0am
+0an
+1ao
+b00 ap
+b00 aq
+0ar
+1as
+b00 at
+b000000000000 au
+b00000000 av
+b000 aw
+b00 ax
+0ay
+1az
+b00 ba
+b0000000000000000 bb
+b00 bc
+0bd
+#5
+1ab
+b01 ad
+b000100000000 ae
+b00000001 af
+b010 ag
+b01 ah
+1aa
+#10
+0aa
+#15
+0ab
+1ai
+b1010101010101010 ak
+b11 al
+0am
+1ar
+b10 at
+b001000000000 au
+b00000001 av
+b010 aw
+b01 ax
+1aa
+#20
+0aa
+#25
+b1011101110111011 ak
+1am
+0ar
+1ay
+b10 ba
+b0000000000010001 bb
+b00 bc
+0bd
+1aa
+#30
+0aa
+#35
+0ai
+1an
+b01 ap
+b00 aq
+b0000000000100010 bb
+1bd
+1aa
