@@ -29,6 +29,7 @@ def lint_project(project: ProjectConfig) -> dict:
         tool,
         "--lint-only",
         "--timing",
+        "--assert",
         "--Wno-fatal",
         "--top-module",
         project.top,
