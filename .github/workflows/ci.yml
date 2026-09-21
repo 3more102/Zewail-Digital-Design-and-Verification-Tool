@@ -71,6 +71,16 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
+      - name: Export run history
+        run: |
+          zddv --project examples/counter export junit .zddv/reports/junit.xml
+          zddv --project examples/counter export json .zddv/reports/runs.json
+          test -s .zddv/reports/junit.xml
+          test -s .zddv/reports/runs.json
+
+      - name: Verify empty selective rerun
+        run: zddv --project examples/counter rerun --status FAIL
+
       - name: Merge coverage
         run: zddv --project examples/counter coverage
 

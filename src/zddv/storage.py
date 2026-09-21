@@ -41,6 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_runs_test_seed
 """
 
 
+_ALLOWED_STATUSES = ("PASS", "FAIL", "TIMEOUT")
+
+
 def database_path(project: ProjectConfig) -> Path:
     return (project.root / ".zddv" / "results.db").resolve()
 
@@ -100,6 +103,8 @@ def list_runs(
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
+    if status is not None and status not in _ALLOWED_STATUSES:
+        raise ValueError(f"Unsupported run status: {status}")
 
     query = """
         SELECT run_id, created_at, test_name, seed, status, returncode,
@@ -160,3 +165,40 @@ def list_run_records(
         record["plusargs"] = json.loads(record.pop("plusargs_json"))
         records.append(record)
     return records
+
+
+
+def rerun_candidates(
+    project: ProjectConfig,
+    *,
+    statuses: tuple[str, ...] = ("FAIL", "TIMEOUT"),
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if not statuses:
+        raise ValueError("At least one status is required for rerun selection.")
+    invalid = [status for status in statuses if status not in _ALLOWED_STATUSES]
+    if invalid:
+        raise ValueError(f"Unsupported run status: {invalid[0]}")
+
+    placeholders = ", ".join("?" for _ in statuses)
+    query = f"""
+        SELECT run_id, created_at, test_name, seed, status, timeout_s,
+               plusargs_json
+        FROM runs
+        WHERE status IN ({placeholders})
+        ORDER BY created_at DESC
+        LIMIT ?
+    """
+    params: list[Any] = [*statuses, limit]
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["plusargs"] = json.loads(item.pop("plusargs_json"))
+        results.append(item)
+    return results

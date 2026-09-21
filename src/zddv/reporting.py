@@ -1,90 +1,97 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 from pathlib import Path
-from typing import Any
-from xml.etree import ElementTree as ET
+import xml.etree.ElementTree as ET
+
+from zddv.config import ProjectConfig
+from zddv.storage import list_runs
 
 
-def write_junit_report(
-    records: list[dict[str, Any]],
+def _testcase_name(row: dict) -> str:
+    name = row["test_name"] or "unnamed"
+    if row["seed"] is not None:
+        return f"{name}[seed={row['seed']}]"
+    return name
+
+
+def export_runs(
+    project: ProjectConfig,
     output: str | Path,
     *,
-    suite_name: str = "zddv",
+    format: str,
+    limit: int = 1000,
+    status: str | None = None,
 ) -> Path:
+    rows = list_runs(project, limit=limit, status=status)
     path = Path(output).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    failures = sum(row["status"] == "FAIL" for row in records)
-    errors = sum(row["status"] == "TIMEOUT" for row in records)
-    total_seconds = sum(
-        float(row.get("duration_ms") or 0.0) / 1000.0 for row in records
-    )
+    if format == "json":
+        payload = {
+            "project": project.name,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "runs": rows,
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return path
 
+    if format != "junit":
+        raise ValueError(f"Unsupported export format: {format}")
+
+    total_time_s = sum((row["duration_ms"] or 0.0) for row in rows) / 1000.0
+    failures = sum(row["status"] != "PASS" for row in rows)
     suite = ET.Element(
         "testsuite",
         {
-            "name": suite_name,
-            "tests": str(len(records)),
+            "name": f"ZDDV:{project.name}",
+            "tests": str(len(rows)),
             "failures": str(failures),
-            "errors": str(errors),
-            "time": f"{total_seconds:.6f}",
+            "errors": "0",
+            "skipped": "0",
+            "time": f"{total_time_s:.6f}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
 
-    for row in records:
-        duration_s = float(row.get("duration_ms") or 0.0) / 1000.0
-        test_name = row.get("test_name") or row["run_id"]
+    for row in reversed(rows):
+        duration_s = (row["duration_ms"] or 0.0) / 1000.0
         case = ET.SubElement(
             suite,
             "testcase",
             {
-                "classname": str(row.get("project") or suite_name),
-                "name": str(test_name),
+                "classname": f"zddv.{project.name}",
+                "name": _testcase_name(row),
                 "time": f"{duration_s:.6f}",
             },
         )
-
-        properties = ET.SubElement(case, "properties")
-        ET.SubElement(
-            properties,
-            "property",
-            {"name": "run_id", "value": str(row["run_id"])},
-        )
-        ET.SubElement(
-            properties,
-            "property",
-            {"name": "simulator", "value": str(row.get("simulator") or "")},
-        )
-        if row.get("seed") is not None:
-            ET.SubElement(
-                properties,
-                "property",
-                {"name": "seed", "value": str(row["seed"])},
+        if row["status"] != "PASS":
+            failure_type = (
+                "timeout" if row["status"] == "TIMEOUT" else "simulation_failure"
             )
-
-        status = row["status"]
-        if status == "FAIL":
             failure = ET.SubElement(
                 case,
                 "failure",
                 {
-                    "message": f"simulation returned {row['returncode']}",
-                    "type": "SimulationFailure",
+                    "type": failure_type,
+                    "message": (
+                        f"{row['status']} (return code {row['returncode']})"
+                    ),
                 },
             )
-            failure.text = f"Log: {row.get('log_path', '')}"
-        elif status == "TIMEOUT":
-            error = ET.SubElement(
-                case,
-                "error",
-                {
-                    "message": "simulation timed out",
-                    "type": "SimulationTimeout",
-                },
+            failure.text = (
+                f"run_id={row['run_id']}\n"
+                f"run_dir={row['run_dir']}"
             )
-            error.text = f"Log: {row.get('log_path', '')}"
 
-    tree = ET.ElementTree(suite)
-    ET.indent(tree, space="  ")
-    tree.write(path, encoding="utf-8", xml_declaration=True)
+        out = ET.SubElement(case, "system-out")
+        out.text = (
+            f"run_id={row['run_id']}\n"
+            f"simulator={row['simulator']}\n"
+            f"status={row['status']}\n"
+            f"run_dir={row['run_dir']}"
+        )
+
+    ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
     return path

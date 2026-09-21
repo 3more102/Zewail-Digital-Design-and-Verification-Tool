@@ -43,6 +43,23 @@ def test_record_and_list_runs(tmp_path: Path):
     assert failed[0]["run_id"] == "run-2"
 
 
+def test_rerun_candidates_restore_plusargs(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    first = _record("run-1", "PASS", 1)
+    second = _record("run-2", "FAIL", 2)
+    first["plusargs"] = ["+SEED=1"]
+    second["plusargs"] = ["+SEED=2"]
+    record_run(project, first)
+    record_run(project, second)
+
+    rows = rerun_candidates(project, statuses=("FAIL", "TIMEOUT"), limit=10)
+
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == "run-2"
+    assert rows[0]["plusargs"] == ["+SEED=2"]
+    assert rows[0]["timeout_s"] == 10.0
+
+
 def test_run_limit_validation(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
 

@@ -1,56 +1,62 @@
 from pathlib import Path
-from xml.etree import ElementTree as ET
+import json
+import xml.etree.ElementTree as ET
 
-from zddv.reporting import write_junit_report
+from zddv.config import initialize_project
+from zddv.reporting import export_runs
+from zddv.storage import record_run
 
 
-def test_write_junit_report(tmp_path: Path):
-    records = [
-        {
-            "run_id": "run-pass",
-            "project": "demo",
-            "simulator": "verilator",
-            "test_name": "smoke",
-            "seed": 1,
-            "status": "PASS",
-            "returncode": 0,
-            "duration_ms": 10.0,
-            "log_path": "/tmp/pass.log",
-        },
-        {
-            "run_id": "run-fail",
-            "project": "demo",
-            "simulator": "verilator",
-            "test_name": "corner",
-            "seed": 2,
-            "status": "FAIL",
-            "returncode": 1,
-            "duration_ms": 20.0,
-            "log_path": "/tmp/fail.log",
-        },
-        {
-            "run_id": "run-timeout",
-            "project": "demo",
-            "simulator": "verilator",
-            "test_name": "stress",
-            "seed": 3,
-            "status": "TIMEOUT",
-            "returncode": 124,
-            "duration_ms": 30.0,
-            "log_path": "/tmp/timeout.log",
-        },
-    ]
+def _record(run_id: str, status: str, seed: int) -> dict:
+    return {
+        "run_id": run_id,
+        "created_at": f"2026-09-21T19:20:0{seed}+00:00",
+        "project": "demo",
+        "simulator": "verilator",
+        "simulator_version": "Verilator test",
+        "top": "tb_top",
+        "test": "smoke",
+        "seed": seed,
+        "status": status,
+        "returncode": 0 if status == "PASS" else 1,
+        "duration_ms": 100.0 * seed,
+        "run_dir": f"/tmp/{run_id}",
+        "log": f"/tmp/{run_id}/simulation.log",
+        "waveform": None,
+        "coverage": None,
+        "timeout_s": 10.0,
+        "command": ["zddv_sim"],
+        "plusargs": [],
+    }
 
-    output = write_junit_report(records, tmp_path / "junit.xml", suite_name="demo")
+
+def test_export_json(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _record("run-1", "PASS", 1))
+
+    output = export_runs(project, tmp_path / "runs.json", format="json")
+    payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert payload["project"] == "demo"
+    assert payload["runs"][0]["run_id"] == "run-1"
+
+
+def test_export_junit_marks_failures(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _record("run-pass", "PASS", 1))
+    record_run(project, _record("run-timeout", "TIMEOUT", 2))
+
+    output = export_runs(project, tmp_path / "junit.xml", format="junit")
     root = ET.parse(output).getroot()
 
     assert root.tag == "testsuite"
-    assert root.attrib["tests"] == "3"
+    assert root.attrib["tests"] == "2"
     assert root.attrib["failures"] == "1"
-    assert root.attrib["errors"] == "1"
-
     cases = root.findall("testcase")
-    assert len(cases) == 3
-    assert cases[0].find("failure") is None
-    assert cases[1].find("failure") is not None
-    assert cases[2].find("error") is not None
+    assert len(cases) == 2
+    timeout_case = next(
+        case for case in cases if "seed=2" in case.attrib["name"]
+    )
+    failure = timeout_case.find("failure")
+    assert failure is not None
+    assert failure.attrib["type"] == "timeout"

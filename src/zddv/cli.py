@@ -9,6 +9,8 @@ from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
 from zddv.regression import run_regression
+from zddv.reporting import export_runs
+from zddv.rerun import rerun_history
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import database_path, list_run_records, list_runs
@@ -119,6 +121,26 @@ def cmd_regress(args) -> int:
         f"{summary['passed']}/{summary['total']} passed"
     )
     print(f"Summary: {summary['summary_path']}")
+    return 0 if summary["status"] == "PASS" else 1
+
+
+def cmd_rerun(args) -> int:
+    project = load_project(_project_arg(args))
+    backend = _backend(project.simulator)
+    statuses = tuple(args.status or ["FAIL", "TIMEOUT"])
+    summary = rerun_history(
+        project,
+        backend,
+        statuses=statuses,
+        limit=args.limit,
+    )
+    if summary["selected"] == 0:
+        print(f"No historical runs matched status: {', '.join(statuses)}")
+        return 0
+    print(
+        f"RERUN {summary['status']}: {summary['passed']}/{summary['selected']} passed "
+        f"({summary['failed']} failed, {summary['timed_out']} timed out)"
+    )
     return 0 if summary["status"] == "PASS" else 1
 
 
@@ -248,6 +270,19 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_export(args) -> int:
+    project = load_project(_project_arg(args))
+    path = export_runs(
+        project,
+        args.output,
+        format=args.format,
+        limit=args.limit,
+        status=args.status,
+    )
+    print(f"Exported {args.format.upper()}: {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -298,6 +333,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_rerun = sub.add_parser(
+        "rerun",
+        help="Rerun selected historical verification failures",
+    )
+    p_rerun.add_argument(
+        "--status",
+        action="append",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+        help="Historical status to rerun; repeat as needed (default: FAIL + TIMEOUT)",
+    )
+    p_rerun.add_argument("--limit", type=int, default=20)
+    p_rerun.set_defaults(func=cmd_rerun)
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
