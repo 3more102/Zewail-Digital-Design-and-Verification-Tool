@@ -1,0 +1,29 @@
+{
+  "source": "counter-example",
+  "bins": [
+    {
+      "scope": "tb_counter",
+      "coverpoint": "reset_release",
+      "bin": "observed",
+      "hits": 4,
+      "goal": 1
+    },
+    {
+      "scope": "tb_counter",
+      "coverpoint": "final_count",
+      "bin": "eight",
+      "hits": 4,
+      "goal": 1
+    },
+    {
+      "scope": "tb_counter",
+      "coverpoint": "counter_corner",
+      "bin": "wraparound",
+      "hits": 0,
+      "goal": 1,
+      "metadata": {
+        "note": "Not targeted by the smoke regression"
+      }
+    }
+  ]
+}
