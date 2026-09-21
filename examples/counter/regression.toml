@@ -1,0 +1,9 @@
+[regression]
+name = "counter-smoke"
+jobs = 2
+
+[[tests]]
+name = "counter_basic"
+seeds = [1, 7, 42, 100]
+timeout_s = 10
+plusargs = []
