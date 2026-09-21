@@ -71,7 +71,14 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
-      - name: Merge coverage
+      - name: Verify async FIFO example
+        run: |
+          zddv --project examples/async_fifo build
+          zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
+          zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
+          zddv --project examples/async_fifo coverage
+
+      - name: Merge counter coverage
         run: zddv --project examples/counter coverage
 
       - name: Integration tests
