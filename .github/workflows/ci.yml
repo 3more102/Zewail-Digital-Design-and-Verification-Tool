@@ -71,6 +71,11 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
+      - name: Generate HTML report
+        run: |
+          zddv --project examples/counter report --output .zddv/report.html --limit 50
+          test -s examples/counter/.zddv/report.html
+
       - name: Merge coverage
         run: zddv --project examples/counter coverage
 

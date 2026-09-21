@@ -1,7 +1,7 @@
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from zddv.reporting import write_junit_report
+from zddv.reporting import write_html_report, write_junit_report
 
 
 def test_write_junit_report(tmp_path: Path):
@@ -54,3 +54,50 @@ def test_write_junit_report(tmp_path: Path):
     assert cases[0].find("failure") is None
     assert cases[1].find("failure") is not None
     assert cases[2].find("error") is not None
+
+
+
+def test_write_html_report_escapes_and_summarizes(tmp_path: Path):
+    records = [
+        {
+            "run_id": "run-pass",
+            "created_at": "2026-09-21T19:00:00+00:00",
+            "simulator": "verilator",
+            "test_name": "smoke<unsafe>",
+            "seed": 1,
+            "status": "PASS",
+            "duration_ms": 10.0,
+        },
+        {
+            "run_id": "run-fail",
+            "created_at": "2026-09-21T19:01:00+00:00",
+            "simulator": "verilator",
+            "test_name": "corner",
+            "seed": 2,
+            "status": "FAIL",
+            "duration_ms": 20.0,
+        },
+    ]
+    groups = [
+        {
+            "count": 1,
+            "statuses": ["FAIL"],
+            "tests": ["corner"],
+            "seeds": [2],
+            "signature": "ASSERT x < y",
+        }
+    ]
+
+    output = write_html_report(
+        records,
+        groups,
+        tmp_path / "report.html",
+        suite_name="demo",
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert "ZDDV Verification Report" in html
+    assert "50.0%" in html
+    assert "smoke&lt;unsafe&gt;" in html
+    assert "ASSERT x &lt; y" in html
+    assert "run-fail" in html

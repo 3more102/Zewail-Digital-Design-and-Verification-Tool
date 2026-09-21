@@ -67,13 +67,17 @@ This run directory becomes the atomic unit for future regression, coverage, debu
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
 
+## Current Regression Data Plane
+
+The regression layer now includes named tests, deterministic seeds, plusargs,
+parallel execution, timeouts, SQLite run history, selective rerun, JUnit export,
+failure-signature grouping, and a self-contained HTML verification report.
+
 ## Next Architectural Steps
 
-1. Add test/seed/plusarg models.
-2. Add regression scheduler and worker pool.
-3. Move run records into SQLite while preserving JSON artifacts.
-4. Define normalized assertion and coverage schemas.
-5. Add waveform indexing and source/hierarchy metadata.
-6. Add protocol-aware analyzers.
-7. Add formal adapters.
-8. Add AI-assisted triage over normalized ZDDV evidence.
+1. Define normalized coverage metrics and persist them in the result database.
+2. Define assertion result schemas and assertion-to-run correlation.
+3. Add waveform indexing and source/hierarchy metadata.
+4. Add protocol-aware analyzers.
+5. Add formal adapters.
+6. Add AI-assisted triage over normalized ZDDV evidence.

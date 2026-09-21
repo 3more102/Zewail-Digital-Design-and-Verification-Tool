@@ -9,7 +9,7 @@ from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
 from zddv.regression import run_regression
-from zddv.reporting import write_junit_report
+from zddv.reporting import write_html_report, write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import database_path, list_run_records, list_runs
 from zddv.triage import group_failure_records, write_failure_report
@@ -248,6 +248,34 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_report(args) -> int:
+    project = load_project(_project_arg(args))
+    statuses = tuple(args.status or ())
+    rows = list_run_records(
+        project,
+        limit=args.limit,
+        statuses=statuses or None,
+    )
+    groups = group_failure_records(rows)
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    report = write_html_report(
+        rows,
+        groups,
+        output,
+        suite_name=project.name,
+    )
+    print(f"HTML report: {report}")
+    print(
+        f"Runs: {len(rows)} | "
+        f"Failure groups: {len(groups)}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -352,6 +380,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_failures.set_defaults(func=cmd_failures)
+
+    p_report = sub.add_parser(
+        "report",
+        help="Generate a self-contained HTML verification report",
+    )
+    p_report.add_argument("--output", default=".zddv/report.html")
+    p_report.add_argument("--limit", type=int, default=200)
+    p_report.add_argument(
+        "--status",
+        action="append",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+        help="Optional status filter; repeat as needed.",
+    )
+    p_report.set_defaults(func=cmd_report)
 
     return parser
 
