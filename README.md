@@ -122,6 +122,8 @@ zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
 zddv --project my_project axi4-analyze axi4_trace.json
+# Exclusive-access example:
+zddv --project my_project axi4-analyze ../axi4_exclusive_trace.json
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -354,6 +356,13 @@ AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
 different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
 and the requirement that each AXI burst remain inside one 4KB address region.
+
+Exclusive accesses are now correlated by transaction ID and matching address
+attributes. ZDDV checks the AXI4 exclusive-access alignment, power-of-two size,
+128-byte maximum, 16-transfer maximum, EXOKAY use, and the rule that an
+exclusive write cannot begin until its matching exclusive read has completed.
+Topology-dependent AxCACHE reachability is intentionally not inferred from a
+normalized trace.
 
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage.
