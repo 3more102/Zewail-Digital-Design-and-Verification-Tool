@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import platform
 import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.regression import run_regression
 from zddv.simulator import VerilatorBackend
 
 
@@ -81,12 +81,30 @@ def cmd_build(args) -> int:
 def cmd_run(args) -> int:
     project = load_project(_project_arg(args))
     backend = _backend(project.simulator)
-    result = backend.run(project)
+    result = backend.run(
+        project,
+        test_name=args.test,
+        seed=args.seed,
+        plusargs=args.plusarg,
+        timeout_s=args.timeout,
+    )
     print(f"RUN {result.status}: {result.run_id}")
     print(f"Log: {result.log_path}")
     if result.waveform_path:
         print(f"Waveform: {result.waveform_path}")
     return result.returncode
+
+
+def cmd_regress(args) -> int:
+    project = load_project(_project_arg(args))
+    backend = _backend(project.simulator)
+    summary = run_regression(project, backend, args.regression_file)
+    print(
+        f"REGRESSION {summary['status']}: "
+        f"{summary['passed']}/{summary['total']} passed"
+    )
+    print(f"Summary: {summary['summary_path']}")
+    return 0 if summary["status"] == "PASS" else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,7 +143,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.set_defaults(func=cmd_build)
 
     p_run = sub.add_parser("run", help="Run the configured simulation")
+    p_run.add_argument("--test", default=None, help="Logical test name")
+    p_run.add_argument("--seed", type=int, default=None)
+    p_run.add_argument(
+        "--plusarg",
+        action="append",
+        default=[],
+        help="Runtime plusarg; repeat for multiple arguments",
+    )
+    p_run.add_argument("--timeout", type=float, default=None, help="Timeout in seconds")
     p_run.set_defaults(func=cmd_run)
+
+    p_regress = sub.add_parser("regress", help="Run a regression definition")
+    p_regress.add_argument("regression_file", help="Regression TOML file")
+    p_regress.set_defaults(func=cmd_regress)
 
     return parser
 
