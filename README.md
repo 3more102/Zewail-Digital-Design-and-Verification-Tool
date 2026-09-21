@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
+> Status: **v0.4 Debug Studio Core — source + elaborated hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
 
 ## What Works Today
 
@@ -37,6 +37,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- Simulator-elaborated hierarchy normalized from Verilator JSON/XML parser output
 - VCD waveform scope/signal index with FST artifact metadata support
 - Targeted VCD signal value probing with exact/unique-name resolution, time windows, and bounded change capture
 - Assertion-to-waveform run correlation with conservative signal hints
@@ -82,6 +83,8 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project elaborate
+zddv --project my_project hierarchy --elaborated
 zddv --project my_project connectivity
 zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
@@ -354,10 +357,12 @@ SHA-256 hashes, source design units, instance locations, duplicate-unit detectio
 and the configured top hierarchy. `zddv hierarchy` renders the same normalized
 hierarchy in the terminal.
 
-This v0.4 foundation is intentionally a **source-level** index. It does not claim
-to replace elaboration: generate-time choices, parameter specialization, binds,
-and tool-resolved hierarchy will be enriched later through simulator-adapter AST
-data while preserving the same normalized ZDDV model.
+The source-level index remains deterministic and simulator-independent. For
+tool-resolved hierarchy, `zddv elaborate` asks the Verilator adapter to export its
+elaborated parser tree and writes `.zddv/design/elaborated.json`. Verilator
+5.022+ uses JSON parser output; older supported versions such as 5.020 use the
+legacy XML export path. `zddv hierarchy --elaborated` renders that normalized
+instance hierarchy without changing the source-index contract.
 
 ### Debug Studio Waveform Index
 
