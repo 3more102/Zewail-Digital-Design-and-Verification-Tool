@@ -55,16 +55,23 @@ class VerilatorBackend(SimulatorBackend):
             self._tool(),
             "--binary",
             "--timing",
-            "--trace",
             "--Wno-fatal",
-            "--top-module",
-            project.top,
-            "-Mdir",
-            str(build_dir),
-            "-o",
-            "zddv_sim",
-            *[str(path) for path in sources],
         ]
+        if project.waveform:
+            command.append("--trace")
+        if project.coverage:
+            command.append("--coverage")
+        command.extend(
+            [
+                "--top-module",
+                project.top,
+                "-Mdir",
+                str(build_dir),
+                "-o",
+                "zddv_sim",
+                *[str(path) for path in sources],
+            ]
+        )
 
         completed = subprocess.run(
             command,
@@ -172,6 +179,10 @@ class VerilatorBackend(SimulatorBackend):
                 waveform = candidate
                 break
 
+        coverage = run_dir / "coverage.dat"
+        if not coverage.exists():
+            coverage = None
+
         status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
         record = {
             "run_id": run_id,
@@ -189,6 +200,7 @@ class VerilatorBackend(SimulatorBackend):
             "status": status,
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
+            "coverage": str(coverage) if coverage else None,
         }
         (run_dir / "run.json").write_text(
             json.dumps(record, indent=2),
@@ -203,6 +215,7 @@ class VerilatorBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform,
+            coverage_path=coverage,
             test_name=test_name,
             seed=seed,
         )
