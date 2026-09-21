@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
+> Status: **v0.3 verification-results foundation — coverage-hole analysis implemented**
 
 ## What Works Today
 
