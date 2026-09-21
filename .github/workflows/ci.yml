@@ -23,7 +23,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Unit tests
-        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py -q
+        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py tests/test_triage.py -q
 
   verilator-integration:
     runs-on: ubuntu-latest
