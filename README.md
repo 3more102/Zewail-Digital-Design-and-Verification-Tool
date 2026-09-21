@@ -36,6 +36,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- VCD waveform scope/signal indexing linked to ZDDV run history
 
 ## Quick Start
 
@@ -76,6 +77,8 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project wave-index
+zddv --project my_project wave-index --run <run-id>
 zddv --project my_project lint
 zddv --project my_project build
 
