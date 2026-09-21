@@ -32,7 +32,7 @@ from zddv.storage import (
     list_runs,
 )
 from zddv.triage import group_failure_records, write_failure_report
-from zddv.waveform import write_waveform_index
+from zddv.waveform import write_waveform_index, write_waveform_probe
 
 
 def _backend(name: str):
@@ -137,6 +137,51 @@ def cmd_waveform_index(args) -> int:
     print(f"Index: {result['path']}")
     if result.get("latest_path"):
         print(f"Latest: {result['latest_path']}")
+    return 0
+
+
+def cmd_waveform_probe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_waveform_probe(
+        project,
+        signals=args.signal,
+        at_time=args.at_time,
+        before=args.before,
+        after=args.after,
+        max_transitions=args.max_transitions,
+        run_id=args.run_id,
+        input_path=args.input,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"WAVEFORM PROBE: {summary['signals']} signal(s), "
+        f"{summary['transitions_in_window']} transition(s) in window"
+    )
+    print(
+        f"Time: {result['time']['tick']} tick(s) "
+        f"[-{result['time']['before']}, +{result['time']['after']}]"
+    )
+    if result.get("timescale"):
+        print(f"Timescale: {result['timescale']}")
+    if result.get("run_id"):
+        print(f"Run: {result['run_id']}")
+
+    for signal in result["signals"]:
+        value = signal["value_at"]
+        value_label = "<unknown>" if value is None else str(value)
+        last_transition = signal["last_transition"]
+        next_transition = signal["next_transition"]
+        last_time = "-" if last_transition is None else str(last_transition["time"])
+        next_time = "-" if next_transition is None else str(next_transition["time"])
+        truncated = " truncated" if signal["truncated"] else ""
+        print(
+            f"{signal['path']} value={value_label} "
+            f"last={last_time} next={next_time} "
+            f"transitions={signal['transitions_in_window']}{truncated}"
+        )
+
+    print(f"Report: {result['path']}")
     return 0
 
 
@@ -633,6 +678,60 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+    p_waveform_probe = sub.add_parser(
+        "waveform-probe",
+        help="Cross-probe selected VCD signal values around a simulation time",
+    )
+    waveform_probe_source = p_waveform_probe.add_mutually_exclusive_group()
+    waveform_probe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    waveform_probe_source.add_argument(
+        "--input",
+        default=None,
+        help="VCD path relative to the project, independent of run history",
+    )
+    p_waveform_probe.add_argument(
+        "--signal",
+        action="append",
+        required=True,
+        help="Signal path or unambiguous short name; repeat for multiple signals",
+    )
+    p_waveform_probe.add_argument(
+        "--time",
+        dest="at_time",
+        type=int,
+        required=True,
+        help="Simulation time in integer VCD ticks",
+    )
+    p_waveform_probe.add_argument(
+        "--before",
+        type=int,
+        default=0,
+        help="Include transitions this many VCD ticks before --time",
+    )
+    p_waveform_probe.add_argument(
+        "--after",
+        type=int,
+        default=0,
+        help="Include transitions this many VCD ticks after --time",
+    )
+    p_waveform_probe.add_argument(
+        "--max-transitions",
+        type=int,
+        default=200,
+        help="Maximum transitions retained per signal in the requested window",
+    )
+    p_waveform_probe.add_argument(
+        "--output",
+        default=".zddv/debug/waveform-probe.json",
+        help="JSON waveform cross-probe report path",
+    )
+    p_waveform_probe.set_defaults(func=cmd_waveform_probe)
 
     p_assertion_waveform = sub.add_parser(
         "assertion-waveform",
