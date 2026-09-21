@@ -1,0 +1,57 @@
+{
+  "source": "zddv-axi4-example",
+  "samples": [
+    {
+      "cycle": 0,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWID": 1,
+      "AWADDR": "0x100",
+      "AWLEN": 1,
+      "AWSIZE": 2,
+      "AWBURST": "INCR"
+    },
+    {
+      "cycle": 1,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0xAAAA5555",
+      "WSTRB": "0xF",
+      "WLAST": 0,
+      "ARVALID": 1,
+      "ARREADY": 1,
+      "ARID": 2,
+      "ARADDR": "0x200",
+      "ARLEN": 1,
+      "ARSIZE": 2,
+      "ARBURST": "INCR"
+    },
+    {
+      "cycle": 2,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0xDEADBEEF",
+      "WSTRB": "0xF",
+      "WLAST": 1,
+      "RVALID": 1,
+      "RREADY": 1,
+      "RID": 2,
+      "RDATA": "0x11",
+      "RRESP": "OKAY",
+      "RLAST": 0
+    },
+    {
+      "cycle": 3,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BID": 1,
+      "BRESP": "OKAY",
+      "RVALID": 1,
+      "RREADY": 1,
+      "RID": 2,
+      "RDATA": "0x22",
+      "RRESP": "OKAY",
+      "RLAST": 1
+    }
+  ]
+}
