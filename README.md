@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, and full AXI4 burst analysis are implemented; CDC and UCIe packs remain planned**
 
 ## What Works Today
 
@@ -31,6 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
+- Full AXI4 burst reconstruction with IDs, AxLEN/AxSIZE/AxBURST checks, WLAST/RLAST validation, 4KB-boundary checks, BID/RID correlation, and interleaved read handling
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -120,6 +121,7 @@ zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
+zddv --project my_project axi4-analyze axi4_trace.json
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -288,7 +290,7 @@ separately from Verilator's annotation threshold.
 - [x] Coverage-hole analysis
 - [x] APB normalized-trace transaction analysis
 - [x] AXI4-Lite normalized-trace protocol analysis
-- [ ] AXI4 full-burst protocol analysis
+- [x] AXI4 full-burst protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
@@ -374,6 +376,29 @@ The extracted trace is written to
 `.zddv/protocols/axi4lite/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4lite/waveform-latest.json`. AW, W, AR, and response
 timestamps are preserved in reconstructed transactions.
+
+
+### AXI4 Full-Burst Trace Analysis
+
+`zddv axi4-analyze <trace.json>` reconstructs full AXI4 read and write bursts from
+clock-edge samples. The analyzer keeps the five channels independent, assigns AXI4
+write data in AW acceptance order, correlates write responses by BID, and correlates
+read data by RID so different read IDs can return data interleaved.
+
+The current normalized-trace checks include AxLEN/AxSIZE/AxBURST legality,
+FIXED/INCR/WRAP burst-length rules, 4KB boundary protection, WLAST/RLAST placement,
+VALID/payload stability under backpressure, response-ID correlation, incomplete
+bursts, and protocol-valid SLVERR/DECERR accounting. EXOKAY remains a valid full-AXI
+response; exclusive-access semantic checks are not yet modeled.
+
+```bash
+zddv --project my_project axi4-analyze examples/axi4_trace.json
+```
+
+Reports are written to `.zddv/protocols/axi4/latest.json` by default. Waveform
+extraction for full AXI4 remains separate future work; this milestone establishes the
+simulator-independent burst semantics first.
+
 
 ### Assertion Result Markers
 
