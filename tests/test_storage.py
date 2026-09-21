@@ -3,9 +3,12 @@ from pathlib import Path
 from zddv.config import initialize_project
 from zddv.storage import (
     database_path,
+    get_run_record,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
+    record_assertion_events,
     record_coverage_snapshot,
     record_run,
 )
@@ -104,3 +107,49 @@ def test_record_and_list_coverage_snapshots(tmp_path: Path):
     assert rows[0]["snapshot_id"] == "cov-1"
     assert rows[0]["hit_rate"] == 75.0
     assert rows[0]["by_type"]["line"]["hit"] == 8
+
+
+def test_get_run_record(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record = _record("run-exact", "PASS", 3)
+    record["plusargs"] = ["+MODE=debug"]
+    record_run(project, record)
+
+    row = get_run_record(project, "run-exact")
+
+    assert row is not None
+    assert row["run_id"] == "run-exact"
+    assert row["plusargs"] == ["+MODE=debug"]
+    assert get_run_record(project, "missing") is None
+
+
+def test_list_assertions_can_filter_by_run(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    events = [
+        {
+            "run_id": "run-a",
+            "event_index": 0,
+            "created_at": "2026-09-21T20:00:00+00:00",
+            "assertion_name": "a_ok",
+            "status": "PASS",
+            "message": None,
+            "log_path": "/tmp/a.log",
+            "log_line": 1,
+        },
+        {
+            "run_id": "run-b",
+            "event_index": 0,
+            "created_at": "2026-09-21T20:01:00+00:00",
+            "assertion_name": "b_fail",
+            "status": "FAIL",
+            "message": "count=4",
+            "log_path": "/tmp/b.log",
+            "log_line": 2,
+        },
+    ]
+    record_assertion_events(project, events)
+
+    rows = list_assertion_events(project, run_id="run-b", limit=10)
+
+    assert len(rows) == 1
+    assert rows[0]["assertion_name"] == "b_fail"
