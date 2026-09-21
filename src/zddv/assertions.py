@@ -7,7 +7,7 @@ import re
 _VERILATOR_ASSERTION = re.compile(
     r"^(?:\[(?P<time>\d+)\]\s*)?"
     r"%Error(?:-[A-Za-z0-9_]+)?:\s*"
-    r"(?:(?P<file>.*?):(?P<line>\d+):(?P<column>\d+):\s*)?"
+    r"(?:(?P<file>.*?):(?P<line>\d+)(?::(?P<column>\d+))?:\s*)?"
     r"(?P<message>.*Assertion failed.*)$"
 )
 _GENERIC_ASSERTION = re.compile(r"(?i)\bassertion failed\b")
