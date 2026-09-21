@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_run_records
+from zddv.storage import get_run_record, list_run_records
 
 
 _DECLARATION_RE = re.compile(
@@ -219,22 +219,20 @@ def select_waveform_run(
     *,
     run_id: str | None = None,
 ) -> dict[str, Any]:
-    # Keep exact historical run lookup practical without adding a second storage API.
-    rows = list_run_records(project, limit=1_000_000)
-
     if run_id is not None:
-        for row in rows:
-            if row["run_id"] == run_id:
-                if not row.get("waveform_path"):
-                    raise RuntimeError(f"Run '{run_id}' has no recorded waveform artifact.")
-                path = Path(str(row["waveform_path"]))
-                if not path.exists():
-                    raise RuntimeError(
-                        f"Recorded waveform for run '{run_id}' does not exist: {path}"
-                    )
-                return row
-        raise RuntimeError(f"Run '{run_id}' was not found in the verification database.")
+        row = get_run_record(project, run_id)
+        if row is None:
+            raise RuntimeError(f"Run '{run_id}' was not found in the verification database.")
+        if not row.get("waveform_path"):
+            raise RuntimeError(f"Run '{run_id}' has no recorded waveform artifact.")
+        path = Path(str(row["waveform_path"]))
+        if not path.exists():
+            raise RuntimeError(
+                f"Recorded waveform for run '{run_id}' does not exist: {path}"
+            )
+        return row
 
+    rows = list_run_records(project, limit=1_000_000)
     for row in rows:
         value = row.get("waveform_path")
         if value and Path(str(value)).exists():
