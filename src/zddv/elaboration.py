@@ -8,6 +8,7 @@ from typing import Any, Iterable
 import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
+from zddv.design_index import write_design_index
 from zddv.simulator import VerilatorBackend
 
 
@@ -260,6 +261,7 @@ def write_elaborated_index(
         )
 
     backend = backend or VerilatorBackend()
+    source_index = write_design_index(project)
     out_dir = (project.root / ".zddv" / "design").resolve()
     export = backend.export_design_tree(project, out_dir)
 
@@ -287,7 +289,7 @@ def write_elaborated_index(
         "simulator": project.simulator,
         "simulator_version": export["simulator_version"],
         "source_format": export["format"],
-        "source_index": str((out_dir / "index.json").resolve()),
+        "source_index": source_index["path"],
         "modules": parsed["modules"],
         "instances": parsed["instances"],
         "summary": {
