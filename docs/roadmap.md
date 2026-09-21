@@ -49,9 +49,9 @@ Current status: in progress. The first slice builds a normalized source/module i
 - [x] Design hierarchy.
 - [x] Source indexing.
 - [ ] Waveform index.
-- Drivers/loads navigation.
-- Assertion-to-waveform correlation.
-- Protocol transaction reconstruction.
+- [ ] Drivers/loads navigation.
+- [ ] Assertion-to-waveform correlation.
+- [ ] Protocol transaction reconstruction.
 
 ## v0.5 — Protocol Verification
 
