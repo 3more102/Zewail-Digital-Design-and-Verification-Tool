@@ -40,7 +40,7 @@ class VerilatorBackend(SimulatorBackend):
 
     @staticmethod
     def _version_number(version_text: str) -> tuple[int, int] | None:
-        match = re.search(r"\\bVerilator\\s+(\\d+)\\.(\\d+)", version_text)
+        match = re.search(r"\bVerilator\s+(\d+)\.(\d+)", version_text)
         if match is None:
             return None
         return int(match.group(1)), int(match.group(2))
