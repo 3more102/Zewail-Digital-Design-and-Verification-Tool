@@ -54,7 +54,6 @@ traces) are implemented. Elaborated connectivity and waveform-driven protocol ex
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata).
 - [x] Waveform-to-source cross-probing.
 - [x] Drivers/loads navigation (source-level structural evidence).
-- [x] Waveform-to-source cross-probing.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 
