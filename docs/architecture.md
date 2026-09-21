@@ -124,17 +124,20 @@ must be enriched by simulator AST/elaboration adapters rather than guessed.
 
 ## v0.4 Waveform / Source Cross-Probe Contract
 
-`zddv crossprobe <signal>` composes the normalized waveform index with the
-source-level design hierarchy. Signal resolution is deterministic: exact path,
-unique hierarchy suffix, then unique short name. Ambiguous short-name matches are
-rejected instead of guessed.
+`zddv crossprobe <signal>` composes normalized evidence across the waveform,
+source hierarchy, and source-level connectivity models. Signal resolution is
+deterministic: exact path, unique hierarchy suffix, then unique short name.
+Ambiguous short-name matches are rejected instead of guessed.
 
 A successful source match records the waveform signal, matched hierarchy scope,
-design instance path and type, source design unit, and exact declaration line
-when one can be identified conservatively. Results remain `PARTIAL` when the
-waveform scope maps to a design unit but an exact declaration cannot be proven.
+design instance path and type, source design unit, exact declaration line when
+one can be identified conservatively, and the structural driver/load evidence
+available for the same source signal. The report also records the design,
+connectivity, and waveform index paths used as evidence. Results remain
+`PARTIAL` when the waveform scope maps to a design unit but an exact declaration
+cannot be proven.
 
-This first contract is source-level. Generated hierarchy, parameter-specialized
+This contract is source-level. Generated hierarchy, parameter-specialized
 instances, binds, macros, and simulator-resolved objects remain enrichment work
 for simulator AST/elaboration adapters.
 
