@@ -36,6 +36,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- Compact VCD waveform index with signal metadata, activity counts, and sparse time checkpoints
 
 ## Quick Start
 
@@ -76,6 +77,7 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project waveform-index
 zddv --project my_project lint
 zddv --project my_project build
 
@@ -313,6 +315,18 @@ This v0.4 foundation is intentionally a **source-level** index. It does not clai
 to replace elaboration: generate-time choices, parameter specialization, binds,
 and tool-resolved hierarchy will be enriched later through simulator-adapter AST
 data while preserving the same normalized ZDDV model.
+
+### Debug Studio Waveform Index
+
+`zddv waveform-index` indexes an explicit VCD or, by default, the newest
+waveform recorded in the verification database. The JSON index stores VCD
+metadata, scopes, signal names/types/widths, per-signal activity summaries,
+first/last values and change locations, plus sparse time checkpoints for future
+waveform navigation and cross-probing.
+
+The first waveform-index implementation intentionally targets ASCII VCD. FST and
+commercial waveform databases remain adapter work rather than being treated as
+if they were already parsed.
 
 ### Phase 4 — Advanced Verification
 
