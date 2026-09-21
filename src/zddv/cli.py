@@ -15,6 +15,7 @@ from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import (
     database_path,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
@@ -129,6 +130,8 @@ def cmd_run(args) -> int:
         print(f"Waveform: {result.waveform_path}")
     if result.coverage_path:
         print(f"Coverage: {result.coverage_path}")
+    if result.assertion_failures:
+        print(f"Assertion failures: {result.assertion_failures}")
     return result.returncode
 
 
@@ -294,6 +297,31 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_assertions(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_assertion_events(
+        project,
+        limit=args.limit,
+        run_id=args.run,
+    )
+    if not rows:
+        print("No assertion failures found.")
+        return 0
+
+    print(f"{'TIME':>10} {'SOURCE':<30} {'ASSERTION':<24} MESSAGE")
+    for row in rows:
+        sim_time = "-" if row["simulation_time"] is None else str(row["simulation_time"])
+        source = row["source_file"] or "-"
+        if row["source_line"] is not None:
+            source += f":{row['source_line']}"
+        name = row["assertion_name"] or "-"
+        print(
+            f"{sim_time:>10} {source[:30]:<30} "
+            f"{name[:24]:<24} {row['message']}"
+        )
+    return 0
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -421,6 +449,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_failures.set_defaults(func=cmd_failures)
+
+    p_assertions = sub.add_parser(
+        "assertions",
+        help="Show recorded assertion failures",
+    )
+    p_assertions.add_argument("--limit", type=int, default=100)
+    p_assertions.add_argument("--run", default=None, help="Filter by run ID")
+    p_assertions.set_defaults(func=cmd_assertions)
 
     p_report = sub.add_parser(
         "report",
