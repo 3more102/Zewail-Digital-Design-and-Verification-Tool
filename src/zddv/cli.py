@@ -37,8 +37,10 @@ from zddv.storage import (
     list_functional_coverage_snapshots,
     list_run_records,
     list_runs,
+    list_uvm_log_snapshots,
 )
 from zddv.triage import group_failure_records, write_failure_report
+from zddv.uvm import analyze_uvm_log
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
 
@@ -522,6 +524,66 @@ def cmd_assertions(args) -> int:
         print(
             f"{row['status']:<7} {row['assertion_name'][:28]:<28} "
             f"{row['run_id'][:32]:<32} {message}"
+        )
+    return 0
+
+
+def cmd_uvm_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_log(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+    )
+    summary = result["summary"]
+    test_name = result.get("test_name") or "-"
+    print(
+        f"UVM {result['status']}: test={test_name} "
+        f"I/W/E/F={summary['infos']}/{summary['warnings']}/"
+        f"{summary['errors']}/{summary['fatals']}"
+    )
+    print(
+        f"Counts: {result['count_source']}  "
+        f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
+    )
+    for event in result["messages"]:
+        if event["severity"] not in {"UVM_WARNING", "UVM_ERROR", "UVM_FATAL"}:
+            continue
+        report_id = f"[{event['report_id']}] " if event.get("report_id") else ""
+        message = event.get("message") or "-"
+        print(
+            f"{event['severity']} line={event['log_line']} "
+            f"{report_id}{message}"
+        )
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_uvm_log_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+    )
+    if not rows:
+        print("No UVM log snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<6} {'TEST':<28} {'I/W/E/F':<20} "
+        f"{'COUNT SOURCE':<18} SNAPSHOT"
+    )
+    for row in rows:
+        counts = (
+            f"{row['info_count']}/{row['warning_count']}/"
+            f"{row['error_count']}/{row['fatal_count']}"
+        )
+        test_name = row["test_name"] or "-"
+        print(
+            f"{row['status']:<6} {test_name[:28]:<28} {counts:<20} "
+            f"{row['count_source']:<18} {row['snapshot_id']}"
         )
     return 0
 
@@ -1253,6 +1315,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fcov_holes.add_argument("--limit", type=int, default=50)
     p_fcov_holes.set_defaults(func=cmd_fcov_holes)
+
+    p_uvm = sub.add_parser(
+        "uvm-analyze",
+        help="Normalize UVM report messages and final severity summary from a log",
+    )
+    p_uvm.add_argument("path", help="UVM simulation log file")
+    p_uvm.add_argument(
+        "--source",
+        default=None,
+        help="Optional simulator/adapter label, e.g. questa or vcs",
+    )
+    p_uvm.add_argument(
+        "--output",
+        default=".zddv/uvm/latest.json",
+        help="Normalized UVM JSON report path",
+    )
+    p_uvm.set_defaults(func=cmd_uvm_analyze)
+
+    p_uvm_history = sub.add_parser(
+        "uvm-history",
+        help="Show persisted normalized UVM log analysis snapshots",
+    )
+    p_uvm_history.add_argument("--limit", type=int, default=20)
+    p_uvm_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL"),
+        default=None,
+    )
+    p_uvm_history.set_defaults(func=cmd_uvm_history)
 
     p_async_fifo = sub.add_parser(
         "async-fifo-analyze",
