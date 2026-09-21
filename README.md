@@ -26,6 +26,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
+- Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI example
 
@@ -76,6 +77,7 @@ zddv --project my_project regress regression.toml
 zddv --project my_project runs --limit 20
 zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
+zddv --project my_project failures --limit 200
 zddv --project my_project coverage
 ```
 
@@ -225,7 +227,7 @@ docs/                  Architecture and roadmap
 - [x] SQLite result database
 - [x] Selective rerun
 - [x] JUnit XML export
-- [ ] Failure signature grouping
+- [x] Failure signature grouping
 - [ ] HTML report
 
 ### Phase 3 — Coverage and Verification Intelligence
