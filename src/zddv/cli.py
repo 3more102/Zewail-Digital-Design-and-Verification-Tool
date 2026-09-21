@@ -13,6 +13,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
+from zddv.design_index import format_hierarchy_tree, index_project
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.regression import run_regression
