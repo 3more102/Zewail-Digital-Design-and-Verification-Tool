@@ -1,0 +1,79 @@
+{
+  "source": "example-normalized-axi4-monitor",
+  "samples": [
+    {
+      "cycle": 0,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWID": 3,
+      "AWADDR": "0x100",
+      "AWLEN": 3,
+      "AWSIZE": 2,
+      "AWBURST": "INCR"
+    },
+    {
+      "cycle": 1,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x11111111",
+      "WSTRB": "0xF",
+      "WLAST": 0
+    },
+    {
+      "cycle": 2,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x22222222",
+      "WSTRB": "0xF",
+      "WLAST": 0
+    },
+    {
+      "cycle": 3,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x33333333",
+      "WSTRB": "0xF",
+      "WLAST": 0
+    },
+    {
+      "cycle": 4,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x44444444",
+      "WSTRB": "0xF",
+      "WLAST": 1
+    },
+    {
+      "cycle": 5,
+      "ARVALID": 1,
+      "ARREADY": 1,
+      "ARID": 9,
+      "ARADDR": "0x200",
+      "ARLEN": 1,
+      "ARSIZE": 2,
+      "ARBURST": "INCR"
+    },
+    {
+      "cycle": 6,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BID": 3,
+      "BRESP": "OKAY",
+      "RVALID": 1,
+      "RREADY": 1,
+      "RID": 9,
+      "RDATA": "0xAAAA0001",
+      "RRESP": "OKAY",
+      "RLAST": 0
+    },
+    {
+      "cycle": 7,
+      "RVALID": 1,
+      "RREADY": 1,
+      "RID": 9,
+      "RDATA": "0xAAAA0002",
+      "RRESP": "OKAY",
+      "RLAST": 1
+    }
+  ]
+}
