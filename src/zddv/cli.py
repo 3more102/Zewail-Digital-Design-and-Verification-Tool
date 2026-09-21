@@ -13,6 +13,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
+from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
@@ -22,6 +23,8 @@ from zddv.storage import (
     database_path,
     list_assertion_events,
     list_coverage_snapshots,
+    list_functional_coverage_bins,
+    list_functional_coverage_snapshots,
     list_run_records,
     list_runs,
 )
@@ -228,6 +231,67 @@ def cmd_coverage_holes(args) -> int:
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
+    return 0
+
+
+def cmd_fcov_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_functional_coverage(
+        project,
+        args.path,
+        source=args.source,
+    )
+    print(
+        f"FUNCTIONAL COVERAGE: {result['covered_bins']}/{result['total_bins']} bins "
+        f"covered ({result['coverage_rate']:.1f}%)"
+    )
+    print(f"Source: {result['source']}")
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Normalized: {result['normalized_path']}")
+    return 0
+
+
+def cmd_fcov_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_functional_coverage_snapshots(project, limit=args.limit)
+    if not rows:
+        print("No functional coverage snapshots found.")
+        return 0
+
+    print(f"{'COVERAGE':>9} {'COVERED/TOTAL':>15} {'SOURCE':<20} SNAPSHOT")
+    for row in rows:
+        ratio = f"{row['covered_bins']}/{row['total_bins']}"
+        print(
+            f"{row['coverage_rate']:>8.1f}% {ratio:>15} "
+            f"{row['source'][:20]:<20} {row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_fcov_holes(args) -> int:
+    project = load_project(_project_arg(args))
+    snapshot_id = args.snapshot
+    if snapshot_id is None:
+        rows = list_functional_coverage_snapshots(project, limit=1)
+        if not rows:
+            print("No functional coverage snapshots found.")
+            return 0
+        snapshot_id = rows[0]["snapshot_id"]
+
+    bins = list_functional_coverage_bins(
+        project,
+        snapshot_id,
+        status="UNCOVERED",
+    )
+    print(f"FUNCTIONAL COVERAGE HOLES: {len(bins)} bin(s) in {snapshot_id}")
+    for item in bins[: args.limit]:
+        scope = f"{item['scope']}." if item['scope'] else ""
+        print(
+            f"{scope}{item['coverpoint']}.{item['bin_name']} "
+            f"hits={item['hits']} goal={item['goal']}"
+        )
+    if len(bins) > args.limit:
+        print(f"... {len(bins) - args.limit} more")
     return 0
 
 
@@ -473,6 +537,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+    p_fcov_import = sub.add_parser(
+        "fcov-import",
+        help="Import normalized functional coverage bins from JSON",
+    )
+    p_fcov_import.add_argument("path", help="Functional coverage JSON file")
+    p_fcov_import.add_argument(
+        "--source",
+        default=None,
+        help="Optional source/adapter label overriding the JSON source",
+    )
+    p_fcov_import.set_defaults(func=cmd_fcov_import)
+
+    p_fcov_history = sub.add_parser(
+        "fcov-history",
+        help="Show functional coverage snapshot history",
+    )
+    p_fcov_history.add_argument("--limit", type=int, default=20)
+    p_fcov_history.set_defaults(func=cmd_fcov_history)
+
+    p_fcov_holes = sub.add_parser(
+        "fcov-holes",
+        help="Show uncovered bins from a functional coverage snapshot",
+    )
+    p_fcov_holes.add_argument(
+        "--snapshot",
+        default=None,
+        help="Snapshot ID; defaults to the latest snapshot",
+    )
+    p_fcov_holes.add_argument("--limit", type=int, default=50)
+    p_fcov_holes.set_defaults(func=cmd_fcov_holes)
 
     p_assertions = sub.add_parser(
         "assertions",
