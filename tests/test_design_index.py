@@ -54,7 +54,7 @@ def test_build_source_index_and_hierarchy(tmp_path: Path):
     }
 
     top = next(unit for unit in index["units"] if unit["name"] == "top")
-    assert top["instances"] == [{"name": "u_child", "type": "child", "line": 13}]
+    assert top["instances"] == [{"name": "u_child", "type": "child", "line": 14}]
 
     hierarchy = index["hierarchy"]
     assert hierarchy["path"] == "top"
