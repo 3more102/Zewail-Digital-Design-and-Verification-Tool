@@ -23,6 +23,7 @@ from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
 from zddv.protocols.axi4 import analyze_axi4_file
 from zddv.protocols.axi4_waveform import analyze_axi4_waveform
+from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -608,6 +609,40 @@ def cmd_axi4_analyze(args) -> int:
         print(
             f"[{violation['code']}] cycle={violation['cycle']} "
             f"{violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_ucie_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_ucie_file(project, args.path, output=args.output)
+    summary = result["summary"]
+    print(
+        f"UCIe {result['status']}: health={result['health']}  "
+        f"{summary['flits']} flit(s), {summary['violations']} trace violation(s)"
+    )
+    print(
+        f"TX/RX: {summary['tx_flits']}/{summary['rx_flits']}  "
+        f"ACK/NAK: {summary['ack_flits']}/{summary['nak_flits']}  "
+        f"CRC errors: {summary['crc_error_flits']}"
+    )
+    print(
+        "FLIT sizes: "
+        f"68B={summary['flit_sizes']['68']} "
+        f"256B={summary['flit_sizes']['256']}"
+    )
+    for violation in result["violations"][: args.show]:
+        field = (
+            f" field={violation['field']}"
+            if violation.get("field") is not None
+            else ""
+        )
+        print(
+            f"[{violation['code']}] flit={violation['flit_index']}"
+            f"{field} {violation['message']}"
         )
     if len(result["violations"]) > args.show:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
@@ -1235,6 +1270,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_axi4.set_defaults(func=cmd_axi4_analyze)
+
+    p_ucie = sub.add_parser(
+        "ucie-analyze",
+        help="Analyze a normalized public UCIe FLIT trace and link-health evidence",
+    )
+    p_ucie.add_argument("path", help="Normalized UCIe FLIT trace JSON file")
+    p_ucie.add_argument(
+        "--output",
+        default=".zddv/protocols/ucie/latest.json",
+        help="JSON UCIe trace-analysis report path",
+    )
+    p_ucie.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of normalized trace violations to print",
+    )
+    p_ucie.set_defaults(func=cmd_ucie_analyze)
 
     p_axi4_waveform = sub.add_parser(
         "axi4-waveform",
