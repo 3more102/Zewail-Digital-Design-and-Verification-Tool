@@ -57,6 +57,15 @@ jobs:
           grep -q "tb_counter: tb_counter" /tmp/zddv-hierarchy.txt
           grep -q "dut: counter" /tmp/zddv-hierarchy.txt
 
+      - name: Build and query connectivity index
+        run: |
+          zddv --project examples/counter connectivity
+          test -s examples/counter/.zddv/design/connectivity.json
+          zddv --project examples/counter connectivity count --unit counter | tee /tmp/zddv-count-connectivity.txt
+          grep -q "DRIVER \[procedural_assignment\]" /tmp/zddv-count-connectivity.txt
+          zddv --project examples/counter connectivity count --unit tb_counter | tee /tmp/zddv-tb-connectivity.txt
+          grep -q "DRIVER \[instance_port\]" /tmp/zddv-tb-connectivity.txt
+
       - name: Build counter example
         run: zddv --project examples/counter build
 

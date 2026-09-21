@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform indexing, and VCD cross-probing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform indexing/cross-probing, assertion correlation, and structural connectivity in progress**
 
 ## What Works Today
 
@@ -40,6 +40,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - VCD waveform scope/signal index with FST artifact metadata support
 - VCD waveform cross-probing at exact ticks with bounded transition windows
 - Assertion-to-waveform run correlation with conservative signal hints
+- Source-level structural drivers/loads navigation with assignment and instance-port evidence
 
 ## Quick Start
 
@@ -80,6 +81,8 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project connectivity
+zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
@@ -362,6 +365,24 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Debug Studio Drivers/Loads Navigation
+
+`zddv connectivity` writes a normalized source-level structural connectivity
+index to `.zddv/design/connectivity.json`. Query a signal with:
+
+```bash
+zddv --project my_project connectivity count --unit counter
+```
+
+The index records driver/load evidence from simple continuous/procedural
+assignments, module port boundaries, and named/positional connections to known
+child design units. Every edge keeps its source file and line plus instance/port
+metadata where applicable.
+
+This is deliberately a conservative **source-level** view, not elaborated
+connectivity. Generate choices, macros, binds, interface/modport semantics,
+complex lvalues, and other constructs require later simulator-AST enrichment.
 
 ### Debug Studio Waveform Cross-Probing
 
