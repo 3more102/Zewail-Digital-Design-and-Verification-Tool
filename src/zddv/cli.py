@@ -7,6 +7,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -110,6 +111,44 @@ def cmd_hierarchy(args) -> int:
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
 
+
+
+def cmd_connectivity(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project, output=args.output)
+    summary = result["summary"]
+
+    if args.signal is None:
+        print(
+            f"CONNECTIVITY: {summary['units']} unit(s), "
+            f"{summary['signals']} signal(s), "
+            f"{summary['drivers']} driver edge(s), "
+            f"{summary['loads']} load edge(s)"
+        )
+        print(
+            "Analysis: source-level structural "
+            f"({summary['unresolved_instance_connections']} unresolved instance connection(s))"
+        )
+        print(f"Index: {result['path']}")
+        return 0
+
+    unit = args.unit or project.top
+    nav = signal_navigation(result, unit=unit, signal=args.signal)
+    print(
+        f"SIGNAL: {nav['unit']}.{nav['signal']}  "
+        f"drivers={len(nav['drivers'])} loads={len(nav['loads'])}"
+    )
+    for label, entries in (("DRIVER", nav["drivers"]), ("LOAD", nav["loads"])):
+        if not entries:
+            print(f"{label}: none found by source-level analysis")
+            continue
+        for item in entries:
+            print(
+                f"{label} [{item['kind']}] "
+                f"{item['file']}:{item['line']} {item['detail']}"
+            )
+    print(f"Index: {result['path']}")
+    return 0
 
 def cmd_waveform_index(args) -> int:
     project = load_project(_project_arg(args))
@@ -572,6 +611,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_connectivity = sub.add_parser(
+        "connectivity",
+        help="Build/query source-level structural drivers and loads",
+    )
+    p_connectivity.add_argument(
+        "signal",
+        nargs="?",
+        default=None,
+        help="Optional signal name to query; omit to build/show index summary",
+    )
+    p_connectivity.add_argument(
+        "--unit",
+        default=None,
+        help="Design unit containing the signal; defaults to the configured top",
+    )
+    p_connectivity.add_argument(
+        "--output",
+        default=".zddv/design/connectivity.json",
+        help="Normalized connectivity JSON output path",
+    )
+    p_connectivity.set_defaults(func=cmd_connectivity)
 
     p_waveform_index = sub.add_parser(
         "waveform-index",
