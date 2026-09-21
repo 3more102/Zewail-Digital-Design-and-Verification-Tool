@@ -91,6 +91,20 @@ converter or simulator-native waveform adapter is available. This distinction is
 explicit in the `parse_status` field so downstream debug features do not treat
 metadata-only artifacts as fully indexed waveforms.
 
+## v0.4 Waveform / Source Cross-Probe Contract
+
+`zddv crossprobe` composes normalized debug evidence across the waveform,
+hierarchy, source, and connectivity models. A query resolves one waveform signal,
+maps its scope to the source-level hierarchy, resolves the matching design unit
+and declaration when possible, and attaches structural driver/load evidence for
+the same source signal.
+
+Matching is conservative: exact paths are preferred, suffix matches must resolve
+uniquely, and ambiguous short signal names are rejected. Reports retain the
+design, connectivity, and waveform index paths used as evidence so a future GUI
+can implement deterministic source/waveform cross-navigation without embedding
+simulator-specific logic.
+
 ## v0.4 Assertion / Waveform Correlation
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
@@ -122,22 +136,6 @@ Generate-time elaboration, preprocessor-dependent structure, binds,
 interface/modport semantics, complex lvalues, and other unresolved constructs
 must be enriched by simulator AST/elaboration adapters rather than guessed.
 
-## v0.4 Waveform / Source Cross-Probe Contract
-
-`zddv crossprobe <signal>` composes the normalized waveform index with the
-source-level design hierarchy. Signal resolution is deterministic: exact path,
-unique hierarchy suffix, then unique short name. Ambiguous short-name matches are
-rejected instead of guessed.
-
-A successful source match records the waveform signal, matched hierarchy scope,
-design instance path and type, source design unit, and exact declaration line
-when one can be identified conservatively. Results remain `PARTIAL` when the
-waveform scope maps to a design unit but an exact declaration cannot be proven.
-
-This first contract is source-level. Generated hierarchy, parameter-specialized
-instances, binds, macros, and simulator-resolved objects remain enrichment work
-for simulator AST/elaboration adapters.
-
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
@@ -148,7 +146,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Enrich source/connectivity/hierarchy/waveform cross-probing with simulator elaboration and generated hierarchy.
+5. Build source/waveform cross-probing on the source, connectivity, hierarchy, assertion, and waveform indexes.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
