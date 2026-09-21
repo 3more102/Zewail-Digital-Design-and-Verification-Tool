@@ -31,6 +31,7 @@ class RunResult:
     coverage_path: Path | None = None
     test_name: str | None = None
     seed: int | None = None
+    assertion_failures: int = 0
 
 
 class SimulatorBackend(ABC):
