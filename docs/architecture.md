@@ -182,6 +182,19 @@ rather than protocol violations.
 ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive
 exclusive/system-ordering semantics remain outside this first AXI4 contract.
 
+### v0.5 AXI4 Waveform Extraction Contract
+
+`zddv axi4-waveform` resolves one VCD scope containing ACLK and the five AXI4
+VALID/READY channel pairs, samples that scope on a configurable clock edge, and
+normalizes available AXI4 payload signals into the same trace schema consumed by
+`axi4-analyze`. Scope auto-detection is deterministic: zero matches are rejected
+and multiple matches require an explicit `--scope`.
+
+Waveform timestamps are preserved in normalized samples and propagated into
+protocol violations and reconstructed transaction timing. The extractor remains
+VCD-specific; FST or simulator-native databases belong behind future waveform
+adapters rather than being guessed by the core protocol analyzer.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
