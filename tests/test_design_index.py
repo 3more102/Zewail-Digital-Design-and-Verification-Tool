@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from zddv.cli import main
 from zddv.config import initialize_project, save_project
 from zddv.design_index import format_hierarchy_tree, index_project
 
@@ -102,3 +103,23 @@ def test_index_reports_missing_top(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="Configured top 'missing_top'"):
         index_project(project)
+
+
+def test_index_cli_command(tmp_path: Path, capsys):
+    project = _project_with_sources(tmp_path)
+    (project.root / "rtl" / "leaf.sv").write_text(
+        "module leaf; endmodule\n",
+        encoding="utf-8",
+    )
+    (project.root / "tb" / "tb.sv").write_text(
+        "module tb_top; leaf dut(); endmodule\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["--project", str(project.root), "index"])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "INDEX: 2 file(s), 2 design unit(s), 1 instance declaration(s)" in output
+    assert "tb_top : tb_top" in output
+    assert "dut : leaf" in output
