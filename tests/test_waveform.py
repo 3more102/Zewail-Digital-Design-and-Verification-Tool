@@ -7,6 +7,7 @@ from zddv.storage import record_run
 from zddv.waveform import (
     build_waveform_index,
     parse_vcd_header,
+    probe_vcd,
     select_waveform_run,
     write_waveform_index,
 )
@@ -166,3 +167,100 @@ def test_waveform_index_cli_with_direct_input(tmp_path: Path, capsys):
     assert "3 signal(s)" in output
     assert "Timescale: 1ns" in output
     assert (project.root / ".zddv" / "waveforms" / "manual.json").is_file()
+
+
+
+PROBE_VCD = """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0001 #
+#10
+0!
+b0010 #
+#15
+1!
+b0011 #
+#20
+0!
+b0100 #
+"""
+
+
+def test_probe_vcd_returns_value_and_transition_window(tmp_path: Path):
+    path = tmp_path / "probe.vcd"
+    path.write_text(PROBE_VCD, encoding="utf-8")
+
+    result = probe_vcd(
+        path,
+        ["count"],
+        at_time=10,
+        before=5,
+        after=5,
+        max_transitions=10,
+        project_name="demo",
+    )
+
+    assert result["timescale"] == "1ns"
+    assert result["time"] == {
+        "tick": 10,
+        "before": 5,
+        "after": 5,
+        "window_start": 5,
+        "window_end": 15,
+    }
+    assert result["summary"] == {
+        "signals": 1,
+        "transitions_in_window": 3,
+        "truncated_signals": 0,
+    }
+
+    signal = result["signals"][0]
+    assert signal["query"] == "count"
+    assert signal["path"] == "tb_top.dut.count"
+    assert signal["value_at"] == "0010"
+    assert signal["last_transition"] == {"time": 10, "value": "0010"}
+    assert signal["next_transition"] == {"time": 15, "value": "0011"}
+    assert signal["transitions"] == [
+        {"time": 5, "value": "0001"},
+        {"time": 10, "value": "0010"},
+        {"time": 15, "value": "0011"},
+    ]
+
+
+def test_waveform_probe_cli_with_direct_input(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "probe.vcd"
+    waveform.write_text(PROBE_VCD, encoding="utf-8")
+
+    rc = main([
+        "--project",
+        str(project.root),
+        "waveform-probe",
+        "--input",
+        "probe.vcd",
+        "--signal",
+        "tb_top.dut.count",
+        "--time",
+        "10",
+        "--before",
+        "5",
+        "--after",
+        "5",
+    ])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "WAVEFORM PROBE: 1 signal(s), 3 transition(s) in window" in output
+    assert "Timescale: 1ns" in output
+    assert "tb_top.dut.count value=0010 last=10 next=15 transitions=3" in output
+    assert (project.root / ".zddv" / "debug" / "waveform-probe.json").is_file()
