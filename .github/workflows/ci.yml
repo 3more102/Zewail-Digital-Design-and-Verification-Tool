@@ -92,6 +92,8 @@ jobs:
           test -s examples/counter/.zddv/debug/crossprobe.json
           grep -q '"status": "MATCHED"' examples/counter/.zddv/debug/crossprobe.json
           grep -q '"file": "rtl/counter.sv"' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"resolved": true' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"kind": "procedural_assignment"' examples/counter/.zddv/debug/crossprobe.json
 
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
