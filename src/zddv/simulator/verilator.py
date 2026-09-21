@@ -56,6 +56,7 @@ class VerilatorBackend(SimulatorBackend):
             "--binary",
             "--timing",
             "--trace",
+            "--Wno-fatal",
             "--top-module",
             project.top,
             "-Mdir",
