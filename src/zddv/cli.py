@@ -6,6 +6,7 @@ import platform
 import sys
 
 from zddv import __version__
+from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
@@ -522,6 +523,32 @@ def cmd_assertions(args) -> int:
             f"{row['run_id'][:32]:<32} {message}"
         )
     return 0
+
+
+def cmd_async_fifo_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_async_fifo_file(project, args.path, output=args.output)
+    summary = result["summary"]
+    print(
+        f"ASYNC FIFO CDC {result['status']}: "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} invariant violation(s)"
+    )
+    print(
+        f"Accepted W/R: {summary['accepted_writes']}/{summary['accepted_reads']}  "
+        f"Blocked W/R requests: "
+        f"{summary['blocked_write_requests']}/{summary['blocked_read_requests']}"
+    )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] {violation['domain']} "
+            f"cycle={violation['cycle']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print("Scope: dynamic local-domain FIFO invariants; not static CDC signoff")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
 
 
 def cmd_apb_analyze(args) -> int:
@@ -1181,6 +1208,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fcov_holes.add_argument("--limit", type=int, default=50)
     p_fcov_holes.set_defaults(func=cmd_fcov_holes)
+
+    p_async_fifo = sub.add_parser(
+        "async-fifo-analyze",
+        help="Check normalized async-FIFO/CDC pointer and blocking invariants",
+    )
+    p_async_fifo.add_argument(
+        "path",
+        help="Normalized asynchronous FIFO CDC event trace JSON file",
+    )
+    p_async_fifo.add_argument(
+        "--output",
+        default=".zddv/cdc/async-fifo/latest.json",
+        help="JSON CDC analysis report path",
+    )
+    p_async_fifo.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of invariant violations to print",
+    )
+    p_async_fifo.set_defaults(func=cmd_async_fifo_analyze)
 
     p_apb = sub.add_parser(
         "apb-analyze",
