@@ -29,6 +29,8 @@ class RunResult:
     log_path: Path
     waveform_path: Path | None
     coverage_path: Path | None = None
+    assertion_count: int = 0
+    assertions_path: Path | None = None
     test_name: str | None = None
     seed: int | None = None
 
