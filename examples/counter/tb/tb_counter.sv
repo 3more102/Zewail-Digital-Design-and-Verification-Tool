@@ -5,6 +5,7 @@ module tb_counter;
     logic rst_n = 1'b0;
     logic [3:0] count;
     logic [3:0] expected;
+    logic inject_assert_fail = 1'b0;
 
     counter dut (
         .clk   (clk),
@@ -14,7 +15,13 @@ module tb_counter;
 
     always #5 clk = ~clk;
 
+    a_zddv_demo: assert property (
+        @(posedge clk) disable iff (!rst_n)
+        !inject_assert_fail
+    ) else $error("ZDDV intentional assertion failure");
+
     initial begin
+        inject_assert_fail = $test$plusargs("ZDDV_ASSERT_FAIL");
         $dumpfile("waveform.vcd");
         $dumpvars(0, tb_counter);
 
