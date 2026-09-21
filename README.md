@@ -32,6 +32,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
+- Verilator-backed normalized source/module index
+- Elaborated design hierarchy with source locations
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI example
 
@@ -73,6 +75,9 @@ zddv --project my_project config top tb_top
 
 zddv doctor
 zddv --project my_project lint
+zddv --project my_project index
+zddv --project my_project hierarchy
+zddv --project my_project hierarchy --max-depth 2
 zddv --project my_project build
 
 zddv --project my_project run
@@ -261,7 +266,7 @@ separately from Verilator's annotation threshold.
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
-- [ ] Source/hierarchy database
+- [x] Source/hierarchy index
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
