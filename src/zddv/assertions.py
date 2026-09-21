@@ -5,12 +5,12 @@ from typing import Any
 
 
 _ASSERTION_RE = re.compile(
-    r"^(?:\\[(?P<time>[^\\]]+)\\]\\s+)?"
-    r"%(?P<severity>Error|Fatal|Warning):\\s+"
-    r"(?P<source>.*?):(?P<line>\\d+)(?::(?P<column>\\d+))?:\\s+"
+    r"^(?:\[(?P<time>[^\]]+)\]\s+)?"
+    r"%(?P<severity>Error|Fatal|Warning):\s+"
+    r"(?P<source>.*?):(?P<line>\d+)(?::(?P<column>\d+))?:\s+"
     r"Assertion failed"
     r"(?: in (?P<scope>[^:]+))?"
-    r"(?::\\s*(?P<message>.*))?$"
+    r"(?::\s*(?P<message>.*))?$"
 )
 
 
@@ -42,7 +42,7 @@ def parse_verilator_assertions(text: str) -> list[dict[str, Any]]:
                 break
             if _ASSERTION_RE.match(line.rstrip()):
                 break
-            if re.match(r"^\\s*%(?:Error|Fatal|Warning):", line):
+            if re.match(r"^\s*%(?:Error|Fatal|Warning):", line):
                 break
             if line[:1].isspace():
                 continuation.append(line.strip())
