@@ -71,6 +71,49 @@ def test_async_fifo_dynamic_invariants_pass_with_blocking_and_wrap():
     assert result["scope"]["not_static_cdc_signoff"] is True
 
 
+def test_reset_restarts_local_trace_continuity():
+    result = analyze_async_fifo_trace(
+        {
+            "pointer_width": 3,
+            "write_events": [
+                {
+                    "cycle": 0,
+                    "request": 1,
+                    "full": 0,
+                    "accepted": 1,
+                    "binary_before": 0,
+                    "binary_after": 1,
+                    "gray_before": _gray(0),
+                    "gray_after": _gray(1),
+                },
+                {
+                    "cycle": 1,
+                    "reset": 1,
+                    "binary_before": 5,
+                    "binary_after": 0,
+                    "gray_before": _gray(5),
+                    "gray_after": 0,
+                },
+                {
+                    "cycle": 2,
+                    "request": 1,
+                    "full": 0,
+                    "accepted": 1,
+                    "binary_before": 0,
+                    "binary_after": 1,
+                    "gray_before": 0,
+                    "gray_after": 1,
+                },
+            ],
+            "read_events": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["reset_events"] == 1
+    assert result["summary"]["violations"] == 0
+
+
 def test_async_fifo_reports_acceptance_pointer_and_gray_errors():
     result = analyze_async_fifo_trace(
         {
