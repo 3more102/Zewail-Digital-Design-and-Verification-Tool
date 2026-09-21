@@ -218,6 +218,32 @@ def cmd_junit(args) -> int:
     return 0
 
 
+def cmd_triage(args) -> int:
+    project = load_project(_project_arg(args))
+    statuses = tuple(args.status or ("FAIL", "TIMEOUT"))
+    rows = list_run_records(project, limit=args.limit, statuses=statuses)
+    groups = group_failure_records(rows)
+
+    print(f"Failure runs: {len(rows)}")
+    print(f"Failure groups: {len(groups)}")
+    if not groups:
+        return 0
+
+    for index, group in enumerate(groups, start=1):
+        print(f"[{index}] {group['count']}x {group['signature']}")
+        for run in group["runs"][: args.show_runs]:
+            seed = "-" if run["seed"] is None else str(run["seed"])
+            print(f"    {run['test'] or '-'} seed={seed} run={run['run_id']}")
+
+    if args.output:
+        output = Path(args.output)
+        if not output.is_absolute():
+            output = project.root / output
+        report = write_triage_report(rows, output)
+        print(f"Triage JSON: {report}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -309,6 +335,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional status filter; repeat as needed.",
     )
     p_junit.set_defaults(func=cmd_junit)
+
+    p_triage = sub.add_parser(
+        "triage",
+        help="Cluster failed verification runs by normalized log signature",
+    )
+    p_triage.add_argument("--limit", type=int, default=100)
+    p_triage.add_argument(
+        "--status",
+        action="append",
+        choices=("FAIL", "TIMEOUT"),
+        default=None,
+        help="Failure status to include; repeat as needed. Defaults to FAIL and TIMEOUT.",
+    )
+    p_triage.add_argument(
+        "--show-runs",
+        type=int,
+        default=3,
+        help="Maximum example runs printed per failure group",
+    )
+    p_triage.add_argument(
+        "--output",
+        default=".zddv/triage.json",
+        help="JSON triage report path; use an empty value to disable writing",
+    )
+    p_triage.set_defaults(func=cmd_triage)
 
     return parser
 
