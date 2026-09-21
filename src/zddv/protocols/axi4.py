@@ -112,6 +112,8 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
         "sample_index": index,
         "cycle": upper.get("CYCLE", index),
     }
+    if "TIME" in upper:
+        sample["time"] = upper["TIME"]
 
     for spec in _CHANNELS.values():
         for name in (spec["valid"], spec["ready"]):
@@ -178,6 +180,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "message": message,
         }
+        if "time" in sample:
+            entry["time"] = sample["time"]
         if channel is not None:
             entry["channel"] = channel
         if transaction_index is not None:
@@ -408,6 +412,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "lock": bool(sample.get(f"{prefix}LOCK", False)),
             "cycle": sample["cycle"],
             "sample_index": sample["sample_index"],
+            "time": sample.get("time"),
             "prot": sample.get(f"{prefix}PROT"),
         }
 
@@ -481,6 +486,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "ar_cycle": request["cycle"],
             "response_cycle": response_cycle,
         }
+        if request.get("time") is not None:
+            tx["ar_time"] = request["time"]
+        if beats and beats[-1].get("time") is not None:
+            tx["response_time"] = beats[-1]["time"]
+        read_times = [beat.get("time") for beat in beats]
+        if any(value is not None for value in read_times):
+            tx["read_times"] = read_times
         if request.get("prot") is not None:
             tx["arprot"] = request["prot"]
         transactions.append(tx)
@@ -501,6 +513,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             beat = {
                 "sample": sample,
                 "cycle": sample["cycle"],
+                "time": sample.get("time"),
                 "data": sample.get("WDATA"),
                 "strb": sample.get("WSTRB"),
                 "last": bool(sample.get("WLAST", False)),
@@ -555,6 +568,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "w_cycles": [beat["cycle"] for beat in beats],
                     "response_cycle": sample["cycle"],
                 }
+                if request.get("time") is not None:
+                    tx["aw_time"] = request["time"]
+                w_times = [beat.get("time") for beat in beats]
+                if any(value is not None for value in w_times):
+                    tx["w_times"] = w_times
+                if sample.get("time") is not None:
+                    tx["response_time"] = sample["time"]
                 if request.get("prot") is not None:
                     tx["awprot"] = request["prot"]
                 transactions.append(tx)
@@ -576,6 +596,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 beat = {
                     "cycle": sample["cycle"],
+                    "time": sample.get("time"),
                     "data": sample.get("RDATA"),
                     "response": label,
                     "response_code": code,
@@ -670,7 +691,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         if response in {"SLVERR", "DECERR"}
     )
 
-    return {
+    result = {
         "protocol": "AXI4",
         "analysis_level": "normalized_cycle_trace_burst_foundation",
         "source": str(payload.get("source", "normalized-trace")),
@@ -694,9 +715,12 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive exclusive semantics are not modeled.",
-            "Waveform extraction is separate; this analyzer consumes normalized ACLK-edge samples.",
+            "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
+    if isinstance(payload.get("waveform"), dict):
+        result["waveform"] = payload["waveform"]
+    return result
 
 
 def analyze_axi4_file(
