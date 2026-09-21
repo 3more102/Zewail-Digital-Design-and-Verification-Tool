@@ -118,8 +118,21 @@ def test_reports_protocol_violations():
     assert result["status"] == "FAIL"
     assert "read_with_active_pstrb" in codes
     assert "request_changed_during_transfer" in codes
-    assert "penable_without_psel" in codes
     assert "access_terminated_before_ready" in codes
+
+
+def test_penable_with_unselected_peripheral_is_not_a_violation():
+    result = analyze_apb_trace(
+        {
+            "samples": [
+                {"cycle": 0, "PSEL": 0, "PENABLE": 1},
+                {"cycle": 1, "PSEL": 0, "PENABLE": 0},
+            ]
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["violations"] == 0
 
 
 def test_analyze_apb_file_writes_json_report(tmp_path: Path):
