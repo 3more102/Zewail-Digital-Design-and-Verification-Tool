@@ -14,7 +14,9 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import (
+    assertion_statistics,
     database_path,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
@@ -129,6 +131,9 @@ def cmd_run(args) -> int:
         print(f"Waveform: {result.waveform_path}")
     if result.coverage_path:
         print(f"Coverage: {result.coverage_path}")
+    print(f"Assertion events: {result.assertion_count}")
+    if result.assertions_path:
+        print(f"Assertions: {result.assertions_path}")
     return result.returncode
 
 
@@ -181,6 +186,41 @@ def cmd_coverage_history(args) -> int:
             f"{row['hit_rate']:>8.1f}% {ratio:>15} "
             f"{row['input_count']:>6}  {row['snapshot_id']}"
         )
+    return 0
+
+
+def cmd_assertions(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_assertion_events(
+        project,
+        limit=args.limit,
+        run_id=args.run_id,
+        severity=args.severity,
+    )
+    stats = assertion_statistics(project)
+    print(f"Results DB: {database_path(project)}")
+    print(
+        f"Assertion events: {stats['total_events']} across "
+        f"{stats['affected_runs']} run(s), "
+        f"{stats['unique_assertions']} unique assertion(s)"
+    )
+    if not rows:
+        print("No assertion events found.")
+        return 0
+
+    print(f"{'SEV':<8} {'TIME':<10} {'ASSERTION':<30} {'LOCATION':<36} RUN ID")
+    for row in rows:
+        sim_time = row["sim_time"] or "-"
+        name = row["assertion_name"] or row["scope"] or "(unnamed)"
+        location = f"{row['source_path']}:{row['source_line']}"
+        if row["source_column"] is not None:
+            location += f":{row['source_column']}"
+        print(
+            f"{row['severity']:<8} {str(sim_time)[:10]:<10} "
+            f"{str(name)[:30]:<30} {location[:36]:<36} {row['run_id']}"
+        )
+        if row["message"]:
+            print(f"         {row['message']}")
     return 0
 
 
@@ -370,6 +410,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_coverage_history.add_argument("--limit", type=int, default=20)
     p_coverage_history.set_defaults(func=cmd_coverage_history)
+
+    p_assertions = sub.add_parser(
+        "assertions",
+        help="Show structured assertion events captured from simulation logs",
+    )
+    p_assertions.add_argument("--limit", type=int, default=100)
+    p_assertions.add_argument("--run-id", default=None)
+    p_assertions.add_argument(
+        "--severity",
+        choices=("WARNING", "ERROR", "FATAL"),
+        default=None,
+    )
+    p_assertions.set_defaults(func=cmd_assertions)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
