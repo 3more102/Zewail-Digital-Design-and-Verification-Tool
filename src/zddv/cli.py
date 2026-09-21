@@ -20,7 +20,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
-from zddv.protocols.axi4lite import analyze_axi4lite_file
+from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -629,6 +629,56 @@ def cmd_apb_waveform(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_axi4lite_waveform(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_axi4lite_waveform(
+        project,
+        run_id=args.run_id,
+        input_path=args.input,
+        scope=args.scope,
+        clock=args.clock,
+        edge=args.edge,
+        trace_output=args.trace_output,
+        output=args.output,
+    )
+    summary = result["summary"]
+    waveform = result["waveform"]
+    print(
+        f"AXI4-Lite WAVEFORM {result['status']}: "
+        f"{summary['completed_transactions']} completed transaction(s), "
+        f"{summary['violations']} protocol violation(s)"
+    )
+    print(
+        f"Scope: {waveform['scope']}  Clock: {waveform['clock']} "
+        f"({waveform['edge']})  Timescale: {waveform.get('timescale') or '-'}"
+    )
+    print(
+        f"Reads/Writes: {summary['reads']}/{summary['writes']}  "
+        f"Error responses: {summary['error_responses']}"
+    )
+    stalls = summary["channel_stall_cycles"]
+    print(
+        "Channel stalls: "
+        + " ".join(f"{name}={stalls[name]}" for name in ("AW", "W", "B", "AR", "R"))
+    )
+    for violation in result["violations"][: args.show]:
+        when = (
+            f"time={violation.get('time')} "
+            if violation.get("time") is not None
+            else ""
+        )
+        channel = f"[{violation.get('channel')}] " if violation.get("channel") else ""
+        print(
+            f"[{violation['code']}] {channel}{when}"
+            f"cycle={violation['cycle']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Normalized trace: {result['trace_path']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -1132,6 +1182,56 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_apb_waveform.set_defaults(func=cmd_apb_waveform)
+
+    p_axi4lite_waveform = sub.add_parser(
+        "axi4lite-waveform",
+        help="Extract and analyze AXI4-Lite transactions directly from a VCD waveform",
+    )
+    axi4lite_waveform_source = p_axi4lite_waveform.add_mutually_exclusive_group()
+    axi4lite_waveform_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID whose waveform should be decoded; defaults to latest waveform run",
+    )
+    axi4lite_waveform_source.add_argument(
+        "--input",
+        default=None,
+        help="VCD path relative to the project, independent of run history",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--scope",
+        default=None,
+        help="AXI4-Lite waveform scope; auto-detected when exactly one complete bus exists",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--clock",
+        default="ACLK",
+        help="AXI4-Lite clock signal name inside the selected scope",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--edge",
+        choices=("rising", "falling", "both"),
+        default="rising",
+        help="Clock edge used to sample AXI4-Lite signals",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--trace-output",
+        default=".zddv/protocols/axi4lite/waveform-trace.json",
+        help="Normalized AXI4-Lite trace generated from the waveform",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--output",
+        default=".zddv/protocols/axi4lite/waveform-latest.json",
+        help="JSON protocol-analysis report path",
+    )
+    p_axi4lite_waveform.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of protocol violations to print",
+    )
+    p_axi4lite_waveform.set_defaults(func=cmd_axi4lite_waveform)
 
     p_assertions = sub.add_parser(
         "assertions",
