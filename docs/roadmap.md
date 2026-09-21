@@ -44,6 +44,8 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 ## v0.4 — Debug Studio Core
 
+Current status: started with simulator-independent APB transaction reconstruction and cycle-localized protocol violation reporting.
+
 - Design hierarchy.
 - Source indexing.
 - Waveform index.
