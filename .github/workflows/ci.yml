@@ -63,6 +63,14 @@ jobs:
       - name: Run counter example
         run: zddv --project examples/counter run
 
+      - name: Index latest VCD waveform
+        run: |
+          zddv --project examples/counter waveform-index
+          INDEX_PATH=$(find examples/counter/.zddv/runs -name waveform.index.json -type f | head -n 1)
+          test -n "$INDEX_PATH"
+          grep -q '"signals"' "$INDEX_PATH"
+          grep -q '"time_index"' "$INDEX_PATH"
+
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
