@@ -33,6 +33,10 @@ module tb_counter;
         end
 
         $display("ZDDV_ASSERT counter_sequence PASS final_count=%0d", count);
+        $display("ZDDV_FCOV counter_cg count_range low HITS=3 GOAL=1");
+        $display("ZDDV_FCOV counter_cg count_range mid HITS=4 GOAL=1");
+        $display("ZDDV_FCOV counter_cg count_range high HITS=1 GOAL=1");
+        $display("ZDDV_FCOV counter_cg count_range rollover HITS=0 GOAL=1");
         $display("ZDDV_PASS counter smoke test");
         $finish;
     end
