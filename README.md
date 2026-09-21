@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, assertion correlation, and structural connectivity in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, structural connectivity, assertion correlation, and cross-probing in progress**
 
 ## What Works Today
 
