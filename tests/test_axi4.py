@@ -156,3 +156,177 @@ def test_analyze_axi4_file_and_cli_write_report(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "AXI4 PASS" in output
     assert "1 completed transaction(s)" in output
+
+
+def test_axi4_exclusive_read_write_success_sequence():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1, "ARREADY": 1,
+                "ARID": 5, "ARADDR": 0x100,
+                "ARLEN": 0, "ARSIZE": 2, "ARBURST": "INCR",
+                "ARLOCK": 1, "ARCACHE": 0, "ARPROT": 0, "ARREGION": 0,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1, "RREADY": 1,
+                "RID": 5, "RDATA": 0x11,
+                "RRESP": "EXOKAY", "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1, "AWREADY": 1,
+                "AWID": 5, "AWADDR": 0x100,
+                "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR",
+                "AWLOCK": 1, "AWCACHE": 0, "AWPROT": 0, "AWREGION": 0,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1, "WREADY": 1,
+                "WDATA": 0x22, "WSTRB": 0xF, "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1, "BREADY": 1,
+                "BID": 5, "BRESP": "EXOKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["exclusive_read_bursts"] == 1
+    assert result["summary"]["exclusive_write_bursts"] == 1
+    assert result["summary"]["exclusive_write_successes"] == 1
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    assert write["exclusive"] is True
+    assert write["exclusive_pair_matched"] is True
+    assert write["exclusive_read_outcome"] == "EXOKAY"
+
+
+def test_axi4_exclusive_write_okay_is_valid_failed_attempt():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1, "ARREADY": 1,
+                "ARID": 2, "ARADDR": 0x80,
+                "ARLEN": 0, "ARSIZE": 2, "ARBURST": "INCR", "ARLOCK": 1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1, "RREADY": 1,
+                "RID": 2, "RDATA": 1, "RRESP": "EXOKAY", "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1, "AWREADY": 1,
+                "AWID": 2, "AWADDR": 0x80,
+                "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR", "AWLOCK": 1,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1, "WREADY": 1,
+                "WDATA": 2, "WSTRB": 0xF, "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1, "BREADY": 1,
+                "BID": 2, "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["exclusive_write_failures"] == 1
+    assert result["summary"]["exclusive_write_successes"] == 0
+
+
+def test_axi4_exclusive_restrictions_and_pairing_violations():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1, "ARREADY": 1,
+                "ARID": 1, "ARADDR": 0x104,
+                "ARLEN": 3, "ARSIZE": 2, "ARBURST": "INCR", "ARLOCK": 1,
+            },
+            {
+                "cycle": 1,
+                "AWVALID": 1, "AWREADY": 1,
+                "AWID": 9, "AWADDR": 0,
+                "AWLEN": 31, "AWSIZE": 3, "AWBURST": "INCR", "AWLOCK": 1,
+            },
+        ]}
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert result["status"] == "FAIL"
+    assert "exclusive_address_misaligned" in codes
+    assert "exclusive_burst_too_long" in codes
+    assert "exclusive_access_too_large" in codes
+    assert "exclusive_write_without_completed_read" in codes
+
+
+def test_axi4_exclusive_sequence_requires_matching_attributes():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1, "ARREADY": 1,
+                "ARID": 7, "ARADDR": 0x100,
+                "ARLEN": 0, "ARSIZE": 2, "ARBURST": "INCR", "ARLOCK": 1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1, "RREADY": 1,
+                "RID": 7, "RDATA": 0, "RRESP": "EXOKAY", "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1, "AWREADY": 1,
+                "AWID": 7, "AWADDR": 0x104,
+                "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR", "AWLOCK": 1,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1, "WREADY": 1,
+                "WDATA": 1, "WSTRB": 0xF, "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1, "BREADY": 1,
+                "BID": 7, "BRESP": "EXOKAY",
+            },
+        ]}
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert "exclusive_sequence_attribute_mismatch" in codes
+    assert "exclusive_write_success_without_matching_read" in codes
+
+
+def test_axi4_exclusive_read_cannot_mix_okay_and_exokay():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1, "ARREADY": 1,
+                "ARID": 3, "ARADDR": 0x200,
+                "ARLEN": 1, "ARSIZE": 2, "ARBURST": "INCR", "ARLOCK": 1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1, "RREADY": 1,
+                "RID": 3, "RDATA": 1, "RRESP": "EXOKAY", "RLAST": 0,
+            },
+            {
+                "cycle": 2,
+                "RVALID": 1, "RREADY": 1,
+                "RID": 3, "RDATA": 2, "RRESP": "OKAY", "RLAST": 1,
+            },
+        ]}
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert "exclusive_read_mixed_okay_exokay" in codes
