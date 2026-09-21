@@ -67,6 +67,21 @@ def cmd_doctor(args) -> int:
         return 1
 
 
+def cmd_lint(args) -> int:
+    project = load_project(_project_arg(args))
+    if project.simulator != "verilator":
+        raise RuntimeError("Lint is currently implemented with Verilator only.")
+
+    result = lint_project(project)
+    print(
+        f"LINT {result['status']}: "
+        f"{result['errors']} error(s), {result['warnings']} warning(s)"
+    )
+    print(f"Log: {result['log']}")
+    print(f"Summary: {result['summary']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_build(args) -> int:
     project = load_project(_project_arg(args))
     backend = _backend(project.simulator)
@@ -218,6 +233,19 @@ def cmd_junit(args) -> int:
     return 0
 
 
+def cmd_report(args) -> int:
+    project = load_project(_project_arg(args))
+    result = generate_html_report(project, limit=args.limit)
+    stats = result["stats"]
+    print(
+        f"REPORT: {stats['passed']}/{stats['total']} passed "
+        f"({stats['pass_rate']:.1f}%)"
+    )
+    print(f"HTML: {result['path']}")
+    print(f"Failure groups: {len(result['failure_groups'])}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -249,6 +277,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
+    p_lint.set_defaults(func=cmd_lint)
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
@@ -309,6 +340,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional status filter; repeat as needed.",
     )
     p_junit.set_defaults(func=cmd_junit)
+
+    p_report = sub.add_parser(
+        "report",
+        help="Generate an HTML verification dashboard from run history",
+    )
+    p_report.add_argument("--limit", type=int, default=100)
+    p_report.set_defaults(func=cmd_report)
 
     return parser
 
