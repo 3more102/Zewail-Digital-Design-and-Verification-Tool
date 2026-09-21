@@ -13,9 +13,9 @@ from zddv.storage import record_design_index_snapshot
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
 _MODULE_START = re.compile(
-    r"\\bmodule\\s+(?:(?:automatic|static)\\s+)?([A-Za-z_][A-Za-z0-9_$]*)\\b"
+    r"\bmodule\s+(?:(?:automatic|static)\s+)?([A-Za-z_][A-Za-z0-9_$]*)\b"
 )
-_ENDMODULE = re.compile(r"\\bendmodule\\b")
+_ENDMODULE = re.compile(r"\bendmodule\b")
 
 
 def _mask_noncode(text: str) -> str:
@@ -27,7 +27,7 @@ def _mask_noncode(text: str) -> str:
         if text.startswith("//", i):
             out[i] = out[i + 1] = " "
             i += 2
-            while i < n and text[i] != "\\n":
+            while i < n and text[i] != "\n":
                 out[i] = " "
                 i += 1
             continue
@@ -36,7 +36,7 @@ def _mask_noncode(text: str) -> str:
             out[i] = out[i + 1] = " "
             i += 2
             while i < n and not text.startswith("*/", i):
-                if text[i] != "\\n":
+                if text[i] != "\n":
                     out[i] = " "
                 i += 1
             if i < n:
@@ -52,14 +52,14 @@ def _mask_noncode(text: str) -> str:
             escaped = False
             while i < n:
                 ch = text[i]
-                if ch == "\\n":
+                if ch == "\n":
                     escaped = False
                     i += 1
                     continue
                 out[i] = " "
                 if escaped:
                     escaped = False
-                elif ch == "\\\\":
+                elif ch == "\\":
                     escaped = True
                 elif ch == '"':
                     i += 1
@@ -72,7 +72,7 @@ def _mask_noncode(text: str) -> str:
 
 
 def _line_number(text: str, offset: int) -> int:
-    return text.count("\\n", 0, offset) + 1
+    return text.count("\n", 0, offset) + 1
 
 
 def _skip_ws(text: str, offset: int) -> int:
@@ -115,7 +115,7 @@ def _parse_instances_in_module(
     instances: list[dict[str, Any]] = []
 
     for child_module in sorted(known_modules, key=len, reverse=True):
-        pattern = re.compile(rf"\\b{re.escape(child_module)}\\b")
+        pattern = re.compile(rf"\b{re.escape(child_module)}\b")
         for match in pattern.finditer(body):
             i = _skip_ws(body, match.end())
 
@@ -336,7 +336,7 @@ def build_design_index(project: ProjectConfig) -> dict[str, Any]:
         "instances": analysis["instances"],
     }
     output.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\\n",
+        json.dumps(record, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     record_design_index_snapshot(project, record)
