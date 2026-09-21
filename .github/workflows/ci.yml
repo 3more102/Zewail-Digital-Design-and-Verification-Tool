@@ -124,6 +124,13 @@ jobs:
           test -s examples/counter/.zddv/protocols/apb/latest.json
           grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/apb/latest.json
 
+      - name: Analyze AXI4-Lite trace
+        run: |
+          zddv --project examples/counter axi4lite-analyze ../axi4lite_trace.json
+          test -s examples/counter/.zddv/protocols/axi4lite/latest.json
+          grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/axi4lite/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4lite/latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
