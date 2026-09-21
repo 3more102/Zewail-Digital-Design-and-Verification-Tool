@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — feature-complete**
+> Status: **v0.4 Debug Studio Core — source/hierarchy index in progress**
 
 ## What Works Today
 
@@ -27,6 +27,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent functional coverage snapshots and per-bin database
+- Project-local SystemVerilog module/source index with elaborated instance paths
+- SQLite design-index snapshots for future debug cross-probing
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -94,6 +96,8 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
+zddv --project my_project source-index
+zddv --project my_project hierarchy
 ```
 
 ## Verification Flow
@@ -261,7 +265,7 @@ separately from Verilator's annotation threshold.
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
-- [ ] Source/hierarchy database
+- [x] Source/hierarchy database (project-local module and instance index)
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
