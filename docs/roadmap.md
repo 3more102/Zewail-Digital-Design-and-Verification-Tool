@@ -44,10 +44,9 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 ## v0.4 — Debug Studio Core
 
-Current status: deterministic source indexing and source-level hierarchy are implemented.
-Elaborated hierarchy enrichment remains planned through simulator-adapter AST data.
+Current status: deterministic source indexing plus simulator-resolved elaborated hierarchy are implemented. Verilator JSON AST output is normalized on 5.022+ with an XML compatibility path for older supported releases.
 
-- [x] Design hierarchy (source-level).
+- [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
 - [ ] Waveform index.
 - [ ] Drivers/loads navigation.
