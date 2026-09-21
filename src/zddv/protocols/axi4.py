@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.vcd import sample_vcd_on_clock
+from zddv.waveform import parse_vcd_header, select_waveform_run
 
 
 _CHANNELS = {
@@ -112,6 +114,8 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
         "sample_index": index,
         "cycle": upper.get("CYCLE", index),
     }
+    if "TIME" in upper:
+        sample["time"] = upper["TIME"]
 
     for spec in _CHANNELS.values():
         for name in (spec["valid"], spec["ready"]):
@@ -178,6 +182,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "message": message,
         }
+        if "time" in sample:
+            entry["time"] = sample["time"]
         if channel is not None:
             entry["channel"] = channel
         if transaction_index is not None:
@@ -408,6 +414,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "lock": bool(sample.get(f"{prefix}LOCK", False)),
             "cycle": sample["cycle"],
             "sample_index": sample["sample_index"],
+            "time": sample.get("time"),
             "prot": sample.get(f"{prefix}PROT"),
         }
 
@@ -481,6 +488,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "ar_cycle": request["cycle"],
             "response_cycle": response_cycle,
         }
+        if request.get("time") is not None:
+            tx["ar_time"] = request["time"]
+        if beats and beats[-1].get("time") is not None:
+            tx["response_time"] = beats[-1]["time"]
         if request.get("prot") is not None:
             tx["arprot"] = request["prot"]
         transactions.append(tx)
@@ -501,6 +512,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             beat = {
                 "sample": sample,
                 "cycle": sample["cycle"],
+                "time": sample.get("time"),
                 "data": sample.get("WDATA"),
                 "strb": sample.get("WSTRB"),
                 "last": bool(sample.get("WLAST", False)),
@@ -555,6 +567,12 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "w_cycles": [beat["cycle"] for beat in beats],
                     "response_cycle": sample["cycle"],
                 }
+                if request.get("time") is not None:
+                    tx["aw_time"] = request["time"]
+                if any(beat.get("time") is not None for beat in beats):
+                    tx["w_times"] = [beat.get("time") for beat in beats]
+                if sample.get("time") is not None:
+                    tx["response_time"] = sample["time"]
                 if request.get("prot") is not None:
                     tx["awprot"] = request["prot"]
                 transactions.append(tx)
@@ -576,6 +594,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 beat = {
                     "cycle": sample["cycle"],
+                    "time": sample.get("time"),
                     "data": sample.get("RDATA"),
                     "response": label,
                     "response_code": code,
@@ -670,7 +689,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         if response in {"SLVERR", "DECERR"}
     )
 
-    return {
+    result = {
         "protocol": "AXI4",
         "analysis_level": "normalized_cycle_trace_burst_foundation",
         "source": str(payload.get("source", "normalized-trace")),
@@ -694,9 +713,191 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive exclusive semantics are not modeled.",
-            "Waveform extraction is separate; this analyzer consumes normalized ACLK-edge samples.",
+            "Waveform decoding currently targets VCD and normalizes samples on a selected ACLK edge.",
         ],
     }
+    if isinstance(payload.get("waveform"), dict):
+        result["waveform"] = payload["waveform"]
+    return result
+
+
+def _scope_signal_names(header: dict[str, Any], scope: str) -> dict[str, str]:
+    return {
+        str(item["name"]).upper(): str(item["name"])
+        for item in header.get("signals", [])
+        if item.get("scope") == scope
+    }
+
+
+def _resolve_axi4_scope(
+    path: str | Path,
+    *,
+    scope: str | None = None,
+    clock: str = "ACLK",
+) -> tuple[str, dict[str, str]]:
+    header = parse_vcd_header(path)
+    required = {
+        clock.upper(),
+        "AWVALID", "AWREADY",
+        "WVALID", "WREADY",
+        "BVALID", "BREADY",
+        "ARVALID", "ARREADY",
+        "RVALID", "RREADY",
+    }
+
+    if scope is not None:
+        names = _scope_signal_names(header, scope)
+        missing = sorted(required - set(names))
+        if missing:
+            raise RuntimeError(
+                f"VCD scope '{scope}' is not a complete AXI4 scope; missing: "
+                + ", ".join(missing)
+            )
+        return scope, names
+
+    candidates: list[tuple[str, dict[str, str]]] = []
+    for item in header.get("scopes", []):
+        candidate = str(item["path"])
+        names = _scope_signal_names(header, candidate)
+        if required.issubset(names):
+            candidates.append((candidate, names))
+
+    if not candidates:
+        raise RuntimeError(
+            "No AXI4 waveform scope was found. Expected one scope containing "
+            f"{clock} and all five VALID/READY channel pairs; use --scope when needed."
+        )
+    if len(candidates) > 1:
+        choices = ", ".join(candidate for candidate, _ in candidates)
+        raise RuntimeError(
+            "Multiple AXI4 waveform scopes were found; select one with --scope. "
+            f"Candidates: {choices}"
+        )
+    return candidates[0]
+
+
+def extract_axi4_trace_from_vcd(
+    path: str | Path,
+    *,
+    scope: str | None = None,
+    clock: str = "ACLK",
+    edge: str = "rising",
+) -> dict[str, Any]:
+    source = Path(path).resolve()
+    resolved_scope, available = _resolve_axi4_scope(
+        source,
+        scope=scope,
+        clock=clock,
+    )
+
+    canonical_names = (
+        "AWVALID", "AWREADY", "AWID", "AWADDR", "AWLEN", "AWSIZE",
+        "AWBURST", "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION",
+        "WVALID", "WREADY", "WDATA", "WSTRB", "WLAST",
+        "BVALID", "BREADY", "BID", "BRESP",
+        "ARVALID", "ARREADY", "ARID", "ARADDR", "ARLEN", "ARSIZE",
+        "ARBURST", "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION",
+        "RVALID", "RREADY", "RID", "RDATA", "RRESP", "RLAST",
+    )
+    actual_clock = available[clock.upper()]
+    actual_to_canonical = {
+        available[name]: name
+        for name in canonical_names
+        if name in available
+    }
+    required_actual = tuple(
+        available[name]
+        for name in (
+            "AWVALID", "AWREADY",
+            "WVALID", "WREADY",
+            "BVALID", "BREADY",
+            "ARVALID", "ARREADY",
+            "RVALID", "RREADY",
+        )
+    )
+
+    sampled = sample_vcd_on_clock(
+        source,
+        scope=resolved_scope,
+        clock=actual_clock,
+        signals=actual_to_canonical,
+        edge=edge,
+        required=required_actual,
+    )
+
+    normalized_samples: list[dict[str, Any]] = []
+    for raw in sampled["samples"]:
+        sample: dict[str, Any] = {
+            "cycle": raw["cycle"],
+            "time": raw["time"],
+        }
+        for actual, canonical in actual_to_canonical.items():
+            if actual in raw:
+                sample[canonical] = raw[actual]
+        normalized_samples.append(sample)
+
+    waveform = dict(sampled["waveform"])
+    waveform["clock"] = actual_clock
+    return {
+        "source": "vcd-waveform",
+        "waveform": waveform,
+        "samples": normalized_samples,
+    }
+
+
+def analyze_axi4_waveform(
+    project: ProjectConfig,
+    *,
+    run_id: str | None = None,
+    input_path: str | Path | None = None,
+    scope: str | None = None,
+    clock: str = "ACLK",
+    edge: str = "rising",
+    trace_output: str | Path = ".zddv/protocols/axi4/waveform-trace.json",
+    output: str | Path = ".zddv/protocols/axi4/waveform-latest.json",
+) -> dict[str, Any]:
+    if run_id is not None and input_path is not None:
+        raise ValueError("run_id and input_path are mutually exclusive")
+
+    selected_run: dict[str, Any] | None = None
+    if input_path is None:
+        selected_run = select_waveform_run(project, run_id=run_id)
+        source = Path(str(selected_run["waveform_path"])).resolve()
+    else:
+        source = Path(input_path)
+        if not source.is_absolute():
+            source = project.root / source
+        source = source.resolve()
+
+    trace = extract_axi4_trace_from_vcd(
+        source,
+        scope=scope,
+        clock=clock,
+        edge=edge,
+    )
+
+    trace_path = Path(trace_output)
+    if not trace_path.is_absolute():
+        trace_path = project.root / trace_path
+    trace_path = trace_path.resolve()
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
+
+    report = analyze_axi4_trace(trace)
+    report["input_path"] = str(source)
+    report["trace_path"] = str(trace_path)
+    report["run_id"] = (
+        str(selected_run["run_id"]) if selected_run is not None else None
+    )
+
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = project.root / destination
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report["report_path"] = str(destination)
+    return report
 
 
 def analyze_axi4_file(
