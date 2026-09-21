@@ -14,6 +14,7 @@ from zddv.coverage import (
 )
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
+from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file
@@ -136,6 +137,43 @@ def cmd_waveform_index(args) -> int:
     print(f"Index: {result['path']}")
     if result.get("latest_path"):
         print(f"Latest: {result['latest_path']}")
+    return 0
+
+
+def cmd_assertion_waveform(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_assertion_waveform_report(
+        project,
+        run_id=args.run_id,
+        status=args.status,
+        assertion_name=args.name,
+        limit=args.limit,
+        signal_hint_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"ASSERTION/WAVEFORM: {summary['events']} event(s), "
+        f"{summary['with_waveform']} with waveform, "
+        f"{summary['with_indexed_waveform']} fully indexed, "
+        f"{summary['with_signal_hints']} with signal hint(s)"
+    )
+    for event in result["events"][: args.show]:
+        waveform = event["waveform"]
+        wave_label = "no-waveform"
+        hints = ""
+        if waveform is not None:
+            wave_label = f"{waveform['format']}:{waveform['parse_status']}"
+            paths = [item["path"] for item in waveform["signal_hints"]]
+            if paths:
+                hints = " signals=" + ",".join(paths)
+        print(
+            f"[{event['status']}] {event['assertion_name']} "
+            f"run={event['run_id']} {wave_label}{hints}"
+        )
+    if len(result["events"]) > args.show:
+        print(f"... {len(result['events']) - args.show} more event(s)")
+    print(f"Report: {result['path']}")
     return 0
 
 
@@ -595,6 +633,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+    p_assertion_waveform = sub.add_parser(
+        "assertion-waveform",
+        help="Correlate assertion events with their run waveform indexes",
+    )
+    p_assertion_waveform.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional exact run ID",
+    )
+    p_assertion_waveform.add_argument(
+        "--status",
+        choices=("PASS", "FAIL"),
+        default=None,
+        help="Optional assertion status filter",
+    )
+    p_assertion_waveform.add_argument(
+        "--name",
+        default=None,
+        help="Optional exact assertion-name filter",
+    )
+    p_assertion_waveform.add_argument("--limit", type=int, default=100)
+    p_assertion_waveform.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum exact-name/path waveform signal hints per assertion",
+    )
+    p_assertion_waveform.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum correlated assertion events to print",
+    )
+    p_assertion_waveform.add_argument(
+        "--output",
+        default=".zddv/debug/assertion-waveform.json",
+        help="JSON correlation report path",
+    )
+    p_assertion_waveform.set_defaults(func=cmd_assertion_waveform)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)

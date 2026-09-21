@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Assertion-to-waveform run correlation with conservative signal hints
 
 ## Quick Start
 
@@ -81,6 +82,7 @@ zddv --project my_project hierarchy
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
 
@@ -358,6 +360,14 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Assertion-to-Waveform Debug Correlation
+
+`zddv assertion-waveform` joins stored assertion events to the exact simulation
+run and its waveform index. The JSON report includes run/test/seed context,
+waveform format and timescale, and conservative signal hints when assertion text
+contains an exact waveform signal name or hierarchical path. Missing waveforms
+remain visible as uncorrelated events rather than being silently dropped.
 
 ### Phase 4 — Advanced Verification
 
