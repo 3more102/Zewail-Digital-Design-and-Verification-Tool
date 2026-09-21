@@ -1,0 +1,42 @@
+{
+  "source": "zddv-public-ucie-example",
+  "profile": "public-flit-68-256",
+  "negotiated": {
+    "width": "x16",
+    "lane_numbering": "normal",
+    "frequency_gt_s": 32,
+    "protocol": "CXL"
+  },
+  "flits": [
+    {
+      "cycle": 0,
+      "time": 100,
+      "direction": "TX",
+      "size_bytes": 68,
+      "header_bytes": 2,
+      "ack_nak": "ACK",
+      "crc_ok": true,
+      "tag": "request-0"
+    },
+    {
+      "cycle": 1,
+      "time": 110,
+      "direction": "RX",
+      "size_bytes": 68,
+      "header_bytes": 2,
+      "ack_nak": "ACK",
+      "crc_ok": true,
+      "tag": "response-0"
+    },
+    {
+      "cycle": 2,
+      "time": 120,
+      "direction": "RX",
+      "size_bytes": 256,
+      "header_bytes": 2,
+      "ack_nak": "NAK",
+      "crc_ok": false,
+      "tag": "health-event"
+    }
+  ]
+}
