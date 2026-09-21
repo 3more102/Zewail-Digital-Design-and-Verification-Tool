@@ -204,6 +204,16 @@ def cmd_crossprobe(args) -> int:
         print(f"Declaration: {declaration['text']}")
     elif source:
         print(f"Source unit: {source['file']}:{source['unit_line']}")
+    connectivity = result.get("connectivity")
+    if connectivity is not None:
+        if connectivity.get("resolved"):
+            print(
+                f"Drivers/Loads: {len(connectivity['drivers'])}/"
+                f"{len(connectivity['loads'])} "
+                f"({connectivity['analysis_level']})"
+            )
+        else:
+            print("Drivers/Loads: unresolved by source-level connectivity analysis")
     if result.get("note"):
         print(f"Note: {result['note']}")
     print(f"Report: {result['report_path']}")
