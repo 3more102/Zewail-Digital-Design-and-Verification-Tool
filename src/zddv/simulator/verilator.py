@@ -7,9 +7,11 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 import uuid
 
 from zddv.config import ProjectConfig
+from zddv.storage import record_run
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -213,6 +215,7 @@ int main(int argc, char** argv) {{
         command.extend(plusargs or [])
 
         timed_out = False
+        started = time.perf_counter()
         try:
             completed = subprocess.run(
                 command,
@@ -232,6 +235,8 @@ int main(int argc, char** argv) {{
             if isinstance(output, bytes):
                 output = output.decode(errors="replace")
             output += f"\nZDDV_TIMEOUT after {timeout_s} seconds\n"
+
+        duration_ms = (time.perf_counter() - started) * 1000.0
 
         log_path = run_dir / "simulation.log"
         log_path.write_text(output, encoding="utf-8")
@@ -262,6 +267,8 @@ int main(int argc, char** argv) {{
             "command": command,
             "returncode": returncode,
             "status": status,
+            "duration_ms": round(duration_ms, 3),
+            "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
             "coverage": str(coverage) if coverage else None,
@@ -270,6 +277,7 @@ int main(int argc, char** argv) {{
             json.dumps(record, indent=2),
             encoding="utf-8",
         )
+        record_run(project, record)
 
         return RunResult(
             run_id=run_id,
