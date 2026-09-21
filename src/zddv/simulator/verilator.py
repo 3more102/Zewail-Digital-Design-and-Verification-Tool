@@ -10,6 +10,7 @@ import subprocess
 import time
 import uuid
 
+from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from .base import BuildResult, RunResult, SimulatorBackend
@@ -278,6 +279,12 @@ int main(int argc, char** argv) {{
             encoding="utf-8",
         )
         record_run(project, record)
+        ingest_assertion_log(
+            project,
+            run_id=run_id,
+            log_path=log_path,
+            created_at=now.isoformat(),
+        )
 
         return RunResult(
             run_id=run_id,
