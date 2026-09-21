@@ -24,6 +24,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage merge/report flow
 - Normalized Verilator coverage metrics stored as SQLite snapshots
 - Coverage history/trend CLI with per-type point breakdown
+- Coverage-hole analysis with type filtering, ranked unhit points, and JSON/text reports
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -84,6 +85,7 @@ zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
+zddv --project my_project coverage-holes --limit 50
 ```
 
 ## Verification Flow
