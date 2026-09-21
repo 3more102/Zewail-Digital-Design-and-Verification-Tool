@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4, and asynchronous-FIFO CDC invariant analysis are implemented**
 
 ## What Works Today
 
@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
+- Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -122,6 +123,7 @@ zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
 zddv --project my_project axi4-analyze axi4_trace.json
+zddv --project my_project async-fifo-analyze async_fifo_cdc_trace.json
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -259,7 +261,8 @@ docs/                  Architecture and roadmap
 - [x] JSON build/run metadata
 - [x] Waveform artifact handling
 - [x] Self-checking counter example
-- [ ] FIFO example
+- [ ] RTL FIFO example
+- [x] Async-FIFO CDC normalized-event invariant checker
 
 ### Phase 2 — Regression
 
@@ -292,6 +295,7 @@ separately from Verilator's annotation threshold.
 - [x] AXI4-Lite normalized-trace protocol analysis
 - [x] AXI4 burst normalized-trace foundation
 - [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
+- [x] Async-FIFO CDC normalized-event invariant analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
@@ -394,6 +398,32 @@ The extracted trace is written to
 `.zddv/protocols/axi4lite/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4lite/waveform-latest.json`. AW, W, AR, and response
 timestamps are preserved in reconstructed transactions.
+
+
+### Asynchronous FIFO / CDC Dynamic Invariant Analysis
+
+`zddv async-fifo-analyze <trace.json>` checks a simulator-independent event trace
+from the FIFO write and read clock domains. Each local-domain event carries the
+request/block/accept decision plus binary and Gray pointer values before and after
+that local clock event.
+
+The checker verifies accepted-operation pointer increments (including modulo wrap),
+pointer stability for blocked/idle operations, binary-to-Gray encoding, one-bit local
+Gray transitions, full/empty blocking semantics, normalized reset zeroing, and event
+trace continuity.
+
+This is deliberately a **dynamic FIFO invariant checker**, not static CDC signoff.
+A sampled trace cannot by itself prove synchronizer structure, metastability MTBF,
+timing constraints, or physical CDC implementation. Those require later structural
+and implementation-aware CDC analysis. The JSON report records this limitation as
+`not_static_cdc_signoff: true`.
+
+```bash
+zddv --project my_project async-fifo-analyze examples/async_fifo_cdc_trace.json
+```
+
+The default report is `.zddv/cdc/async-fifo/latest.json`.
+
 
 ### Assertion Result Markers
 
