@@ -8,6 +8,8 @@ import sys
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.connectivity import signal_navigation, write_connectivity_index
+from zddv.crossprobe import write_crossprobe_report
+from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -151,6 +153,45 @@ def cmd_connectivity(args) -> int:
     print(f"Index: {result['path']}")
     return 0
 
+
+def cmd_connectivity(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project, output=args.output)
+    summary = result["summary"]
+
+    if args.signal is None:
+        print(
+            f"CONNECTIVITY: {summary['units']} unit(s), "
+            f"{summary['signals']} signal(s), "
+            f"{summary['drivers']} driver edge(s), "
+            f"{summary['loads']} load edge(s)"
+        )
+        print(
+            "Analysis: source-level structural "
+            f"({summary['unresolved_instance_connections']} unresolved instance connection(s))"
+        )
+        print(f"Index: {result['path']}")
+        return 0
+
+    unit = args.unit or project.top
+    nav = signal_navigation(result, unit=unit, signal=args.signal)
+    print(
+        f"SIGNAL: {nav['unit']}.{nav['signal']}  "
+        f"drivers={len(nav['drivers'])} loads={len(nav['loads'])}"
+    )
+    for label, entries in (("DRIVER", nav["drivers"]), ("LOAD", nav["loads"])):
+        if not entries:
+            print(f"{label}: none found by source-level analysis")
+            continue
+        for item in entries:
+            print(
+                f"{label} [{item['kind']}] "
+                f"{item['file']}:{item['line']} {item['detail']}"
+            )
+    print(f"Index: {result['path']}")
+    return 0
+
+
 def cmd_waveform_index(args) -> int:
     project = load_project(_project_arg(args))
     result = write_waveform_index(
@@ -176,6 +217,37 @@ def cmd_waveform_index(args) -> int:
     print(f"Index: {result['path']}")
     if result.get("latest_path"):
         print(f"Latest: {result['latest_path']}")
+    return 0
+
+
+
+def cmd_crossprobe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_crossprobe_report(
+        project,
+        args.signal,
+        run_id=args.run_id,
+        input_path=args.input,
+        output=args.output,
+    )
+    signal = result["waveform"]["signal"]
+    print(f"CROSSPROBE {result['status']}: {signal['path']}")
+    if result.get("hierarchy"):
+        hierarchy = result["hierarchy"]
+        print(
+            f"Hierarchy: {hierarchy['waveform_scope']} -> "
+            f"{hierarchy['design_path']} ({hierarchy['type']})"
+        )
+    source = result.get("source")
+    if source and source.get("declaration"):
+        declaration = source["declaration"]
+        print(f"Source: {declaration['file']}:{declaration['line']}")
+        print(f"Declaration: {declaration['text']}")
+    elif source:
+        print(f"Source unit: {source['file']}:{source['unit_line']}")
+    if result.get("note"):
+        print(f"Note: {result['note']}")
+    print(f"Report: {result['report_path']}")
     return 0
 
 
@@ -672,6 +744,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_connectivity.set_defaults(func=cmd_connectivity)
 
+
+    p_connectivity = sub.add_parser(
+        "connectivity",
+        help="Build/query source-level structural drivers and loads",
+    )
+    p_connectivity.add_argument(
+        "signal",
+        nargs="?",
+        default=None,
+        help="Optional signal name to query; omit to build/show index summary",
+    )
+    p_connectivity.add_argument(
+        "--unit",
+        default=None,
+        help="Design unit containing the signal; defaults to the configured top",
+    )
+    p_connectivity.add_argument(
+        "--output",
+        default=".zddv/design/connectivity.json",
+        help="Normalized connectivity JSON output path",
+    )
+    p_connectivity.set_defaults(func=cmd_connectivity)
+
     p_waveform_index = sub.add_parser(
         "waveform-index",
         help="Index scopes and signals from a waveform artifact",
@@ -694,6 +789,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+
+    p_crossprobe = sub.add_parser(
+        "crossprobe",
+        help="Map a waveform signal to source-level hierarchy and RTL declaration",
+    )
+    p_crossprobe.add_argument(
+        "signal",
+        help="Waveform signal path or a unique signal name",
+    )
+    crossprobe_source = p_crossprobe.add_mutually_exclusive_group()
+    crossprobe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    crossprobe_source.add_argument(
+        "--input",
+        default=None,
+        help="Waveform path relative to the project, independent of run history",
+    )
+    p_crossprobe.add_argument(
+        "--output",
+        default=".zddv/debug/crossprobe.json",
+        help="Cross-probe JSON report path",
+    )
+    p_crossprobe.set_defaults(func=cmd_crossprobe)
 
     p_assertion_waveform = sub.add_parser(
         "assertion-waveform",
