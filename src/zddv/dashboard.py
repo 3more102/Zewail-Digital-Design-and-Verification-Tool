@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from html import escape
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_coverage_snapshots, list_run_records, run_statistics
+from zddv.storage import (
+    functional_coverage_statistics,
+    list_coverage_snapshots,
+    list_functional_coverage_bins,
+    list_run_records,
+    run_statistics,
+)
 from zddv.triage import group_failure_records
 
 
@@ -12,6 +18,8 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
     records = list_run_records(project, limit=limit)
     stats = run_statistics(project)
     groups = group_failure_records(records)
+    fcov_stats = functional_coverage_statistics(project)
+    fcov_bins = list_functional_coverage_bins(project, limit=20)
     coverage_rows = list_coverage_snapshots(project, limit=1)
     latest_coverage = coverage_rows[0] if coverage_rows else None
 
@@ -60,6 +68,38 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
             f"<td>{escape(tests)}</td>"
             f"<td><code>{escape(group['signature'])}</code></td>"
             "</tr>"
+        )
+
+    fcov_card = ""
+    fcov_section = ""
+    if fcov_stats["total_bins"]:
+        fcov_card = (
+            "<div class=\"card\"><div>Functional coverage</div>"
+            f"<div class=\"metric\">{fcov_stats['coverage_rate']:.1f}%</div>"
+            f"<small>{fcov_stats['covered_bins']}/{fcov_stats['total_bins']} bins</small>"
+            "</div>"
+        )
+        fcov_rows = []
+        for item in fcov_bins:
+            status = "COVERED" if item["covered"] else "UNCOVERED"
+            status_class = "pass" if item["covered"] else "fail"
+            fcov_rows.append(
+                "<tr>"
+                f"<td class='status {status_class}'>{status}</td>"
+                f"<td>{escape(item['covergroup'])}</td>"
+                f"<td>{escape(item['coverpoint'])}</td>"
+                f"<td>{escape(item['bin_name'])}</td>"
+                f"<td>{item['hits']}/{item['goal']}</td>"
+                f"<td>{item['runs']}</td>"
+                "</tr>"
+            )
+        fcov_section = (
+            "<section><h2>Functional coverage</h2>"
+            "<table><thead><tr><th>Status</th><th>Covergroup</th>"
+            "<th>Coverpoint</th><th>Bin</th><th>Hits/goal</th><th>Runs</th>"
+            "</tr></thead><tbody>"
+            + "".join(fcov_rows)
+            + "</tbody></table></section>"
         )
 
     coverage_card = ""
@@ -124,10 +164,12 @@ small {{ color: #9ca3af; }}
   <div class="card"><div>Failed</div><div class="metric">{stats['failed']}</div></div>
   <div class="card"><div>Timeouts</div><div class="metric">{stats['timed_out']}</div></div>
   <div class="card"><div>Pass rate</div><div class="metric">{stats['pass_rate']:.1f}%</div></div>
+  {fcov_card}
   {coverage_card}
 </div>
 
 {coverage_section}
+{fcov_section}
 
 <section>
 <h2>Per-test summary</h2>
@@ -162,6 +204,8 @@ small {{ color: #9ca3af; }}
         "path": str(report_path),
         "stats": stats,
         "failure_groups": groups,
+        "functional_coverage": fcov_stats,
+        "functional_coverage_bins": fcov_bins,
         "latest_coverage": latest_coverage,
         "shown_runs": len(records),
     }
