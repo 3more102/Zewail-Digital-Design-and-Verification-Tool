@@ -55,5 +55,8 @@ jobs:
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
+      - name: Merge coverage
+        run: zddv --project examples/counter coverage
+
       - name: Integration tests
         run: pytest tests/test_verilator_integration.py -q
