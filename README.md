@@ -1,117 +1,266 @@
 # Zewail Digital Design and Verification Tool (ZDDV)
 
-ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, assertions, waveform debugging, protocol verification, and future formal/AI-assisted verification workflows.
+[![ZDDV CI](https://github.com/3more102/Zewail-Digital-Design-and-Verification-Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/3more102/Zewail-Digital-Design-and-Verification-Tool/actions/workflows/ci.yml)
 
-> Status: early development (v0.1 foundation)
+ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-## v0.1 Goal
+> Status: **v0.1 foundation — executable and continuously tested**
 
-The first milestone is intentionally small and executable:
+## What Works Today
 
-```text
-Create project
-    ↓
-Add RTL + testbench
-    ↓
-Select simulator
-    ↓
-Build
-    ↓
-Run
-    ↓
-PASS / FAIL
-    ↓
-Inspect log + waveform
+- TOML-based verification projects
+- RTL/testbench source discovery
+- Simulator-adapter architecture
+- Verilator detection and version reporting
+- SystemVerilog compile/elaboration
+- Self-checking simulation with PASS / FAIL / TIMEOUT results
+- Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
+- Parallel seeded regressions
+- Isolated run directories
+- Build and run JSON manifests
+- Simulation logs
+- VCD/FST artifact discovery
+- Verilator code-coverage collection
+- Coverage merge/report flow
+- Compatibility path for packaged Verilator 5.020 coverage generation
+- CI on Python 3.11, 3.12, and 3.13
+- End-to-end Verilator CI example
+
+## Quick Start
+
+Requirements:
+
+- Python 3.11+
+- Verilator available in `PATH`
+
+Install ZDDV for development:
+
+```bash
+git clone https://github.com/3more102/Zewail-Digital-Design-and-Verification-Tool.git
+cd Zewail-Digital-Design-and-Verification-Tool
+python -m pip install -e ".[dev]"
+zddv doctor
 ```
 
-The first simulator backend is **Verilator**. The architecture is backend-oriented so adapters for Questa, VCS, Xcelium, and other simulators can be added later without changing the project model.
+Run the included counter example:
 
-## Planned CLI
+```bash
+zddv --project examples/counter build
+zddv --project examples/counter run --test counter_basic --seed 42
+zddv --project examples/counter regress examples/counter/regression.toml
+zddv --project examples/counter coverage
+```
+
+## Current CLI
 
 ```bash
 zddv init my_project
-zddv add rtl rtl/*.sv
-zddv add tb tb/*.sv
-zddv config simulator verilator
-zddv build
-zddv run
-zddv run --test smoke --seed 100
-zddv regress regression.yaml
-zddv coverage
-zddv debug <run-id>
+
+zddv --project my_project add rtl "rtl/*.sv"
+zddv --project my_project add tb "tb/*.sv"
+
+zddv --project my_project config simulator verilator
+zddv --project my_project config top tb_top
+
+zddv doctor
+zddv --project my_project build
+
+zddv --project my_project run
+zddv --project my_project run --test smoke --seed 100
+zddv --project my_project run --plusarg +MODE=1 --timeout 30
+
+zddv --project my_project regress regression.toml
+zddv --project my_project coverage
 ```
+
+## Verification Flow
+
+```text
+zddv.toml
+    │
+    ├── RTL / SystemVerilog testbench
+    │
+    ▼
+Project + Source Model
+    │
+    ▼
+Simulator Adapter
+    │
+    └── Verilator
+           │
+           ├── build.log
+           ├── build.json
+           └── zddv_sim
+                  │
+                  ▼
+              Run Engine
+                  │
+          ┌───────┼────────┐
+          │       │        │
+         log   waveform  coverage.dat
+          │       │        │
+          └───────┼────────┘
+                  ▼
+               run.json
+                  │
+                  ▼
+          Regression Engine
+                  │
+                  ├── seed sweeps
+                  ├── parallel workers
+                  ├── timeout handling
+                  └── regression JSON
+                  │
+                  ▼
+             Coverage Merge
+```
+
+## Project Configuration
+
+Example `zddv.toml`:
+
+```toml
+[project]
+name = "counter"
+
+[simulator]
+backend = "verilator"
+top = "tb_counter"
+
+[sources]
+rtl = ["rtl/*.sv"]
+tb = ["tb/*.sv"]
+
+[run]
+build_dir = ".zddv/build"
+run_dir = ".zddv/runs"
+waveform = true
+coverage = true
+```
+
+## Regression Definition
+
+Example `regression.toml`:
+
+```toml
+[regression]
+name = "counter-smoke"
+jobs = 2
+
+[[tests]]
+name = "counter_basic"
+seeds = [1, 7, 42, 100]
+timeout_s = 10
+plusargs = []
+```
+
+Each test/seed executes in an isolated run directory and produces reproducible metadata including simulator version, command line, seed, status, logs, waveform path, and coverage artifact.
 
 ## Core Architecture
 
-- Project model and configuration
-- Simulator adapter interface
-- Verilator backend
-- Build/run orchestration
-- Structured run database
-- Regression manager
-- Coverage collection
-- Assertion result handling
-- Waveform artifacts
-- Protocol analyzers
-- UVM inspection
-- Formal adapters
-- AI-assisted debug
+```text
+CLI / future GUI
+       │
+       ▼
+    ZDDV Core
+       │
+       ├── Project Model
+       ├── Run/Result Model
+       ├── Regression Engine
+       └── Coverage Engine
+       │
+       ▼
+ Simulator Adapter API
+       │
+       ├── Verilator  ← implemented
+       ├── Questa     ← planned
+       ├── VCS        ← planned
+       └── Xcelium    ← planned
+```
+
+The CLI and future GUI must use the same core APIs. Simulator-specific command construction stays inside simulator adapters.
 
 ## Repository Layout
 
 ```text
-src/zddv/          Python package and CLI
-examples/          Small RTL verification examples
-tests/             Unit and integration tests
-docs/              Architecture and roadmap
-.github/workflows/ CI
+src/zddv/              Python package and CLI
+src/zddv/simulator/    Simulator adapter layer
+examples/counter/      Self-checking SystemVerilog example
+tests/                 Unit and integration tests
+docs/                  Architecture and roadmap
+.github/workflows/     Continuous integration
 ```
 
-## Design Principles
-
-1. Simulator-independent orchestration.
-2. Reproducible runs: command, seed, sources, simulator version, logs, and artifacts belong to the run record.
-3. Open formats wherever practical.
-4. CLI-first core; GUI consumes the same APIs.
-5. Protocol-aware verification rather than a waveform viewer only.
-6. Incremental development with executable examples and tests.
-
-## Initial Development Roadmap
+## Development Status
 
 ### Phase 1 — Executable Core
-- [ ] Project initialization
-- [ ] TOML project configuration
-- [ ] Source discovery
-- [ ] Verilator installation/version detection
-- [ ] Compile/build command
-- [ ] Simulation command
-- [ ] PASS/FAIL classification
-- [ ] Run directories and logs
-- [ ] VCD/FST waveform handling
-- [ ] Counter/FIFO example
+
+- [x] Project initialization
+- [x] TOML project configuration
+- [x] Source discovery
+- [x] Verilator installation/version detection
+- [x] Compile/build command
+- [x] Simulation command
+- [x] PASS / FAIL / TIMEOUT classification
+- [x] Isolated run directories and logs
+- [x] JSON build/run metadata
+- [x] Waveform artifact handling
+- [x] Self-checking counter example
+- [ ] FIFO example
 
 ### Phase 2 — Regression
-- [ ] Test definitions
-- [ ] Seed sweeps
-- [ ] Parallel workers
-- [ ] Timeouts
-- [ ] JSON/SQLite results
-- [ ] Failure grouping
-- [ ] HTML/CLI reports
 
-### Phase 3 — Verification Intelligence
-- [ ] Assertions
-- [ ] Functional/code coverage ingestion
-- [ ] AXI/APB protocol analysis
+- [x] Test definitions
+- [x] Seed sweeps
+- [x] Parallel workers
+- [x] Per-test timeouts
+- [x] JSON regression results
+- [x] CLI regression summary
+- [ ] SQLite result database
+- [ ] Failure signature grouping
+- [ ] Selective rerun
+- [ ] HTML report
+
+### Phase 3 — Coverage and Verification Intelligence
+
+- [x] Verilator coverage instrumentation
+- [x] Per-run coverage artifacts
+- [x] Multi-run coverage merge
+- [ ] Normalized coverage metrics/database
+- [ ] Assertion result database
+- [ ] Coverage-hole analysis
+- [ ] APB protocol analysis
+- [ ] AXI4 / AXI4-Lite protocol analysis
+- [ ] UCIe transaction analysis
 - [ ] Source/hierarchy database
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
 ### Phase 4 — Advanced Verification
-- [ ] Formal tool adapters
-- [ ] Coverage-hole analysis
+
+- [ ] Questa adapter
+- [ ] VCS adapter
+- [ ] Xcelium adapter
+- [ ] Formal adapter API
+- [ ] Counterexample normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
+- [ ] Desktop debug GUI
+
+## Design Principles
+
+1. Simulator-independent orchestration.
+2. Reproducible runs: simulator version, command, seed, sources, logs, and artifacts are part of the run record.
+3. Open formats wherever practical.
+4. CLI-first core; the future GUI consumes the same APIs.
+5. Protocol-aware verification rather than only waveform viewing.
+6. Compatibility with practical tool versions, not only the newest simulator release.
+7. Every milestone must have an executable example and CI test.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)
 
 ## License
 
