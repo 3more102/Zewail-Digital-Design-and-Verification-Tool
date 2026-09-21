@@ -17,6 +17,8 @@ Exit criteria:
 
 ## v0.2 — Regression Engine
 
+Current status: core regression flow, SQLite run history, selective rerun, and JUnit export are implemented.
+
 - Named tests.
 - Seeds and plusargs.
 - Regression YAML/TOML.

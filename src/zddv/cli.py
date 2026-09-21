@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import platform
 import sys
 
@@ -8,8 +9,9 @@ from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
 from zddv.regression import run_regression
+from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
-from zddv.storage import database_path, list_runs
+from zddv.storage import database_path, list_run_records, list_runs
 
 
 def _backend(name: str):
@@ -157,6 +159,65 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_rerun(args) -> int:
+    project = load_project(_project_arg(args))
+    backend = _backend(project.simulator)
+    statuses = tuple(args.status or ("FAIL", "TIMEOUT"))
+    rows = list_run_records(project, limit=args.limit, statuses=statuses)
+
+    print(f"Selected {len(rows)} run(s) for rerun: {', '.join(statuses)}")
+    if not rows:
+        return 0
+
+    build = backend.build(project)
+    if not build.passed:
+        print(f"BUILD FAIL: {build.log_path}")
+        return build.returncode or 1
+
+    passed = 0
+    for source in reversed(rows):
+        result = backend.run(
+            project,
+            test_name=source["test_name"],
+            seed=source["seed"],
+            plusargs=list(source["plusargs"]),
+            timeout_s=source["timeout_s"],
+        )
+        print(
+            f"{source['run_id']} -> {result.status}: "
+            f"{result.run_id}"
+        )
+        if result.status == "PASS":
+            passed += 1
+
+    total = len(rows)
+    print(f"RERUN: {passed}/{total} passed")
+    return 0 if passed == total else 1
+
+
+def cmd_junit(args) -> int:
+    project = load_project(_project_arg(args))
+    statuses = tuple(args.status or ())
+    rows = list_run_records(
+        project,
+        limit=args.limit,
+        statuses=statuses or None,
+    )
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    report = write_junit_report(
+        rows,
+        output,
+        suite_name=project.name,
+    )
+    print(f"JUnit: {report}")
+    print(f"Tests: {len(rows)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -219,6 +280,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     p_runs.set_defaults(func=cmd_runs)
+
+    p_rerun = sub.add_parser(
+        "rerun",
+        help="Rerun selected historical verification runs",
+    )
+    p_rerun.add_argument("--limit", type=int, default=20)
+    p_rerun.add_argument(
+        "--status",
+        action="append",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+        help="Historical status to select; repeat as needed. Defaults to FAIL and TIMEOUT.",
+    )
+    p_rerun.set_defaults(func=cmd_rerun)
+
+    p_junit = sub.add_parser(
+        "junit",
+        help="Export verification run history as JUnit XML",
+    )
+    p_junit.add_argument("--output", default=".zddv/junit.xml")
+    p_junit.add_argument("--limit", type=int, default=100)
+    p_junit.add_argument(
+        "--status",
+        action="append",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+        help="Optional status filter; repeat as needed.",
+    )
+    p_junit.set_defaults(func=cmd_junit)
 
     return parser
 

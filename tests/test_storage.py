@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from zddv.config import initialize_project
-from zddv.storage import database_path, list_runs, record_run
+from zddv.storage import database_path, list_run_records, list_runs, record_run
 
 
 def _record(run_id: str, status: str, seed: int) -> dict:
@@ -52,3 +52,18 @@ def test_run_limit_validation(tmp_path: Path):
         assert "limit" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_list_run_records_for_rerun(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record = _record("run-fail", "FAIL", 7)
+    record["plusargs"] = ["+MODE=stress"]
+    record["timeout_s"] = 3.5
+    record_run(project, record)
+
+    rows = list_run_records(project, limit=10, statuses=("FAIL", "TIMEOUT"))
+
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == "run-fail"
+    assert rows[0]["plusargs"] == ["+MODE=stress"]
+    assert rows[0]["timeout_s"] == 3.5

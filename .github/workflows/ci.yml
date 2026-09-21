@@ -23,7 +23,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Unit tests
-        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py -q
+        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py tests/test_reporting.py -q
 
   verilator-integration:
     runs-on: ubuntu-latest
@@ -57,6 +57,14 @@ jobs:
 
       - name: Show run database
         run: zddv --project examples/counter runs --limit 10
+
+      - name: Export JUnit results
+        run: |
+          zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
+          test -s examples/counter/.zddv/junit.xml
+
+      - name: Exercise selective rerun command
+        run: zddv --project examples/counter rerun --status FAIL --limit 10
 
       - name: Merge coverage
         run: zddv --project examples/counter coverage
