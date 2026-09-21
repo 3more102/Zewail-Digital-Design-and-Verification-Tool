@@ -18,7 +18,9 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import (
+    assertion_statistics,
     database_path,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
@@ -133,6 +135,11 @@ def cmd_run(args) -> int:
         print(f"Waveform: {result.waveform_path}")
     if result.coverage_path:
         print(f"Coverage: {result.coverage_path}")
+    if result.assertion_count:
+        print(
+            f"Assertions: {result.assertion_count} event(s), "
+            f"{result.assertion_failures} failed"
+        )
     return result.returncode
 
 
@@ -226,6 +233,44 @@ def cmd_coverage_holes(args) -> int:
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
+    return 0
+
+
+def cmd_assertions(args) -> int:
+    project = load_project(_project_arg(args))
+    stats = assertion_statistics(project)
+    rows = list_assertion_events(
+        project,
+        limit=args.limit,
+        status=args.status,
+        run_id=args.run_id,
+    )
+    print(
+        f"ASSERTIONS: {stats['total']} event(s), "
+        f"{stats['failed']} failed, {stats['passed']} passed, "
+        f"{stats['named_properties']} named properties"
+    )
+    if not rows:
+        print("No assertion events found.")
+        return 0
+
+    print(
+        f"{'STATUS':<7} {'PROPERTY':<24} {'TEST':<18} "
+        f"{'SEED':<8} {'SOURCE':<28} MESSAGE"
+    )
+    for row in rows:
+        prop = str(row["property_name"] or "-")
+        test = str(row["test_name"] or "-")
+        seed = "-" if row["seed"] is None else str(row["seed"])
+        source = "-"
+        if row["source_file"]:
+            source = str(row["source_file"])
+            if row["source_line"] is not None:
+                source += f":{row['source_line']}"
+        print(
+            f"{row['status']:<7} {prop[:24]:<24} {test[:18]:<18} "
+            f"{seed:<8} {source[-28:]:<28} {str(row['message'] or '-')}"
+        )
     return 0
 
 
@@ -444,6 +489,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+    p_assertions = sub.add_parser(
+        "assertions",
+        help="Show normalized assertion events from verification runs",
+    )
+    p_assertions.add_argument("--limit", type=int, default=100)
+    p_assertions.add_argument("--status", choices=("PASS", "FAIL"), default=None)
+    p_assertions.add_argument("--run-id", default=None, help="Optional run ID filter")
+    p_assertions.set_defaults(func=cmd_assertions)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
