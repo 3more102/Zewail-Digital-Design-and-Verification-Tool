@@ -56,6 +56,30 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_created_at
     ON coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS assertion_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    simulator TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    sim_time TEXT,
+    source_path TEXT NOT NULL,
+    source_line INTEGER NOT NULL,
+    source_column INTEGER,
+    scope TEXT,
+    assertion_name TEXT,
+    message TEXT NOT NULL,
+    UNIQUE(run_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assertion_run
+    ON assertion_events(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_assertion_name
+    ON assertion_events(assertion_name);
 """
 
 
@@ -298,3 +322,104 @@ def list_coverage_snapshots(
         item["by_type"] = json.loads(item.pop("by_type_json"))
         result.append(item)
     return result
+
+
+
+def record_assertion_events(
+    project: ProjectConfig,
+    run_record: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> Path:
+    path = database_path(project)
+    with _connect(project) as db:
+        db.execute(
+            "DELETE FROM assertion_events WHERE run_id = ?",
+            (run_record["run_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO assertion_events (
+                run_id, event_index, created_at, project, simulator, severity,
+                sim_time, source_path, source_line, source_column, scope,
+                assertion_name, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    run_record["run_id"],
+                    int(event["event_index"]),
+                    run_record["created_at"],
+                    run_record["project"],
+                    run_record["simulator"],
+                    event["severity"],
+                    event.get("time"),
+                    event["source_path"],
+                    int(event["source_line"]),
+                    event.get("source_column"),
+                    event.get("scope"),
+                    event.get("assertion_name"),
+                    event.get("message", ""),
+                )
+                for event in events
+            ],
+        )
+    return path
+
+
+def list_assertion_events(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    run_id: str | None = None,
+    severity: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    normalized_severity = severity.upper() if severity else None
+    allowed = {"WARNING", "ERROR", "FATAL"}
+    if normalized_severity and normalized_severity not in allowed:
+        raise ValueError(f"Unsupported assertion severity: {severity}")
+
+    query = """
+        SELECT run_id, event_index, created_at, project, simulator, severity,
+               sim_time, source_path, source_line, source_column, scope,
+               assertion_name, message
+        FROM assertion_events
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if run_id:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if normalized_severity:
+        clauses.append("severity = ?")
+        params.append(normalized_severity)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC, event_index ASC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def assertion_statistics(project: ProjectConfig) -> dict[str, int]:
+    with _connect(project) as db:
+        row = db.execute(
+            """
+            SELECT
+                COUNT(*) AS total_events,
+                COUNT(DISTINCT run_id) AS affected_runs,
+                COUNT(DISTINCT COALESCE(assertion_name, scope, source_path || ':' || source_line))
+                    AS unique_assertions
+            FROM assertion_events
+            """
+        ).fetchone()
+
+    return {
+        "total_events": int(row["total_events"] or 0),
+        "affected_runs": int(row["affected_runs"] or 0),
+        "unique_assertions": int(row["unique_assertions"] or 0),
+    }
