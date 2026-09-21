@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from zddv.config import initialize_project
-from zddv.storage import database_path, list_run_records, list_runs, record_run
+from zddv.storage import (
+    database_path,
+    list_coverage_snapshots,
+    list_run_records,
+    list_runs,
+    record_coverage_snapshot,
+    record_run,
+)
 
 
 def _record(run_id: str, status: str, seed: int) -> dict:
@@ -67,3 +74,33 @@ def test_list_run_records_for_rerun(tmp_path: Path):
     assert rows[0]["run_id"] == "run-fail"
     assert rows[0]["plusargs"] == ["+MODE=stress"]
     assert rows[0]["timeout_s"] == 3.5
+
+
+def test_record_and_list_coverage_snapshots(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_coverage_snapshot(
+        project,
+        {
+            "snapshot_id": "cov-1",
+            "created_at": "2026-09-21T20:00:00+00:00",
+            "project": "demo",
+            "simulator": "verilator",
+            "input_count": 4,
+            "total_points": 20,
+            "hit_points": 15,
+            "hit_rate": 75.0,
+            "by_type": {
+                "line": {"total": 10, "hit": 8, "hit_rate": 80.0},
+            },
+            "merged": "/tmp/coverage.dat",
+            "summary": "/tmp/summary.txt",
+            "metrics_path": "/tmp/metrics.json",
+        },
+    )
+
+    rows = list_coverage_snapshots(project, limit=10)
+
+    assert len(rows) == 1
+    assert rows[0]["snapshot_id"] == "cov-1"
+    assert rows[0]["hit_rate"] == 75.0
+    assert rows[0]["by_type"]["line"]["hit"] == 8

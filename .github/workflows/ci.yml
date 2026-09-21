@@ -74,10 +74,13 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
-      - name: Generate HTML dashboard
+      - name: Merge and ingest coverage
         run: |
-          zddv --project examples/counter report --limit 50
-          test -s examples/counter/.zddv/reports/latest.html
+          zddv --project examples/counter coverage
+          test -s examples/counter/.zddv/coverage/metrics.json
+
+      - name: Show coverage history
+        run: zddv --project examples/counter coverage-history --limit 10
 
       - name: Verify async FIFO example
         run: |
@@ -86,9 +89,14 @@ jobs:
           zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
           zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
           zddv --project examples/async_fifo coverage
+          zddv --project examples/async_fifo coverage-history --limit 5
+          test -s examples/async_fifo/.zddv/coverage/metrics.json
 
-      - name: Merge counter coverage
-        run: zddv --project examples/counter coverage
+      - name: Generate HTML dashboard
+        run: |
+          zddv --project examples/counter report --limit 50
+          test -s examples/counter/.zddv/reports/latest.html
+          grep -q "Coverage hit rate" examples/counter/.zddv/reports/latest.html
 
       - name: Integration tests
         run: pytest tests/test_verilator_integration.py -q

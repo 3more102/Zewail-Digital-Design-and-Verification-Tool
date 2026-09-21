@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.2 regression foundation — executable and continuously tested**
+> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
 
 ## What Works Today
 
@@ -22,6 +22,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - VCD/FST artifact discovery
 - Verilator code-coverage collection
 - Coverage merge/report flow
+- Normalized Verilator coverage metrics stored as SQLite snapshots
+- Coverage history/trend CLI with per-type point breakdown
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -30,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI examples
 - Dual-clock asynchronous FIFO RTL with Gray-pointer CDC verification
+- SystemVerilog assertions enabled in Verilator build/lint flows
 
 ## Quick Start
 
@@ -57,6 +60,8 @@ zddv --project examples/counter coverage
 
 zddv --project examples/async_fifo lint
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
+zddv --project examples/async_fifo coverage
+zddv --project examples/async_fifo coverage-history --limit 5
 ```
 
 ## Current CLI
@@ -85,6 +90,7 @@ zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
+zddv --project my_project coverage-history --limit 20
 ```
 
 ## Verification Flow
@@ -221,7 +227,7 @@ docs/                  Architecture and roadmap
 - [x] JSON build/run metadata
 - [x] Waveform artifact handling
 - [x] Self-checking counter example
-- [x] Asynchronous FIFO example with CDC/Gray-pointer checks
+- [x] Asynchronous FIFO example with CDC/Gray-pointer assertions
 
 ### Phase 2 — Regression
 
@@ -239,10 +245,14 @@ docs/                  Architecture and roadmap
 
 ### Phase 3 — Coverage and Verification Intelligence
 
+ZDDV defines the normalized **hit rate** as the percentage of parsed Verilator
+coverage points whose runtime counter is greater than zero. This is stored
+separately from Verilator's annotation threshold.
+
 - [x] Verilator coverage instrumentation
 - [x] Per-run coverage artifacts
 - [x] Multi-run coverage merge
-- [ ] Normalized coverage metrics/database
+- [x] Normalized coverage metrics/database
 - [ ] Assertion result database
 - [ ] Coverage-hole analysis
 - [ ] APB protocol analysis
