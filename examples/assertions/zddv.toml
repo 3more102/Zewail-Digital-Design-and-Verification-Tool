@@ -1,0 +1,16 @@
+[project]
+name = "assertion-demo"
+
+[simulator]
+backend = "verilator"
+top = "tb_assertions"
+
+[sources]
+rtl = []
+tb = ["tb/*.sv"]
+
+[run]
+build_dir = ".zddv/build"
+run_dir = ".zddv/runs"
+waveform = false
+coverage = false
