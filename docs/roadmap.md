@@ -46,9 +46,9 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 Current status: deterministic source indexing, source-level hierarchy, VCD waveform
 indexing, targeted VCD value-change probing, source-level structural drivers/loads
-navigation, waveform-to-source cross-probing, assertion-to-waveform correlation, and
-the first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Elaborated connectivity and waveform-driven protocol extraction remain planned.
+navigation, waveform-to-source cross-probing, assertion-to-waveform correlation,
+APB transaction reconstruction, and APB VCD waveform-to-transaction extraction are
+implemented. Elaborated connectivity remains planned.
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
@@ -58,6 +58,7 @@ implemented. Elaborated connectivity and waveform-driven protocol extraction rem
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
+- [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
 
 ## v0.5 — Protocol Verification
 
