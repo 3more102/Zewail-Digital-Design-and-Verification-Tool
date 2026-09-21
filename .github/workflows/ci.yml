@@ -57,6 +57,15 @@ jobs:
           grep -q "tb_counter: tb_counter" /tmp/zddv-hierarchy.txt
           grep -q "dut: counter" /tmp/zddv-hierarchy.txt
 
+      - name: Build elaborated hierarchy
+        run: |
+          zddv --project examples/counter elaborate
+          test -s examples/counter/.zddv/design/elaborated.json
+          test -s examples/counter/.zddv/design/elaborated-hierarchy.txt
+          zddv --project examples/counter hierarchy --elaborated | tee /tmp/zddv-elaborated.txt
+          grep -q "tb_counter" /tmp/zddv-elaborated.txt
+          grep -q "dut" /tmp/zddv-elaborated.txt
+
       - name: Build counter example
         run: zddv --project examples/counter build
 
