@@ -18,6 +18,14 @@ _SUPPORTED_VCD_SUFFIXES = {".vcd"}
 _FST_SUFFIXES = {".fst"}
 
 
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _relative_path(project: ProjectConfig, path: Path) -> str:
     try:
         return path.resolve().relative_to(project.root.resolve()).as_posix()
@@ -160,7 +168,7 @@ def build_waveform_index(
     artifact = {
         "path": str(source),
         "bytes": source.stat().st_size,
-        "sha256": sha256(source.read_bytes()).hexdigest(),
+        "sha256": _sha256_file(source),
     }
 
     if suffix in _SUPPORTED_VCD_SUFFIXES:
