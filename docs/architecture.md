@@ -92,3 +92,16 @@ The normalized artifact is written to:
 This artifact is intentionally separate from simulator-generated elaboration data. It gives the CLI and future GUI a stable source/hierarchy model now, while later adapters can enrich it with elaborated parameters, generated scopes, signal metadata, and simulator-specific handles.
 
 The next Debug Studio layer will add a waveform index and correlate waveform scopes back to these hierarchy paths.
+
+
+## v0.4 Waveform Index
+
+ZDDV can index VCD headers independently of the simulator that produced them. The waveform index records scope paths, signal paths, VCD identifier codes, widths, variable types, and timescale without loading the full value-change stream.
+
+Waveform indexes are linked to ZDDV run IDs when available and are written under:
+
+```text
+.zddv/index/waveforms/<run-id>.json
+```
+
+Keeping header indexing separate from value decoding makes the first debug operations fast and gives later cross-probing code a compact signal catalog before selective waveform data is read.
