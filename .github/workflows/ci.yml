@@ -66,6 +66,11 @@ jobs:
           zddv --project examples/counter assertions --limit 20
           zddv --project examples/counter assertions --status PASS --limit 20 | grep -q counter_sequence
 
+      - name: Show functional coverage database
+        run: |
+          zddv --project examples/counter functional-coverage --limit 20
+          zddv --project examples/counter fcov --uncovered --limit 20 | grep -q rollover
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
@@ -97,6 +102,7 @@ jobs:
           zddv --project examples/counter report --limit 50
           test -s examples/counter/.zddv/reports/latest.html
           grep -q "Coverage hit rate" examples/counter/.zddv/reports/latest.html
+          grep -q "Functional coverage" examples/counter/.zddv/reports/latest.html
 
       - name: Integration tests
         run: pytest tests/test_verilator_integration.py -q
