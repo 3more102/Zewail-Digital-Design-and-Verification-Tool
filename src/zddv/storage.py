@@ -60,6 +60,53 @@ CREATE INDEX IF NOT EXISTS idx_assertions_status
 CREATE INDEX IF NOT EXISTS idx_assertions_name
     ON assertion_events(assertion_name);
 
+CREATE TABLE IF NOT EXISTS uvm_log_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    test_name TEXT,
+    status TEXT NOT NULL,
+    count_source TEXT NOT NULL,
+    info_count INTEGER NOT NULL,
+    warning_count INTEGER NOT NULL,
+    error_count INTEGER NOT NULL,
+    fatal_count INTEGER NOT NULL,
+    total_reports INTEGER NOT NULL,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_snapshots_created_at
+    ON uvm_log_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_snapshots_status
+    ON uvm_log_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_snapshots_test
+    ON uvm_log_snapshots(test_name);
+
+CREATE TABLE IF NOT EXISTS uvm_report_messages (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    severity TEXT NOT NULL,
+    report_id TEXT,
+    component TEXT,
+    message TEXT,
+    time_text TEXT,
+    source_location TEXT,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_messages_severity
+    ON uvm_report_messages(severity);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_messages_report_id
+    ON uvm_report_messages(report_id);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -413,6 +460,131 @@ def assertion_statistics(project: ProjectConfig) -> dict[str, Any]:
         "failed": failed,
         "pass_rate": 100.0 * passed / total if total else 0.0,
     }
+
+
+def record_uvm_log_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_log_snapshots (
+                snapshot_id, created_at, project, source, test_name, status,
+                count_source, info_count, warning_count, error_count,
+                fatal_count, total_reports, input_path, normalized_path,
+                report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record.get("test_name"),
+                record["status"],
+                record["count_source"],
+                int(summary["infos"]),
+                int(summary["warnings"]),
+                int(summary["errors"]),
+                int(summary["fatals"]),
+                int(summary["total_reports"]),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_report_messages WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_report_messages (
+                snapshot_id, event_index, severity, report_id, component,
+                message, time_text, source_location, log_line, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["severity"],
+                    item.get("report_id"),
+                    item.get("component"),
+                    item.get("message"),
+                    item.get("time"),
+                    item.get("source_location"),
+                    int(item["log_line"]),
+                    item["raw"],
+                )
+                for item in record["messages"]
+            ],
+        )
+    return path
+
+
+def list_uvm_log_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, test_name, status,
+               count_source, info_count, warning_count, error_count,
+               fatal_count, total_reports, input_path, normalized_path,
+               report_path
+        FROM uvm_log_snapshots
+    """
+    params: list[Any] = []
+    if status is not None:
+        query += " WHERE status = ?"
+        params.append(status)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_report_messages(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    severity: str | None = None,
+) -> list[dict[str, Any]]:
+    if severity is not None and severity not in {
+        "UVM_INFO",
+        "UVM_WARNING",
+        "UVM_ERROR",
+        "UVM_FATAL",
+    }:
+        raise ValueError(f"Unsupported UVM severity: {severity}")
+
+    query = """
+        SELECT snapshot_id, event_index, severity, report_id, component,
+               message, time_text, source_location, log_line, raw
+        FROM uvm_report_messages
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if severity is not None:
+        query += " AND severity = ?"
+        params.append(severity)
+    query += " ORDER BY event_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
 
 
 def record_functional_coverage_snapshot(
