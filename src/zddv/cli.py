@@ -7,6 +7,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.connectivity import query_net, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -138,6 +139,48 @@ def cmd_waveform_index(args) -> int:
         print(f"Latest: {result['latest_path']}")
     return 0
 
+
+
+def cmd_connectivity(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project)
+    summary = result["summary"]
+    print(
+        f"CONNECTIVITY: {summary['units']} unit(s), "
+        f"{summary['signals']} signal(s), "
+        f"{summary['driver_edges']} driver edge(s), "
+        f"{summary['load_edges']} load edge(s)"
+    )
+    print(f"Index: {result['path']}")
+    return 0
+
+
+def _cmd_net_role(args, role: str) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project)
+    unit_name = args.unit or project.top
+    rows = query_net(
+        result,
+        unit_name=unit_name,
+        signal=args.signal,
+        role=role,
+    )
+    print(f"{role.upper()} {unit_name}.{args.signal}: {len(rows)}")
+    for item in rows:
+        print(
+            f"[{item['kind']}] {item['file']}:{item['line']} "
+            f"{item['detail']}"
+        )
+    print(f"Index: {result['path']}")
+    return 0
+
+
+def cmd_drivers(args) -> int:
+    return _cmd_net_role(args, "drivers")
+
+
+def cmd_loads(args) -> int:
+    return _cmd_net_role(args, "loads")
 
 def cmd_lint(args) -> int:
     project = load_project(_project_arg(args))
@@ -595,6 +638,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+    p_connectivity = sub.add_parser(
+        "connectivity",
+        help="Build the source-level driver/load connectivity index",
+    )
+    p_connectivity.set_defaults(func=cmd_connectivity)
+
+    p_drivers = sub.add_parser(
+        "drivers",
+        help="Show source-level drivers for a signal",
+    )
+    p_drivers.add_argument("signal", help="Signal name inside the selected design unit")
+    p_drivers.add_argument(
+        "--unit",
+        default=None,
+        help="Design unit name (default: configured project top)",
+    )
+    p_drivers.set_defaults(func=cmd_drivers)
+
+    p_loads = sub.add_parser(
+        "loads",
+        help="Show source-level loads for a signal",
+    )
+    p_loads.add_argument("signal", help="Signal name inside the selected design unit")
+    p_loads.add_argument(
+        "--unit",
+        default=None,
+        help="Design unit name (default: configured project top)",
+    )
+    p_loads.set_defaults(func=cmd_loads)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
