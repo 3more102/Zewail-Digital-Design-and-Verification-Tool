@@ -56,6 +56,34 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_created_at
     ON coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS assertion_events (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    simulator TEXT NOT NULL,
+    status TEXT NOT NULL,
+    property_name TEXT,
+    scope TEXT,
+    source_file TEXT,
+    source_line INTEGER,
+    source_column INTEGER,
+    sim_time TEXT,
+    message TEXT NOT NULL,
+    raw_text TEXT NOT NULL,
+    parser TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assertions_run_ordinal
+    ON assertion_events(run_id, ordinal);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_status
+    ON assertion_events(status);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_property
+    ON assertion_events(property_name);
 """
 
 
@@ -298,3 +326,106 @@ def list_coverage_snapshots(
         item["by_type"] = json.loads(item.pop("by_type_json"))
         result.append(item)
     return result
+
+
+
+def record_assertion_events(
+    project: ProjectConfig,
+    run_record: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> Path:
+    path = database_path(project)
+    if not events:
+        return path
+
+    with _connect(project) as db:
+        for ordinal, event in enumerate(events, start=1):
+            event_id = f"{run_record['run_id']}:assert:{ordinal:04d}"
+            db.execute(
+                """
+                INSERT OR REPLACE INTO assertion_events (
+                    event_id, run_id, ordinal, created_at, project, simulator,
+                    status, property_name, scope, source_file, source_line,
+                    source_column, sim_time, message, raw_text, parser
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    run_record["run_id"],
+                    ordinal,
+                    run_record["created_at"],
+                    run_record["project"],
+                    run_record["simulator"],
+                    event["status"],
+                    event.get("property_name"),
+                    event.get("scope"),
+                    event.get("source_file"),
+                    event.get("source_line"),
+                    event.get("source_column"),
+                    event.get("sim_time"),
+                    event.get("message", ""),
+                    event.get("raw_text", ""),
+                    event.get("parser", "unknown"),
+                ),
+            )
+    return path
+
+
+def list_assertion_events(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    status: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported assertion status: {status}")
+
+    query = """
+        SELECT
+            a.event_id, a.run_id, a.ordinal, a.created_at, a.project,
+            a.simulator, a.status, a.property_name, a.scope, a.source_file,
+            a.source_line, a.source_column, a.sim_time, a.message,
+            a.raw_text, a.parser, r.test_name, r.seed
+        FROM assertion_events AS a
+        LEFT JOIN runs AS r ON r.run_id = a.run_id
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("a.status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("a.run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY a.created_at DESC, a.ordinal ASC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def assertion_statistics(project: ProjectConfig) -> dict[str, int]:
+    with _connect(project) as db:
+        row = db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS passed,
+                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failed,
+                COUNT(DISTINCT property_name) AS named_properties
+            FROM assertion_events
+            """
+        ).fetchone()
+
+    return {
+        "total": int(row["total"] or 0),
+        "passed": int(row["passed"] or 0),
+        "failed": int(row["failed"] or 0),
+        "named_properties": int(row["named_properties"] or 0),
+    }
