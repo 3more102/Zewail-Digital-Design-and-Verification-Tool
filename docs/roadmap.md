@@ -71,7 +71,8 @@ remain planned.
 - [x] AXI4-Lite five-channel transaction reconstruction and protocol checks.
 - [x] AXI4 burst normalized-trace foundation (IDs, lengths/types, WLAST/RLAST, 4KB rule).
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
-- [ ] Exhaustive AXI4 optional-sideband and exclusive-access checking.
+- [x] AXI4 exclusive-access sequence, response, alignment, and size checking.
+- [ ] Exhaustive AXI4 optional-sideband semantics and topology-dependent checks.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [ ] UCIe-oriented transaction analysis.
 
