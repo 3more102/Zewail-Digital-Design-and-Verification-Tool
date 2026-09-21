@@ -28,6 +28,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
+- APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
@@ -115,6 +116,8 @@ zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
 zddv --project my_project apb-analyze apb_trace.json
+zddv --project my_project apb-waveform --input apb.vcd
+zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
 ```
 
@@ -337,6 +340,21 @@ zddv --project my_project axi4lite-analyze axi4lite_trace.json
 
 The default report is `.zddv/protocols/axi4lite/latest.json`. The repository
 also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it.
+
+ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
+signals on PCLK edges, emits the same normalized trace model, then runs the same
+protocol checker. If exactly one waveform scope contains PCLK, PSEL, and PENABLE,
+the scope is selected automatically; otherwise use `--scope`.
+
+```bash
+zddv --project my_project apb-waveform --input apb.vcd
+zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
+```
+
+The normalized extracted trace is written to
+`.zddv/protocols/apb/waveform-trace.json` and the analyzed report to
+`.zddv/protocols/apb/waveform-latest.json`. Waveform timestamps are preserved
+alongside logical sample cycles and transaction start/end cycles.
 
 ### Assertion Result Markers
 
