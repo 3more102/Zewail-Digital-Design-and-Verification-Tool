@@ -42,6 +42,48 @@ class VerilatorBackend(SimulatorBackend):
         name = "zddv_sim.exe" if os.name == "nt" else "zddv_sim"
         return self._build_dir(project) / name
 
+    @staticmethod
+    def _cpp_top_name(top: str) -> str:
+        return "V" + re.sub(r"[^A-Za-z0-9_]", "_", top)
+
+    def _write_main(self, project: ProjectConfig, build_dir: Path) -> Path:
+        cpp_top = self._cpp_top_name(project.top)
+        path = build_dir / "zddv_main.cpp"
+        path.write_text(
+            f"""#include <memory>
+#include "verilated.h"
+#include "verilated_cov.h"
+#include "{cpp_top}.h"
+
+int main(int argc, char** argv) {{
+    const std::unique_ptr<VerilatedContext> contextp{{new VerilatedContext}};
+
+#if VM_TRACE
+    contextp->traceEverOn(true);
+#endif
+
+    contextp->commandArgs(argc, argv);
+    const std::unique_ptr<{cpp_top}> topp{{new {cpp_top}{{contextp.get()}}}};
+
+    while (!contextp->gotFinish()) {{
+        topp->eval();
+        if (!topp->eventsPending()) break;
+        contextp->time(topp->nextTimeSlot());
+    }}
+
+    topp->final();
+
+#if VM_COVERAGE
+    contextp->coveragep()->write("coverage.dat");
+#endif
+
+    return 0;
+}}
+""",
+            encoding="utf-8",
+        )
+        return path
+
     def build(self, project: ProjectConfig) -> BuildResult:
         sources = project.source_files()
         if not sources:
@@ -51,16 +93,33 @@ class VerilatorBackend(SimulatorBackend):
         build_dir.mkdir(parents=True, exist_ok=True)
         log_path = build_dir / "build.log"
 
-        command = [
-            self._tool(),
-            "--binary",
-            "--timing",
-            "--Wno-fatal",
-        ]
+        if project.coverage:
+            # Verilator versions before 5.050 do not automatically dump
+            # coverage from --main/--binary. Use an explicit wrapper so ZDDV
+            # remains compatible with older packaged releases such as 5.020.
+            main_cpp = self._write_main(project, build_dir)
+            command = [
+                self._tool(),
+                "--cc",
+                "--exe",
+                "--build",
+                "--timing",
+                "--Wno-fatal",
+            ]
+        else:
+            main_cpp = None
+            command = [
+                self._tool(),
+                "--binary",
+                "--timing",
+                "--Wno-fatal",
+            ]
+
         if project.waveform:
             command.append("--trace")
         if project.coverage:
             command.append("--coverage")
+
         command.extend(
             [
                 "--top-module",
@@ -72,6 +131,8 @@ class VerilatorBackend(SimulatorBackend):
                 *[str(path) for path in sources],
             ]
         )
+        if main_cpp is not None:
+            command.append(str(main_cpp))
 
         completed = subprocess.run(
             command,
@@ -92,6 +153,9 @@ class VerilatorBackend(SimulatorBackend):
             "simulator_version": self.version(),
             "top": project.top,
             "sources": [str(p) for p in sources],
+            "waveform": project.waveform,
+            "coverage": project.coverage,
+            "custom_main": str(main_cpp) if main_cpp else None,
             "command": command,
             "returncode": completed.returncode,
             "executable": str(executable) if executable else None,
