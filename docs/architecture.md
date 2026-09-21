@@ -73,7 +73,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Add waveform indexing and source/hierarchy metadata.
+5. Add waveform indexing on top of the implemented source/hierarchy metadata.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
