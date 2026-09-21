@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from zddv.assertions import ingest_assertion_log
+from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.debug import correlate_assertions, write_assertion_waveform_report
 from zddv.storage import record_run
@@ -146,3 +147,40 @@ def test_write_assertion_waveform_report(tmp_path: Path):
 
     assert Path(result["path"]).is_file()
     assert result["summary"]["with_indexed_waveform"] == 1
+
+
+def test_assertion_waveform_cli(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-cli"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.vcd"
+    waveform.write_text(VCD, encoding="utf-8")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT counter_sequence FAIL final_count=8\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    rc = main([
+        "--project",
+        str(project.root),
+        "assertion-waveform",
+        "--run",
+        run_id,
+        "--status",
+        "FAIL",
+    ])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "ASSERTION/WAVEFORM: 1 event(s)" in output
+    assert "tb_top.dut.count" in output
+    assert (project.root / ".zddv" / "debug" / "assertion-waveform.json").is_file()
