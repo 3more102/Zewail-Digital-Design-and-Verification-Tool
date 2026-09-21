@@ -23,10 +23,10 @@ _DECLARATION_RE = re.compile(
     r"(?P<body>[^;]*);"
 )
 _ASSIGNMENT_RE = re.compile(
-    r"(?P<prefix>^[ \\t]*|[;{}:][ \\t]*|\\)[ \\t]*|\\b(?:begin|else)[ \\t]+)"
-    rf"(?:(?P<continuous>\\bassign)\\s+)?"
-    rf"(?P<lhs>{_IDENTIFIER_TEXT}(?:\\s*\\[[^;\\]]+\\])?)\\s*"
-    r"(?P<op><=|(?<![=!<>])=(?!=))\\s*"
+    r"(?P<prefix>^[ \t]*|[;{}:][ \t]*|\)[ \t]*|\b(?:begin|else)[ \t]+)"
+    rf"(?:(?P<continuous>\bassign)\s+)?"
+    rf"(?P<lhs>{_IDENTIFIER_TEXT}(?:\s*\[[^;\]]+\])?)\s*"
+    r"(?P<op><=|(?<![=!<>])=(?!=))\s*"
     r"(?P<rhs>[^;]+);",
     re.MULTILINE,
 )
