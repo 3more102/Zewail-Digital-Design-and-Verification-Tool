@@ -15,6 +15,7 @@ from zddv.coverage import (
 from zddv.dashboard import generate_html_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
+from zddv.protocols.apb import analyze_apb_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -322,6 +323,35 @@ def cmd_assertions(args) -> int:
     return 0
 
 
+
+def cmd_apb_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_apb_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"APB {result['status']}: "
+        f"{summary['completed_transactions']} completed transaction(s), "
+        f"{summary['violations']} protocol violation(s)"
+    )
+    print(
+        f"Reads/Writes: {summary['reads']}/{summary['writes']}  "
+        f"Wait cycles: {summary['wait_cycles']}  "
+        f"Error responses: {summary['error_responses']}"
+    )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] cycle={violation['cycle']} "
+            f"{violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -568,6 +598,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fcov_holes.add_argument("--limit", type=int, default=50)
     p_fcov_holes.set_defaults(func=cmd_fcov_holes)
+
+
+    p_apb = sub.add_parser(
+        "apb-analyze",
+        help="Reconstruct APB transactions and report protocol violations",
+    )
+    p_apb.add_argument("path", help="Normalized APB trace JSON file")
+    p_apb.add_argument(
+        "--output",
+        default=".zddv/protocols/apb/latest.json",
+        help="JSON protocol-analysis report path",
+    )
+    p_apb.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of protocol violations to print",
+    )
+    p_apb.set_defaults(func=cmd_apb_analyze)
 
     p_assertions = sub.add_parser(
         "assertions",
