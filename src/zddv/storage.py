@@ -117,3 +117,46 @@ def list_runs(
         rows = db.execute(query, params).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def list_run_records(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    statuses: tuple[str, ...] | list[str] | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    allowed = {"PASS", "FAIL", "TIMEOUT"}
+    normalized = tuple(statuses or ())
+    invalid = sorted(set(normalized) - allowed)
+    if invalid:
+        raise ValueError(f"Unsupported run status: {', '.join(invalid)}")
+
+    query = """
+        SELECT run_id, created_at, project, simulator, simulator_version,
+               top, test_name, seed, status, returncode, duration_ms,
+               run_dir, log_path, waveform_path, coverage_path, timeout_s,
+               command_json, plusargs_json
+        FROM runs
+    """
+    params: list[Any] = []
+    if normalized:
+        placeholders = ", ".join("?" for _ in normalized)
+        query += f" WHERE status IN ({placeholders})"
+        params.extend(normalized)
+
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        record = dict(row)
+        record["command"] = json.loads(record.pop("command_json"))
+        record["plusargs"] = json.loads(record.pop("plusargs_json"))
+        records.append(record)
+    return records
