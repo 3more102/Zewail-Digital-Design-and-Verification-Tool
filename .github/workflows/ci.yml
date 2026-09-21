@@ -49,6 +49,13 @@ jobs:
       - name: Lint counter example
         run: zddv --project examples/counter lint
 
+      - name: Build source and hierarchy index
+        run: |
+          zddv --project examples/counter index
+          zddv --project examples/counter hierarchy | grep -q "tb_counter"
+          test -s examples/counter/.zddv/index/source_index.json
+          test -s examples/counter/.zddv/index/hierarchy.json
+
       - name: Build counter example
         run: zddv --project examples/counter build
 
