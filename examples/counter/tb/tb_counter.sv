@@ -26,11 +26,13 @@ module tb_counter;
             @(negedge clk);
             expected = expected + 1'b1;
             if (count !== expected) begin
+                $display("ZDDV_ASSERT counter_sequence FAIL expected=%0d actual=%0d", expected, count);
                 $display("ZDDV_FAIL expected=%0d actual=%0d", expected, count);
                 $fatal(1, "Counter mismatch");
             end
         end
 
+        $display("ZDDV_ASSERT counter_sequence PASS final_count=%0d", count);
         $display("ZDDV_PASS counter smoke test");
         $finish;
     end

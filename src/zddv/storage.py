@@ -39,6 +39,27 @@ CREATE INDEX IF NOT EXISTS idx_runs_status
 CREATE INDEX IF NOT EXISTS idx_runs_test_seed
     ON runs(test_name, seed);
 
+CREATE TABLE IF NOT EXISTS assertion_events (
+    run_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    assertion_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT,
+    log_path TEXT NOT NULL,
+    log_line INTEGER,
+    PRIMARY KEY (run_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_created_at
+    ON assertion_events(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_status
+    ON assertion_events(status);
+
+CREATE INDEX IF NOT EXISTS idx_assertions_name
+    ON assertion_events(assertion_name);
+
 CREATE TABLE IF NOT EXISTS coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -236,6 +257,97 @@ def run_statistics(project: ProjectConfig) -> dict[str, Any]:
         "timed_out": timed_out,
         "pass_rate": 100.0 * passed / total if total else 0.0,
         "tests": test_rows,
+    }
+
+
+def record_assertion_events(
+    project: ProjectConfig,
+    events: list[dict[str, Any]],
+) -> Path:
+    path = database_path(project)
+    if not events:
+        return path
+
+    with _connect(project) as db:
+        db.executemany(
+            """
+            INSERT OR REPLACE INTO assertion_events (
+                run_id, event_index, created_at, assertion_name, status,
+                message, log_path, log_line
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    event["run_id"],
+                    int(event["event_index"]),
+                    event["created_at"],
+                    event["assertion_name"],
+                    event["status"],
+                    event.get("message"),
+                    event["log_path"],
+                    event.get("log_line"),
+                )
+                for event in events
+            ],
+        )
+    return path
+
+
+def list_assertion_events(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    status: str | None = None,
+    assertion_name: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported assertion status: {status}")
+
+    query = """
+        SELECT run_id, event_index, created_at, assertion_name, status,
+               message, log_path, log_line
+        FROM assertion_events
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if assertion_name is not None:
+        clauses.append("assertion_name = ?")
+        params.append(assertion_name)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC, run_id DESC, event_index ASC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def assertion_statistics(project: ProjectConfig) -> dict[str, Any]:
+    with _connect(project) as db:
+        totals = db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS passed,
+                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failed
+            FROM assertion_events
+            """
+        ).fetchone()
+
+    total = int(totals["total"] or 0)
+    passed = int(totals["passed"] or 0)
+    failed = int(totals["failed"] or 0)
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "pass_rate": 100.0 * passed / total if total else 0.0,
     }
 
 

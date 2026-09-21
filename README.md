@@ -25,6 +25,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized Verilator coverage metrics stored as SQLite snapshots
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
+- Normalized assertion result database keyed by simulation run
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -87,6 +88,8 @@ zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
+zddv --project my_project assertions --limit 100
+zddv --project my_project assertions --status FAIL
 ```
 
 ## Verification Flow
@@ -248,7 +251,7 @@ separately from Verilator's annotation threshold.
 - [x] Per-run coverage artifacts
 - [x] Multi-run coverage merge
 - [x] Normalized coverage metrics/database
-- [ ] Assertion result database
+- [x] Assertion result database
 - [x] Coverage-hole analysis
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
@@ -256,6 +259,20 @@ separately from Verilator's annotation threshold.
 - [ ] Source/hierarchy database
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
+
+### Assertion Result Markers
+
+ZDDV can ingest simulator-independent assertion results from testbench logs using a
+small normalized marker format:
+
+```text
+ZDDV_ASSERT fifo_no_overflow PASS depth=4
+ZDDV_ASSERT axi_response_valid FAIL unexpected_BRESP
+```
+
+Each event is stored with its run ID, assertion name, status, message, log path,
+and source log line. Simulator adapters can translate native assertion output into
+this same database model over time.
 
 ### Phase 4 — Advanced Verification
 
