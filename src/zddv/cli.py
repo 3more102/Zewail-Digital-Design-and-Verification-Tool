@@ -18,6 +18,7 @@ from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
+from zddv.source_index import hierarchy_lines, write_source_index
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -322,6 +323,30 @@ def cmd_assertions(args) -> int:
     return 0
 
 
+
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_source_index(project, max_depth=args.max_depth)
+    print(
+        f"INDEX: {result['file_count']} file(s), "
+        f"{result['symbol_count']} symbol(s), "
+        f"{result['module_count']} module(s), "
+        f"{result['instance_count']} resolved instance(s)"
+    )
+    print(f"Source index: {result['index_path']}")
+    print(f"Hierarchy: {result['hierarchy_path']}")
+    return 0
+
+
+def cmd_hierarchy(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_source_index(project, max_depth=args.max_depth)
+    print("HIERARCHY:")
+    for line in hierarchy_lines(result["hierarchy"]):
+        print(line)
+    print(f"Hierarchy JSON: {result['hierarchy_path']}")
+    return 0
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -586,6 +611,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional exact assertion name filter",
     )
     p_assertions.set_defaults(func=cmd_assertions)
+
+    p_index = sub.add_parser(
+        "index",
+        help="Build the SystemVerilog source and design hierarchy index",
+    )
+    p_index.add_argument(
+        "--max-depth",
+        type=int,
+        default=64,
+        help="Maximum hierarchy expansion depth",
+    )
+    p_index.set_defaults(func=cmd_index)
+
+    p_hierarchy = sub.add_parser(
+        "hierarchy",
+        help="Build and print the resolved module-instance hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--max-depth",
+        type=int,
+        default=64,
+        help="Maximum hierarchy expansion depth",
+    )
+    p_hierarchy.set_defaults(func=cmd_hierarchy)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
