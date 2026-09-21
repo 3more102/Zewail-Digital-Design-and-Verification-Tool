@@ -103,7 +103,8 @@ def list_runs(
 
     query = """
         SELECT run_id, created_at, test_name, seed, status, returncode,
-               duration_ms, simulator, run_dir
+               duration_ms, simulator, run_dir, log_path, waveform_path,
+               coverage_path
         FROM runs
     """
     params: list[Any] = []
@@ -117,3 +118,61 @@ def list_runs(
         rows = db.execute(query, params).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def run_statistics(project: ProjectConfig) -> dict[str, Any]:
+    with _connect(project) as db:
+        totals = db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS passed,
+                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'TIMEOUT' THEN 1 ELSE 0 END) AS timed_out
+            FROM runs
+            """
+        ).fetchone()
+
+        tests = db.execute(
+            """
+            SELECT
+                COALESCE(test_name, '(default)') AS test_name,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS passed,
+                SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'TIMEOUT' THEN 1 ELSE 0 END) AS timed_out
+            FROM runs
+            GROUP BY COALESCE(test_name, '(default)')
+            ORDER BY test_name
+            """
+        ).fetchall()
+
+    total = int(totals["total"] or 0)
+    passed = int(totals["passed"] or 0)
+    failed = int(totals["failed"] or 0)
+    timed_out = int(totals["timed_out"] or 0)
+    pass_rate = (100.0 * passed / total) if total else 0.0
+
+    test_rows: list[dict[str, Any]] = []
+    for row in tests:
+        row_total = int(row["total"] or 0)
+        row_passed = int(row["passed"] or 0)
+        test_rows.append(
+            {
+                "test_name": str(row["test_name"]),
+                "total": row_total,
+                "passed": row_passed,
+                "failed": int(row["failed"] or 0),
+                "timed_out": int(row["timed_out"] or 0),
+                "pass_rate": (100.0 * row_passed / row_total) if row_total else 0.0,
+            }
+        )
+
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "timed_out": timed_out,
+        "pass_rate": pass_rate,
+        "tests": test_rows,
+    }
