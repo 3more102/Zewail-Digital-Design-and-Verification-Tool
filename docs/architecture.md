@@ -105,3 +105,12 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
+
+
+## v0.4 Source Connectivity Contract
+
+ZDDV builds a source-level connectivity index at `.zddv/design/connectivity.json`. The index records signal driver/load evidence derived from ANSI port directions, continuous assignments, simple procedural assignments, and connections to known child design units.
+
+The model is evidence-based rather than a replacement for simulator elaboration. It is intended for fast Debug Studio navigation and can later be enriched by simulator AST/elaboration adapters for generate constructs, aliases, interfaces/modports, binds, macros, and other full-SystemVerilog semantics.
+
+CLI navigation is available through `zddv drivers <signal>` and `zddv loads <signal>`, with `--unit` selecting the source-level design unit.
