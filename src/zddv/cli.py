@@ -6,6 +6,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.coverage import merge_verilator_coverage
 from zddv.regression import run_regression
 from zddv.simulator import VerilatorBackend
 
@@ -100,6 +101,8 @@ def cmd_run(args) -> int:
     print(f"Log: {result.log_path}")
     if result.waveform_path:
         print(f"Waveform: {result.waveform_path}")
+    if result.coverage_path:
+        print(f"Coverage: {result.coverage_path}")
     return result.returncode
 
 
@@ -113,6 +116,22 @@ def cmd_regress(args) -> int:
     )
     print(f"Summary: {summary['summary_path']}")
     return 0 if summary["status"] == "PASS" else 1
+
+
+def cmd_coverage(args) -> int:
+    project = load_project(_project_arg(args))
+    if project.simulator != "verilator":
+        raise RuntimeError(
+            "Coverage reporting is currently implemented for Verilator only."
+        )
+    result = merge_verilator_coverage(project)
+    print(f"Coverage inputs: {len(result['inputs'])}")
+    print(f"Merged coverage: {result['merged']}")
+    print(f"Summary: {result['summary']}")
+    report = result["report"].strip()
+    if report:
+        print(report)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -165,6 +184,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
+    p_coverage.set_defaults(func=cmd_coverage)
 
     return parser
 
