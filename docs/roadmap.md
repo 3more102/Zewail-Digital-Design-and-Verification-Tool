@@ -44,13 +44,15 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 ## v0.4 — Debug Studio Core
 
-Current status: deterministic source indexing, source-level hierarchy, and the first
-protocol transaction reconstruction path (normalized APB traces) are implemented.
-Elaborated hierarchy and waveform-driven protocol extraction remain planned.
+Current status: deterministic source indexing, source-level hierarchy, waveform indexing,
+waveform-to-source cross-probing, and the first protocol transaction reconstruction path
+(normalized APB traces) are implemented. Elaborated hierarchy and waveform-driven protocol
+extraction remain planned.
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata).
+- [x] Waveform-to-source cross-probing.
 - [ ] Drivers/loads navigation.
 - [ ] Assertion-to-waveform correlation.
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
