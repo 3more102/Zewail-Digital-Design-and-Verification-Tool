@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.1 foundation — executable and continuously tested**
+> Status: **v0.2 regression foundation — executable and continuously tested**
 
 ## What Works Today
 
@@ -23,6 +23,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator code-coverage collection
 - Coverage merge/report flow
 - Compatibility path for packaged Verilator 5.020 coverage generation
+- SQLite verification results database and run history
+- Selective rerun of historical PASS / FAIL / TIMEOUT runs
+- JUnit XML export for CI systems
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI example
 
@@ -70,6 +73,9 @@ zddv --project my_project run --test smoke --seed 100
 zddv --project my_project run --plusarg +MODE=1 --timeout 30
 
 zddv --project my_project regress regression.toml
+zddv --project my_project runs --limit 20
+zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
+zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project coverage
 ```
 
@@ -216,9 +222,10 @@ docs/                  Architecture and roadmap
 - [x] Per-test timeouts
 - [x] JSON regression results
 - [x] CLI regression summary
-- [ ] SQLite result database
+- [x] SQLite result database
+- [x] Selective rerun
+- [x] JUnit XML export
 - [ ] Failure signature grouping
-- [ ] Selective rerun
 - [ ] HTML report
 
 ### Phase 3 — Coverage and Verification Intelligence
