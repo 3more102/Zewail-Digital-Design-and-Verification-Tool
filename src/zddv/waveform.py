@@ -298,3 +298,277 @@ def write_waveform_index(
         "latest_path": str(latest_path) if output is None else None,
         "selected_run": selected_run,
     }
+
+
+
+def _resolve_vcd_probe_signals(
+    waveform_index: dict[str, Any],
+    requested: list[str],
+) -> list[dict[str, Any]]:
+    if not requested:
+        raise ValueError("At least one waveform signal must be requested.")
+
+    by_path = {
+        str(signal["path"]): signal
+        for signal in waveform_index.get("signals", [])
+    }
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for signal in waveform_index.get("signals", []):
+        by_name.setdefault(str(signal["name"]), []).append(signal)
+
+    resolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_query in requested:
+        query = raw_query.strip()
+        if not query:
+            raise ValueError("Waveform signal queries must not be empty.")
+
+        signal = by_path.get(query)
+        if signal is None:
+            matches = by_name.get(query, [])
+            if len(matches) > 1:
+                choices = ", ".join(sorted(str(item["path"]) for item in matches))
+                raise RuntimeError(
+                    f"Signal name '{query}' is ambiguous. Use a full path: {choices}"
+                )
+            if len(matches) == 1:
+                signal = matches[0]
+
+        if signal is None:
+            raise RuntimeError(f"Signal '{query}' was not found in the VCD waveform.")
+
+        path = str(signal["path"])
+        if path in seen:
+            continue
+        seen.add(path)
+        resolved.append({**signal, "query": query})
+
+    return resolved
+
+
+def _parse_vcd_value_change(line: str) -> tuple[str, str] | None:
+    text = line.strip()
+    if not text or text.startswith("$"):
+        return None
+
+    lead = text[0]
+    if lead in "01xXzZuUwWlLhH-":
+        identifier = text[1:].strip()
+        if not identifier:
+            return None
+        return identifier, lead.lower()
+
+    if lead in "bBrRsS":
+        parts = text.split(maxsplit=1)
+        if len(parts) != 2:
+            return None
+        value_token, identifier = parts
+        identifier = identifier.strip()
+        if not identifier:
+            return None
+        return identifier, value_token[1:].lower()
+
+    return None
+
+
+def probe_vcd(
+    path: str | Path,
+    signals: list[str],
+    *,
+    at_time: int,
+    before: int = 0,
+    after: int = 0,
+    max_transitions: int = 200,
+    run_id: str | None = None,
+    project_name: str | None = None,
+) -> dict[str, Any]:
+    """Cross-probe selected VCD signals around one simulation timestamp.
+
+    Time arguments are integer VCD ticks. The returned report includes the VCD
+    timescale so callers can interpret the tick values without guessing units.
+    """
+    if at_time < 0:
+        raise ValueError("at_time must be non-negative.")
+    if before < 0 or after < 0:
+        raise ValueError("before/after windows must be non-negative.")
+    if max_transitions <= 0:
+        raise ValueError("max_transitions must be greater than zero.")
+
+    source = Path(path).resolve()
+    waveform_index = build_waveform_index(
+        source,
+        run_id=run_id,
+        project_name=project_name,
+    )
+    if waveform_index["format"] != "vcd":
+        raise RuntimeError(
+            "Waveform cross-probing currently requires a VCD artifact. "
+            "FST remains metadata-only until an adapter/converter is available."
+        )
+
+    selected = _resolve_vcd_probe_signals(waveform_index, signals)
+    window_start = max(0, at_time - before)
+    window_end = at_time + after
+
+    states: dict[str, dict[str, Any]] = {}
+    signals_by_id: dict[str, list[dict[str, Any]]] = {}
+    for signal in selected:
+        path_name = str(signal["path"])
+        states[path_name] = {
+            "query": signal["query"],
+            "path": path_name,
+            "scope": signal.get("scope"),
+            "name": signal.get("name"),
+            "width": signal.get("width"),
+            "range": signal.get("range"),
+            "var_type": signal.get("var_type"),
+            "id_code": signal.get("id_code"),
+            "value_at": None,
+            "last_transition": None,
+            "next_transition": None,
+            "transitions": [],
+            "transitions_in_window": 0,
+            "truncated": False,
+        }
+        signals_by_id.setdefault(str(signal["id_code"]), []).append(signal)
+
+    current_time = 0
+    in_body = False
+    waiting_enddefinitions_end = False
+
+    with source.open("r", encoding="utf-8", errors="replace") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+
+            if not in_body:
+                if waiting_enddefinitions_end:
+                    if "$end" in line:
+                        in_body = True
+                    continue
+
+                if "$enddefinitions" in line:
+                    tail = line.split("$enddefinitions", 1)[1]
+                    if "$end" in tail:
+                        in_body = True
+                    else:
+                        waiting_enddefinitions_end = True
+                    continue
+
+                continue
+
+            if not line:
+                continue
+
+            if line.startswith("#"):
+                try:
+                    current_time = int(line[1:].strip())
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"Invalid VCD timestamp '{line}' in {source}"
+                    ) from exc
+                continue
+
+            change = _parse_vcd_value_change(line)
+            if change is None:
+                continue
+            identifier, value = change
+            matched_signals = signals_by_id.get(identifier)
+            if not matched_signals:
+                continue
+
+            transition = {"time": current_time, "value": value}
+            for signal in matched_signals:
+                state = states[str(signal["path"])]
+
+                if current_time <= at_time:
+                    state["value_at"] = value
+                    state["last_transition"] = transition.copy()
+                elif state["next_transition"] is None:
+                    state["next_transition"] = transition.copy()
+
+                if window_start <= current_time <= window_end:
+                    state["transitions_in_window"] += 1
+                    if len(state["transitions"]) < max_transitions:
+                        state["transitions"].append(transition.copy())
+                    else:
+                        state["truncated"] = True
+
+    probe_signals = [states[str(signal["path"])] for signal in selected]
+    return {
+        "schema_version": 1,
+        "project": project_name,
+        "run_id": run_id,
+        "format": "vcd",
+        "artifact": waveform_index["artifact"],
+        "timescale": waveform_index.get("timescale"),
+        "time": {
+            "tick": at_time,
+            "before": before,
+            "after": after,
+            "window_start": window_start,
+            "window_end": window_end,
+        },
+        "signals": probe_signals,
+        "summary": {
+            "signals": len(probe_signals),
+            "transitions_in_window": sum(
+                int(item["transitions_in_window"]) for item in probe_signals
+            ),
+            "truncated_signals": sum(
+                1 for item in probe_signals if item["truncated"]
+            ),
+        },
+    }
+
+
+def write_waveform_probe(
+    project: ProjectConfig,
+    *,
+    signals: list[str],
+    at_time: int,
+    before: int = 0,
+    after: int = 0,
+    max_transitions: int = 200,
+    run_id: str | None = None,
+    input_path: str | Path | None = None,
+    output: str | Path = ".zddv/debug/waveform-probe.json",
+) -> dict[str, Any]:
+    if run_id is not None and input_path is not None:
+        raise ValueError("run_id and input_path are mutually exclusive")
+
+    selected_run: dict[str, Any] | None = None
+    if input_path is None:
+        selected_run = select_waveform_run(project, run_id=run_id)
+        waveform_path = Path(str(selected_run["waveform_path"])).resolve()
+        effective_run_id = str(selected_run["run_id"])
+    else:
+        waveform_path = Path(input_path)
+        if not waveform_path.is_absolute():
+            waveform_path = project.root / waveform_path
+        waveform_path = waveform_path.resolve()
+        effective_run_id = None
+
+    report = probe_vcd(
+        waveform_path,
+        signals,
+        at_time=at_time,
+        before=before,
+        after=after,
+        max_transitions=max_transitions,
+        run_id=effective_run_id,
+        project_name=project.name,
+    )
+    report["artifact"]["project_path"] = _relative_path(project, waveform_path)
+
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = project.root / destination
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+    return {
+        **report,
+        "path": str(destination),
+        "selected_run": selected_run,
+    }
