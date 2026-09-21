@@ -79,6 +79,13 @@ jobs:
           grep -q '"format": "vcd"' examples/counter/.zddv/waveforms/latest.json
           grep -q '"parse_status": "indexed"' examples/counter/.zddv/waveforms/latest.json
 
+      - name: Cross-probe source signal to waveform
+        run: |
+          zddv --project examples/counter crossprobe count --unit counter | tee /tmp/zddv-crossprobe.txt
+          test -s examples/counter/.zddv/debug/crossprobe.json
+          grep -q "CROSSPROBE counter.count" /tmp/zddv-crossprobe.txt
+          grep -q "WAVE \[" /tmp/zddv-crossprobe.txt
+
       - name: Correlate assertion to waveform
         run: |
           zddv --project examples/counter assertion-waveform --status PASS --limit 10
