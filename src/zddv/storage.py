@@ -235,6 +235,54 @@ def list_run_records(
     return records
 
 
+def get_run_record(
+    project: ProjectConfig,
+    run_id: str,
+) -> dict[str, Any] | None:
+    with _connect(project) as db:
+        row = db.execute(
+            """
+            SELECT run_id, created_at, project, simulator, simulator_version,
+                   top, test_name, seed, status, returncode, duration_ms,
+                   run_dir, log_path, waveform_path, coverage_path, timeout_s,
+                   command_json, plusargs_json
+            FROM runs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    record = dict(row)
+    record["command"] = json.loads(record.pop("command_json"))
+    record["plusargs"] = json.loads(record.pop("plusargs_json"))
+    return record
+
+
+def latest_waveform_run(project: ProjectConfig) -> dict[str, Any] | None:
+    with _connect(project) as db:
+        row = db.execute(
+            """
+            SELECT run_id, created_at, project, simulator, simulator_version,
+                   top, test_name, seed, status, returncode, duration_ms,
+                   run_dir, log_path, waveform_path, coverage_path, timeout_s,
+                   command_json, plusargs_json
+            FROM runs
+            WHERE waveform_path IS NOT NULL
+            ORDER BY created_at DESC, run_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+    record = dict(row)
+    record["command"] = json.loads(record.pop("command_json"))
+    record["plusargs"] = json.loads(record.pop("plusargs_json"))
+    return record
+
+
 def run_statistics(project: ProjectConfig) -> dict[str, Any]:
     with _connect(project) as db:
         totals = db.execute(
