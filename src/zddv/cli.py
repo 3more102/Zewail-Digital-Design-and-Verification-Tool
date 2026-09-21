@@ -603,6 +603,12 @@ def cmd_axi4_analyze(args) -> int:
         f"Error responses: write={summary['write_error_responses']} "
         f"read-beats={summary['read_error_beats']}"
     )
+    print(
+        f"Exclusive: reads={summary['exclusive_read_bursts']} "
+        f"writes={summary['exclusive_write_bursts']} "
+        f"success={summary['exclusive_write_successes']} "
+        f"failed={summary['exclusive_write_failures']}"
+    )
     for violation in result["violations"][: args.show]:
         print(
             f"[{violation['code']}] cycle={violation['cycle']} "
