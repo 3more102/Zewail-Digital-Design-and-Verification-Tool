@@ -10,8 +10,9 @@ import subprocess
 import time
 import uuid
 
+from zddv.assertions import parse_verilator_assertions
 from zddv.config import ProjectConfig
-from zddv.storage import record_run
+from zddv.storage import record_assertion_events, record_run
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -116,6 +117,11 @@ int main(int argc, char** argv) {{
                 "--timing",
                 "--Wno-fatal",
             ]
+
+        # Verilator releases before 5.038 disabled assertions unless --assert
+        # was supplied explicitly. Keep assertion checking deterministic across
+        # supported releases, including the 5.020 CI baseline.
+        command.append("--assert")
 
         if project.waveform:
             command.append("--trace")
@@ -240,6 +246,9 @@ int main(int argc, char** argv) {{
 
         log_path = run_dir / "simulation.log"
         log_path.write_text(output, encoding="utf-8")
+        assertion_events = [
+            event.as_dict() for event in parse_verilator_assertions(output)
+        ]
 
         waveform = None
         for name in ("waveform.vcd", "dump.vcd", "waveform.fst", "dump.fst"):
@@ -272,12 +281,19 @@ int main(int argc, char** argv) {{
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
             "coverage": str(coverage) if coverage else None,
+            "assertion_failures": len(assertion_events),
         }
         (run_dir / "run.json").write_text(
             json.dumps(record, indent=2),
             encoding="utf-8",
         )
         record_run(project, record)
+        record_assertion_events(
+            project,
+            run_id,
+            now.isoformat(),
+            assertion_events,
+        )
 
         return RunResult(
             run_id=run_id,
@@ -290,4 +306,5 @@ int main(int argc, char** argv) {{
             coverage_path=coverage,
             test_name=test_name,
             seed=seed,
+            assertion_failures=len(assertion_events),
         )
