@@ -232,26 +232,27 @@ def analyze_async_fifo_trace(payload: dict[str, Any]) -> dict[str, Any]:
             gray_before = event["gray_before"]
             gray_after = event["gray_after"]
 
-            if previous_after is not None and before != previous_after:
-                add_violation(
-                    "binary_trace_discontinuity",
-                    event,
-                    "binary_before does not match the previous event binary_after",
-                    domain=domain,
-                    signal="binary_before",
-                    expected=previous_after,
-                    actual=before,
-                )
-            if previous_gray_after is not None and gray_before != previous_gray_after:
-                add_violation(
-                    "gray_trace_discontinuity",
-                    event,
-                    "gray_before does not match the previous event gray_after",
-                    domain=domain,
-                    signal="gray_before",
-                    expected=previous_gray_after,
-                    actual=gray_before,
-                )
+            if not event["reset"]:
+                if previous_after is not None and before != previous_after:
+                    add_violation(
+                        "binary_trace_discontinuity",
+                        event,
+                        "binary_before does not match the previous event binary_after",
+                        domain=domain,
+                        signal="binary_before",
+                        expected=previous_after,
+                        actual=before,
+                    )
+                if previous_gray_after is not None and gray_before != previous_gray_after:
+                    add_violation(
+                        "gray_trace_discontinuity",
+                        event,
+                        "gray_before does not match the previous event gray_after",
+                        domain=domain,
+                        signal="gray_before",
+                        expected=previous_gray_after,
+                        actual=gray_before,
+                    )
 
             expected_gray_before = _gray(before)
             expected_gray_after = _gray(after)
