@@ -394,10 +394,11 @@ short signal names are supported. Ambiguous short names are rejected so debug
 navigation does not silently select the wrong signal.
 
 The report records the waveform signal, matched hierarchy path, RTL unit,
-source declaration, match type, and the design/waveform index artifacts used as
-evidence. Source lookup is intentionally conservative: when the scope matches
-but a declaration cannot be identified on a single source line, ZDDV returns a
-partial result instead of claiming an exact source location.
+source declaration, source-level driver/load evidence, match type, and the
+design/connectivity/waveform index artifacts used as evidence. Source lookup is
+intentionally conservative: when the scope matches but a declaration cannot be
+identified on a single source line, ZDDV returns a partial result instead of
+claiming an exact source location.
 
 ### Assertion-to-Waveform Debug Correlation
 
