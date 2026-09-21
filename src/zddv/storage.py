@@ -38,6 +38,24 @@ CREATE INDEX IF NOT EXISTS idx_runs_status
 
 CREATE INDEX IF NOT EXISTS idx_runs_test_seed
     ON runs(test_name, seed);
+
+CREATE TABLE IF NOT EXISTS coverage_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    simulator TEXT NOT NULL,
+    input_count INTEGER NOT NULL,
+    total_points INTEGER NOT NULL,
+    hit_points INTEGER NOT NULL,
+    hit_rate REAL NOT NULL,
+    by_type_json TEXT NOT NULL,
+    merged_path TEXT NOT NULL,
+    summary_path TEXT NOT NULL,
+    metrics_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_created_at
+    ON coverage_snapshots(created_at DESC);
 """
 
 
@@ -219,3 +237,64 @@ def run_statistics(project: ProjectConfig) -> dict[str, Any]:
         "pass_rate": 100.0 * passed / total if total else 0.0,
         "tests": test_rows,
     }
+
+
+def record_coverage_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO coverage_snapshots (
+                snapshot_id, created_at, project, simulator, input_count,
+                total_points, hit_points, hit_rate, by_type_json,
+                merged_path, summary_path, metrics_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["simulator"],
+                int(record["input_count"]),
+                int(record["total_points"]),
+                int(record["hit_points"]),
+                float(record["hit_rate"]),
+                json.dumps(record.get("by_type", {}), sort_keys=True),
+                record["merged"],
+                record["summary"],
+                record["metrics_path"],
+            ),
+        )
+    return path
+
+
+def list_coverage_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, created_at, project, simulator, input_count,
+                   total_points, hit_points, hit_rate, by_type_json,
+                   merged_path, summary_path, metrics_path
+            FROM coverage_snapshots
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["by_type"] = json.loads(item.pop("by_type_json"))
+        result.append(item)
+    return result
