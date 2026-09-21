@@ -117,6 +117,8 @@ int main(int argc, char** argv) {{
                 "--Wno-fatal",
             ]
 
+        command.append("--assert")
+
         if project.waveform:
             command.append("--trace")
         if project.coverage:
