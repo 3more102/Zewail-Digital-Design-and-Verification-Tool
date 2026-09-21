@@ -13,3 +13,4 @@ tb = ["tb/*.sv"]
 build_dir = ".zddv/build"
 run_dir = ".zddv/runs"
 waveform = true
+coverage = true
