@@ -4,6 +4,7 @@ import shutil
 import pytest
 
 from zddv.config import load_project
+from zddv.coverage import merge_verilator_coverage
 from zddv.simulator import VerilatorBackend
 
 
@@ -20,4 +21,10 @@ def test_counter_build_and_run():
     assert run.status == "PASS", run.log_path.read_text(encoding="utf-8")
     assert run.waveform_path is not None
     assert run.waveform_path.exists()
+    assert run.coverage_path is not None
+    assert run.coverage_path.exists()
     assert (run.run_dir / "run.json").exists()
+
+    coverage = merge_verilator_coverage(project)
+    assert Path(coverage["merged"]).exists()
+    assert Path(coverage["summary"]).exists()
