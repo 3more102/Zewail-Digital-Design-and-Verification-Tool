@@ -324,7 +324,6 @@ def list_coverage_snapshots(
     return result
 
 
-
 def record_assertion_events(
     project: ProjectConfig,
     run_record: dict[str, Any],
@@ -412,7 +411,7 @@ def assertion_statistics(project: ProjectConfig) -> dict[str, int]:
             SELECT
                 COUNT(*) AS total_events,
                 COUNT(DISTINCT run_id) AS affected_runs,
-                COUNT(DISTINCT COALESCE(assertion_name, scope, source_path || ':' || source_line))
+                COUNT(DISTINCT COALESCE(scope, assertion_name, source_path || ':' || source_line))
                     AS unique_assertions
             FROM assertion_events
             """
