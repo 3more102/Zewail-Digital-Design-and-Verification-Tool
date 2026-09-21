@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
+> Status: **v0.3 verification-results foundation — feature-complete**
 
 ## What Works Today
 
@@ -26,6 +26,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
+- Simulator-independent functional coverage snapshots and per-bin database
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -90,6 +91,9 @@ zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
+zddv --project my_project fcov-import functional_coverage.json
+zddv --project my_project fcov-history --limit 20
+zddv --project my_project fcov-holes --limit 50
 ```
 
 ## Verification Flow
@@ -252,6 +256,7 @@ separately from Verilator's annotation threshold.
 - [x] Multi-run coverage merge
 - [x] Normalized coverage metrics/database
 - [x] Assertion result database
+- [x] Functional coverage schema and JSON ingestion
 - [x] Coverage-hole analysis
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
@@ -273,6 +278,25 @@ ZDDV_ASSERT axi_response_valid FAIL unexpected_BRESP
 Each event is stored with its run ID, assertion name, status, message, log path,
 and source log line. Simulator adapters can translate native assertion output into
 this same database model over time.
+
+### Functional Coverage Input
+
+ZDDV v0.3 defines a simulator-independent JSON model for functional coverage.
+Each bin records its scope, coverpoint, bin name, observed hits, goal, and optional
+metadata. Coverage status is derived from `hits >= goal` and persisted in SQLite.
+
+```json
+{
+  "source": "uvm-export",
+  "bins": [
+    {"scope": "tb.axi", "coverpoint": "burst_len", "bin": "len1", "hits": 8, "goal": 1},
+    {"scope": "tb.axi", "coverpoint": "burst_len", "bin": "len16", "hits": 0, "goal": 1}
+  ]
+}
+```
+
+This normalized model is intentionally simulator-independent so later Questa,
+VCS, Xcelium, or UVM exporters can feed the same verification database.
 
 ### Phase 4 — Advanced Verification
 
