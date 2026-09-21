@@ -18,7 +18,7 @@ from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
-from zddv.protocols.apb import analyze_apb_file
+from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -483,6 +483,51 @@ def cmd_apb_analyze(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_apb_waveform(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_apb_waveform(
+        project,
+        run_id=args.run_id,
+        input_path=args.input,
+        scope=args.scope,
+        clock=args.clock,
+        edge=args.edge,
+        trace_output=args.trace_output,
+        output=args.output,
+    )
+    summary = result["summary"]
+    waveform = result["waveform"]
+    print(
+        f"APB WAVEFORM {result['status']}: "
+        f"{summary['completed_transactions']} completed transaction(s), "
+        f"{summary['violations']} protocol violation(s)"
+    )
+    print(
+        f"Scope: {waveform['scope']}  Clock: {waveform['clock']} "
+        f"({waveform['edge']})  Timescale: {waveform.get('timescale') or '-'}"
+    )
+    print(
+        f"Reads/Writes: {summary['reads']}/{summary['writes']}  "
+        f"Wait cycles: {summary['wait_cycles']}  "
+        f"Error responses: {summary['error_responses']}"
+    )
+    for violation in result["violations"][: args.show]:
+        when = (
+            f"time={violation.get('time')} "
+            if violation.get("time") is not None
+            else ""
+        )
+        print(
+            f"[{violation['code']}] {when}cycle={violation['cycle']} "
+            f"{violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Normalized trace: {result['trace_path']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -845,6 +890,56 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_apb.set_defaults(func=cmd_apb_analyze)
+
+    p_apb_waveform = sub.add_parser(
+        "apb-waveform",
+        help="Extract and analyze APB transactions directly from a VCD waveform",
+    )
+    apb_waveform_source = p_apb_waveform.add_mutually_exclusive_group()
+    apb_waveform_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID whose waveform should be decoded; defaults to latest waveform run",
+    )
+    apb_waveform_source.add_argument(
+        "--input",
+        default=None,
+        help="VCD path relative to the project, independent of run history",
+    )
+    p_apb_waveform.add_argument(
+        "--scope",
+        default=None,
+        help="APB waveform scope; auto-detected when exactly one matching scope exists",
+    )
+    p_apb_waveform.add_argument(
+        "--clock",
+        default="PCLK",
+        help="APB clock signal name inside the selected scope",
+    )
+    p_apb_waveform.add_argument(
+        "--edge",
+        choices=("rising", "falling", "both"),
+        default="rising",
+        help="Clock edge used to sample APB signals",
+    )
+    p_apb_waveform.add_argument(
+        "--trace-output",
+        default=".zddv/protocols/apb/waveform-trace.json",
+        help="Normalized APB trace generated from the waveform",
+    )
+    p_apb_waveform.add_argument(
+        "--output",
+        default=".zddv/protocols/apb/waveform-latest.json",
+        help="JSON protocol-analysis report path",
+    )
+    p_apb_waveform.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of protocol violations to print",
+    )
+    p_apb_waveform.set_defaults(func=cmd_apb_waveform)
 
     p_assertions = sub.add_parser(
         "assertions",
