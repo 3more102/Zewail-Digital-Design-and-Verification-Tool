@@ -30,6 +30,7 @@ from zddv.storage import (
     list_runs,
 )
 from zddv.triage import group_failure_records, write_failure_report
+from zddv.waveform import write_waveform_index
 
 
 def _backend(name: str):
@@ -107,6 +108,34 @@ def cmd_hierarchy(args) -> int:
         print(line)
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
+
+
+def cmd_waveform_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_waveform_index(
+        project,
+        run_id=args.run_id,
+        input_path=args.input,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"WAVEFORM INDEX: {result['format'].upper()} "
+        f"{summary['scopes']} scope(s), {summary['signals']} signal(s), "
+        f"{summary['declared_bits']} declared bit(s)"
+    )
+    print(f"Parse status: {result['parse_status']}")
+    if result.get("run_id"):
+        print(f"Run: {result['run_id']}")
+    print(f"Waveform: {result['artifact']['path']}")
+    if result.get("timescale"):
+        print(f"Timescale: {result['timescale']}")
+    if result.get("note"):
+        print(f"Note: {result['note']}")
+    print(f"Index: {result['path']}")
+    if result.get("latest_path"):
+        print(f"Latest: {result['latest_path']}")
+    return 0
 
 
 def cmd_lint(args) -> int:
@@ -513,6 +542,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_waveform_index = sub.add_parser(
+        "waveform-index",
+        help="Index scopes and signals from a waveform artifact",
+    )
+    waveform_source = p_waveform_index.add_mutually_exclusive_group()
+    waveform_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to index; defaults to the latest run with a waveform",
+    )
+    waveform_source.add_argument(
+        "--input",
+        default=None,
+        help="Waveform path relative to the project, independent of run history",
+    )
+    p_waveform_index.add_argument(
+        "--output",
+        default=None,
+        help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
+    )
+    p_waveform_index.set_defaults(func=cmd_waveform_index)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
