@@ -1,4 +1,4 @@
-function raw() { [native code] }timescale 1ns/1ps
+`timescale 1ns/1ps
 
 module async_fifo #(
     parameter int DATA_WIDTH = 8,
