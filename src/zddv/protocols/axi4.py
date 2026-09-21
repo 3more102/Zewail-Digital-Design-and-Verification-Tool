@@ -157,11 +157,16 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
     current_w_beats: list[dict[str, Any]] = []
     pending_write_responses: dict[int, deque[dict[str, Any]]] = defaultdict(deque)
     pending_reads: dict[int, deque[dict[str, Any]]] = defaultdict(deque)
+    exclusive_monitors: dict[int, dict[str, Any]] = {}
 
     issued_write_bursts = 0
     issued_read_bursts = 0
     observed_write_beats = 0
     observed_read_beats = 0
+    exclusive_read_bursts = 0
+    exclusive_write_bursts = 0
+    exclusive_write_successes = 0
+    exclusive_write_failures = 0
 
     def add_violation(
         code: str,
@@ -400,6 +405,38 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     expected="burst contained within one 4KB region", actual=addr,
                 )
 
+        exclusive = bool(sample.get(f"{prefix}LOCK", False))
+        if exclusive and valid_addr and beat_bytes is not None:
+            total_bytes = beats * beat_bytes
+            if beats > 16:
+                add_violation(
+                    "exclusive_burst_too_long", sample,
+                    "Exclusive access burst must not exceed 16 transfers",
+                    channel=prefix, signal=f"{prefix}LEN",
+                    expected="0..15", actual=length,
+                )
+            if total_bytes > 128:
+                add_violation(
+                    "exclusive_access_too_large", sample,
+                    "Exclusive access must transfer no more than 128 bytes",
+                    channel=prefix,
+                    expected="<=128 bytes", actual=total_bytes,
+                )
+            if total_bytes <= 0 or total_bytes & (total_bytes - 1):
+                add_violation(
+                    "exclusive_access_size_not_power_of_two", sample,
+                    "Exclusive access total byte count must be a power of two",
+                    channel=prefix,
+                    expected="1,2,4,8,16,32,64,128 bytes", actual=total_bytes,
+                )
+            if total_bytes > 0 and addr % total_bytes:
+                add_violation(
+                    "exclusive_address_misaligned", sample,
+                    "Exclusive access address must align to the total bytes in the transaction",
+                    channel=prefix, signal=f"{prefix}ADDR",
+                    expected=f"multiple of {total_bytes}", actual=addr,
+                )
+
         return {
             "index": index,
             "id": tx_id,
@@ -409,12 +446,43 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "burst": burst,
             "beats_expected": beats,
             "beat_bytes": beat_bytes,
-            "lock": bool(sample.get(f"{prefix}LOCK", False)),
+            "lock": exclusive,
             "cycle": sample["cycle"],
             "sample_index": sample["sample_index"],
             "time": sample.get("time"),
+            "cache": sample.get(f"{prefix}CACHE"),
             "prot": sample.get(f"{prefix}PROT"),
+            "region": sample.get(f"{prefix}REGION"),
         }
+
+    def exclusive_signature(request: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            request["id"], request["address"], request.get("region"),
+            request["len"], request["size"], request["burst"],
+            request["lock"], request.get("cache"), request.get("prot"),
+        )
+
+    def pair_exclusive_write(request: dict[str, Any], sample: dict[str, Any]) -> None:
+        monitor = exclusive_monitors.pop(request["id"], None)
+        request["exclusive_pair_matched"] = False
+        request["exclusive_read_outcome"] = None
+        if monitor is None:
+            add_violation(
+                "exclusive_write_without_completed_read", sample,
+                "Exclusive write started without a completed exclusive read using the same ID",
+                channel="AW", transaction_index=request["index"],
+            )
+            return
+        request["exclusive_read_outcome"] = monitor["outcome"]
+        if exclusive_signature(request) != monitor["signature"]:
+            add_violation(
+                "exclusive_sequence_attribute_mismatch", sample,
+                "Exclusive write attributes do not match the preceding exclusive read",
+                channel="AW", transaction_index=request["index"],
+                expected=monitor["signature"], actual=exclusive_signature(request),
+            )
+            return
+        request["exclusive_pair_matched"] = True
 
     def burst_addresses(request: dict[str, Any], count: int) -> list[int] | None:
         addr = request["address"]
@@ -474,6 +542,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "protocol_index": request["index"],
             "direction": "READ",
             "id": request["id"],
+            "exclusive": request["lock"],
             "address": request["address"],
             "burst": request["burst"],
             "length": request["len"],
@@ -495,6 +564,34 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             tx["read_times"] = read_times
         if request.get("prot") is not None:
             tx["arprot"] = request["prot"]
+        if request.get("cache") is not None:
+            tx["arcache"] = request["cache"]
+        if request.get("region") is not None:
+            tx["arregion"] = request["region"]
+        if request["lock"]:
+            labels = {
+                beat["response"] for beat in beats
+                if beat["response"] in {"OKAY", "EXOKAY"}
+            }
+            if labels == {"OKAY", "EXOKAY"}:
+                add_violation(
+                    "exclusive_read_mixed_okay_exokay", beats[-1]["sample"],
+                    "An exclusive read burst must not mix OKAY and EXOKAY responses",
+                    channel="R", transaction_index=request["index"],
+                )
+                outcome = "MIXED"
+            elif "EXOKAY" in labels:
+                outcome = "EXOKAY"
+            elif "OKAY" in labels:
+                outcome = "OKAY"
+            else:
+                outcome = "ERROR"
+            tx["exclusive_read_outcome"] = outcome
+            exclusive_monitors[request["id"]] = {
+                "signature": exclusive_signature(request),
+                "outcome": outcome,
+                "transaction_index": request["index"],
+            }
         transactions.append(tx)
 
     for sample in samples:
@@ -505,7 +602,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         r_hs = channel_event(sample, "R")
 
         if aw_hs:
-            aw_queue.append(make_request(sample, "AW", issued_write_bursts))
+            request = make_request(sample, "AW", issued_write_bursts)
+            if request["lock"]:
+                exclusive_write_bursts += 1
+                pair_exclusive_write(request, sample)
+            aw_queue.append(request)
             issued_write_bursts += 1
 
         if w_hs:
@@ -528,6 +629,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         if ar_hs:
             request = make_request(sample, "AR", issued_read_bursts)
             request["beats"] = []
+            if request["lock"]:
+                exclusive_read_bursts += 1
+                exclusive_monitors.pop(request["id"], None)
             pending_reads[request["id"]].append(request)
             issued_read_bursts += 1
 
@@ -548,11 +652,23 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     sample, "BRESP", "B", exclusive=request["lock"]
                 )
                 beats = pending["beats"]
+                if request["lock"]:
+                    if label == "EXOKAY":
+                        exclusive_write_successes += 1
+                        if not request.get("exclusive_pair_matched", False):
+                            add_violation(
+                                "exclusive_write_success_without_matching_read", sample,
+                                "EXOKAY write response requires a matching completed exclusive read",
+                                channel="B", transaction_index=request["index"],
+                            )
+                    elif label == "OKAY":
+                        exclusive_write_failures += 1
                 tx = {
                     "index": len(transactions),
                     "protocol_index": request["index"],
                     "direction": "WRITE",
                     "id": request["id"],
+                    "exclusive": request["lock"],
                     "address": request["address"],
                     "burst": request["burst"],
                     "length": request["len"],
@@ -577,6 +693,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["response_time"] = sample["time"]
                 if request.get("prot") is not None:
                     tx["awprot"] = request["prot"]
+                if request.get("cache") is not None:
+                    tx["awcache"] = request["cache"]
+                if request.get("region") is not None:
+                    tx["awregion"] = request["region"]
+                if request["lock"]:
+                    tx["exclusive_pair_matched"] = request.get("exclusive_pair_matched", False)
+                    tx["exclusive_read_outcome"] = request.get("exclusive_read_outcome")
                 transactions.append(tx)
 
         if r_hs:
@@ -595,6 +718,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     sample, "RRESP", "R", exclusive=request["lock"]
                 )
                 beat = {
+                    "sample": sample,
                     "cycle": sample["cycle"],
                     "time": sample.get("time"),
                     "data": sample.get("RDATA"),
@@ -707,14 +831,19 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "read_beats": observed_read_beats,
             "write_error_responses": write_error_responses,
             "read_error_beats": read_error_beats,
+            "exclusive_read_bursts": exclusive_read_bursts,
+            "exclusive_write_bursts": exclusive_write_bursts,
+            "exclusive_write_successes": exclusive_write_successes,
+            "exclusive_write_failures": exclusive_write_failures,
             "channel_stall_cycles": channel_stall_cycles,
             "violations": len(violations),
         },
         "transactions": transactions,
         "violations": violations,
         "limitations": [
-            "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
-            "ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive exclusive semantics are not modeled.",
+            "Core AXI4 burst, ID, ordering, handshake, response, 4KB-boundary, and exclusive-access sequence rules are modeled.",
+            "Exclusive AxCACHE reachability depends on system topology and is reported but not inferred from a trace alone.",
+            "ACE coherency, AXI5 additions, USER sidebands, and QoS policy semantics are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
