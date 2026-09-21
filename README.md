@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, structural connectivity, assertion correlation, and cross-probing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
 
 ## What Works Today
 
@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Targeted VCD signal value probing with exact/unique-name resolution, time windows, and bounded change capture
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
 - Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
@@ -86,6 +87,7 @@ zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project waveform-probe tb_top.dut.count --start 0 --end 1000
 zddv --project my_project crossprobe tb_top.dut.count
 zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
@@ -281,6 +283,7 @@ separately from Verilator's annotation threshold.
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
+- [x] Targeted VCD value-change probing
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -366,6 +369,25 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Targeted VCD Value Probing
+
+`zddv waveform-probe` streams only requested VCD signals from the value-change
+section instead of loading the complete waveform. A signal can be selected by exact
+hierarchical path or by a unique leaf name; ambiguous leaf names are rejected and
+must be disambiguated with the full path. Optional inclusive `--start` / `--end`
+timestamps and `--max-changes` bounds keep debug queries deterministic on large
+waveforms.
+
+```bash
+zddv --project my_project waveform-probe tb_top.dut.count --run <run-id>
+zddv --project my_project waveform-probe count clk --input trace.vcd --start 100 --end 500
+```
+
+Probe reports are written under `.zddv/waveforms/probes/` and retain the waveform
+timescale, normalized signal metadata, exact timestamps, values, and truncation
+status. This complements `crossprobe`, which maps waveform signals back to RTL
+source locations.
 
 ### Debug Studio Drivers/Loads Navigation
 
