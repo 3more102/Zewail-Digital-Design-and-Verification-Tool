@@ -60,6 +60,27 @@ CREATE INDEX IF NOT EXISTS idx_assertions_status
 CREATE INDEX IF NOT EXISTS idx_assertions_name
     ON assertion_events(assertion_name);
 
+CREATE TABLE IF NOT EXISTS functional_coverage_bins (
+    run_id TEXT NOT NULL,
+    bin_index INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    covergroup TEXT NOT NULL,
+    coverpoint TEXT NOT NULL,
+    bin_name TEXT NOT NULL,
+    hits INTEGER NOT NULL,
+    goal INTEGER NOT NULL DEFAULT 1,
+    message TEXT,
+    log_path TEXT NOT NULL,
+    log_line INTEGER,
+    PRIMARY KEY (run_id, bin_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcov_created_at
+    ON functional_coverage_bins(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_fcov_logical_bin
+    ON functional_coverage_bins(covergroup, coverpoint, bin_name);
+
 CREATE TABLE IF NOT EXISTS coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -348,6 +369,155 @@ def assertion_statistics(project: ProjectConfig) -> dict[str, Any]:
         "passed": passed,
         "failed": failed,
         "pass_rate": 100.0 * passed / total if total else 0.0,
+    }
+
+
+def record_functional_coverage_bins(
+    project: ProjectConfig,
+    bins: list[dict[str, Any]],
+) -> Path:
+    path = database_path(project)
+    if not bins:
+        return path
+
+    with _connect(project) as db:
+        db.executemany(
+            """
+            INSERT OR REPLACE INTO functional_coverage_bins (
+                run_id, bin_index, created_at, covergroup, coverpoint,
+                bin_name, hits, goal, message, log_path, log_line
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    item["run_id"],
+                    int(item["bin_index"]),
+                    item["created_at"],
+                    item["covergroup"],
+                    item["coverpoint"],
+                    item["bin_name"],
+                    int(item["hits"]),
+                    int(item.get("goal", 1)),
+                    item.get("message"),
+                    item["log_path"],
+                    item.get("log_line"),
+                )
+                for item in bins
+            ],
+        )
+    return path
+
+
+def list_functional_coverage_bins(
+    project: ProjectConfig,
+    *,
+    limit: int = 100,
+    covergroup: str | None = None,
+    coverpoint: str | None = None,
+    uncovered_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Return logical bins aggregated across all stored simulation runs."""
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    where: list[str] = []
+    params: list[Any] = []
+    if covergroup is not None:
+        where.append("covergroup = ?")
+        params.append(covergroup)
+    if coverpoint is not None:
+        where.append("coverpoint = ?")
+        params.append(coverpoint)
+
+    query = """
+        SELECT
+            covergroup,
+            coverpoint,
+            bin_name,
+            SUM(hits) AS hits,
+            MAX(goal) AS goal,
+            COUNT(DISTINCT run_id) AS runs
+        FROM functional_coverage_bins
+    """
+    if where:
+        query += " WHERE " + " AND ".join(where)
+    query += " GROUP BY covergroup, coverpoint, bin_name"
+    if uncovered_only:
+        query += " HAVING SUM(hits) < MAX(goal)"
+    query += """
+        ORDER BY
+            CASE WHEN SUM(hits) >= MAX(goal) THEN 1 ELSE 0 END ASC,
+            covergroup ASC,
+            coverpoint ASC,
+            bin_name ASC
+        LIMIT ?
+    """
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["hits"] = int(item["hits"] or 0)
+        item["goal"] = int(item["goal"] or 1)
+        item["runs"] = int(item["runs"] or 0)
+        item["covered"] = item["hits"] >= item["goal"]
+        result.append(item)
+    return result
+
+
+def functional_coverage_statistics(
+    project: ProjectConfig,
+    *,
+    covergroup: str | None = None,
+    coverpoint: str | None = None,
+) -> dict[str, Any]:
+    """Summarize unique logical functional-coverage bins across all runs."""
+    where: list[str] = []
+    params: list[Any] = []
+    if covergroup is not None:
+        where.append("covergroup = ?")
+        params.append(covergroup)
+    if coverpoint is not None:
+        where.append("coverpoint = ?")
+        params.append(coverpoint)
+
+    filtered = "functional_coverage_bins"
+    if where:
+        filtered = (
+            "(SELECT * FROM functional_coverage_bins WHERE "
+            + " AND ".join(where)
+            + ")"
+        )
+
+    query = f"""
+        SELECT
+            COUNT(*) AS total_bins,
+            SUM(CASE WHEN hits >= goal THEN 1 ELSE 0 END) AS covered_bins
+        FROM (
+            SELECT
+                covergroup,
+                coverpoint,
+                bin_name,
+                SUM(hits) AS hits,
+                MAX(goal) AS goal
+            FROM {filtered}
+            GROUP BY covergroup, coverpoint, bin_name
+        )
+    """
+
+    with _connect(project) as db:
+        row = db.execute(query, params).fetchone()
+
+    total = int(row["total_bins"] or 0)
+    covered = int(row["covered_bins"] or 0)
+    return {
+        "total_bins": total,
+        "covered_bins": covered,
+        "uncovered_bins": total - covered,
+        "coverage_rate": 100.0 * covered / total if total else 0.0,
     }
 
 
