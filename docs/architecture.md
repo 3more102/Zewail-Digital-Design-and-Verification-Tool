@@ -92,3 +92,16 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
+
+
+## v0.4 Waveform Index Contract
+
+ZDDV indexes VCD headers into a simulator-independent signal catalog. The index records waveform timescale, scope paths, signal paths, VCD identifier codes, widths, and variable types without decoding the complete value-change stream.
+
+When the waveform originates from a recorded ZDDV run, the index is linked to that run ID and written under:
+
+```text
+.zddv/index/waveforms/<run-id>.json
+```
+
+This compact header index is the bridge between run artifacts and future Debug Studio cross-probing. Later work can selectively decode only requested signals instead of loading the entire waveform up front.
