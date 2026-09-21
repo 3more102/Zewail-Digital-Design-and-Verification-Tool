@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.2 regression foundation — executable and continuously tested**
+> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
 
 ## What Works Today
 
@@ -22,6 +22,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - VCD/FST artifact discovery
 - Verilator code-coverage collection
 - Coverage merge/report flow
+- Normalized Verilator coverage metrics stored as SQLite snapshots
+- Coverage history/trend CLI with per-type point breakdown
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -81,6 +83,7 @@ zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
+zddv --project my_project coverage-history --limit 20
 ```
 
 ## Verification Flow
@@ -230,14 +233,18 @@ docs/                  Architecture and roadmap
 - [x] Selective rerun
 - [x] JUnit XML export
 - [x] Failure signature grouping
-- [ ] HTML report
+- [x] HTML report
 
 ### Phase 3 — Coverage and Verification Intelligence
+
+ZDDV defines the normalized **hit rate** as the percentage of parsed Verilator
+coverage points whose runtime counter is greater than zero. This is stored
+separately from Verilator's annotation threshold.
 
 - [x] Verilator coverage instrumentation
 - [x] Per-run coverage artifacts
 - [x] Multi-run coverage merge
-- [ ] Normalized coverage metrics/database
+- [x] Normalized coverage metrics/database
 - [ ] Assertion result database
 - [ ] Coverage-hole analysis
 - [ ] APB protocol analysis

@@ -31,12 +31,16 @@ Current status: v0.2 is feature-complete with SQLite run history, selective reru
 
 ## v0.3 — Verification Results
 
-- Assertions database.
-- Code-coverage ingestion.
-- Functional-coverage schema.
-- Coverage merge.
-- Coverage-hole reporting.
-- Failure signatures and clustering.
+Current status: normalized Verilator coverage ingestion, SQLite coverage snapshots,
+coverage history, coverage merge, and failure clustering are implemented.
+
+- [ ] Assertions database.
+- [x] Code-coverage ingestion.
+- [ ] Functional-coverage schema.
+- [x] Coverage merge.
+- [ ] Coverage-hole reporting.
+- [x] Failure signatures and clustering.
+- [x] Normalized coverage history/trend.
 
 ## v0.4 — Debug Studio Core
 

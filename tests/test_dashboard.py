@@ -2,7 +2,7 @@ from pathlib import Path
 
 from zddv.config import initialize_project
 from zddv.dashboard import generate_html_report
-from zddv.storage import record_run, run_statistics
+from zddv.storage import record_coverage_snapshot, record_run, run_statistics
 
 
 def _record(run_id: str, status: str, seed: int, log: Path) -> dict:
@@ -40,6 +40,25 @@ def test_statistics_and_html_report(tmp_path: Path):
 
     record_run(project, _record("run-1", "PASS", 1, pass_log))
     record_run(project, _record("run-2", "FAIL", 2, fail_log))
+    record_coverage_snapshot(
+        project,
+        {
+            "snapshot_id": "cov-dashboard",
+            "created_at": "2026-09-21T20:01:00+00:00",
+            "project": "demo",
+            "simulator": "verilator",
+            "input_count": 2,
+            "total_points": 10,
+            "hit_points": 8,
+            "hit_rate": 80.0,
+            "by_type": {
+                "line": {"total": 10, "hit": 8, "hit_rate": 80.0},
+            },
+            "merged": "/tmp/coverage.dat",
+            "summary": "/tmp/summary.txt",
+            "metrics_path": "/tmp/metrics.json",
+        },
+    )
 
     stats = run_statistics(project)
     assert stats["total"] == 2
@@ -53,4 +72,8 @@ def test_statistics_and_html_report(tmp_path: Path):
     content = report_path.read_text(encoding="utf-8")
     assert "ZDDV Verification Report" in content
     assert "ASSERT mismatch packet=# expected=# actual=#" in content
+    assert "Coverage hit rate" in content
+    assert "80.0%" in content
+    assert "cov-dashboard" in content
     assert len(result["failure_groups"]) == 1
+    assert result["latest_coverage"]["snapshot_id"] == "cov-dashboard"
