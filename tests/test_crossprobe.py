@@ -82,6 +82,15 @@ def test_crossprobe_maps_vcd_scope_to_rtl_declaration(tmp_path: Path):
     assert result["source"]["file"] == "rtl/counter.sv"
     assert result["source"]["declaration"]["line"] == 3
     assert "output logic [3:0] count" in result["source"]["declaration"]["text"]
+    assert result["connectivity"]["analysis_level"] == "source_structural"
+    assert result["connectivity"]["unit"] == "counter"
+    assert result["connectivity"]["signal"] == "count"
+    assert {item["kind"] for item in result["connectivity"]["drivers"]} == {
+        "procedural_assignment"
+    }
+    assert {item["kind"] for item in result["connectivity"]["loads"]} == {
+        "boundary_port"
+    }
 
 
 def test_crossprobe_rejects_ambiguous_short_signal_name(tmp_path: Path):
@@ -125,6 +134,8 @@ def test_crossprobe_cli_writes_report(tmp_path: Path, capsys):
     assert "CROSSPROBE MATCHED" in output
     assert "tb_top.dut" in output
     assert "rtl/counter.sv:3" in output
+    assert "Connectivity: drivers=1 loads=1" in output
+    assert (project.root / ".zddv" / "design" / "connectivity.json").is_file()
     assert (project.root / ".zddv" / "debug" / "crossprobe.json").is_file()
 
 
@@ -142,4 +153,6 @@ def test_write_crossprobe_report_can_use_direct_input(tmp_path: Path):
     assert result["status"] == "MATCHED"
     assert result["hierarchy"]["design_path"] == "tb_top"
     assert result["source"]["file"] == "tb/tb_top.sv"
+    assert result["connectivity"]["unit"] == "tb_top"
+    assert result["connectivity_index_path"].endswith("connectivity.json")
     assert Path(result["report_path"]).is_file()
