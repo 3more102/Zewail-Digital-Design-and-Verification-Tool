@@ -19,6 +19,7 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.source_index import build_design_index, format_hierarchy, write_design_index
+from zddv.waveform_index import build_waveform_index, write_waveform_index
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -471,6 +472,28 @@ def cmd_hierarchy(args) -> int:
     print(format_hierarchy(index))
     return 0
 
+
+def cmd_wave_index(args) -> int:
+    project = load_project(_project_arg(args))
+    index = build_waveform_index(
+        project,
+        run_id=args.run,
+        waveform=args.waveform,
+    )
+    path = write_waveform_index(project, index)
+    stats = index["stats"]
+    print(
+        f"WAVEFORM INDEX: {stats['signals']} signal(s), "
+        f"{stats['scopes']} scope(s)"
+    )
+    if index.get("run_id"):
+        print(f"Run: {index['run_id']}")
+    if index.get("timescale"):
+        print(f"Timescale: {index['timescale']}")
+    print(f"Waveform: {index['waveform']}")
+    print(f"Index: {path}")
+    return 0
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -687,6 +710,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also write .zddv/index/design.json",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_wave_index = sub.add_parser(
+        "wave-index",
+        help="Index VCD waveform scopes and signals",
+    )
+    p_wave_index.add_argument(
+        "--run",
+        default=None,
+        help="Run ID to index (default: latest run with a waveform)",
+    )
+    p_wave_index.add_argument(
+        "--waveform",
+        default=None,
+        help="Explicit VCD path, relative to the project or absolute",
+    )
+    p_wave_index.set_defaults(func=cmd_wave_index)
 
     return parser
 
