@@ -113,6 +113,10 @@ def parse_vcd_index(path: str | Path) -> dict[str, Any]:
             index += 1
             continue
 
+        if raw in {"$dumpvars", "$dumpon", "$dumpoff", "$dumpall"}:
+            index += 1
+            continue
+
         if raw.startswith("$"):
             _, index = _directive(lines, index)
             continue
