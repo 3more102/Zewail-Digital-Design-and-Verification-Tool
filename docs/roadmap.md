@@ -62,13 +62,13 @@ implemented. Elaborated connectivity and waveform-driven protocol extraction rem
 
 ## v0.5 — Protocol Verification
 
-Current status: normalized-trace transaction analyzers are implemented for APB and
-AXI4-Lite. Full AXI4 burst semantics, CDC-oriented checks, and UCIe transaction
-analysis remain planned.
+Current status: normalized-trace transaction analyzers are implemented for APB,
+AXI4-Lite, and classic AXI4 full-burst semantics. CDC-oriented checks and UCIe
+transaction analysis remain planned.
 
 - [x] APB normalized-trace reconstruction and protocol checks.
 - [x] AXI4-Lite five-channel transaction reconstruction and protocol checks.
-- [ ] AXI4 full-burst transaction analysis.
+- [x] AXI4 full-burst transaction analysis.
 - [ ] Asynchronous FIFO / CDC-oriented checks.
 - [ ] UCIe-oriented transaction analysis.
 
