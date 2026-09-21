@@ -141,6 +141,32 @@ This contract is source-level. Generated hierarchy, parameter-specialized
 instances, binds, macros, and simulator-resolved objects remain enrichment work
 for simulator AST/elaboration adapters.
 
+## v0.5 AXI4-Lite Protocol Analysis Contract
+
+`zddv axi4lite-analyze` consumes a simulator-independent JSON trace whose
+samples represent values observed on ACLK edges. The analyzer keeps independent
+state for the AW, W, B, AR, and R channels and treats a transfer as accepted only
+when the channel's VALID and READY signals are both asserted in the same sample.
+
+Write address and write data are accepted independently and paired in acceptance
+order. Read and write responses are correlated in order because AXI4-Lite has no
+transaction IDs. The analyzer permits multiple outstanding transactions while
+preserving that ordering constraint.
+
+The normalized checks cover:
+
+- VALID remaining asserted until its READY handshake completes.
+- Channel payload remaining stable while VALID is asserted and READY is LOW.
+- Required payload presence for active channels.
+- Responses appearing only after their corresponding requests.
+- Incomplete requests/responses at trace end.
+- AXI4-Lite response legality, including rejection of EXOKAY.
+- Legal SLVERR/DECERR responses as transaction outcomes rather than protocol failures.
+
+This contract is AXI4-Lite only. It does not claim support for full AXI4 bursts,
+IDs, reordering, burst types, beat counting, WLAST/RLAST semantics, or
+out-of-order response matching. Those belong to a later full-AXI protocol pack.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.

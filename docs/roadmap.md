@@ -48,7 +48,7 @@ Current status: deterministic source indexing, source-level hierarchy, VCD wavef
 indexing, targeted VCD value-change probing, source-level structural drivers/loads
 navigation, waveform-to-source cross-probing, assertion-to-waveform correlation, and
 the first protocol transaction reconstruction path (normalized APB traces) are
-implemented. APB VCD waveform-to-transaction extraction is implemented. Elaborated connectivity remains planned.
+implemented. Elaborated connectivity and waveform-driven protocol extraction remain planned.
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
@@ -58,16 +58,18 @@ implemented. APB VCD waveform-to-transaction extraction is implemented. Elaborat
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
-- [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
 
 ## v0.5 — Protocol Verification
 
-Initial protocol packs:
+Current status: normalized-trace transaction analyzers are implemented for APB and
+AXI4-Lite. Full AXI4 burst semantics, CDC-oriented checks, and UCIe transaction
+analysis remain planned.
 
-- APB
-- AXI4 / AXI4-Lite
-- asynchronous FIFO / CDC-oriented checks
-- UCIe-oriented transaction analysis
+- [x] APB normalized-trace reconstruction and protocol checks.
+- [x] AXI4-Lite five-channel transaction reconstruction and protocol checks.
+- [ ] AXI4 full-burst transaction analysis.
+- [ ] Asynchronous FIFO / CDC-oriented checks.
+- [ ] UCIe-oriented transaction analysis.
 
 Each pack should support reusable checks, assertions, transaction extraction, coverage goals, and debug summaries.
 
