@@ -12,6 +12,7 @@ import uuid
 
 from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
+from zddv.functional_coverage import ingest_functional_coverage_log
 from zddv.storage import record_run
 from .base import BuildResult, RunResult, SimulatorBackend
 
@@ -280,6 +281,12 @@ int main(int argc, char** argv) {{
         )
         record_run(project, record)
         ingest_assertion_log(
+            project,
+            run_id=run_id,
+            log_path=log_path,
+            created_at=now.isoformat(),
+        )
+        ingest_functional_coverage_log(
             project,
             run_id=run_id,
             log_path=log_path,
