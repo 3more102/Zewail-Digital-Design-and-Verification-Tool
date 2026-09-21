@@ -58,6 +58,7 @@ implemented. Elaborated connectivity and waveform-driven protocol extraction rem
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
+- [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
 
 ## v0.5 — Protocol Verification
 
