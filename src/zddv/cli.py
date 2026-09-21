@@ -20,6 +20,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
+from zddv.protocols.axi4 import analyze_axi4_file
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
@@ -584,6 +585,41 @@ def cmd_axi4lite_analyze(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_axi4_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_axi4_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"AXI4 {result['status']}: "
+        f"{summary['completed_transactions']} completed transaction(s), "
+        f"{summary['violations']} protocol violation(s)"
+    )
+    print(
+        f"Read/Write bursts: {summary['reads']}/{summary['writes']}  "
+        f"Read/Write beats: {summary['read_beats']}/{summary['write_beats']}  "
+        f"Error response beats: {summary['error_response_beats']}"
+    )
+    stalls = summary["channel_stall_cycles"]
+    print(
+        "Channel stalls: "
+        + " ".join(f"{name}={stalls[name]}" for name in ("AW", "W", "B", "AR", "R"))
+    )
+    for violation in result["violations"][: args.show]:
+        channel = f"[{violation.get('channel')}] " if violation.get("channel") else ""
+        print(
+            f"[{violation['code']}] {channel}"
+            f"cycle={violation['cycle']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_apb_waveform(args) -> int:
     project = load_project(_project_arg(args))
     result = analyze_apb_waveform(
@@ -1132,6 +1168,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_axi4lite.set_defaults(func=cmd_axi4lite_analyze)
+
+
+    p_axi4 = sub.add_parser(
+        "axi4-analyze",
+        help="Reconstruct full AXI4 bursts and report protocol violations",
+    )
+    p_axi4.add_argument("path", help="Normalized AXI4 trace JSON file")
+    p_axi4.add_argument(
+        "--output",
+        default=".zddv/protocols/axi4/latest.json",
+        help="JSON protocol-analysis report path",
+    )
+    p_axi4.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of protocol violations to print",
+    )
+    p_axi4.set_defaults(func=cmd_axi4_analyze)
 
     p_apb_waveform = sub.add_parser(
         "apb-waveform",
