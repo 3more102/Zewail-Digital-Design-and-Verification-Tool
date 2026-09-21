@@ -12,6 +12,7 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
 from zddv.storage import database_path, list_run_records, list_runs
+from zddv.triage import group_failure_records, write_failure_report
 
 
 def _backend(name: str):
@@ -218,6 +219,35 @@ def cmd_junit(args) -> int:
     return 0
 
 
+def cmd_failures(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_run_records(
+        project,
+        limit=args.limit,
+        statuses=("FAIL", "TIMEOUT"),
+    )
+    groups = group_failure_records(rows)
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+    report = write_failure_report(groups, output)
+
+    total_runs = sum(group["count"] for group in groups)
+    print(f"Failure groups: {len(groups)} from {total_runs} run(s)")
+    if groups:
+        print(f"{'COUNT':>5}  {'STATUS':<14} {'TESTS':<24} SIGNATURE")
+        for group in groups[: args.show]:
+            statuses = ",".join(group["statuses"])
+            tests = ",".join(group["tests"]) or "-"
+            print(
+                f"{group['count']:>5}  {statuses[:14]:<14} "
+                f"{tests[:24]:<24} {group['signature']}"
+            )
+    print(f"Report: {report}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -309,6 +339,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional status filter; repeat as needed.",
     )
     p_junit.set_defaults(func=cmd_junit)
+
+    p_failures = sub.add_parser(
+        "failures",
+        help="Group historical failures by normalized signature",
+    )
+    p_failures.add_argument("--limit", type=int, default=200)
+    p_failures.add_argument("--show", type=int, default=20)
+    p_failures.add_argument(
+        "--output",
+        default=".zddv/failure-groups.json",
+        help="JSON report path",
+    )
+    p_failures.set_defaults(func=cmd_failures)
 
     return parser
 
