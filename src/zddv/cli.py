@@ -35,6 +35,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.waveform import write_waveform_index
+from zddv.waveform_probe import write_waveform_probe
 
 
 def _backend(name: str):
@@ -179,6 +180,34 @@ def cmd_waveform_index(args) -> int:
         print(f"Latest: {result['latest_path']}")
     return 0
 
+
+
+def cmd_waveform_probe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_waveform_probe(
+        project,
+        args.signals,
+        run_id=args.run_id,
+        input_path=args.input,
+        start_time=args.start,
+        end_time=args.end,
+        max_changes=args.max_changes,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"WAVEFORM PROBE: {summary['signals']} signal(s), "
+        f"{summary['total_changes']} change(s)"
+    )
+    if result.get("run_id"):
+        print(f"Run: {result['run_id']}")
+    if result.get("timescale"):
+        print(f"Timescale: {result['timescale']}")
+    for signal in result["signals"]:
+        marker = " [TRUNCATED]" if signal["truncated"] else ""
+        print(f"{signal['path']}: {len(signal['changes'])} change(s){marker}")
+    print(f"Probe: {result['path']}")
+    return 0
 
 
 def cmd_crossprobe(args) -> int:
@@ -726,6 +755,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+    p_waveform_probe = sub.add_parser(
+        "waveform-probe",
+        help="Stream selected VCD signal value changes",
+    )
+    p_waveform_probe.add_argument(
+        "signals",
+        nargs="+",
+        help="Signal full path or unique leaf name; repeat for multiple signals",
+    )
+    probe_source = p_waveform_probe.add_mutually_exclusive_group()
+    probe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    probe_source.add_argument(
+        "--input",
+        default=None,
+        help="VCD path relative to the project, independent of run history",
+    )
+    p_waveform_probe.add_argument(
+        "--start",
+        type=int,
+        default=None,
+        help="Optional inclusive VCD start timestamp",
+    )
+    p_waveform_probe.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="Optional inclusive VCD end timestamp",
+    )
+    p_waveform_probe.add_argument(
+        "--max-changes",
+        type=int,
+        default=10_000,
+        help="Maximum value changes retained per selected signal",
+    )
+    p_waveform_probe.add_argument(
+        "--output",
+        default=None,
+        help="Optional JSON output path; default is .zddv/waveforms/probes/<run>.json",
+    )
+    p_waveform_probe.set_defaults(func=cmd_waveform_probe)
 
     p_crossprobe = sub.add_parser(
         "crossprobe",
