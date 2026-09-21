@@ -1,0 +1,40 @@
+{
+  "source": "zddv-example",
+  "samples": [
+    {
+      "cycle": 0,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWADDR": "0x10",
+      "BREADY": 1
+    },
+    {
+      "cycle": 1,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0xCAFE",
+      "WSTRB": "0xF",
+      "BREADY": 1
+    },
+    {
+      "cycle": 2,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BRESP": "OKAY"
+    },
+    {
+      "cycle": 3,
+      "ARVALID": 1,
+      "ARREADY": 1,
+      "ARADDR": "0x20",
+      "RREADY": 1
+    },
+    {
+      "cycle": 4,
+      "RVALID": 1,
+      "RREADY": 1,
+      "RDATA": "0x55",
+      "RRESP": "OKAY"
+    }
+  ]
+}
