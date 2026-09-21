@@ -1,0 +1,9 @@
+[regression]
+name = "async-fifo-stress"
+jobs = 2
+
+[[tests]]
+name = "async_fifo_random"
+seeds = [1, 7, 42, 100]
+timeout_s = 20
+plusargs = []
