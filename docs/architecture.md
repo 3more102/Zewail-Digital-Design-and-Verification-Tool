@@ -91,6 +91,25 @@ converter or simulator-native waveform adapter is available. This distinction is
 explicit in the `parse_status` field so downstream debug features do not treat
 metadata-only artifacts as fully indexed waveforms.
 
+## v0.4 Connectivity Index Contract
+
+`zddv connectivity` writes `.zddv/design/connectivity.json` as a normalized
+source-level structural connectivity model. Each evidence edge records a design
+unit, signal, driver/load role, evidence kind, source file, and line. Known child
+instance connections also retain the instance name, child type, port name,
+direction, and connected expression.
+
+The initial analyzer recognizes simple continuous/procedural assignments, port
+boundaries, and named or positional connections to known child design units.
+Input ports are modeled as boundary drivers into a unit, output ports as boundary
+loads leaving a unit, and inouts as both. At a child instance, an input consumes
+the parent signal (load) and an output drives the parent signal (driver).
+
+The contract is explicitly tagged `analysis_level = "source_structural"`.
+Generate-time elaboration, preprocessor-dependent structure, binds,
+interface/modport semantics, complex lvalues, and other unresolved constructs
+must be enriched by simulator AST/elaboration adapters rather than guessed.
+
 ## v0.4 Assertion / Waveform Correlation
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
@@ -113,7 +132,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Build cross-probing and drivers/loads navigation on the source/hierarchy and waveform indexes.
+5. Build source/assertion/waveform cross-probing on the source, connectivity, hierarchy, and waveform indexes.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
