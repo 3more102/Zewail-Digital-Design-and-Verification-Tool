@@ -20,8 +20,6 @@ module tb_async_fifo;
     logic r_empty;
 
     logic [DATA_WIDTH-1:0] expected_q[$];
-    logic [PTR_WIDTH-1:0] prev_wgray = '0;
-    logic [PTR_WIDTH-1:0] prev_rgray = '0;
 
     integer seed;
     integer random_init;
@@ -56,35 +54,97 @@ module tb_async_fifo;
         end
     endfunction
 
-    always @(negedge wclk) begin
-        if (!wrst_n) begin
-            prev_wgray = '0;
-        end else begin
-            if (!onehot0(dut.wgray ^ prev_wgray)) begin
+    // Assertion monitors sample the request/flag state at the active clock edge
+    // and check the registered pointer state after nonblocking assignments settle.
+    always @(posedge wclk) begin : write_domain_assertions
+        logic [PTR_WIDTH-1:0] wbin_before;
+        logic [PTR_WIDTH-1:0] wgray_before;
+        logic accepted_write;
+
+        if (wrst_n) begin
+            wbin_before = dut.wbin;
+            wgray_before = dut.wgray;
+            accepted_write = w_en && !w_full;
+            #1;
+
+            assert (onehot0(dut.wgray ^ wgray_before))
+            else begin
                 $display(
-                    "ZDDV_FAIL write Gray pointer changed by more than one bit: prev=%b now=%b",
-                    prev_wgray,
+                    "ZDDV_FAIL assertion write Gray transition prev=%b now=%b",
+                    wgray_before,
                     dut.wgray
                 );
-                $fatal(1, "Write Gray pointer violation");
+                $fatal(1, "Write Gray pointer assertion failed");
             end
-            prev_wgray = dut.wgray;
+
+            if (accepted_write) begin
+                assert (dut.wbin == (wbin_before + 1'b1))
+                else begin
+                    $display(
+                        "ZDDV_FAIL assertion accepted write did not increment pointer prev=%0d now=%0d",
+                        wbin_before,
+                        dut.wbin
+                    );
+                    $fatal(1, "Write pointer increment assertion failed");
+                end
+            end else begin
+                assert (dut.wbin == wbin_before)
+                else begin
+                    $display(
+                        "ZDDV_FAIL assertion blocked/idle write changed pointer prev=%0d now=%0d full=%0b",
+                        wbin_before,
+                        dut.wbin,
+                        w_full
+                    );
+                    $fatal(1, "Write pointer stability assertion failed");
+                end
+            end
         end
     end
 
-    always @(negedge rclk) begin
-        if (!rrst_n) begin
-            prev_rgray = '0;
-        end else begin
-            if (!onehot0(dut.rgray ^ prev_rgray)) begin
+    always @(posedge rclk) begin : read_domain_assertions
+        logic [PTR_WIDTH-1:0] rbin_before;
+        logic [PTR_WIDTH-1:0] rgray_before;
+        logic accepted_read;
+
+        if (rrst_n) begin
+            rbin_before = dut.rbin;
+            rgray_before = dut.rgray;
+            accepted_read = r_en && !r_empty;
+            #1;
+
+            assert (onehot0(dut.rgray ^ rgray_before))
+            else begin
                 $display(
-                    "ZDDV_FAIL read Gray pointer changed by more than one bit: prev=%b now=%b",
-                    prev_rgray,
+                    "ZDDV_FAIL assertion read Gray transition prev=%b now=%b",
+                    rgray_before,
                     dut.rgray
                 );
-                $fatal(1, "Read Gray pointer violation");
+                $fatal(1, "Read Gray pointer assertion failed");
             end
-            prev_rgray = dut.rgray;
+
+            if (accepted_read) begin
+                assert (dut.rbin == (rbin_before + 1'b1))
+                else begin
+                    $display(
+                        "ZDDV_FAIL assertion accepted read did not increment pointer prev=%0d now=%0d",
+                        rbin_before,
+                        dut.rbin
+                    );
+                    $fatal(1, "Read pointer increment assertion failed");
+                end
+            end else begin
+                assert (dut.rbin == rbin_before)
+                else begin
+                    $display(
+                        "ZDDV_FAIL assertion blocked/idle read changed pointer prev=%0d now=%0d empty=%0b",
+                        rbin_before,
+                        dut.rbin,
+                        r_empty
+                    );
+                    $fatal(1, "Read pointer stability assertion failed");
+                end
+            end
         end
     end
 
