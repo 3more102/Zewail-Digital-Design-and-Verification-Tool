@@ -18,11 +18,15 @@ from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
+from zddv.source_index import build_design_index
 from zddv.storage import (
     assertion_statistics,
     database_path,
     list_assertion_events,
     list_coverage_snapshots,
+    list_design_index_snapshots,
+    list_design_instances,
+    list_design_modules,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
     list_run_records,
@@ -322,6 +326,65 @@ def cmd_assertions(args) -> int:
     return 0
 
 
+def cmd_source_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = build_design_index(project)
+    print(
+        f"DESIGN INDEX: {result['module_count']} module(s), "
+        f"{result['instance_count']} elaborated instance(s), "
+        f"{result['source_count']} source file(s)"
+    )
+    print(f"Top: {result['top']}")
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Index: {result['index_path']}")
+    return 0
+
+
+def cmd_hierarchy(args) -> int:
+    project = load_project(_project_arg(args))
+    snapshot_id = args.snapshot
+    if snapshot_id is None:
+        snapshots = list_design_index_snapshots(project, limit=1)
+        if not snapshots:
+            raise RuntimeError(
+                "No design index found. Run 'zddv source-index' first."
+            )
+        snapshot = snapshots[0]
+        snapshot_id = snapshot["snapshot_id"]
+    else:
+        matches = [
+            row
+            for row in list_design_index_snapshots(project, limit=1000)
+            if row["snapshot_id"] == snapshot_id
+        ]
+        if not matches:
+            raise ValueError(f"Unknown design index snapshot: {snapshot_id}")
+        snapshot = matches[0]
+
+    modules = list_design_modules(project, snapshot_id)
+    instances = list_design_instances(project, snapshot_id, limit=args.limit)
+
+    print(
+        f"HIERARCHY: top={snapshot['top']} "
+        f"modules={snapshot['module_count']} "
+        f"instances={snapshot['instance_count']}"
+    )
+    print(snapshot["top"])
+    for item in instances:
+        indent = "  " * int(item["depth"])
+        recursion = " [recursive]" if item["recursive"] else ""
+        print(
+            f"{indent}{item['instance_name']} : {item['module_name']}"
+            f"{recursion}"
+        )
+
+    if snapshot["instance_count"] > len(instances):
+        print(f"... {snapshot['instance_count'] - len(instances)} more instance(s)")
+    print(f"Indexed modules: {len(modules)}")
+    print(f"Snapshot: {snapshot_id}")
+    return 0
+
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -586,6 +649,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional exact assertion name filter",
     )
     p_assertions.set_defaults(func=cmd_assertions)
+
+    p_source_index = sub.add_parser(
+        "source-index",
+        help="Index project-local modules and reconstruct design hierarchy",
+    )
+    p_source_index.set_defaults(func=cmd_source_index)
+
+    p_hierarchy = sub.add_parser(
+        "hierarchy",
+        help="Show the latest indexed design hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--snapshot",
+        default=None,
+        help="Design index snapshot ID; defaults to the latest snapshot",
+    )
+    p_hierarchy.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Maximum number of instances to print",
+    )
+    p_hierarchy.set_defaults(func=cmd_hierarchy)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
