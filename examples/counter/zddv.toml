@@ -1,0 +1,15 @@
+[project]
+name = "counter"
+
+[simulator]
+backend = "verilator"
+top = "tb_counter"
+
+[sources]
+rtl = ["rtl/*.sv"]
+tb = ["tb/*.sv"]
+
+[run]
+build_dir = ".zddv/build"
+run_dir = ".zddv/runs"
+waveform = true
