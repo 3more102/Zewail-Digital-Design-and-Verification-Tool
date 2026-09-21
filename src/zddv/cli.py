@@ -30,6 +30,7 @@ from zddv.storage import (
     list_runs,
 )
 from zddv.triage import group_failure_records, write_failure_report
+from zddv.waveform import write_waveform_index
 
 
 def _backend(name: str):
@@ -108,6 +109,31 @@ def cmd_hierarchy(args) -> int:
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
 
+
+
+def cmd_waveform_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_waveform_index(
+        project,
+        args.path,
+        output=args.output,
+        checkpoint_interval=args.checkpoint_interval,
+    )
+    summary = result["summary"]
+    time_index = result["time_index"]
+    print(
+        f"WAVEFORM INDEX: {summary['signals']} signal(s), "
+        f"{summary['value_changes']} value change(s), "
+        f"{summary['active_signals']} active"
+    )
+    print(
+        f"Time: {time_index['first_time']} -> {time_index['last_time']} "
+        f"({result['metadata']['timescale'] or 'unknown timescale'})"
+    )
+    if result.get("run_id"):
+        print(f"Run: {result['run_id']}")
+    print(f"Index: {result['path']}")
+    return 0
 
 def cmd_lint(args) -> int:
     project = load_project(_project_arg(args))
@@ -513,6 +539,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_waveform_index = sub.add_parser(
+        "waveform-index",
+        help="Build a compact VCD signal/activity/time index",
+    )
+    p_waveform_index.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Optional VCD path; defaults to the newest recorded run waveform",
+    )
+    p_waveform_index.add_argument(
+        "--output",
+        default=None,
+        help="Optional JSON index output path",
+    )
+    p_waveform_index.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=128,
+        help="Store one sparse time checkpoint every N timestamp records",
+    )
+    p_waveform_index.set_defaults(func=cmd_waveform_index)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
