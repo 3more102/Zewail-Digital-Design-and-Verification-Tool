@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — feature-complete**
+> Status: **v0.4 Debug Studio Core — in progress (source index + hierarchy foundation)**
 
 ## What Works Today
 
@@ -34,6 +34,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI example
+- SystemVerilog source index for module/interface/package/program declarations
+- Resolved module-instance hierarchy database and CLI tree
 
 ## Quick Start
 
@@ -85,6 +87,8 @@ zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
+zddv --project my_project index
+zddv --project my_project hierarchy --max-depth 64
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project coverage-holes --show 20
@@ -258,11 +262,23 @@ separately from Verilator's annotation threshold.
 - [x] Assertion result database
 - [x] Functional coverage schema and JSON ingestion
 - [x] Coverage-hole analysis
+
+### Phase 4 — Debug Studio Core
+
+- [x] SystemVerilog source index
+- [x] Design hierarchy database/tree
+- [ ] Waveform index
+- [ ] Drivers/loads navigation
+- [ ] Assertion-to-waveform correlation
+- [ ] Protocol transaction reconstruction
+- [ ] Waveform cross-probing
+
+### Phase 5 — Protocol Verification
+
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
+- [ ] asynchronous FIFO / CDC-oriented checks
 - [ ] UCIe transaction analysis
-- [ ] Source/hierarchy database
-- [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
 ### Assertion Result Markers
@@ -298,7 +314,7 @@ metadata. Coverage status is derived from `hits >= goal` and persisted in SQLite
 This normalized model is intentionally simulator-independent so later Questa,
 VCS, Xcelium, or UVM exporters can feed the same verification database.
 
-### Phase 4 — Advanced Verification
+### Phase 6 — Advanced Verification
 
 - [ ] Questa adapter
 - [ ] VCS adapter
