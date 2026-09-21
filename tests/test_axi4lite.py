@@ -3,7 +3,12 @@ from pathlib import Path
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_trace
+from zddv.protocols.axi4lite import (
+    analyze_axi4lite_file,
+    analyze_axi4lite_trace,
+    analyze_axi4lite_waveform,
+    extract_axi4lite_trace_from_vcd,
+)
 
 
 def test_reconstructs_axi4lite_transactions_with_independent_write_channels():
@@ -221,3 +226,157 @@ def test_analyze_axi4lite_file_and_cli_write_report(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "AXI4-Lite PASS" in output
     assert "1 completed transaction(s)" in output
+
+
+AXI4LITE_VCD = """$timescale 1ns $end
+$scope module tb $end
+$scope module axi $end
+$var wire 1 a ACLK $end
+$var wire 1 b AWVALID $end
+$var wire 1 c AWREADY $end
+$var wire 8 d AWADDR [7:0] $end
+$var wire 3 e AWPROT [2:0] $end
+$var wire 1 f WVALID $end
+$var wire 1 g WREADY $end
+$var wire 16 h WDATA [15:0] $end
+$var wire 2 i WSTRB [1:0] $end
+$var wire 1 j BVALID $end
+$var wire 1 k BREADY $end
+$var wire 2 l BRESP [1:0] $end
+$var wire 1 m ARVALID $end
+$var wire 1 n ARREADY $end
+$var wire 8 o ARADDR [7:0] $end
+$var wire 3 p ARPROT [2:0] $end
+$var wire 1 q RVALID $end
+$var wire 1 r RREADY $end
+$var wire 16 s RDATA [15:0] $end
+$var wire 2 t RRESP [1:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0a
+0b
+1c
+b00000000 d
+b000 e
+0f
+1g
+b0000000000000000 h
+b00 i
+0j
+1k
+b00 l
+0m
+1n
+b00000000 o
+b000 p
+0q
+1r
+b0000000000000000 s
+b00 t
+#5
+1b
+1c
+b00010000 d
+b000 e
+1a
+#10
+0a
+#15
+0b
+1f
+1g
+b1100101011111110 h
+b11 i
+1m
+1n
+b00100000 o
+b000 p
+1a
+#20
+0a
+#25
+0f
+0m
+1j
+0k
+b00 l
+1q
+1r
+b0000000001010101 s
+b00 t
+1a
+#30
+0a
+#35
+1j
+1k
+b00 l
+0q
+1a
+"""
+
+
+def test_extracts_axi4lite_transactions_from_vcd(tmp_path: Path):
+    waveform = tmp_path / "axi4lite.vcd"
+    waveform.write_text(AXI4LITE_VCD, encoding="utf-8")
+
+    trace = extract_axi4lite_trace_from_vcd(waveform)
+
+    assert trace["waveform"]["scope"] == "tb.axi"
+    assert trace["waveform"]["clock"] == "ACLK"
+    assert trace["waveform"]["timescale"] == "1ns"
+    assert [sample["time"] for sample in trace["samples"]] == [5, 15, 25, 35]
+
+    result = analyze_axi4lite_trace(trace)
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["completed_transactions"] == 2
+    assert result["summary"]["reads"] == 1
+    assert result["summary"]["writes"] == 1
+    assert result["summary"]["channel_stall_cycles"]["B"] == 1
+
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+
+    assert write["address"] == 0x10
+    assert write["write_data"] == 0xCAFE
+    assert write["wstrb"] == 0x3
+    assert write["aw_time"] == 5
+    assert write["w_time"] == 15
+    assert write["response_time"] == 35
+
+    assert read["address"] == 0x20
+    assert read["read_data"] == 0x55
+    assert read["ar_time"] == 15
+    assert read["response_time"] == 25
+
+
+def test_axi4lite_waveform_cli_writes_trace_and_report(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "axi4lite.vcd"
+    waveform.write_text(AXI4LITE_VCD, encoding="utf-8")
+
+    result = analyze_axi4lite_waveform(project, input_path="axi4lite.vcd")
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["completed_transactions"] == 2
+    assert Path(result["trace_path"]).is_file()
+    assert Path(result["report_path"]).is_file()
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "axi4lite-waveform",
+            "--input",
+            "axi4lite.vcd",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "AXI4-Lite WAVEFORM PASS" in output
+    assert "2 completed transaction(s)" in output
+    assert "Scope: tb.axi" in output

@@ -1,0 +1,87 @@
+$timescale 1ns $end
+$scope module tb $end
+$scope module axi $end
+$var wire 1 a ACLK $end
+$var wire 1 b AWVALID $end
+$var wire 1 c AWREADY $end
+$var wire 8 d AWADDR [7:0] $end
+$var wire 3 e AWPROT [2:0] $end
+$var wire 1 f WVALID $end
+$var wire 1 g WREADY $end
+$var wire 16 h WDATA [15:0] $end
+$var wire 2 i WSTRB [1:0] $end
+$var wire 1 j BVALID $end
+$var wire 1 k BREADY $end
+$var wire 2 l BRESP [1:0] $end
+$var wire 1 m ARVALID $end
+$var wire 1 n ARREADY $end
+$var wire 8 o ARADDR [7:0] $end
+$var wire 3 p ARPROT [2:0] $end
+$var wire 1 q RVALID $end
+$var wire 1 r RREADY $end
+$var wire 16 s RDATA [15:0] $end
+$var wire 2 t RRESP [1:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0a
+0b
+1c
+b00000000 d
+b000 e
+0f
+1g
+b0000000000000000 h
+b00 i
+0j
+1k
+b00 l
+0m
+1n
+b00000000 o
+b000 p
+0q
+1r
+b0000000000000000 s
+b00 t
+#5
+1b
+1c
+b00010000 d
+b000 e
+1a
+#10
+0a
+#15
+0b
+1f
+1g
+b1100101011111110 h
+b11 i
+1m
+1n
+b00100000 o
+b000 p
+1a
+#20
+0a
+#25
+0f
+0m
+1j
+0k
+b00 l
+1q
+1r
+b0000000001010101 s
+b00 t
+1a
+#30
+0a
+#35
+1j
+1k
+b00 l
+0q
+1a

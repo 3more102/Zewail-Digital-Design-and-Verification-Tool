@@ -29,6 +29,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
+- AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
@@ -119,6 +120,8 @@ zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
+zddv --project my_project axi4lite-waveform --input axi4lite.vcd
+zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
 
 ## Verification Flow
@@ -355,6 +358,22 @@ The normalized extracted trace is written to
 `.zddv/protocols/apb/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/apb/waveform-latest.json`. Waveform timestamps are preserved
 alongside logical sample cycles and transaction start/end cycles.
+
+ZDDV can decode AXI4-Lite directly from a VCD waveform. `axi4lite-waveform`
+samples all five VALID/READY channels on ACLK edges, emits the normalized trace
+model, and runs the same ordering, stability, response, and transaction checks.
+Automatic scope detection requires one scope containing ACLK and all five channel
+handshake pairs; use `--scope` when multiple buses are present.
+
+```bash
+zddv --project my_project axi4lite-waveform --input axi4lite.vcd
+zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
+```
+
+The extracted trace is written to
+`.zddv/protocols/axi4lite/waveform-trace.json` and the analyzed report to
+`.zddv/protocols/axi4lite/waveform-latest.json`. AW, W, AR, and response
+timestamps are preserved in reconstructed transactions.
 
 ### Assertion Result Markers
 
