@@ -7,6 +7,7 @@ from zddv.config import load_project
 from zddv.coverage import merge_verilator_coverage
 from zddv.simulator import VerilatorBackend
 from zddv.storage import list_coverage_snapshots
+from zddv.waveform import write_waveform_index
 
 
 @pytest.mark.skipif(shutil.which("verilator") is None, reason="Verilator not installed")
@@ -25,6 +26,12 @@ def test_counter_build_and_run():
     assert run.coverage_path is not None
     assert run.coverage_path.exists()
     assert (run.run_dir / "run.json").exists()
+
+    waveform_index = write_waveform_index(project, run_id=run.run_id)
+    assert waveform_index["format"] == "vcd"
+    assert waveform_index["parse_status"] == "indexed"
+    assert waveform_index["summary"]["signals"] > 0
+    assert Path(waveform_index["path"]).exists()
 
     coverage = merge_verilator_coverage(project)
     assert Path(coverage["merged"]).exists()

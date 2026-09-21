@@ -63,6 +63,13 @@ jobs:
       - name: Run counter example
         run: zddv --project examples/counter run
 
+      - name: Index latest waveform
+        run: |
+          zddv --project examples/counter waveform-index
+          test -s examples/counter/.zddv/waveforms/latest.json
+          grep -q '"format": "vcd"' examples/counter/.zddv/waveforms/latest.json
+          grep -q '"parse_status": "indexed"' examples/counter/.zddv/waveforms/latest.json
+
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
