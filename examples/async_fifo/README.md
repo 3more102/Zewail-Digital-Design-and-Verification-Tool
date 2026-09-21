@@ -29,7 +29,9 @@ The self-checking testbench covers:
 - Pointer wrap-around.
 - Mixed seeded push/pop stress.
 - End-to-end data ordering with a scoreboard queue.
-- Gray-pointer one-bit transition checks in both clock domains.
+- SystemVerilog assertions for one-bit Gray-pointer transitions.
+- SystemVerilog assertions for accepted-operation pointer increments.
+- SystemVerilog assertions that full/empty blocked operations keep pointers stable.
 - Final write/read accounting.
 
 Run it with:
