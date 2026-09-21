@@ -28,7 +28,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
-- End-to-end Verilator CI example
+- End-to-end Verilator CI examples\n- Dual-clock asynchronous FIFO RTL with Gray-pointer CDC verification
 
 ## Quick Start
 
@@ -53,6 +53,8 @@ zddv --project examples/counter build
 zddv --project examples/counter run --test counter_basic --seed 42
 zddv --project examples/counter regress examples/counter/regression.toml
 zddv --project examples/counter coverage
+
+zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 ```
 
 ## Current CLI
@@ -193,7 +195,7 @@ The CLI and future GUI must use the same core APIs. Simulator-specific command c
 ```text
 src/zddv/              Python package and CLI
 src/zddv/simulator/    Simulator adapter layer
-examples/counter/      Self-checking SystemVerilog example
+examples/counter/      Self-checking SystemVerilog counter example\nexamples/async_fifo/   Dual-clock Gray-pointer FIFO verification example
 tests/                 Unit and integration tests
 docs/                  Architecture and roadmap
 .github/workflows/     Continuous integration
@@ -214,7 +216,7 @@ docs/                  Architecture and roadmap
 - [x] JSON build/run metadata
 - [x] Waveform artifact handling
 - [x] Self-checking counter example
-- [ ] FIFO example
+- [x] Asynchronous FIFO example with CDC/Gray-pointer checks
 
 ### Phase 2 — Regression
 
