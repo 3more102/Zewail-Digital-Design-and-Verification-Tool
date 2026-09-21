@@ -225,7 +225,7 @@ docs/                  Architecture and roadmap
 - [x] SQLite result database
 - [x] Selective rerun
 - [x] JUnit XML export
-- [ ] Failure signature grouping
+- [x] Failure signature grouping
 - [ ] HTML report
 
 ### Phase 3 — Coverage and Verification Intelligence
