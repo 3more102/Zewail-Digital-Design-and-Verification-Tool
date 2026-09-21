@@ -77,3 +77,18 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
+
+
+## v0.4 Static Design Index
+
+The first Debug Studio service is a simulator-independent static design index. ZDDV scans the configured SystemVerilog sources, records module definitions and source locations, resolves instances whose module types exist in the same project, and builds a hierarchy rooted at the configured top module.
+
+The normalized artifact is written to:
+
+```text
+.zddv/index/design.json
+```
+
+This artifact is intentionally separate from simulator-generated elaboration data. It gives the CLI and future GUI a stable source/hierarchy model now, while later adapters can enrich it with elaborated parameters, generated scopes, signal metadata, and simulator-specific handles.
+
+The next Debug Studio layer will add a waveform index and correlate waveform scopes back to these hierarchy paths.
