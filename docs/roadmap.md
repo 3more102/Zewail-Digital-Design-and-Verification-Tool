@@ -17,7 +17,7 @@ Exit criteria:
 
 ## v0.2 — Regression Engine
 
-Current status: core regression flow, SQLite run history, selective rerun, and JUnit export are implemented.
+Current status: core regression flow, SQLite run history, selective rerun, JUnit export, and failure-signature triage are implemented.
 
 - Named tests.
 - Seeds and plusargs.
@@ -36,7 +36,7 @@ Current status: core regression flow, SQLite run history, selective rerun, and J
 - Functional-coverage schema.
 - Coverage merge.
 - Coverage-hole reporting.
-- Failure signatures and clustering.
+- [x] Failure signatures and clustering.
 
 ## v0.4 — Debug Studio Core
 
