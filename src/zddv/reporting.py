@@ -63,12 +63,20 @@ def write_junit_report(
             )
 
         status = row["status"]
+        signature = failure_signature(row.get("log_path", ""), status)
+        if signature:
+            ET.SubElement(
+                properties,
+                "property",
+                {"name": "failure_signature", "value": signature},
+            )
+
         if status == "FAIL":
             failure = ET.SubElement(
                 case,
                 "failure",
                 {
-                    "message": f"simulation returned {row['returncode']}",
+                    "message": signature or f"simulation returned {row['returncode']}",
                     "type": "SimulationFailure",
                 },
             )
@@ -78,7 +86,7 @@ def write_junit_report(
                 case,
                 "error",
                 {
-                    "message": "simulation timed out",
+                    "message": signature or "simulation timed out",
                     "type": "SimulationTimeout",
                 },
             )
