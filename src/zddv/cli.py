@@ -13,6 +13,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
+from zddv.design_index import build_design_index, format_hierarchy, load_design_index
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.regression import run_regression
@@ -97,6 +98,41 @@ def cmd_lint(args) -> int:
     print(f"Log: {result['log']}")
     print(f"Summary: {result['summary']}")
     return 0 if result["status"] == "PASS" else 1
+
+
+
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = build_design_index(project)
+    summary = result["summary"]
+    print(
+        f"INDEX: {summary['source_files']} source(s), "
+        f"{summary['modules']} module(s), {summary['instances']} instance(s)"
+    )
+    print(f"Format: {result['source_format']}")
+    print(f"Design index: {result['path']}")
+    print(f"Hierarchy: {result['hierarchy_path']}")
+    return 0
+
+
+def cmd_hierarchy(args) -> int:
+    project = load_project(_project_arg(args))
+    if args.refresh:
+        index = build_design_index(project)
+    else:
+        try:
+            index = load_design_index(project)
+        except FileNotFoundError:
+            index = build_design_index(project)
+
+    lines = format_hierarchy(index, max_depth=args.max_depth)
+    if not lines:
+        print("No design hierarchy found.")
+        return 0
+
+    for line in lines:
+        print(line)
+    return 0
 
 
 def cmd_build(args) -> int:
@@ -479,6 +515,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_index = sub.add_parser(
+        "index",
+        help="Build normalized source, module, and instance hierarchy index",
+    )
+    p_index.set_defaults(func=cmd_index)
+
+    p_hierarchy = sub.add_parser(
+        "hierarchy",
+        help="Show the elaborated design hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Rebuild the design index before printing hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--max-depth",
+        type=int,
+        default=None,
+        help="Maximum hierarchy depth to print",
+    )
+    p_hierarchy.set_defaults(func=cmd_hierarchy)
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
