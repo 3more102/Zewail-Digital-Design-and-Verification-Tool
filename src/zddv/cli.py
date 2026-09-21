@@ -8,6 +8,7 @@ import sys
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.connectivity import signal_navigation, write_connectivity_index
+from zddv.crossprobe import write_crossprobe_report
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -176,6 +177,36 @@ def cmd_waveform_index(args) -> int:
     print(f"Index: {result['path']}")
     if result.get("latest_path"):
         print(f"Latest: {result['latest_path']}")
+    return 0
+
+
+def cmd_crossprobe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_crossprobe_report(
+        project,
+        args.signal,
+        run_id=args.run_id,
+        input_path=args.input,
+        output=args.output,
+    )
+    signal = result["waveform"]["signal"]
+    print(f"CROSSPROBE {result['status']}: {signal['path']}")
+    if result.get("hierarchy"):
+        hierarchy = result["hierarchy"]
+        print(
+            f"Hierarchy: {hierarchy['waveform_scope']} -> "
+            f"{hierarchy['design_path']} ({hierarchy['type']})"
+        )
+    source = result.get("source")
+    if source and source.get("declaration"):
+        declaration = source["declaration"]
+        print(f"Source: {declaration['file']}:{declaration['line']}")
+        print(f"Declaration: {declaration['text']}")
+    elif source:
+        print(f"Source unit: {source['file']}:{source['unit_line']}")
+    if result.get("note"):
+        print(f"Note: {result['note']}")
+    print(f"Report: {result['report_path']}")
     return 0
 
 
@@ -694,6 +725,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
+
+    p_crossprobe = sub.add_parser(
+        "crossprobe",
+        help="Map a waveform signal to source-level hierarchy and RTL declaration",
+    )
+    p_crossprobe.add_argument(
+        "signal",
+        help="Waveform signal path or a unique signal name",
+    )
+    crossprobe_source = p_crossprobe.add_mutually_exclusive_group()
+    crossprobe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    crossprobe_source.add_argument(
+        "--input",
+        default=None,
+        help="Waveform path relative to the project, independent of run history",
+    )
+    p_crossprobe.add_argument(
+        "--output",
+        default=".zddv/debug/crossprobe.json",
+        help="Cross-probe JSON report path",
+    )
+    p_crossprobe.set_defaults(func=cmd_crossprobe)
 
     p_assertion_waveform = sub.add_parser(
         "assertion-waveform",
