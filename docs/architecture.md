@@ -91,6 +91,19 @@ converter or simulator-native waveform adapter is available. This distinction is
 explicit in the `parse_status` field so downstream debug features do not treat
 metadata-only artifacts as fully indexed waveforms.
 
+## v0.4 Waveform / Source Cross-Probe Contract
+
+`zddv crossprobe` composes existing normalized evidence instead of introducing
+simulator-specific debug logic. A query resolves one indexed waveform signal,
+maps its scope to the source-level hierarchy, resolves the matching design unit
+and declaration when possible, and attaches source-level structural driver/load
+evidence for the same signal.
+
+Matching is intentionally conservative. Exact paths are preferred, suffix paths
+must resolve uniquely, and ambiguous short signal names are rejected. The report
+retains the design, waveform, and connectivity index paths used as evidence so a
+future GUI can implement deterministic source/waveform cross-navigation.
+
 ## v0.4 Assertion / Waveform Correlation
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
