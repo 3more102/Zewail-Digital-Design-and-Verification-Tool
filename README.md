@@ -31,6 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
+- AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -120,6 +121,7 @@ zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
+zddv --project my_project axi4-analyze axi4_trace.json
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -288,7 +290,8 @@ separately from Verilator's annotation threshold.
 - [x] Coverage-hole analysis
 - [x] APB normalized-trace transaction analysis
 - [x] AXI4-Lite normalized-trace protocol analysis
-- [ ] AXI4 full-burst protocol analysis
+- [x] AXI4 burst normalized-trace foundation
+- [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
@@ -343,6 +346,23 @@ zddv --project my_project axi4lite-analyze axi4lite_trace.json
 
 The default report is `.zddv/protocols/axi4lite/latest.json`. The repository
 also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it.
+
+### AXI4 Burst Trace Analysis
+
+`zddv axi4-analyze <trace.json>` extends protocol reconstruction to burst-aware
+AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
+without WID, BID/RID response correlation, read-data interleaving across
+different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
+and the requirement that each AXI burst remain inside one 4KB address region.
+
+This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
+coverage.
+
+```bash
+zddv --project my_project axi4-analyze axi4_trace.json
+```
+
+The default report is `.zddv/protocols/axi4/latest.json`.
 
 ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
 signals on PCLK edges, emits the same normalized trace model, then runs the same
