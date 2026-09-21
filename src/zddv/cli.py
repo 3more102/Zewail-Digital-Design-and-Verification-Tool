@@ -13,7 +13,12 @@ from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
-from zddv.storage import database_path, list_run_records, list_runs
+from zddv.storage import (
+    database_path,
+    list_coverage_snapshots,
+    list_run_records,
+    list_runs,
+)
 from zddv.triage import group_failure_records, write_failure_report
 
 
@@ -149,9 +154,33 @@ def cmd_coverage(args) -> int:
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
+    metrics = result["metrics"]
+    print(
+        f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
+        f"({metrics['hit_rate']:.1f}%)"
+    )
+    print(f"Metrics: {result['metrics_path']}")
+    print(f"Snapshot: {result['snapshot_id']}")
     report = result["report"].strip()
     if report:
         print(report)
+    return 0
+
+
+def cmd_coverage_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_coverage_snapshots(project, limit=args.limit)
+    if not rows:
+        print("No coverage snapshots found.")
+        return 0
+
+    print(f"{'HIT RATE':>9} {'HIT/TOTAL':>15} {'INPUTS':>6}  SNAPSHOT")
+    for row in rows:
+        ratio = f"{row['hit_points']}/{row['total_points']}"
+        print(
+            f"{row['hit_rate']:>8.1f}% {ratio:>15} "
+            f"{row['input_count']:>6}  {row['snapshot_id']}"
+        )
     return 0
 
 
@@ -334,6 +363,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
+
+    p_coverage_history = sub.add_parser(
+        "coverage-history",
+        help="Show normalized coverage snapshot history",
+    )
+    p_coverage_history.add_argument("--limit", type=int, default=20)
+    p_coverage_history.set_defaults(func=cmd_coverage_history)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
