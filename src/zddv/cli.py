@@ -167,6 +167,44 @@ def cmd_coverage(args) -> int:
     return 0
 
 
+
+def cmd_coverage_holes(args) -> int:
+    project = load_project(_project_arg(args))
+    result = generate_coverage_hole_report(
+        project,
+        limit=args.limit,
+        kinds=args.type,
+    )
+
+    print(f"Coverage holes: {result['total_holes']}")
+    if result["by_type"]:
+        breakdown = ", ".join(
+            f"{kind}={count}"
+            for kind, count in result["by_type"].items()
+        )
+        print(f"By type: {breakdown}")
+
+    if result["holes"]:
+        print(f"{'RANK':>4} {'TYPE':<12} {'LOCATION':<36} POINT")
+        for hole in result["holes"]:
+            location = hole["location"]
+            if location.get("file") and location.get("line"):
+                display_location = (
+                    f"{location['file']}:{location['line']}"
+                )
+            elif location.get("hierarchy"):
+                display_location = str(location["hierarchy"])
+            else:
+                display_location = "-"
+            print(
+                f"{hole['rank']:>4} {hole['type'][:12]:<12} "
+                f"{display_location[:36]:<36} {hole['name']}"
+            )
+
+    print(f"JSON: {result['json_path']}")
+    print(f"Text: {result['text_path']}")
+    return 0
+
 def cmd_coverage_history(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_coverage_snapshots(project, limit=args.limit)
