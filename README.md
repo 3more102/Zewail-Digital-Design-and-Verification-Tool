@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — feature-complete**
+> Status: **v0.4 Debug Studio Core — source index and source-level hierarchy in progress**
 
 ## What Works Today
 
@@ -34,6 +34,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
 - End-to-end Verilator CI example
+- Deterministic source index with file hashes and source locations
+- Source-level module/interface hierarchy with recursive-cycle protection
 
 ## Quick Start
 
@@ -72,6 +74,8 @@ zddv --project my_project config simulator verilator
 zddv --project my_project config top tb_top
 
 zddv doctor
+zddv --project my_project index
+zddv --project my_project hierarchy
 zddv --project my_project lint
 zddv --project my_project build
 
@@ -261,7 +265,7 @@ separately from Verilator's annotation threshold.
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
-- [ ] Source/hierarchy database
+- [x] Source/hierarchy index
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
@@ -297,6 +301,18 @@ metadata. Coverage status is derived from `hits >= goal` and persisted in SQLite
 
 This normalized model is intentionally simulator-independent so later Questa,
 VCS, Xcelium, or UVM exporters can feed the same verification database.
+
+### Debug Studio Source Index
+
+`zddv index` writes `.zddv/design/index.json` with deterministic file metadata,
+SHA-256 hashes, source design units, instance locations, duplicate-unit detection,
+and the configured top hierarchy. `zddv hierarchy` renders the same normalized
+hierarchy in the terminal.
+
+This v0.4 foundation is intentionally a **source-level** index. It does not claim
+to replace elaboration: generate-time choices, parameter specialization, binds,
+and tool-resolved hierarchy will be enriched later through simulator-adapter AST
+data while preserving the same normalized ZDDV model.
 
 ### Phase 4 — Advanced Verification
 
