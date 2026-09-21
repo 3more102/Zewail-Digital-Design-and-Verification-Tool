@@ -82,6 +82,11 @@ jobs:
       - name: Show coverage history
         run: zddv --project examples/counter coverage-history --limit 10
 
+      - name: Report coverage holes
+        run: |
+          zddv --project examples/counter coverage-holes --show 10
+          test -s examples/counter/.zddv/coverage/holes.json
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50

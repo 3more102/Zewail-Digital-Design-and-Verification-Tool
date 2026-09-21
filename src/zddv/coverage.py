@@ -80,6 +80,60 @@ def summarize_coverage_points(points: list[dict]) -> dict:
     }
 
 
+def build_coverage_hole_report(
+    points: list[dict],
+    *,
+    point_type: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    """Build a deterministic report of unhit normalized coverage points."""
+    holes = [
+        point
+        for point in points
+        if not bool(point.get("hit"))
+        and (point_type is None or str(point.get("type")) == point_type)
+    ]
+    holes.sort(key=lambda point: (str(point.get("type", "unknown")), str(point.get("name", ""))))
+
+    by_type: dict[str, int] = defaultdict(int)
+    for point in holes:
+        by_type[str(point.get("type") or "unknown")] += 1
+
+    shown = holes if limit is None else holes[: max(0, limit)]
+    return {
+        "filter_type": point_type,
+        "total_holes": len(holes),
+        "reported_holes": len(shown),
+        "by_type": dict(sorted(by_type.items())),
+        "holes": [
+            {
+                "type": str(point.get("type") or "unknown"),
+                "name": str(point.get("name") or ""),
+                "count": int(point.get("count", 0)),
+            }
+            for point in shown
+        ],
+    }
+
+
+def write_coverage_hole_report(
+    points: list[dict],
+    output: str | Path,
+    *,
+    point_type: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    report = build_coverage_hole_report(
+        points,
+        point_type=point_type,
+        limit=limit,
+    )
+    destination = Path(output)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return {**report, "path": str(destination)}
+
+
 def merge_verilator_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("verilator_coverage")
     if tool is None:
