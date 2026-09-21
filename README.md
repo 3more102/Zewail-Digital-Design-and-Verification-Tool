@@ -27,6 +27,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent functional coverage snapshots and per-bin database
+- APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -101,6 +102,7 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
+zddv --project my_project apb-analyze apb_trace.json
 ```
 
 ## Verification Flow
@@ -265,12 +267,40 @@ separately from Verilator's annotation threshold.
 - [x] Assertion result database
 - [x] Functional coverage schema and JSON ingestion
 - [x] Coverage-hole analysis
-- [ ] APB protocol analysis
+- [x] APB normalized-trace transaction analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
+
+### APB Trace Analysis
+
+ZDDV can reconstruct APB transactions from a simulator-independent JSON trace.
+Each sample represents values observed on a PCLK edge. The analyzer validates the
+setup/access sequence, tracks wait states, checks requester-signal stability through
+the access phase, rejects active PSTRB on reads, and records PSLVERR on the completion
+cycle.
+
+```json
+{
+  "source": "uvm-apb-monitor",
+  "samples": [
+    {"cycle": 10, "PSEL": 1, "PENABLE": 0, "PWRITE": 1, "PADDR": "0x10", "PWDATA": "0x55"},
+    {"cycle": 11, "PSEL": 1, "PENABLE": 1, "PREADY": 1, "PWRITE": 1, "PADDR": "0x10", "PWDATA": "0x55"}
+  ]
+}
+```
+
+Run:
+
+```bash
+zddv --project my_project apb-analyze apb_trace.json
+```
+
+The JSON report is written to `.zddv/protocols/apb/latest.json` by default and
+contains reconstructed transactions, wait-state counts, error responses, and
+cycle-localized protocol violations.
 
 ### Assertion Result Markers
 
