@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.vcd import sample_vcd_on_clock
+from zddv.waveform import parse_vcd_header, select_waveform_run
 
 
 _CHANNELS = {
@@ -87,6 +89,8 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
         "sample_index": index,
         "cycle": upper.get("CYCLE", index),
     }
+    if "TIME" in upper:
+        sample["time"] = upper["TIME"]
 
     for channel in _CHANNELS.values():
         for name in (channel["valid"], channel["ready"]):
@@ -173,6 +177,8 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "message": message,
         }
+        if "time" in sample:
+            entry["time"] = sample["time"]
         if channel is not None:
             entry["channel"] = channel
         if transaction_index is not None:
@@ -313,6 +319,7 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 {
                     "sample_index": sample["sample_index"],
                     "cycle": sample["cycle"],
+                    "time": sample.get("time"),
                     "address": sample.get("AWADDR"),
                     "prot": sample.get("AWPROT"),
                 }
@@ -322,6 +329,7 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 {
                     "sample_index": sample["sample_index"],
                     "cycle": sample["cycle"],
+                    "time": sample.get("time"),
                     "data": sample.get("WDATA"),
                     "strb": sample.get("WSTRB"),
                 }
@@ -346,6 +354,7 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "index": issued_reads,
                     "sample_index": sample["sample_index"],
                     "cycle": sample["cycle"],
+                    "time": sample.get("time"),
                     "address": sample.get("ARADDR"),
                     "prot": sample.get("ARPROT"),
                 }
@@ -407,6 +416,12 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         sample["sample_index"] - request["request_sample_index"],
                     ),
                 }
+                if aw.get("time") is not None:
+                    transaction["aw_time"] = aw["time"]
+                if w.get("time") is not None:
+                    transaction["w_time"] = w["time"]
+                if sample.get("time") is not None:
+                    transaction["response_time"] = sample["time"]
                 if aw.get("prot") is not None:
                     transaction["awprot"] = aw["prot"]
                 transactions.append(transaction)
@@ -437,6 +452,10 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         sample["sample_index"] - request["sample_index"],
                     ),
                 }
+                if request.get("time") is not None:
+                    transaction["ar_time"] = request["time"]
+                if sample.get("time") is not None:
+                    transaction["response_time"] = sample["time"]
                 if request.get("prot") is not None:
                     transaction["arprot"] = request["prot"]
                 transactions.append(transaction)
@@ -498,7 +517,7 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
         1 for tx in transactions if tx.get("response") in {"SLVERR", "DECERR"}
     )
 
-    return {
+    result = {
         "protocol": "AXI4-Lite",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
@@ -516,6 +535,186 @@ def analyze_axi4lite_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "transactions": transactions,
         "violations": violations,
     }
+    if isinstance(payload.get("waveform"), dict):
+        result["waveform"] = payload["waveform"]
+    return result
+
+
+def _scope_signal_names(header: dict[str, Any], scope: str) -> dict[str, str]:
+    return {
+        str(item["name"]).upper(): str(item["name"])
+        for item in header.get("signals", [])
+        if item.get("scope") == scope
+    }
+
+
+def _resolve_axi4lite_scope(
+    path: str | Path,
+    *,
+    scope: str | None = None,
+    clock: str = "ACLK",
+) -> tuple[str, dict[str, str]]:
+    header = parse_vcd_header(path)
+    required = {
+        clock.upper(),
+        "AWVALID", "AWREADY",
+        "WVALID", "WREADY",
+        "BVALID", "BREADY",
+        "ARVALID", "ARREADY",
+        "RVALID", "RREADY",
+    }
+
+    if scope is not None:
+        names = _scope_signal_names(header, scope)
+        missing = sorted(required - set(names))
+        if missing:
+            raise RuntimeError(
+                f"VCD scope '{scope}' is not a complete AXI4-Lite scope; missing: "
+                + ", ".join(missing)
+            )
+        return scope, names
+
+    candidates: list[tuple[str, dict[str, str]]] = []
+    for item in header.get("scopes", []):
+        candidate = str(item["path"])
+        names = _scope_signal_names(header, candidate)
+        if required.issubset(names):
+            candidates.append((candidate, names))
+
+    if not candidates:
+        raise RuntimeError(
+            "No AXI4-Lite waveform scope was found. Expected one scope containing "
+            f"{clock} and all five VALID/READY channel pairs; use --scope when needed."
+        )
+    if len(candidates) > 1:
+        choices = ", ".join(candidate for candidate, _ in candidates)
+        raise RuntimeError(
+            "Multiple AXI4-Lite waveform scopes were found; select one with --scope. "
+            f"Candidates: {choices}"
+        )
+    return candidates[0]
+
+
+def extract_axi4lite_trace_from_vcd(
+    path: str | Path,
+    *,
+    scope: str | None = None,
+    clock: str = "ACLK",
+    edge: str = "rising",
+) -> dict[str, Any]:
+    source = Path(path).resolve()
+    resolved_scope, available = _resolve_axi4lite_scope(
+        source,
+        scope=scope,
+        clock=clock,
+    )
+
+    canonical_names = (
+        "AWVALID", "AWREADY", "AWADDR", "AWPROT",
+        "WVALID", "WREADY", "WDATA", "WSTRB",
+        "BVALID", "BREADY", "BRESP",
+        "ARVALID", "ARREADY", "ARADDR", "ARPROT",
+        "RVALID", "RREADY", "RDATA", "RRESP",
+    )
+    actual_clock = available[clock.upper()]
+    actual_to_canonical = {
+        available[name]: name
+        for name in canonical_names
+        if name in available
+    }
+    required_actual = tuple(
+        available[name]
+        for name in (
+            "AWVALID", "AWREADY",
+            "WVALID", "WREADY",
+            "BVALID", "BREADY",
+            "ARVALID", "ARREADY",
+            "RVALID", "RREADY",
+        )
+    )
+
+    sampled = sample_vcd_on_clock(
+        source,
+        scope=resolved_scope,
+        clock=actual_clock,
+        signals=actual_to_canonical,
+        edge=edge,
+        required=required_actual,
+    )
+
+    normalized_samples: list[dict[str, Any]] = []
+    for raw in sampled["samples"]:
+        sample: dict[str, Any] = {
+            "cycle": raw["cycle"],
+            "time": raw["time"],
+        }
+        for actual, canonical in actual_to_canonical.items():
+            if actual in raw:
+                sample[canonical] = raw[actual]
+        normalized_samples.append(sample)
+
+    waveform = dict(sampled["waveform"])
+    waveform["clock"] = actual_clock
+    return {
+        "source": "vcd-waveform",
+        "waveform": waveform,
+        "samples": normalized_samples,
+    }
+
+
+def analyze_axi4lite_waveform(
+    project: ProjectConfig,
+    *,
+    run_id: str | None = None,
+    input_path: str | Path | None = None,
+    scope: str | None = None,
+    clock: str = "ACLK",
+    edge: str = "rising",
+    trace_output: str | Path = ".zddv/protocols/axi4lite/waveform-trace.json",
+    output: str | Path = ".zddv/protocols/axi4lite/waveform-latest.json",
+) -> dict[str, Any]:
+    if run_id is not None and input_path is not None:
+        raise ValueError("run_id and input_path are mutually exclusive")
+
+    selected_run: dict[str, Any] | None = None
+    if input_path is None:
+        selected_run = select_waveform_run(project, run_id=run_id)
+        source = Path(str(selected_run["waveform_path"])).resolve()
+    else:
+        source = Path(input_path)
+        if not source.is_absolute():
+            source = project.root / source
+        source = source.resolve()
+
+    trace = extract_axi4lite_trace_from_vcd(
+        source,
+        scope=scope,
+        clock=clock,
+        edge=edge,
+    )
+
+    trace_path = Path(trace_output)
+    if not trace_path.is_absolute():
+        trace_path = project.root / trace_path
+    trace_path = trace_path.resolve()
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
+
+    report = analyze_axi4lite_trace(trace)
+    report["input_path"] = str(source)
+    report["trace_path"] = str(trace_path)
+    report["run_id"] = (
+        str(selected_run["run_id"]) if selected_run is not None else None
+    )
+
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = project.root / destination
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report["report_path"] = str(destination)
+    return report
 
 
 def analyze_axi4lite_file(
