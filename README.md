@@ -34,6 +34,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
 - Static SystemVerilog module/source index and top-rooted instance hierarchy
+- VCD waveform scope/signal indexing linked to verification runs
 - End-to-end Verilator CI example
 
 ## Quick Start
@@ -88,6 +89,8 @@ zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project wave-index
+zddv --project my_project wave-index --run <run-id>
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project coverage-holes --show 20
@@ -265,6 +268,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Static source/module index and design hierarchy
+- [x] VCD waveform scope/signal index
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
