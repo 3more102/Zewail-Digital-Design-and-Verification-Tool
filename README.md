@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy and waveform indexing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, connectivity, and waveform indexing in progress**
 
 ## What Works Today
 
@@ -37,6 +37,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- Conservative source-level signal driver/load navigation with named instance-port direction resolution
 - VCD waveform scope/signal index with FST artifact metadata support
 - Assertion-to-waveform run correlation with conservative signal hints
 
@@ -79,6 +80,8 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project connectivity
+zddv --project my_project signal count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
@@ -274,6 +277,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
+- [x] Source-level drivers/loads navigation
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
@@ -349,6 +353,19 @@ This v0.4 foundation is intentionally a **source-level** index. It does not clai
 to replace elaboration: generate-time choices, parameter specialization, binds,
 and tool-resolved hierarchy will be enriched later through simulator-adapter AST
 data while preserving the same normalized ZDDV model.
+
+### Debug Studio Driver/Load Navigation
+
+`zddv connectivity` writes `.zddv/design/connectivity.json` with conservative
+source-level signal references. It records module/interface/program port boundaries,
+assignment drivers, expression loads, and named instance-port connections when the
+child port direction can be resolved from indexed source.
+
+`zddv signal <name> --unit <unit>` prints the declaration plus driver/load source
+locations for one signal. Qualified names such as `counter.count` are also accepted.
+This is intentionally not presented as elaborated connectivity: generate decisions,
+parameter specialization, binds, modports, and simulator-resolved net topology remain
+future adapter/AST work.
 
 ### Debug Studio Waveform Index
 
