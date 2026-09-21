@@ -10,8 +10,9 @@ import subprocess
 import time
 import uuid
 
+from zddv.assertions import assertion_summary, parse_assertion_events
 from zddv.config import ProjectConfig
-from zddv.storage import record_run
+from zddv.storage import record_assertion_events, record_run
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -106,6 +107,7 @@ int main(int argc, char** argv) {{
                 "--exe",
                 "--build",
                 "--timing",
+                "--assert",
                 "--Wno-fatal",
             ]
         else:
@@ -114,6 +116,7 @@ int main(int argc, char** argv) {{
                 self._tool(),
                 "--binary",
                 "--timing",
+                "--assert",
                 "--Wno-fatal",
             ]
 
@@ -241,6 +244,9 @@ int main(int argc, char** argv) {{
         log_path = run_dir / "simulation.log"
         log_path.write_text(output, encoding="utf-8")
 
+        assertion_events = parse_assertion_events(output)
+        assertions = assertion_summary(assertion_events)
+
         waveform = None
         for name in ("waveform.vcd", "dump.vcd", "waveform.fst", "dump.fst"):
             candidate = run_dir / name
@@ -252,7 +258,15 @@ int main(int argc, char** argv) {{
         if not coverage.exists():
             coverage = None
 
-        status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
+        status = (
+            "TIMEOUT"
+            if timed_out
+            else ("FAIL" if returncode != 0 or assertions["failed"] else "PASS")
+        )
+        effective_returncode = returncode
+        if status == "FAIL" and effective_returncode == 0:
+            effective_returncode = 1
+
         record = {
             "run_id": run_id,
             "created_at": now.isoformat(),
@@ -265,24 +279,27 @@ int main(int argc, char** argv) {{
             "simulator_version": self.version(),
             "top": project.top,
             "command": command,
-            "returncode": returncode,
+            "returncode": effective_returncode,
+            "process_returncode": returncode,
             "status": status,
             "duration_ms": round(duration_ms, 3),
             "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
             "coverage": str(coverage) if coverage else None,
+            "assertions": assertions,
         }
         (run_dir / "run.json").write_text(
             json.dumps(record, indent=2),
             encoding="utf-8",
         )
         record_run(project, record)
+        record_assertion_events(project, record, assertion_events)
 
         return RunResult(
             run_id=run_id,
             command=command,
-            returncode=returncode,
+            returncode=effective_returncode,
             status=status,
             run_dir=run_dir,
             log_path=log_path,
@@ -290,4 +307,6 @@ int main(int argc, char** argv) {{
             coverage_path=coverage,
             test_name=test_name,
             seed=seed,
+            assertion_count=assertions["total"],
+            assertion_failures=assertions["failed"],
         )
