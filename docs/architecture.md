@@ -91,6 +91,18 @@ converter or simulator-native waveform adapter is available. This distinction is
 explicit in the `parse_status` field so downstream debug features do not treat
 metadata-only artifacts as fully indexed waveforms.
 
+## v0.4 Assertion / Waveform Correlation
+
+`zddv assertion-waveform` joins normalized assertion events to their exact
+simulation run and recorded waveform. VCD-backed runs reuse the waveform index,
+while FST-backed runs remain explicitly metadata-only until an adapter is
+available.
+
+Correlation is evidence-based: signal hints are emitted only when identifiers in
+the assertion name/message match a waveform signal by exact hierarchical path or
+exact signal name (including underscore-separated message keys such as
+`final_count` -> `count`). No fuzzy root-cause claim is made.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
