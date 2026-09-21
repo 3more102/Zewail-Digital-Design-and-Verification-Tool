@@ -75,6 +75,14 @@ def cmd_build(args) -> int:
         print(f"BUILD PASS: {result.executable}")
         return 0
     print(f"BUILD FAIL: {result.log_path}")
+    try:
+        diagnostics = result.log_path.read_text(encoding="utf-8").strip()
+        if diagnostics:
+            print("--- simulator diagnostics ---")
+            print(diagnostics)
+            print("--- end diagnostics ---")
+    except OSError:
+        pass
     return result.returncode or 1
 
 
