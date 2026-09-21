@@ -67,6 +67,20 @@ This run directory becomes the atomic unit for future regression, coverage, debu
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
 
+## Debug Index Contract
+
+`zddv index` is the first v0.4 Debug Studio service. It writes two
+simulator-independent artifacts under `.zddv/index/`:
+
+- `source-index.json`: source fingerprints, design units, source locations,
+  instance declarations, and index diagnostics.
+- `hierarchy.json`: the configured top expanded into hierarchical instance
+  paths for later waveform, assertion, and protocol cross-probing.
+
+The CLI and future GUI consume this normalized contract. Simulator-native
+elaboration databases may later augment the index without changing downstream
+consumers.
+
 ## Next Architectural Steps
 
 1. Add test/seed/plusarg models.
