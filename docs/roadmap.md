@@ -44,12 +44,14 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 ## v0.4 — Debug Studio Core
 
-- Design hierarchy.
-- Source indexing.
-- Waveform index.
-- Drivers/loads navigation.
-- Assertion-to-waveform correlation.
-- Protocol transaction reconstruction.
+Current status: in progress. Static source/module indexing and hierarchy generation are implemented on the v0.4 development line.
+
+- [x] Design hierarchy.
+- [x] Source indexing.
+- [ ] Waveform index.
+- [ ] Drivers/loads navigation.
+- [ ] Assertion-to-waveform correlation.
+- [ ] Protocol transaction reconstruction.
 
 ## v0.5 — Protocol Verification
 
