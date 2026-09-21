@@ -166,6 +166,14 @@ jobs:
           grep -q '"scope": "tb.axi"' examples/counter/.zddv/protocols/axi4/waveform-latest.json
           grep -q '"response_time": 65' examples/counter/.zddv/protocols/axi4/waveform-latest.json
 
+      - name: Analyze async FIFO CDC trace
+        run: |
+          zddv --project examples/counter async-fifo-analyze ../async_fifo_cdc_trace.json
+          test -s examples/counter/.zddv/cdc/async-fifo/latest.json
+          grep -q '"analysis": "async_fifo_cdc_dynamic"' examples/counter/.zddv/cdc/async-fifo/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/cdc/async-fifo/latest.json
+          grep -q '"not_static_cdc_signoff": true' examples/counter/.zddv/cdc/async-fifo/latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
