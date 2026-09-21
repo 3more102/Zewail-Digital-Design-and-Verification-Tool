@@ -86,6 +86,13 @@ jobs:
           grep -q '"with_indexed_waveform": 1' examples/counter/.zddv/debug/assertion-waveform.json
           grep -q '"format": "vcd"' examples/counter/.zddv/debug/assertion-waveform.json
 
+      - name: Cross-probe waveform signal
+        run: |
+          zddv --project examples/counter crossprobe tb_counter.dut.count
+          test -s examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"status": "MATCHED"' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"file": "rtl/counter.sv"' examples/counter/.zddv/debug/crossprobe.json
+
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
