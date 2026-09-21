@@ -30,6 +30,7 @@ from zddv.storage import (
     list_runs,
 )
 from zddv.triage import group_failure_records, write_failure_report
+from zddv.waveform import index_run_waveform
 
 
 def _backend(name: str):
@@ -107,6 +108,41 @@ def cmd_hierarchy(args) -> int:
         print(line)
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
+
+
+def cmd_wave_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = index_run_waveform(project, run_id=args.run_id)
+    summary = result["summary"]
+    print(
+        f"WAVEFORM INDEX: {summary['signals']} signal(s), "
+        f"{summary['scopes']} scope(s), {summary['value_changes']} value change(s)"
+    )
+    print(
+        f"Run: {result['run_id']} | Timescale: {result['timescale'] or '-'} | "
+        f"Range: {result['start_time']}..{result['end_time']} ticks"
+    )
+
+    signals = result["signals"]
+    if args.match:
+        needle = args.match.lower()
+        signals = [
+            item for item in signals if needle in item["full_name"].lower()
+        ]
+
+    print(f"{'WIDTH':>5} {'CHANGES':>8} {'FIRST':>10} {'LAST':>10} SIGNAL")
+    for item in signals[: args.show]:
+        first = "-" if item["first_activity"] is None else str(item["first_activity"])
+        last = "-" if item["last_activity"] is None else str(item["last_activity"])
+        print(
+            f"{item['width']:>5} {item['changes']:>8} "
+            f"{first:>10} {last:>10} {item['full_name']}"
+        )
+    if len(signals) > args.show:
+        print(f"... {len(signals) - args.show} more matching signal(s)")
+
+    print(f"Index: {result['index_path']}")
+    return 0
 
 
 def cmd_lint(args) -> int:
@@ -513,6 +549,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_wave_index = sub.add_parser(
+        "wave-index",
+        help="Index a recorded VCD waveform for debug navigation",
+    )
+    p_wave_index.add_argument(
+        "--run-id",
+        default=None,
+        help="Run ID to index; defaults to the latest run with a waveform",
+    )
+    p_wave_index.add_argument(
+        "--match",
+        default=None,
+        help="Optional case-insensitive signal-name substring filter for display",
+    )
+    p_wave_index.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum matching signals to print",
+    )
+    p_wave_index.set_defaults(func=cmd_wave_index)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
