@@ -28,6 +28,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
+- AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -114,6 +115,7 @@ zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
 zddv --project my_project apb-analyze apb_trace.json
+zddv --project my_project axi4lite-analyze axi4lite_trace.json
 ```
 
 ## Verification Flow
@@ -279,7 +281,8 @@ separately from Verilator's annotation threshold.
 - [x] Functional coverage schema and JSON ingestion
 - [x] Coverage-hole analysis
 - [x] APB normalized-trace transaction analysis
-- [ ] AXI4 / AXI4-Lite protocol analysis
+- [x] AXI4-Lite normalized-trace protocol analysis
+- [ ] AXI4 full-burst protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
@@ -313,6 +316,27 @@ zddv --project my_project apb-analyze apb_trace.json
 The JSON report is written to `.zddv/protocols/apb/latest.json` by default and
 contains reconstructed transactions, wait-state counts, error responses, and
 cycle-localized protocol violations.
+
+### AXI4-Lite Trace Analysis
+
+`zddv axi4lite-analyze <trace.json>` reconstructs AXI4-Lite reads and writes
+from clock-edge samples of the five independent channels: AW, W, B, AR, and R.
+Write address and data handshakes are accepted independently and paired in
+acceptance order. Read and write responses are correlated in order because
+AXI4-Lite has no transaction IDs.
+
+The analyzer checks VALID and payload stability while READY is LOW, reports
+responses that precede their requests, identifies incomplete requests at trace
+end, records SLVERR/DECERR responses, and rejects EXOKAY because AXI4-Lite does
+not support exclusive responses. Multiple outstanding transactions are
+supported and paired in acceptance order.
+
+```bash
+zddv --project my_project axi4lite-analyze axi4lite_trace.json
+```
+
+The default report is `.zddv/protocols/axi4lite/latest.json`. The repository
+also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it.
 
 ### Assertion Result Markers
 
