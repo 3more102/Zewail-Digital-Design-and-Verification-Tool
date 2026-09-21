@@ -27,6 +27,12 @@ simulation -> assertions -> coverage -> protocol analysis
            -> waveform/debug -> failure triage -> AI analysis
 ```
 
+## v0.4 Design Index
+
+The debug layer owns a normalized design index. Verilator exports an elaborated parser tree through JSON on 5.022+ and XML on older supported releases; ZDDV converts either format into the same source, module, source-location, and instance-hierarchy schema under `.zddv/index/design.json`.
+
+Simulator-specific export command construction remains inside the Verilator adapter. Higher layers consume only the normalized index, which is the foundation for waveform symbol indexing, drivers/loads navigation, assertion correlation, and protocol transaction reconstruction.
+
 ## v0.1 Contracts
 
 ### Project
@@ -73,7 +79,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Add waveform indexing and source/hierarchy metadata.
+5. Extend the source/hierarchy index with waveform symbols and drivers/loads navigation.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
