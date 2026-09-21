@@ -72,7 +72,7 @@ remain planned.
 - [x] AXI4 burst normalized-trace foundation (IDs, lengths/types, WLAST/RLAST, 4KB rule).
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [ ] Exhaustive AXI4 optional-sideband and exclusive-access checking.
-- [ ] Asynchronous FIFO / CDC-oriented checks.
+- [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [ ] UCIe-oriented transaction analysis.
 
 Each pack should support reusable checks, assertions, transaction extraction, coverage goals, and debug summaries.
