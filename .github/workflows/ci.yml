@@ -79,6 +79,13 @@ jobs:
           grep -q '"format": "vcd"' examples/counter/.zddv/waveforms/latest.json
           grep -q '"parse_status": "indexed"' examples/counter/.zddv/waveforms/latest.json
 
+      - name: Probe latest VCD waveform values
+        run: |
+          SIGNAL=$(python -c 'import json; print(json.load(open("examples/counter/.zddv/waveforms/latest.json"))["signals"][0]["path"])')
+          zddv --project examples/counter waveform-probe "$SIGNAL" --max-changes 5
+          test -s examples/counter/.zddv/waveforms/probes/latest.json
+          grep -q '"total_changes":' examples/counter/.zddv/waveforms/probes/latest.json
+
       - name: Correlate assertion to waveform
         run: |
           zddv --project examples/counter assertion-waveform --status PASS --limit 10
