@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from html import escape
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_coverage_snapshots, list_run_records, run_statistics
+from zddv.storage import (
+    assertion_statistics,
+    list_assertion_events,
+    list_coverage_snapshots,
+    list_run_records,
+    run_statistics,
+)
 from zddv.triage import group_failure_records
 
 
@@ -14,6 +20,8 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
     groups = group_failure_records(records)
     coverage_rows = list_coverage_snapshots(project, limit=1)
     latest_coverage = coverage_rows[0] if coverage_rows else None
+    assertion_stats = assertion_statistics(project)
+    assertion_events = list_assertion_events(project, limit=20)
 
     out_dir = (project.root / ".zddv" / "reports").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +98,31 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
             + "</tbody></table></section>"
         )
 
+    assertion_rows = []
+    for event in assertion_events:
+        source = event["source_file"] or "-"
+        if event["source_line"] is not None:
+            source += f":{event['source_line']}"
+        assertion_rows.append(
+            "<tr>"
+            f"<td><code>{escape(event['run_id'])}</code></td>"
+            f"<td>{escape(source)}</td>"
+            f"<td>{escape(event['assertion_name'] or '-')}</td>"
+            f"<td>{escape(event['message'])}</td>"
+            "</tr>"
+        )
+
+    assertion_section = (
+        "<section><h2>Recent assertion failures</h2>"
+        "<table><thead><tr><th>Run ID</th><th>Source</th>"
+        "<th>Assertion</th><th>Message</th></tr></thead><tbody>"
+        + (
+            "".join(assertion_rows)
+            or '<tr><td colspan="4">No assertion failures recorded.</td></tr>'
+        )
+        + "</tbody></table></section>"
+    )
+
     generated = datetime.now(timezone.utc).isoformat()
     html = f"""<!doctype html>
 <html lang="en">
@@ -124,10 +157,13 @@ small {{ color: #9ca3af; }}
   <div class="card"><div>Failed</div><div class="metric">{stats['failed']}</div></div>
   <div class="card"><div>Timeouts</div><div class="metric">{stats['timed_out']}</div></div>
   <div class="card"><div>Pass rate</div><div class="metric">{stats['pass_rate']:.1f}%</div></div>
+  <div class="card"><div>Assertion failures</div><div class="metric">{assertion_stats['total_events']}</div><small>{assertion_stats['affected_runs']} affected runs</small></div>
   {coverage_card}
 </div>
 
 {coverage_section}
+
+{assertion_section}
 
 <section>
 <h2>Per-test summary</h2>
@@ -163,5 +199,6 @@ small {{ color: #9ca3af; }}
         "stats": stats,
         "failure_groups": groups,
         "latest_coverage": latest_coverage,
+        "assertion_stats": assertion_stats,
         "shown_runs": len(records),
     }
