@@ -74,11 +74,6 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
-      - name: Generate HTML dashboard
-        run: |
-          zddv --project examples/counter report --limit 50
-          test -s examples/counter/.zddv/reports/latest.html
-
       - name: Merge and ingest coverage
         run: |
           zddv --project examples/counter coverage
@@ -86,6 +81,12 @@ jobs:
 
       - name: Show coverage history
         run: zddv --project examples/counter coverage-history --limit 10
+
+      - name: Generate HTML dashboard
+        run: |
+          zddv --project examples/counter report --limit 50
+          test -s examples/counter/.zddv/reports/latest.html
+          grep -q "Coverage hit rate" examples/counter/.zddv/reports/latest.html
 
       - name: Integration tests
         run: pytest tests/test_verilator_integration.py -q
