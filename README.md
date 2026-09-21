@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
+> Status: **v0.3 verification-results foundation — code, assertion, and functional coverage results**
 
 ## What Works Today
 
@@ -26,6 +26,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
+- Simulator-independent functional-coverage bin schema with cumulative regression aggregation
+- Functional-coverage CLI filters plus uncovered-bin reporting
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -90,6 +92,8 @@ zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
+zddv --project my_project functional-coverage
+zddv --project my_project fcov --covergroup packet_cg --uncovered
 ```
 
 ## Verification Flow
@@ -252,6 +256,7 @@ separately from Verilator's annotation threshold.
 - [x] Multi-run coverage merge
 - [x] Normalized coverage metrics/database
 - [x] Assertion result database
+- [x] Functional-coverage schema
 - [x] Coverage-hole analysis
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
@@ -273,6 +278,21 @@ ZDDV_ASSERT axi_response_valid FAIL unexpected_BRESP
 Each event is stored with its run ID, assertion name, status, message, log path,
 and source log line. Simulator adapters can translate native assertion output into
 this same database model over time.
+
+
+### Functional Coverage Markers
+
+Functional coverage uses a simulator-independent logical-bin marker:
+
+```text
+ZDDV_FCOV packet_cg opcode READ HITS=12 GOAL=1
+ZDDV_FCOV packet_cg opcode RESERVED HITS=0 GOAL=1
+```
+
+ZDDV stores every per-run observation with its covergroup, coverpoint, bin, hit
+count, goal, source log, and line. The CLI aggregates the same logical bin across
+all recorded runs: hits are summed and the maximum reported goal is used. This
+makes seeded regressions contribute to one cumulative functional-coverage view.
 
 ### Phase 4 — Advanced Verification
 
