@@ -16,6 +16,8 @@ from zddv.coverage import (
 )
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
+from zddv.elaboration import hierarchy_lines as elaborated_hierarchy_lines
+from zddv.elaboration import write_elaborated_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
@@ -107,6 +109,17 @@ def cmd_index(args) -> int:
 
 def cmd_hierarchy(args) -> int:
     project = load_project(_project_arg(args))
+    if args.elaborated:
+        result = write_elaborated_index(project)
+        print(
+            f"ELABORATED HIERARCHY: top={project.top} "
+            f"format={result['source_format']}"
+        )
+        for line in elaborated_hierarchy_lines(result):
+            print(line)
+        print(f"Index: {result['path']}")
+        return 0
+
     result = write_design_index(project)
     print(f"HIERARCHY: top={project.top}")
     for line in hierarchy_lines(result["hierarchy"]):
@@ -114,6 +127,22 @@ def cmd_hierarchy(args) -> int:
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
 
+
+
+
+def cmd_elaborate(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_elaborated_index(project)
+    summary = result["summary"]
+    print(
+        f"ELABORATION: {summary['modules']} module(s), "
+        f"{summary['instances']} instance(s)"
+    )
+    print(f"Simulator: {result['simulator_version']}")
+    print(f"Format: {result['source_format']}")
+    print(f"Index: {result['path']}")
+    print(f"Hierarchy: {result['hierarchy_path']}")
+    return 0
 
 
 def cmd_connectivity(args) -> int:
@@ -707,9 +736,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_hierarchy = sub.add_parser(
         "hierarchy",
-        help="Build and print the source-level design hierarchy",
+        help="Build and print the design hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--elaborated",
+        action="store_true",
+        help="Use simulator-resolved elaborated hierarchy instead of source-level hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_elaborate = sub.add_parser(
+        "elaborate",
+        help="Build the simulator-resolved normalized design hierarchy",
+    )
+    p_elaborate.set_defaults(func=cmd_elaborate)
 
     p_connectivity = sub.add_parser(
         "connectivity",
