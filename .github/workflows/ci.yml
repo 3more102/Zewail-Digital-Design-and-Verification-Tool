@@ -58,6 +58,17 @@ jobs:
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
+      - name: Exercise assertion capture
+        shell: bash
+        run: |
+          set +e
+          zddv --project examples/counter run --test assertion_demo --plusarg +ZDDV_ASSERT_FAIL
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          zddv --project examples/counter assertions --limit 10 | tee /tmp/zddv-assertions.txt
+          grep -q "a_zddv_demo" /tmp/zddv-assertions.txt
+
       - name: Show run database
         run: zddv --project examples/counter runs --limit 10
 
@@ -87,6 +98,7 @@ jobs:
           zddv --project examples/counter report --limit 50
           test -s examples/counter/.zddv/reports/latest.html
           grep -q "Coverage hit rate" examples/counter/.zddv/reports/latest.html
+          grep -q "Assertion events" examples/counter/.zddv/reports/latest.html
 
       - name: Integration tests
         run: pytest tests/test_verilator_integration.py -q
