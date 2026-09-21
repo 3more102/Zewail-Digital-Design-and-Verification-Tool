@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy and waveform indexing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform indexing, and VCD cross-probing in progress**
 
 ## What Works Today
 
@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- VCD waveform cross-probing at exact ticks with bounded transition windows
 - Assertion-to-waveform run correlation with conservative signal hints
 
 ## Quick Start
@@ -82,6 +83,7 @@ zddv --project my_project hierarchy
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project waveform-probe --signal tb_top.dut.count --time 100 --before 20 --after 20
 zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
@@ -274,7 +276,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
-- [ ] Waveform cross-probing
+- [x] Waveform cross-probing (VCD exact-tick values and transition windows)
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -360,6 +362,27 @@ For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
+
+### Debug Studio Waveform Cross-Probing
+
+`zddv waveform-probe` reads selected VCD signals without building a full in-memory
+waveform database. Signal selection accepts an exact hierarchical path or an
+unambiguous short name. The command reports the value at an integer VCD tick, the
+last transition at or before that tick, the first transition after it, and a bounded
+transition window around the requested time.
+
+The report always includes the VCD `timescale`; `--time`, `--before`, and
+`--after` are expressed in raw VCD ticks. FST remains metadata-only until a
+simulator-native reader or converter adapter is added.
+
+```bash
+zddv --project my_project waveform-probe \
+  --run <run-id> \
+  --signal tb_top.dut.count \
+  --time 100 \
+  --before 20 \
+  --after 20
+```
 
 ### Assertion-to-Waveform Debug Correlation
 
