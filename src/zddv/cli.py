@@ -20,8 +20,10 @@ from zddv.simulator import VerilatorBackend
 from zddv.storage import (
     assertion_statistics,
     database_path,
+    functional_coverage_statistics,
     list_assertion_events,
     list_coverage_snapshots,
+    list_functional_coverage_bins,
     list_run_records,
     list_runs,
 )
@@ -228,6 +230,45 @@ def cmd_coverage_holes(args) -> int:
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
+    return 0
+
+
+def cmd_functional_coverage(args) -> int:
+    project = load_project(_project_arg(args))
+    stats = functional_coverage_statistics(
+        project,
+        covergroup=args.covergroup,
+        coverpoint=args.coverpoint,
+    )
+    rows = list_functional_coverage_bins(
+        project,
+        limit=args.limit,
+        covergroup=args.covergroup,
+        coverpoint=args.coverpoint,
+        uncovered_only=args.uncovered,
+    )
+
+    print(
+        f"FUNCTIONAL COVERAGE: {stats['covered_bins']}/{stats['total_bins']} bins "
+        f"covered ({stats['coverage_rate']:.1f}%), "
+        f"{stats['uncovered_bins']} uncovered"
+    )
+    if not rows:
+        print("No functional coverage bins found.")
+        return 0
+
+    print(
+        f"{'STATUS':<9} {'COVERGROUP':<22} {'COVERPOINT':<22} "
+        f"{'BIN':<22} {'HITS/GOAL':>10} {'RUNS':>5}"
+    )
+    for row in rows:
+        status = "COVERED" if row["covered"] else "UNCOVERED"
+        ratio = f"{row['hits']}/{row['goal']}"
+        print(
+            f"{status:<9} {row['covergroup'][:22]:<22} "
+            f"{row['coverpoint'][:22]:<22} {row['bin_name'][:22]:<22} "
+            f"{ratio:>10} {row['runs']:>5}"
+        )
     return 0
 
 
@@ -473,6 +514,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+    p_fcov = sub.add_parser(
+        "functional-coverage",
+        aliases=["fcov"],
+        help="Show normalized functional coverage bins aggregated across runs",
+    )
+    p_fcov.add_argument("--limit", type=int, default=100)
+    p_fcov.add_argument("--covergroup", default=None)
+    p_fcov.add_argument("--coverpoint", default=None)
+    p_fcov.add_argument(
+        "--uncovered",
+        action="store_true",
+        help="Show only logical bins whose aggregate hits are below their goal",
+    )
+    p_fcov.set_defaults(func=cmd_functional_coverage)
 
     p_assertions = sub.add_parser(
         "assertions",
