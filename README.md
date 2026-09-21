@@ -66,6 +66,7 @@ zddv --project my_project config simulator verilator
 zddv --project my_project config top tb_top
 
 zddv doctor
+zddv --project my_project lint
 zddv --project my_project build
 
 zddv --project my_project run
@@ -76,6 +77,7 @@ zddv --project my_project regress regression.toml
 zddv --project my_project runs --limit 20
 zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
+zddv --project my_project report --limit 100
 zddv --project my_project coverage
 ```
 
