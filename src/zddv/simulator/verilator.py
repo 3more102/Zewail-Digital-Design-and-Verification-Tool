@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import uuid
@@ -37,7 +39,7 @@ class VerilatorBackend(SimulatorBackend):
         return (project.root / project.build_dir).resolve()
 
     def _executable(self, project: ProjectConfig) -> Path:
-        name = "zddv_sim.exe" if __import__("os").name == "nt" else "zddv_sim"
+        name = "zddv_sim.exe" if os.name == "nt" else "zddv_sim"
         return self._build_dir(project) / name
 
     def build(self, project: ProjectConfig) -> BuildResult:
@@ -98,7 +100,20 @@ class VerilatorBackend(SimulatorBackend):
             executable=executable,
         )
 
-    def run(self, project: ProjectConfig) -> RunResult:
+    @staticmethod
+    def _safe_label(value: str) -> str:
+        label = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+        return label[:40] or "test"
+
+    def run(
+        self,
+        project: ProjectConfig,
+        *,
+        test_name: str | None = None,
+        seed: int | None = None,
+        plusargs: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> RunResult:
         executable = self._executable(project)
         if not executable.exists():
             build = self.build(project)
@@ -107,22 +122,47 @@ class VerilatorBackend(SimulatorBackend):
             executable = build.executable
 
         now = datetime.now(timezone.utc)
-        run_id = now.strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
+        parts = [now.strftime("%Y%m%dT%H%M%SZ")]
+        if test_name:
+            parts.append(self._safe_label(test_name))
+        if seed is not None:
+            parts.append(f"s{seed}")
+        parts.append(uuid.uuid4().hex[:8])
+        run_id = "-".join(parts)
+
         run_dir = (project.root / project.run_dir / run_id).resolve()
         run_dir.mkdir(parents=True, exist_ok=False)
 
         command = [str(executable)]
-        completed = subprocess.run(
-            command,
-            cwd=run_dir,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
+        if test_name:
+            command.append(f"+ZDDV_TEST={test_name}")
+        if seed is not None:
+            command.extend([f"+ZDDV_SEED={seed}", f"+verilator+seed+{seed}"])
+        command.extend(plusargs or [])
+
+        timed_out = False
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=run_dir,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=timeout_s,
+            )
+            returncode = completed.returncode
+            output = completed.stdout
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            returncode = 124
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode(errors="replace")
+            output += f"\nZDDV_TIMEOUT after {timeout_s} seconds\n"
 
         log_path = run_dir / "simulation.log"
-        log_path.write_text(completed.stdout, encoding="utf-8")
+        log_path.write_text(output, encoding="utf-8")
 
         waveform = None
         for name in ("waveform.vcd", "dump.vcd", "waveform.fst", "dump.fst"):
@@ -131,16 +171,20 @@ class VerilatorBackend(SimulatorBackend):
                 waveform = candidate
                 break
 
-        status = "PASS" if completed.returncode == 0 else "FAIL"
+        status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
         record = {
             "run_id": run_id,
             "created_at": now.isoformat(),
             "project": project.name,
+            "test": test_name,
+            "seed": seed,
+            "plusargs": plusargs or [],
+            "timeout_s": timeout_s,
             "simulator": self.name,
             "simulator_version": self.version(),
             "top": project.top,
             "command": command,
-            "returncode": completed.returncode,
+            "returncode": returncode,
             "status": status,
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
@@ -153,9 +197,11 @@ class VerilatorBackend(SimulatorBackend):
         return RunResult(
             run_id=run_id,
             command=command,
-            returncode=completed.returncode,
+            returncode=returncode,
             status=status,
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform,
+            test_name=test_name,
+            seed=seed,
         )
