@@ -15,6 +15,8 @@ def test_initialize_and_load_project(tmp_path: Path):
     assert loaded.name == "demo"
     assert loaded.simulator == "verilator"
     assert loaded.top == "tb_top"
+    assert loaded.waveform is True
+    assert loaded.coverage is True
 
 
 def test_source_discovery(tmp_path: Path):
