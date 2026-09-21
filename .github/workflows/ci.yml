@@ -57,6 +57,14 @@ jobs:
           grep -q "tb_counter: tb_counter" /tmp/zddv-hierarchy.txt
           grep -q "dut: counter" /tmp/zddv-hierarchy.txt
 
+      - name: Navigate source-level drivers and loads
+        run: |
+          zddv --project examples/counter net clk --unit tb_counter | tee /tmp/zddv-net.txt
+          grep -q "NET tb_counter.clk" /tmp/zddv-net.txt
+          grep -q "DRIVERS" /tmp/zddv-net.txt
+          grep -q "u_child" /tmp/zddv-net.txt || grep -q "dut.clk" /tmp/zddv-net.txt
+          test -s examples/counter/.zddv/design/connectivity.json
+
       - name: Build counter example
         run: zddv --project examples/counter build
 
