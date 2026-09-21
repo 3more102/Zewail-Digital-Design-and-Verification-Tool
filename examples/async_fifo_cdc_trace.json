@@ -1,0 +1,74 @@
+{
+  "source": "example-async-fifo-monitor",
+  "pointer_width": 4,
+  "write_events": [
+    {
+      "cycle": 0,
+      "reset": 1,
+      "binary_before": 0,
+      "binary_after": 0,
+      "gray_before": 0,
+      "gray_after": 0
+    },
+    {
+      "cycle": 1,
+      "request": 1,
+      "full": 0,
+      "accepted": 1,
+      "binary_before": 0,
+      "binary_after": 1,
+      "gray_before": 0,
+      "gray_after": 1
+    },
+    {
+      "cycle": 2,
+      "request": 1,
+      "full": 0,
+      "accepted": 1,
+      "binary_before": 1,
+      "binary_after": 2,
+      "gray_before": 1,
+      "gray_after": 3
+    },
+    {
+      "cycle": 3,
+      "request": 1,
+      "full": 1,
+      "accepted": 0,
+      "binary_before": 2,
+      "binary_after": 2,
+      "gray_before": 3,
+      "gray_after": 3
+    }
+  ],
+  "read_events": [
+    {
+      "cycle": 0,
+      "reset": 1,
+      "binary_before": 0,
+      "binary_after": 0,
+      "gray_before": 0,
+      "gray_after": 0
+    },
+    {
+      "cycle": 4,
+      "request": 1,
+      "empty": 0,
+      "accepted": 1,
+      "binary_before": 0,
+      "binary_after": 1,
+      "gray_before": 0,
+      "gray_after": 1
+    },
+    {
+      "cycle": 5,
+      "request": 1,
+      "empty": 1,
+      "accepted": 0,
+      "binary_before": 1,
+      "binary_after": 1,
+      "gray_before": 1,
+      "gray_after": 1
+    }
+  ]
+}
