@@ -226,9 +226,6 @@ def cmd_triage(args) -> int:
 
     print(f"Failure runs: {len(rows)}")
     print(f"Failure groups: {len(groups)}")
-    if not groups:
-        return 0
-
     for index, group in enumerate(groups, start=1):
         print(f"[{index}] {group['count']}x {group['signature']}")
         for run in group["runs"][: args.show_runs]:
