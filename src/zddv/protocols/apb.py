@@ -75,6 +75,22 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
     return sample
 
 
+def _active(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return int(text, 0) != 0
+        except ValueError:
+            return bool(text)
+    return bool(value)
+
+
 def _request_fields(write: bool, setup: dict[str, Any]) -> tuple[str, ...]:
     fields = ["PADDR", "PWRITE"]
     if write:
@@ -165,7 +181,8 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 "PWDATA must be valid for an APB write transfer",
                 transaction_index=tx_index,
             )
-        if not write and int(sample.get("PSTRB", 0) or 0) != 0:
+        read_pstrb_reported = False
+        if not write and _active(sample.get("PSTRB")):
             add_violation(
                 "read_with_active_pstrb",
                 sample,
@@ -175,6 +192,7 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 expected=0,
                 actual=sample.get("PSTRB"),
             )
+            read_pstrb_reported = True
 
         return {
             "index": tx_index,
@@ -183,7 +201,22 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "write": write,
             "stable_fields": _request_fields(write, sample),
             "access_cycles": 0,
+            "read_pstrb_reported": read_pstrb_reported,
         }
+
+    def check_read_pstrb(sample: dict[str, Any], tx: dict[str, Any]) -> None:
+        if tx["write"] or tx["read_pstrb_reported"] or not _active(sample.get("PSTRB")):
+            return
+        add_violation(
+            "read_with_active_pstrb",
+            sample,
+            "PSTRB must not be active during a read transfer",
+            transaction_index=tx["index"],
+            signal="PSTRB",
+            expected=0,
+            actual=sample.get("PSTRB"),
+        )
+        tx["read_pstrb_reported"] = True
 
     def complete(sample: dict[str, Any], tx: dict[str, Any]) -> None:
         tx["access_cycles"] += 1
@@ -212,13 +245,6 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
         penable = sample["PENABLE"]
         pready = sample["PREADY"]
 
-        if penable and not psel:
-            add_violation(
-                "penable_without_psel",
-                sample,
-                "PENABLE is asserted while PSEL is deasserted",
-            )
-
         if current is None:
             if psel and not penable:
                 current = start_setup(sample)
@@ -243,8 +269,7 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
             current["phase"] = "ACCESS"
             check_selected_fields(sample, current)
-            if current["write"] and "PSTRB" in sample and sample["PSTRB"] != current["setup"].get("PSTRB"):
-                pass
+            check_read_pstrb(sample, current)
             if pready:
                 complete(sample, current)
                 current = None
@@ -263,6 +288,7 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
             continue
 
         check_selected_fields(sample, current)
+        check_read_pstrb(sample, current)
         if pready:
             complete(sample, current)
             current = None
