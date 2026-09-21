@@ -78,6 +78,24 @@ The source-level index is deliberately separate from simulator elaboration.
 Later adapters may enrich this model with elaborated hierarchy and tool-specific
 AST evidence without changing the CLI/GUI-facing contract.
 
+## v0.4 Waveform Index Contract
+
+The first waveform-debug index is VCD-native and is written under
+`.zddv/waveforms/`. It records:
+
+- waveform identity, byte size, and SHA-256
+- VCD date, version, and normalized timescale
+- nested scopes and hierarchical signal paths
+- signal type, width, reference, and VCD identifier code
+- identifier aliases
+- per-signal activity counts
+- start/end timestamps and total value-change activity
+- the originating ZDDV run ID when selected from run history
+
+The parser streams the VCD rather than loading the full trace into memory. Binary
+formats such as FST remain adapter work; the normalized index is intentionally
+independent of the simulator that produced the VCD.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
@@ -88,7 +106,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Add waveform indexing and source/hierarchy metadata.
+5. Extend waveform indexing into cross-probing and drivers/loads navigation.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
