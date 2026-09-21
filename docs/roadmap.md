@@ -44,12 +44,13 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 ## v0.4 — Debug Studio Core
 
-Current status: deterministic source indexing and source-level hierarchy are implemented.
-Elaborated hierarchy enrichment remains planned through simulator-adapter AST data.
+Current status: deterministic source indexing, source-level hierarchy, and a run-linked
+VCD waveform index are implemented. Elaborated hierarchy enrichment and binary waveform
+formats remain planned through simulator/tool adapters.
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
-- [ ] Waveform index.
+- [x] Waveform index (VCD).
 - [ ] Drivers/loads navigation.
 - [ ] Assertion-to-waveform correlation.
 - [ ] Protocol transaction reconstruction.
