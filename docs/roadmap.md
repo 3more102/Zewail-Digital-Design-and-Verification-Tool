@@ -51,7 +51,7 @@ Elaborated hierarchy and waveform-driven protocol extraction remain planned.
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata).
-- [ ] Drivers/loads navigation.
+- [x] Drivers/loads navigation (source-level).
 - [ ] Assertion-to-waveform correlation.
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 
