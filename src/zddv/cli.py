@@ -364,6 +364,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
 
+    p_coverage_holes = sub.add_parser(
+        "coverage-holes",
+        help="Report unhit normalized coverage points",
+    )
+    p_coverage_holes.add_argument("--limit", type=int, default=50)
+    p_coverage_holes.add_argument(
+        "--type",
+        action="append",
+        default=None,
+        help="Optional coverage-point type filter; repeat as needed.",
+    )
+    p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
     p_coverage_history = sub.add_parser(
         "coverage-history",
         help="Show normalized coverage snapshot history",
