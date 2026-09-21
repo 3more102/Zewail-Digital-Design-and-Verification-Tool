@@ -134,6 +134,8 @@ def analyze_apb_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "message": message,
         }
+        if "time" in sample:
+            entry["time"] = sample["time"]
         if transaction_index is not None:
             entry["transaction_index"] = transaction_index
         if signal is not None:
