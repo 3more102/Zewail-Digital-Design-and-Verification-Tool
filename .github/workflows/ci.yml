@@ -109,6 +109,15 @@ jobs:
           test -s examples/counter/.zddv/protocols/apb/latest.json
           grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/apb/latest.json
 
+      - name: Analyze APB waveform
+        run: |
+          zddv --project examples/counter apb-waveform --input ../apb_waveform.vcd
+          test -s examples/counter/.zddv/protocols/apb/waveform-trace.json
+          test -s examples/counter/.zddv/protocols/apb/waveform-latest.json
+          grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/apb/waveform-latest.json
+          grep -q '"scope": "tb.apb"' examples/counter/.zddv/protocols/apb/waveform-latest.json
+          grep -q '"end_time": 25' examples/counter/.zddv/protocols/apb/waveform-latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
