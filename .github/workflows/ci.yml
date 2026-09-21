@@ -61,6 +61,11 @@ jobs:
       - name: Show run database
         run: zddv --project examples/counter runs --limit 10
 
+      - name: Show assertion database
+        run: |
+          zddv --project examples/counter assertions --limit 20
+          zddv --project examples/counter assertions --status PASS --limit 20 | grep -q counter_sequence
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
