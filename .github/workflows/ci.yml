@@ -49,6 +49,13 @@ jobs:
       - name: Lint counter example
         run: zddv --project examples/counter lint
 
+      - name: Index counter design
+        run: |
+          zddv --project examples/counter index
+          test -s examples/counter/.zddv/index/source-index.json
+          test -s examples/counter/.zddv/index/hierarchy.json
+          grep -q '"unit": "counter"' examples/counter/.zddv/index/hierarchy.json
+
       - name: Build counter example
         run: zddv --project examples/counter build
 
