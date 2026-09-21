@@ -8,6 +8,8 @@ import sys
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
+from zddv.dashboard import generate_html_report
+from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
