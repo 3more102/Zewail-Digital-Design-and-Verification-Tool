@@ -99,6 +99,34 @@ def cmd_lint(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = index_project(project, output_dir=args.output_dir)
+    source_index = result["source_index"]
+    hierarchy = result["hierarchy"]
+
+    stats = source_index["stats"]
+    print(
+        f"INDEX: {stats['files']} file(s), {stats['units']} design unit(s), "
+        f"{stats['instances']} instance declaration(s)"
+    )
+    print(f"Source index: {result['source_index_path']}")
+    print(f"Hierarchy: {result['hierarchy_path']}")
+    print(
+        f"Reachable hierarchy: {hierarchy['stats']['reachable_nodes']} node(s), "
+        f"{hierarchy['stats']['reachable_instances']} child instance(s)"
+    )
+    for line in format_hierarchy_tree(hierarchy["root"]):
+        print(line)
+
+    diagnostics = source_index["diagnostics"]
+    if diagnostics:
+        print(f"Index diagnostics: {len(diagnostics)}")
+        for item in diagnostics:
+            print(f"[{item['severity'].upper()}] {item['code']}: {item['message']}")
+    return 0
+
+
 def cmd_build(args) -> int:
     project = load_project(_project_arg(args))
     backend = _backend(project.simulator)
@@ -479,6 +507,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_index = sub.add_parser(
+        "index",
+        help="Index source design units and build the configured hierarchy",
+    )
+    p_index.add_argument(
+        "--output-dir",
+        default=None,
+        help="Index output directory (default: .zddv/index)",
+    )
+    p_index.set_defaults(func=cmd_index)
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
