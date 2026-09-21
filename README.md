@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, structural connectivity, assertion correlation, and cross-probing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform cross-probing, structural connectivity, and assertion correlation in progress**
 
 ## What Works Today
 
@@ -40,7 +40,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - VCD waveform scope/signal index with FST artifact metadata support
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
-- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
+- Waveform-to-RTL source cross-probing with hierarchy-aware resolution and drivers/loads evidence
 
 ## Quick Start
 
@@ -394,8 +394,9 @@ short signal names are supported. Ambiguous short names are rejected so debug
 navigation does not silently select the wrong signal.
 
 The report records the waveform signal, matched hierarchy path, RTL unit,
-source declaration, match type, and the design/waveform index artifacts used as
-evidence. Source lookup is intentionally conservative: when the scope matches
+source declaration, structural drivers/loads, match type, and the design,
+connectivity, and waveform index artifacts used as evidence. Source lookup is
+intentionally conservative: when the scope matches
 but a declaration cannot be identified on a single source line, ZDDV returns a
 partial result instead of claiming an exact source location.
 
