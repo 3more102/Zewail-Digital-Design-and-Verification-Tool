@@ -357,6 +357,56 @@ def test_reports_exclusive_write_started_before_matching_read_completion():
     assert "exclusive_write_before_read_complete" in codes
 
 
+def test_reports_same_cycle_exclusive_write_before_read_completion():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 13,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARLOCK": 1,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 13,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWLOCK": 1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 13,
+                "RDATA": 0,
+                "RRESP": "EXOKAY",
+                "RLAST": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 1,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 13,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert "exclusive_write_before_read_complete" in codes
+
+
 def test_reports_mixed_okay_and_exokay_on_exclusive_read():
     result = analyze_axi4_trace(
         {"samples": [

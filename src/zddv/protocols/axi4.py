@@ -621,6 +621,18 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         ar_hs = channel_event(sample, "AR")
         r_hs = channel_event(sample, "R")
 
+        if ar_hs:
+            request = make_request(sample, "AR", issued_read_bursts)
+            request["beats"] = []
+            if request["lock"]:
+                issued_exclusive_reads += 1
+                request["exclusive_completed"] = False
+                request["exclusive_read_response_class"] = None
+                request["exclusive_response_mix_reported"] = False
+                exclusive_read_monitors[request["id"]] = request
+            pending_reads[request["id"]].append(request)
+            issued_read_bursts += 1
+
         if aw_hs:
             request = make_request(sample, "AW", issued_write_bursts)
             if request["lock"]:
@@ -645,18 +657,6 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 current_w_beats.clear()
 
         pair_write_bursts()
-
-        if ar_hs:
-            request = make_request(sample, "AR", issued_read_bursts)
-            request["beats"] = []
-            if request["lock"]:
-                issued_exclusive_reads += 1
-                request["exclusive_completed"] = False
-                request["exclusive_read_response_class"] = None
-                request["exclusive_response_mix_reported"] = False
-                exclusive_read_monitors[request["id"]] = request
-            pending_reads[request["id"]].append(request)
-            issued_read_bursts += 1
 
         if b_hs:
             bid = id_value(sample, "BID", "B")
