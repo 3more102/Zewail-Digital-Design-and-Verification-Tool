@@ -61,6 +61,11 @@ jobs:
       - name: Run counter example
         run: zddv --project examples/counter run
 
+      - name: Index latest waveform
+        run: |
+          zddv --project examples/counter wave-index
+          test -n "$(find examples/counter/.zddv/index/waveforms -name '*.json' -print -quit)"
+
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
