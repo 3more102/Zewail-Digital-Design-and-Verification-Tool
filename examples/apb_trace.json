@@ -1,0 +1,11 @@
+{
+  "source": "zddv-apb-example",
+  "samples": [
+    {"cycle": 0, "PSEL": 0, "PENABLE": 0, "PREADY": 1, "PWRITE": 0},
+    {"cycle": 1, "PSEL": 1, "PENABLE": 0, "PREADY": 1, "PWRITE": 1, "PADDR": "0x10", "PWDATA": "0x12345678", "PSTRB": "0xF"},
+    {"cycle": 2, "PSEL": 1, "PENABLE": 1, "PREADY": 0, "PWRITE": 1, "PADDR": "0x10", "PWDATA": "0x12345678", "PSTRB": "0xF"},
+    {"cycle": 3, "PSEL": 1, "PENABLE": 1, "PREADY": 1, "PWRITE": 1, "PADDR": "0x10", "PWDATA": "0x12345678", "PSTRB": "0xF"},
+    {"cycle": 4, "PSEL": 1, "PENABLE": 0, "PREADY": 1, "PWRITE": 0, "PADDR": "0x20", "PSTRB": 0},
+    {"cycle": 5, "PSEL": 1, "PENABLE": 1, "PREADY": 1, "PWRITE": 0, "PADDR": "0x20", "PSTRB": 0, "PRDATA": "0xA5A5A5A5", "PSLVERR": 0}
+  ]
+}
