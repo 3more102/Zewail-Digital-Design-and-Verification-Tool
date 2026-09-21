@@ -57,6 +57,14 @@ jobs:
           grep -q "tb_counter: tb_counter" /tmp/zddv-hierarchy.txt
           grep -q "dut: counter" /tmp/zddv-hierarchy.txt
 
+      - name: Build source connectivity index
+        run: |
+          zddv --project examples/counter connectivity
+          test -s examples/counter/.zddv/design/connectivity.json
+          zddv --project examples/counter signal count --unit counter | tee /tmp/zddv-signal.txt
+          grep -q "SIGNAL counter.count" /tmp/zddv-signal.txt
+          grep -q "\[assignment\]" /tmp/zddv-signal.txt
+
       - name: Build counter example
         run: zddv --project examples/counter build
 
