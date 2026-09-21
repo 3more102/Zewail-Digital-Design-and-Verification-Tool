@@ -10,8 +10,9 @@ import subprocess
 import time
 import uuid
 
+from zddv.assertions import parse_verilator_assertions
 from zddv.config import ProjectConfig
-from zddv.storage import record_run
+from zddv.storage import record_assertion_events, record_run
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -36,6 +37,13 @@ class VerilatorBackend(SimulatorBackend):
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Unable to query Verilator.")
         return result.stdout.strip()
+
+    @staticmethod
+    def _version_number(version_text: str) -> tuple[int, int] | None:
+        match = re.search(r"\\bVerilator\\s+(\\d+)\\.(\\d+)", version_text)
+        if match is None:
+            return None
+        return int(match.group(1)), int(match.group(2))
 
     def _build_dir(self, project: ProjectConfig) -> Path:
         return (project.root / project.build_dir).resolve()
@@ -94,6 +102,7 @@ int main(int argc, char** argv) {{
         build_dir = self._build_dir(project)
         build_dir.mkdir(parents=True, exist_ok=True)
         log_path = build_dir / "build.log"
+        simulator_version = self.version()
 
         if project.coverage:
             # Verilator versions before 5.050 do not automatically dump
@@ -116,6 +125,10 @@ int main(int argc, char** argv) {{
                 "--timing",
                 "--Wno-fatal",
             ]
+
+        version_number = self._version_number(simulator_version)
+        if version_number is not None and version_number < (5, 38):
+            command.append("--assert")
 
         if project.waveform:
             command.append("--trace")
@@ -152,7 +165,7 @@ int main(int argc, char** argv) {{
 
         manifest = {
             "simulator": self.name,
-            "simulator_version": self.version(),
+            "simulator_version": simulator_version,
             "top": project.top,
             "sources": [str(p) for p in sources],
             "waveform": project.waveform,
@@ -253,6 +266,20 @@ int main(int argc, char** argv) {{
             coverage = None
 
         status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
+        assertion_events = parse_verilator_assertions(output)
+        assertions_path = run_dir / "assertions.json"
+        assertions_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "count": len(assertion_events),
+                    "events": assertion_events,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
         record = {
             "run_id": run_id,
             "created_at": now.isoformat(),
@@ -272,12 +299,15 @@ int main(int argc, char** argv) {{
             "log": str(log_path),
             "waveform": str(waveform) if waveform else None,
             "coverage": str(coverage) if coverage else None,
+            "assertion_count": len(assertion_events),
+            "assertions": str(assertions_path),
         }
         (run_dir / "run.json").write_text(
             json.dumps(record, indent=2),
             encoding="utf-8",
         )
         record_run(project, record)
+        record_assertion_events(project, record, assertion_events)
 
         return RunResult(
             run_id=run_id,
@@ -288,6 +318,8 @@ int main(int argc, char** argv) {{
             log_path=log_path,
             waveform_path=waveform,
             coverage_path=coverage,
+            assertion_count=len(assertion_events),
+            assertions_path=assertions_path,
             test_name=test_name,
             seed=seed,
         )
