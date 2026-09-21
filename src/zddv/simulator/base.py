@@ -28,6 +28,8 @@ class RunResult:
     run_dir: Path
     log_path: Path
     waveform_path: Path | None
+    test_name: str | None = None
+    seed: int | None = None
 
 
 class SimulatorBackend(ABC):
@@ -42,5 +44,13 @@ class SimulatorBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def run(self, project: ProjectConfig) -> RunResult:
+    def run(
+        self,
+        project: ProjectConfig,
+        *,
+        test_name: str | None = None,
+        seed: int | None = None,
+        plusargs: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> RunResult:
         raise NotImplementedError
