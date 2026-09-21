@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy and waveform indexing in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, drivers/loads, and waveform indexing in progress**
 
 ## What Works Today
 
@@ -37,6 +37,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - End-to-end Verilator CI example
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
+- Source-level driver/load navigation for ports, assignments, and direction-aware named instance connections
 - VCD waveform scope/signal index with FST artifact metadata support
 - Assertion-to-waveform run correlation with conservative signal hints
 
@@ -79,6 +80,7 @@ zddv --project my_project config top tb_top
 zddv doctor
 zddv --project my_project index
 zddv --project my_project hierarchy
+zddv --project my_project net count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
@@ -274,6 +276,7 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
+- [x] Source-level drivers/loads navigation
 - [ ] Waveform cross-probing
 - [ ] UVM-aware result model
 
@@ -345,7 +348,7 @@ SHA-256 hashes, source design units, instance locations, duplicate-unit detectio
 and the configured top hierarchy. `zddv hierarchy` renders the same normalized
 hierarchy in the terminal.
 
-This v0.4 foundation is intentionally a **source-level** index. It does not claim
+`zddv net <signal> [--unit <unit>]` builds `.zddv/design/connectivity.json` and reports conservative source-level drivers and loads. It recognizes directional module ports, continuous/procedural assignments, and named child-instance connections when the child port direction is known.\n\nThis v0.4 foundation is intentionally a **source-level** index. It does not claim
 to replace elaboration: generate-time choices, parameter specialization, binds,
 and tool-resolved hierarchy will be enriched later through simulator-adapter AST
 data while preserving the same normalized ZDDV model.
