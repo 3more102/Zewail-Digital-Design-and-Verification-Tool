@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from html import escape
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_run_records, run_statistics
+from zddv.storage import list_coverage_snapshots, list_run_records, run_statistics
 from zddv.triage import group_failure_records
 
 
@@ -12,6 +12,8 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
     records = list_run_records(project, limit=limit)
     stats = run_statistics(project)
     groups = group_failure_records(records)
+    coverage_rows = list_coverage_snapshots(project, limit=1)
+    latest_coverage = coverage_rows[0] if coverage_rows else None
 
     out_dir = (project.root / ".zddv" / "reports").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -60,6 +62,34 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
             "</tr>"
         )
 
+    coverage_card = ""
+    coverage_section = ""
+    if latest_coverage is not None:
+        coverage_card = (
+            "<div class=\"card\"><div>Coverage hit rate</div>"
+            f"<div class=\"metric\">{latest_coverage['hit_rate']:.1f}%</div>"
+            f"<small>{latest_coverage['hit_points']}/{latest_coverage['total_points']} points</small>"
+            "</div>"
+        )
+        coverage_type_rows = []
+        for kind, values in latest_coverage["by_type"].items():
+            coverage_type_rows.append(
+                "<tr>"
+                f"<td>{escape(kind)}</td>"
+                f"<td>{values['total']}</td>"
+                f"<td>{values['hit']}</td>"
+                f"<td>{values['hit_rate']:.1f}%</td>"
+                "</tr>"
+            )
+        coverage_section = (
+            "<section><h2>Latest coverage snapshot</h2>"
+            f"<small>{escape(latest_coverage['snapshot_id'])}</small>"
+            "<table><thead><tr><th>Type</th><th>Total</th><th>Hit</th>"
+            "<th>Hit rate</th></tr></thead><tbody>"
+            + ("".join(coverage_type_rows) or '<tr><td colspan="4">No typed coverage points.</td></tr>')
+            + "</tbody></table></section>"
+        )
+
     generated = datetime.now(timezone.utc).isoformat()
     html = f"""<!doctype html>
 <html lang="en">
@@ -94,7 +124,10 @@ small {{ color: #9ca3af; }}
   <div class="card"><div>Failed</div><div class="metric">{stats['failed']}</div></div>
   <div class="card"><div>Timeouts</div><div class="metric">{stats['timed_out']}</div></div>
   <div class="card"><div>Pass rate</div><div class="metric">{stats['pass_rate']:.1f}%</div></div>
+  {coverage_card}
 </div>
+
+{coverage_section}
 
 <section>
 <h2>Per-test summary</h2>
@@ -129,5 +162,6 @@ small {{ color: #9ca3af; }}
         "path": str(report_path),
         "stats": stats,
         "failure_groups": groups,
+        "latest_coverage": latest_coverage,
         "shown_runs": len(records),
     }
