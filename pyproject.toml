@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zddv"
-version = "0.3.0"
+version = "0.5.0"
 description = "Zewail Digital Design and Verification Tool"
 readme = "README.md"
 requires-python = ">=3.11"
