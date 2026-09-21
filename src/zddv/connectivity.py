@@ -23,6 +23,7 @@ _DECLARATION_RE = re.compile(
     r"(?P<body>[^;]*);"
 )
 _ASSIGNMENT_RE = re.compile(
+    r"(?P<prefix>^[ \t]*|[;{}:][ \t]*|\)[ \t]*|\b(?:begin|else)[ \t]+)"
     rf"(?:(?P<continuous>\bassign)\s+)?"
     rf"(?P<lhs>{_IDENTIFIER_TEXT}(?:\s*\[[^;\]]+\])?)\s*"
     r"(?P<op><=|(?<![=!<>])=(?!=))\s*"
@@ -172,9 +173,6 @@ def _ansi_ports(
         direction_match = re.search(r"\b(input|output|inout)\b", stripped)
         if direction_match:
             current_direction = direction_match.group(1)
-        if current_direction is None:
-            continue
-
         name = _declarator_name(stripped)
         if name is None:
             continue
@@ -289,7 +287,7 @@ def _assignment_connections(
         if lhs not in known_signals:
             continue
 
-        line = _line_number(masked, start + match.start())
+        line = _line_number(masked, start + match.start("lhs"))
         style = (
             "continuous_assignment"
             if match.group("continuous")
@@ -376,80 +374,90 @@ def _instance_connections(
                 continue
             pos = _skip_space(body, after_params)
 
-        instance_match = _IDENTIFIER_RE.match(body, pos)
-        if instance_match is None:
-            continue
-        instance_name = instance_match.group(0)
-        pos = _skip_space(body, instance_match.end())
-
-        while pos < len(body) and body[pos] == "[":
-            after_dimension = _skip_balanced(body, pos, "[", "]")
-            if after_dimension is None:
-                break
-            pos = _skip_space(body, after_dimension)
-
-        if pos >= len(body) or body[pos] != "(":
-            continue
-        after_connections = _skip_balanced(body, pos, "(", ")")
-        if after_connections is None:
-            continue
-
         port_list = child_ports[child_type]
         port_by_name = {item["name"]: item for item in port_list}
-        connection_text = body[pos + 1 : after_connections - 1]
-        line = _line_number(masked, start + match.start())
 
-        for index, (part, _) in enumerate(_split_top_level(connection_text)):
-            stripped = part.strip()
-            if not stripped or stripped == ".*":
-                if stripped == ".*":
-                    unresolved += 1
-                continue
+        while pos < len(body):
+            instance_match = _IDENTIFIER_RE.match(body, pos)
+            if instance_match is None:
+                break
 
-            port_name, expression = _named_port_connection(stripped)
-            if port_name is None:
-                if index >= len(port_list):
+            instance_name = instance_match.group(0)
+            instance_offset = instance_match.start()
+            pos = _skip_space(body, instance_match.end())
+
+            while pos < len(body) and body[pos] == "[":
+                after_dimension = _skip_balanced(body, pos, "[", "]")
+                if after_dimension is None:
+                    break
+                pos = _skip_space(body, after_dimension)
+
+            if pos >= len(body) or body[pos] != "(":
+                break
+            after_connections = _skip_balanced(body, pos, "(", ")")
+            if after_connections is None:
+                break
+
+            connection_text = body[pos + 1 : after_connections - 1]
+            line = _line_number(masked, start + instance_offset)
+
+            for index, (part, _) in enumerate(_split_top_level(connection_text)):
+                stripped = part.strip()
+                if not stripped or stripped == ".*":
+                    if stripped == ".*":
+                        unresolved += 1
+                    continue
+
+                port_name, expression = _named_port_connection(stripped)
+                if port_name is None:
+                    if index >= len(port_list):
+                        unresolved += 1
+                        continue
+                    port_name = port_list[index]["name"]
+                    expression = stripped
+
+                port = port_by_name.get(port_name)
+                if port is None or expression is None:
                     unresolved += 1
                     continue
-                port_name = port_list[index]["name"]
-                expression = stripped
 
-            port = port_by_name.get(port_name)
-            if port is None or expression is None:
-                unresolved += 1
+                signals = _expression_identifiers(expression, known_signals)
+                if not signals:
+                    continue
+
+                direction = port["direction"]
+                for signal in signals:
+                    common = {
+                        "kind": "instance_port",
+                        "unit": unit_name,
+                        "signal": signal,
+                        "file": file,
+                        "line": line,
+                        "detail": (
+                            f"{instance_name}.{port_name} ({direction}) connected to "
+                            f"{expression}"
+                        ),
+                        "instance": instance_name,
+                        "child_type": child_type,
+                        "port": port_name,
+                        "direction": direction,
+                        "expression": expression,
+                    }
+                    if direction == "input":
+                        entries.append(_connection(role="load", **common))
+                    elif direction == "output":
+                        entries.append(_connection(role="driver", **common))
+                    elif direction == "inout":
+                        entries.append(_connection(role="driver", **common))
+                        entries.append(_connection(role="load", **common))
+                    else:
+                        unresolved += 1
+
+            pos = _skip_space(body, after_connections)
+            if pos < len(body) and body[pos] == ",":
+                pos = _skip_space(body, pos + 1)
                 continue
-
-            signals = _expression_identifiers(expression, known_signals)
-            if not signals:
-                continue
-
-            direction = port["direction"]
-            for signal in signals:
-                common = {
-                    "kind": "instance_port",
-                    "unit": unit_name,
-                    "signal": signal,
-                    "file": file,
-                    "line": line,
-                    "detail": (
-                        f"{instance_name}.{port_name} ({direction}) connected to "
-                        f"{expression}"
-                    ),
-                    "instance": instance_name,
-                    "child_type": child_type,
-                    "port": port_name,
-                    "direction": direction,
-                    "expression": expression,
-                }
-                if direction == "input":
-                    entries.append(_connection(role="load", **common))
-                elif direction == "output":
-                    entries.append(_connection(role="driver", **common))
-                elif direction == "inout":
-                    entries.append(_connection(role="driver", **common))
-                    entries.append(_connection(role="load", **common))
-                else:
-                    unresolved += 1
+            break
 
     return entries, unresolved
 
