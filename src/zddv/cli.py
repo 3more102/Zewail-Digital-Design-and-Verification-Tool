@@ -20,6 +20,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file
+from zddv.protocols.axi4lite import analyze_axi4lite_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -515,6 +516,39 @@ def cmd_apb_analyze(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_axi4lite_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_axi4lite_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"AXI4-Lite {result['status']}: "
+        f"{summary['completed_transactions']} completed transaction(s), "
+        f"{summary['violations']} protocol violation(s)"
+    )
+    print(
+        f"Reads/Writes: {summary['reads']}/{summary['writes']}  "
+        f"Error responses: {summary['error_responses']}"
+    )
+    stalls = summary["channel_stall_cycles"]
+    print(
+        "Channel stalls: "
+        + " ".join(f"{name}={stalls[name]}" for name in ("AW", "W", "B", "AR", "R"))
+    )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] cycle={violation['cycle']} "
+            f"{violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -904,6 +938,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_apb.set_defaults(func=cmd_apb_analyze)
+
+    p_axi4lite = sub.add_parser(
+        "axi4lite-analyze",
+        help="Reconstruct AXI4-Lite transactions and report protocol violations",
+    )
+    p_axi4lite.add_argument("path", help="Normalized AXI4-Lite trace JSON file")
+    p_axi4lite.add_argument(
+        "--output",
+        default=".zddv/protocols/axi4lite/latest.json",
+        help="JSON protocol-analysis report path",
+    )
+    p_axi4lite.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of protocol violations to print",
+    )
+    p_axi4lite.set_defaults(func=cmd_axi4lite_analyze)
 
     p_assertions = sub.add_parser(
         "assertions",
