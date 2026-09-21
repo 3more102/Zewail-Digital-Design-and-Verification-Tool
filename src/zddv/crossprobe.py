@@ -6,6 +6,11 @@ import re
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.connectivity import (
+    build_connectivity_index,
+    signal_navigation,
+    write_connectivity_index,
+)
 from zddv.design_index import build_design_index, write_design_index
 from zddv.waveform import write_waveform_index
 
@@ -153,6 +158,7 @@ def build_crossprobe(
     waveform_index: dict[str, Any],
     *,
     design_index: dict[str, Any] | None = None,
+    connectivity_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Correlate a waveform signal with source-level design hierarchy metadata."""
     if waveform_index.get("parse_status") != "indexed":
@@ -173,6 +179,7 @@ def build_crossprobe(
     )
 
     source: dict[str, Any] | None = None
+    connectivity_payload: dict[str, Any] | None = None
     status = "PARTIAL"
     note: str | None = None
 
@@ -202,6 +209,25 @@ def build_crossprobe(
                 "unit_end_line": unit["end_line"],
                 "declaration": declaration,
             }
+
+            connectivity = connectivity_index or build_connectivity_index(project)
+            try:
+                navigation = signal_navigation(
+                    connectivity,
+                    unit=str(unit["name"]),
+                    signal=str(signal.get("name", "")),
+                )
+            except ValueError:
+                navigation = None
+            if navigation is not None:
+                connectivity_payload = {
+                    "analysis_level": connectivity.get("analysis_level"),
+                    "unit": navigation["unit"],
+                    "signal": navigation["signal"],
+                    "drivers": navigation["drivers"],
+                    "loads": navigation["loads"],
+                }
+
             if declaration is not None:
                 status = "MATCHED"
             else:
@@ -236,6 +262,7 @@ def build_crossprobe(
         },
         "hierarchy": hierarchy_payload,
         "source": source,
+        "connectivity": connectivity_payload,
         "note": note,
     }
 
@@ -249,6 +276,7 @@ def write_crossprobe_report(
     output: str | Path = ".zddv/debug/crossprobe.json",
 ) -> dict[str, Any]:
     design = write_design_index(project)
+    connectivity = write_connectivity_index(project)
     waveform = write_waveform_index(
         project,
         run_id=run_id,
@@ -259,8 +287,10 @@ def write_crossprobe_report(
         signal_query,
         waveform,
         design_index=design,
+        connectivity_index=connectivity,
     )
     report["design_index_path"] = design["path"]
+    report["connectivity_index_path"] = connectivity["path"]
     report["waveform_index_path"] = waveform["path"]
 
     destination = Path(output)
