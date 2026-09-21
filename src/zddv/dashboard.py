@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from html import escape
 
 from zddv.config import ProjectConfig
-from zddv.storage import list_coverage_snapshots, list_run_records, run_statistics
+from zddv.storage import (
+    assertion_statistics,
+    list_assertion_events,
+    list_coverage_snapshots,
+    list_run_records,
+    run_statistics,
+)
 from zddv.triage import group_failure_records
 
 
@@ -12,6 +18,8 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
     records = list_run_records(project, limit=limit)
     stats = run_statistics(project)
     groups = group_failure_records(records)
+    assertion_stats = assertion_statistics(project)
+    assertion_events = list_assertion_events(project, limit=min(limit, 50))
     coverage_rows = list_coverage_snapshots(project, limit=1)
     latest_coverage = coverage_rows[0] if coverage_rows else None
 
@@ -59,6 +67,22 @@ def generate_html_report(project: ProjectConfig, *, limit: int = 100) -> dict:
             f"<td>{escape(statuses)}</td>"
             f"<td>{escape(tests)}</td>"
             f"<td><code>{escape(group['signature'])}</code></td>"
+            "</tr>"
+        )
+
+    assertion_rows = []
+    for event in assertion_events:
+        location = f"{event['source_path']}:{event['source_line']}"
+        if event["source_column"] is not None:
+            location += f":{event['source_column']}"
+        assertion_rows.append(
+            "<tr>"
+            f"<td>{escape(event['severity'])}</td>"
+            f"<td>{escape(str(event['sim_time'] or '-'))}</td>"
+            f"<td>{escape(str(event['assertion_name'] or event['scope'] or '(unnamed)'))}</td>"
+            f"<td>{escape(location)}</td>"
+            f"<td>{escape(event['message'])}</td>"
+            f"<td><code>{escape(event['run_id'])}</code></td>"
             "</tr>"
         )
 
@@ -124,10 +148,20 @@ small {{ color: #9ca3af; }}
   <div class="card"><div>Failed</div><div class="metric">{stats['failed']}</div></div>
   <div class="card"><div>Timeouts</div><div class="metric">{stats['timed_out']}</div></div>
   <div class="card"><div>Pass rate</div><div class="metric">{stats['pass_rate']:.1f}%</div></div>
+  <div class="card"><div>Assertion events</div><div class="metric">{assertion_stats['total_events']}</div><small>{assertion_stats['unique_assertions']} unique · {assertion_stats['affected_runs']} run(s)</small></div>
   {coverage_card}
 </div>
 
 {coverage_section}
+
+<section>
+<h2>Assertion events</h2>
+<small>Showing up to {min(limit, 50)} captured assertion events.</small>
+<table>
+<thead><tr><th>Severity</th><th>Sim time</th><th>Assertion</th><th>Location</th><th>Message</th><th>Run ID</th></tr></thead>
+<tbody>{''.join(assertion_rows) or '<tr><td colspan="6">No assertion failures captured.</td></tr>'}</tbody>
+</table>
+</section>
 
 <section>
 <h2>Per-test summary</h2>
@@ -162,6 +196,8 @@ small {{ color: #9ca3af; }}
         "path": str(report_path),
         "stats": stats,
         "failure_groups": groups,
+        "assertion_stats": assertion_stats,
+        "assertion_events": assertion_events,
         "latest_coverage": latest_coverage,
         "shown_runs": len(records),
     }
