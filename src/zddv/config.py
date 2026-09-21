@@ -20,6 +20,7 @@ class ProjectConfig:
     build_dir: str = ".zddv/build"
     run_dir: str = ".zddv/runs"
     waveform: bool = True
+    coverage: bool = True
 
     @property
     def config_path(self) -> Path:
@@ -71,6 +72,7 @@ def load_project(path: str | Path = ".") -> ProjectConfig:
         build_dir=run.get("build_dir", ".zddv/build"),
         run_dir=run.get("run_dir", ".zddv/runs"),
         waveform=bool(run.get("waveform", True)),
+        coverage=bool(run.get("coverage", True)),
     )
 
 
@@ -97,6 +99,7 @@ tb = {arr(config.tb)}
 build_dir = {q(config.build_dir)}
 run_dir = {q(config.run_dir)}
 waveform = {str(config.waveform).lower()}
+coverage = {str(config.coverage).lower()}
 """
     config.config_path.write_text(text, encoding="utf-8")
 
