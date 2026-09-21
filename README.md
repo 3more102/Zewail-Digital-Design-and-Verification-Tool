@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Source-level driver/load connectivity from ports, assignments, and instance connections
 
 ## Quick Start
 
@@ -81,6 +82,9 @@ zddv --project my_project hierarchy
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project connectivity
+zddv --project my_project drivers count --unit tb_counter
+zddv --project my_project loads clk --unit tb_counter
 zddv --project my_project lint
 zddv --project my_project build
 
