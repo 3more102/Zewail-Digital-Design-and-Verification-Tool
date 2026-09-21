@@ -151,3 +151,106 @@ def test_write_connectivity_index_and_unknown_signal_errors(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Unknown signal"):
         signal_navigation(result, unit="top", signal="missing")
+
+
+
+def test_relational_less_equal_is_not_misread_as_nonblocking_assignment(tmp_path: Path):
+    project = initialize_project(tmp_path / "comparison")
+    (project.root / "rtl" / "comparison.sv").write_text(
+        """module top (
+    input logic a,
+    input logic b,
+    input logic c,
+    output logic y
+);
+    always_comb begin
+        if (a <= b) y = c;
+    end
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    index = build_connectivity_index(project)
+    a_nav = signal_navigation(index, unit="top", signal="a")
+    y_nav = signal_navigation(index, unit="top", signal="y")
+
+    assert not any(
+        item["kind"] == "procedural_assignment" for item in a_nav["drivers"]
+    )
+    assert any(
+        item["kind"] == "procedural_assignment" for item in y_nav["drivers"]
+    )
+
+
+def test_non_ansi_positional_ports_preserve_header_order(tmp_path: Path):
+    project = initialize_project(tmp_path / "non-ansi")
+    (project.root / "rtl" / "non_ansi.sv").write_text(
+        """module child(a, y, b);
+    output y;
+    input a, b;
+    assign y = a;
+endmodule
+
+module top(
+    input logic x,
+    input logic w,
+    output logic z
+);
+    child u_child(x, z, w);
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    index = build_connectivity_index(project)
+    x_nav = signal_navigation(index, unit="top", signal="x")
+    z_nav = signal_navigation(index, unit="top", signal="z")
+    w_nav = signal_navigation(index, unit="top", signal="w")
+
+    x_edge = next(item for item in x_nav["loads"] if item["kind"] == "instance_port")
+    z_edge = next(item for item in z_nav["drivers"] if item["kind"] == "instance_port")
+    w_edge = next(item for item in w_nav["loads"] if item["kind"] == "instance_port")
+
+    assert (x_edge["port"], x_edge["direction"]) == ("a", "input")
+    assert (z_edge["port"], z_edge["direction"]) == ("y", "output")
+    assert (w_edge["port"], w_edge["direction"]) == ("b", "input")
+
+
+def test_comma_separated_instance_declarations_are_all_indexed(tmp_path: Path):
+    project = initialize_project(tmp_path / "multi-instance")
+    (project.root / "rtl" / "multi_instance.sv").write_text(
+        """module child(input logic a, output logic y);
+    assign y = a;
+endmodule
+
+module top(
+    input logic a,
+    input logic b,
+    output logic y1,
+    output logic y2
+);
+    child u1(a, y1), u2(b, y2);
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    index = build_connectivity_index(project)
+    b_nav = signal_navigation(index, unit="top", signal="b")
+    y2_nav = signal_navigation(index, unit="top", signal="y2")
+
+    b_edge = next(item for item in b_nav["loads"] if item["kind"] == "instance_port")
+    y2_edge = next(item for item in y2_nav["drivers"] if item["kind"] == "instance_port")
+
+    assert b_edge["instance"] == "u2"
+    assert y2_edge["instance"] == "u2"

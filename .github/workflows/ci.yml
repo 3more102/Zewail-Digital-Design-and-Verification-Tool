@@ -79,12 +79,29 @@ jobs:
           grep -q '"format": "vcd"' examples/counter/.zddv/waveforms/latest.json
           grep -q '"parse_status": "indexed"' examples/counter/.zddv/waveforms/latest.json
 
+      - name: Probe waveform values
+        run: |
+          zddv --project examples/counter waveform-probe \
+            --signal tb_counter.dut.count \
+            --time 0 \
+            --after 20
+          test -s examples/counter/.zddv/debug/waveform-probe.json
+          grep -q '"format": "vcd"' examples/counter/.zddv/debug/waveform-probe.json
+          grep -q '"path": "tb_counter.dut.count"' examples/counter/.zddv/debug/waveform-probe.json
+
       - name: Correlate assertion to waveform
         run: |
           zddv --project examples/counter assertion-waveform --status PASS --limit 10
           test -s examples/counter/.zddv/debug/assertion-waveform.json
           grep -q '"with_indexed_waveform": 1' examples/counter/.zddv/debug/assertion-waveform.json
           grep -q '"format": "vcd"' examples/counter/.zddv/debug/assertion-waveform.json
+
+      - name: Cross-probe waveform signal
+        run: |
+          zddv --project examples/counter crossprobe tb_counter.dut.count
+          test -s examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"status": "MATCHED"' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"file": "rtl/counter.sv"' examples/counter/.zddv/debug/crossprobe.json
 
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
