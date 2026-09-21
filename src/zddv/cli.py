@@ -7,6 +7,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.connectivity import find_signal, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -110,6 +111,52 @@ def cmd_hierarchy(args) -> int:
         print(line)
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
+
+
+def cmd_connectivity(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project)
+    summary = result["summary"]
+    print(
+        f"CONNECTIVITY INDEX: {summary['signals']} signal(s), "
+        f"{summary['drivers']} driver reference(s), "
+        f"{summary['loads']} load reference(s)"
+    )
+    print("Analysis: source-level")
+    print(f"Index: {result['path']}")
+    return 0
+
+
+def cmd_signal(args) -> int:
+    project = load_project(_project_arg(args))
+    index = write_connectivity_index(project)
+    item = find_signal(index, args.signal, unit=args.unit)
+    direction = item["direction"] or "-"
+    declaration = item["declaration"]
+    print(f"SIGNAL {item['unit']}.{item['signal']} direction={direction}")
+    print(f"Declaration: {declaration['file']}:{declaration['line']}")
+
+    print(f"DRIVERS ({len(item['drivers'])}):")
+    if item["drivers"]:
+        for ref in item["drivers"]:
+            print(
+                f"  {ref['file']}:{ref['line']} "
+                f"[{ref['kind']}] {ref['detail']}"
+            )
+    else:
+        print("  none found at source level")
+
+    print(f"LOADS ({len(item['loads'])}):")
+    if item["loads"]:
+        for ref in item["loads"]:
+            print(
+                f"  {ref['file']}:{ref['line']} "
+                f"[{ref['kind']}] {ref['detail']}"
+            )
+    else:
+        print("  none found at source level")
+    print(f"Index: {index['path']}")
+    return 0
 
 
 def cmd_waveform_index(args) -> int:
@@ -610,6 +657,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_connectivity = sub.add_parser(
+        "connectivity",
+        help="Build source-level signal driver/load references",
+    )
+    p_connectivity.set_defaults(func=cmd_connectivity)
+
+    p_signal = sub.add_parser(
+        "signal",
+        help="Show source-level drivers and loads for one signal",
+    )
+    p_signal.add_argument(
+        "signal",
+        help="Signal name or qualified unit.signal name",
+    )
+    p_signal.add_argument(
+        "--unit",
+        default=None,
+        help="Unit/module name used to disambiguate a signal",
+    )
+    p_signal.set_defaults(func=cmd_signal)
 
     p_waveform_index = sub.add_parser(
         "waveform-index",
