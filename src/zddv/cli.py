@@ -18,6 +18,7 @@ from zddv.lint import lint_project
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
+from zddv.source_index import build_design_index, format_hierarchy, write_design_index
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -445,6 +446,31 @@ def cmd_report(args) -> int:
     return 0
 
 
+
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    index = build_design_index(project)
+    path = write_design_index(project, index)
+    stats = index["stats"]
+    print(
+        f"DESIGN INDEX: {stats['modules']} module(s), "
+        f"{stats['module_instances']} module instance(s), "
+        f"{stats['source_files']} source file(s)"
+    )
+    print(f"Top: {index['top']}")
+    print(f"Index: {path}")
+    return 0
+
+
+def cmd_hierarchy(args) -> int:
+    project = load_project(_project_arg(args))
+    index = build_design_index(project)
+    if args.write:
+        path = write_design_index(project, index)
+        print(f"Index: {path}")
+    print(format_hierarchy(index))
+    return 0
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -644,6 +670,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.add_argument("--limit", type=int, default=100)
     p_report.set_defaults(func=cmd_report)
+
+    p_index = sub.add_parser(
+        "index",
+        help="Index SystemVerilog sources and build the static design hierarchy",
+    )
+    p_index.set_defaults(func=cmd_index)
+
+    p_hierarchy = sub.add_parser(
+        "hierarchy",
+        help="Print the indexed static module hierarchy",
+    )
+    p_hierarchy.add_argument(
+        "--write",
+        action="store_true",
+        help="Also write .zddv/index/design.json",
+    )
+    p_hierarchy.set_defaults(func=cmd_hierarchy)
 
     return parser
 
