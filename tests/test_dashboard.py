@@ -2,7 +2,12 @@ from pathlib import Path
 
 from zddv.config import initialize_project
 from zddv.dashboard import generate_html_report
-from zddv.storage import record_coverage_snapshot, record_run, run_statistics
+from zddv.storage import (
+    record_assertion_events,
+    record_coverage_snapshot,
+    record_run,
+    run_statistics,
+)
 
 
 def _record(run_id: str, status: str, seed: int, log: Path) -> dict:
@@ -38,8 +43,28 @@ def test_statistics_and_html_report(tmp_path: Path):
         encoding="utf-8",
     )
 
-    record_run(project, _record("run-1", "PASS", 1, pass_log))
-    record_run(project, _record("run-2", "FAIL", 2, fail_log))
+    pass_record = _record("run-1", "PASS", 1, pass_log)
+    fail_record = _record("run-2", "FAIL", 2, fail_log)
+    record_run(project, pass_record)
+    record_run(project, fail_record)
+    record_assertion_events(
+        project,
+        fail_record,
+        [
+            {
+                "status": "FAIL",
+                "property_name": "p_packet_match",
+                "scope": "TOP.tb",
+                "source_file": "tb.sv",
+                "source_line": 41,
+                "source_column": None,
+                "sim_time": "100",
+                "message": "packet mismatch",
+                "raw_text": "Assertion failed in TOP.tb: packet mismatch",
+                "parser": "verilator",
+            }
+        ],
+    )
     record_coverage_snapshot(
         project,
         {
@@ -75,5 +100,10 @@ def test_statistics_and_html_report(tmp_path: Path):
     assert "Coverage hit rate" in content
     assert "80.0%" in content
     assert "cov-dashboard" in content
+    assert "Assertion failures" in content
+    assert "p_packet_match" in content
+    assert "packet mismatch" in content
     assert len(result["failure_groups"]) == 1
     assert result["latest_coverage"]["snapshot_id"] == "cov-dashboard"
+    assert result["assertion_stats"]["failed"] == 1
+    assert len(result["assertion_events"]) == 1
