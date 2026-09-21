@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, and burst-aware AXI4 transaction reconstruction with direct VCD waveform decoding**
 
 ## What Works Today
 
@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
+- AXI4 burst transaction extraction directly from VCD waveforms with timestamp preservation
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -122,6 +123,8 @@ zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
 zddv --project my_project axi4-analyze axi4_trace.json
+zddv --project my_project axi4-waveform --input axi4.vcd
+zddv --project my_project axi4-waveform --run <run-id> --scope tb.axi
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -291,6 +294,7 @@ separately from Verilator's annotation threshold.
 - [x] APB normalized-trace transaction analysis
 - [x] AXI4-Lite normalized-trace protocol analysis
 - [x] AXI4 burst normalized-trace foundation
+- [x] AXI4 burst VCD waveform extraction
 - [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
@@ -363,6 +367,21 @@ zddv --project my_project axi4-analyze axi4_trace.json
 ```
 
 The default report is `.zddv/protocols/axi4/latest.json`.
+
+ZDDV can also decode full AXI4 bursts directly from VCD with `axi4-waveform`.
+It auto-detects a scope containing ACLK and all five AXI channel handshake pairs,
+samples on a selected clock edge, preserves waveform timestamps, and feeds the
+same burst-aware analyzer used by normalized JSON traces.
+
+```bash
+zddv --project my_project axi4-waveform --input axi4.vcd
+zddv --project my_project axi4-waveform --run <run-id> --scope tb.axi
+```
+
+The extracted trace is written to
+`.zddv/protocols/axi4/waveform-trace.json` and the analyzed report to
+`.zddv/protocols/axi4/waveform-latest.json`. Transaction timing includes AW/AR
+acceptance, write-data beat timestamps, and final response timestamps.
 
 ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
 signals on PCLK edges, emits the same normalized trace model, then runs the same
