@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, and burst-aware AXI4 analysis with direct VCD transaction extraction**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4, and public UCIe FLIT/link-health analysis**
 
 ## What Works Today
 
@@ -33,6 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
+- Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -125,6 +126,7 @@ zddv --project my_project axi4lite-analyze axi4lite_trace.json
 zddv --project my_project axi4-analyze axi4_trace.json
 zddv --project my_project axi4-waveform --input axi4.vcd
 zddv --project my_project axi4-waveform --run <run-id> --scope tb.axi
+zddv --project my_project ucie-analyze ucie_trace.json
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
 zddv --project my_project axi4lite-waveform --run <run-id> --scope tb.axi
 ```
@@ -296,7 +298,8 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 burst normalized-trace foundation
 - [x] AXI4 burst VCD waveform extraction
 - [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
-- [ ] UCIe transaction analysis
+- [x] UCIe public 68B/256B FLIT trace and link-health foundation
+- [ ] Specification-complete UCIe protocol/PHY conformance checking
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
@@ -383,6 +386,28 @@ The normalized trace is written to
 `.zddv/protocols/axi4/waveform-latest.json`. AW, W-beat, AR, R-beat, and
 response timestamps are retained so protocol violations and reconstructed bursts
 can be cross-referenced to the waveform.
+
+### UCIe Public FLIT Trace Analysis
+
+`zddv ucie-analyze <trace.json>` adds an intentionally conservative UCIe-oriented
+foundation based only on public UCIe Consortium material. The normalized
+`public-flit-68-256` profile records 68B/256B FLITs, a 2-byte ACK/NAK header
+indication, explicit monitor CRC health, TX/RX direction, timestamps, and optional
+negotiated link metadata.
+
+```bash
+zddv --project my_project ucie-analyze ucie_trace.json
+```
+
+The default report is `.zddv/protocols/ucie/latest.json`. Trace validity and link
+health are separate: malformed normalized evidence returns FAIL, while observed NAKs
+or CRC errors produce `health=DEGRADED` without claiming a protocol violation.
+
+This is not a UCIe conformance checker. PHY behavior, training-state timing, retry
+rules, protocol mappings, exact CRC construction, and other specification-only rules
+remain outside this public foundation. Public references:
+https://www.uciexpress.org/specifications and
+https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap.
 
 ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
 signals on PCLK edges, emits the same normalized trace model, then runs the same
