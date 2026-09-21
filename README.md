@@ -55,6 +55,7 @@ zddv --project examples/counter run --test counter_basic --seed 42
 zddv --project examples/counter regress examples/counter/regression.toml
 zddv --project examples/counter coverage
 
+zddv --project examples/async_fifo lint
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 ```
 
@@ -70,6 +71,7 @@ zddv --project my_project config simulator verilator
 zddv --project my_project config top tb_top
 
 zddv doctor
+zddv --project my_project lint
 zddv --project my_project build
 
 zddv --project my_project run
@@ -81,6 +83,7 @@ zddv --project my_project runs --limit 20
 zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
+zddv --project my_project report --limit 100
 zddv --project my_project coverage
 ```
 
@@ -232,7 +235,7 @@ docs/                  Architecture and roadmap
 - [x] Selective rerun
 - [x] JUnit XML export
 - [x] Failure signature grouping
-- [ ] HTML report
+- [x] HTML report
 
 ### Phase 3 — Coverage and Verification Intelligence
 

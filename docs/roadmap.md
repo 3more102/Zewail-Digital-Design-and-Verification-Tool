@@ -17,7 +17,7 @@ Exit criteria:
 
 ## v0.2 — Regression Engine
 
-Current status: core regression flow, SQLite run history, selective rerun, JUnit export, and failure-signature grouping are implemented.
+Current status: v0.2 is feature-complete with SQLite run history, selective rerun, JUnit export, failure-signature grouping, structured lint diagnostics, and an HTML verification dashboard.
 
 - Named tests.
 - Seeds and plusargs.

@@ -23,7 +23,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Unit tests
-        run: pytest tests/test_config.py tests/test_regression.py tests/test_storage.py tests/test_reporting.py tests/test_triage.py -q
+        run: pytest -q
 
   verilator-integration:
     runs-on: ubuntu-latest
@@ -45,6 +45,9 @@ jobs:
 
       - name: Environment check
         run: zddv doctor
+
+      - name: Lint counter example
+        run: zddv --project examples/counter lint
 
       - name: Build counter example
         run: zddv --project examples/counter build
@@ -71,8 +74,14 @@ jobs:
           zddv --project examples/counter failures --limit 50
           test -s examples/counter/.zddv/failure-groups.json
 
+      - name: Generate HTML dashboard
+        run: |
+          zddv --project examples/counter report --limit 50
+          test -s examples/counter/.zddv/reports/latest.html
+
       - name: Verify async FIFO example
         run: |
+          zddv --project examples/async_fifo lint
           zddv --project examples/async_fifo build
           zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
           zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
