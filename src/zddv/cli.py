@@ -7,6 +7,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
@@ -18,7 +19,7 @@ from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
-from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
+from zddv.protocols.apb import analyze_apb_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import VerilatorBackend
@@ -34,6 +35,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.waveform import write_waveform_index
+from zddv.waveform_probe import write_waveform_probe
 
 
 def _backend(name: str):
@@ -176,6 +178,71 @@ def cmd_waveform_index(args) -> int:
     print(f"Index: {result['path']}")
     if result.get("latest_path"):
         print(f"Latest: {result['latest_path']}")
+    return 0
+
+
+
+def cmd_waveform_probe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_waveform_probe(
+        project,
+        args.signals,
+        run_id=args.run_id,
+        input_path=args.input,
+        start_time=args.start,
+        end_time=args.end,
+        max_changes=args.max_changes,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"WAVEFORM PROBE: {summary['signals']} signal(s), "
+        f"{summary['total_changes']} change(s)"
+    )
+    if result.get("run_id"):
+        print(f"Run: {result['run_id']}")
+    if result.get("timescale"):
+        print(f"Timescale: {result['timescale']}")
+    for signal in result["signals"]:
+        marker = " [TRUNCATED]" if signal["truncated"] else ""
+        print(f"{signal['path']}: {len(signal['changes'])} change(s){marker}")
+    print(f"Probe: {result['path']}")
+    return 0
+
+
+def cmd_crossprobe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_crossprobe_report(
+        project,
+        args.signal,
+        run_id=args.run_id,
+        input_path=args.input,
+        output=args.output,
+    )
+    signal = result["waveform"]["signal"]
+    print(f"CROSSPROBE {result['status']}: {signal['path']}")
+    if result.get("hierarchy"):
+        hierarchy = result["hierarchy"]
+        print(
+            f"Hierarchy: {hierarchy['waveform_scope']} -> "
+            f"{hierarchy['design_path']} ({hierarchy['type']})"
+        )
+    source = result.get("source")
+    if source and source.get("declaration"):
+        declaration = source["declaration"]
+        print(f"Source: {declaration['file']}:{declaration['line']}")
+        print(f"Declaration: {declaration['text']}")
+    elif source:
+        print(f"Source unit: {source['file']}:{source['unit_line']}")
+    connectivity = result.get("connectivity")
+    if connectivity is not None:
+        print(
+            f"Connectivity: drivers={len(connectivity['drivers'])} "
+            f"loads={len(connectivity['loads'])}"
+        )
+    if result.get("note"):
+        print(f"Note: {result['note']}")
+    print(f"Report: {result['report_path']}")
     return 0
 
 
@@ -483,51 +550,6 @@ def cmd_apb_analyze(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
-def cmd_apb_waveform(args) -> int:
-    project = load_project(_project_arg(args))
-    result = analyze_apb_waveform(
-        project,
-        run_id=args.run_id,
-        input_path=args.input,
-        scope=args.scope,
-        clock=args.clock,
-        edge=args.edge,
-        trace_output=args.trace_output,
-        output=args.output,
-    )
-    summary = result["summary"]
-    waveform = result["waveform"]
-    print(
-        f"APB WAVEFORM {result['status']}: "
-        f"{summary['completed_transactions']} completed transaction(s), "
-        f"{summary['violations']} protocol violation(s)"
-    )
-    print(
-        f"Scope: {waveform['scope']}  Clock: {waveform['clock']} "
-        f"({waveform['edge']})  Timescale: {waveform.get('timescale') or '-'}"
-    )
-    print(
-        f"Reads/Writes: {summary['reads']}/{summary['writes']}  "
-        f"Wait cycles: {summary['wait_cycles']}  "
-        f"Error responses: {summary['error_responses']}"
-    )
-    for violation in result["violations"][: args.show]:
-        when = (
-            f"time={violation.get('time')} "
-            if violation.get("time") is not None
-            else ""
-        )
-        print(
-            f"[{violation['code']}] {when}cycle={violation['cycle']} "
-            f"{violation['message']}"
-        )
-    if len(result["violations"]) > args.show:
-        print(f"... {len(result['violations']) - args.show} more violation(s)")
-    print(f"Normalized trace: {result['trace_path']}")
-    print(f"Report: {result['report_path']}")
-    return 0 if result["status"] == "PASS" else 1
-
-
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -740,6 +762,79 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
 
+    p_waveform_probe = sub.add_parser(
+        "waveform-probe",
+        help="Stream selected VCD signal value changes",
+    )
+    p_waveform_probe.add_argument(
+        "signals",
+        nargs="+",
+        help="Signal full path or unique leaf name; repeat for multiple signals",
+    )
+    probe_source = p_waveform_probe.add_mutually_exclusive_group()
+    probe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    probe_source.add_argument(
+        "--input",
+        default=None,
+        help="VCD path relative to the project, independent of run history",
+    )
+    p_waveform_probe.add_argument(
+        "--start",
+        type=int,
+        default=None,
+        help="Optional inclusive VCD start timestamp",
+    )
+    p_waveform_probe.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="Optional inclusive VCD end timestamp",
+    )
+    p_waveform_probe.add_argument(
+        "--max-changes",
+        type=int,
+        default=10_000,
+        help="Maximum value changes retained per selected signal",
+    )
+    p_waveform_probe.add_argument(
+        "--output",
+        default=None,
+        help="Optional JSON output path; default is .zddv/waveforms/probes/<run>.json",
+    )
+    p_waveform_probe.set_defaults(func=cmd_waveform_probe)
+
+    p_crossprobe = sub.add_parser(
+        "crossprobe",
+        help="Map a waveform signal to source-level hierarchy and RTL declaration",
+    )
+    p_crossprobe.add_argument(
+        "signal",
+        help="Waveform signal path or a unique signal name",
+    )
+    crossprobe_source = p_crossprobe.add_mutually_exclusive_group()
+    crossprobe_source.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Run ID to probe; defaults to the latest run with a waveform",
+    )
+    crossprobe_source.add_argument(
+        "--input",
+        default=None,
+        help="Waveform path relative to the project, independent of run history",
+    )
+    p_crossprobe.add_argument(
+        "--output",
+        default=".zddv/debug/crossprobe.json",
+        help="Cross-probe JSON report path",
+    )
+    p_crossprobe.set_defaults(func=cmd_crossprobe)
+
     p_assertion_waveform = sub.add_parser(
         "assertion-waveform",
         help="Correlate assertion events with their run waveform indexes",
@@ -890,56 +985,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_apb.set_defaults(func=cmd_apb_analyze)
-
-    p_apb_waveform = sub.add_parser(
-        "apb-waveform",
-        help="Extract and analyze APB transactions directly from a VCD waveform",
-    )
-    apb_waveform_source = p_apb_waveform.add_mutually_exclusive_group()
-    apb_waveform_source.add_argument(
-        "--run",
-        dest="run_id",
-        default=None,
-        help="Run ID whose waveform should be decoded; defaults to latest waveform run",
-    )
-    apb_waveform_source.add_argument(
-        "--input",
-        default=None,
-        help="VCD path relative to the project, independent of run history",
-    )
-    p_apb_waveform.add_argument(
-        "--scope",
-        default=None,
-        help="APB waveform scope; auto-detected when exactly one matching scope exists",
-    )
-    p_apb_waveform.add_argument(
-        "--clock",
-        default="PCLK",
-        help="APB clock signal name inside the selected scope",
-    )
-    p_apb_waveform.add_argument(
-        "--edge",
-        choices=("rising", "falling", "both"),
-        default="rising",
-        help="Clock edge used to sample APB signals",
-    )
-    p_apb_waveform.add_argument(
-        "--trace-output",
-        default=".zddv/protocols/apb/waveform-trace.json",
-        help="Normalized APB trace generated from the waveform",
-    )
-    p_apb_waveform.add_argument(
-        "--output",
-        default=".zddv/protocols/apb/waveform-latest.json",
-        help="JSON protocol-analysis report path",
-    )
-    p_apb_waveform.add_argument(
-        "--show",
-        type=int,
-        default=20,
-        help="Maximum number of protocol violations to print",
-    )
-    p_apb_waveform.set_defaults(func=cmd_apb_waveform)
 
     p_assertions = sub.add_parser(
         "assertions",

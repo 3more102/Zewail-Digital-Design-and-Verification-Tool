@@ -122,6 +122,25 @@ Generate-time elaboration, preprocessor-dependent structure, binds,
 interface/modport semantics, complex lvalues, and other unresolved constructs
 must be enriched by simulator AST/elaboration adapters rather than guessed.
 
+## v0.4 Waveform / Source Cross-Probe Contract
+
+`zddv crossprobe <signal>` composes normalized evidence across the waveform,
+source hierarchy, and source-level connectivity models. Signal resolution is
+deterministic: exact path, unique hierarchy suffix, then unique short name.
+Ambiguous short-name matches are rejected instead of guessed.
+
+A successful source match records the waveform signal, matched hierarchy scope,
+design instance path and type, source design unit, exact declaration line when
+one can be identified conservatively, and the structural driver/load evidence
+available for the same source signal. The report also records the design,
+connectivity, and waveform index paths used as evidence. Results remain
+`PARTIAL` when the waveform scope maps to a design unit but an exact declaration
+cannot be proven.
+
+This contract is source-level. Generated hierarchy, parameter-specialized
+instances, binds, macros, and simulator-resolved objects remain enrichment work
+for simulator AST/elaboration adapters.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
@@ -132,7 +151,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Build source/waveform cross-probing on the source, connectivity, hierarchy, assertion, and waveform indexes.
+5. Enrich source/connectivity/hierarchy/waveform cross-probing with simulator elaboration and generated hierarchy.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.

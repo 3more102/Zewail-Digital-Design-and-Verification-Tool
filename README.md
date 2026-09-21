@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.4 Debug Studio Core — source/hierarchy, waveform, assertion correlation, and structural connectivity in progress**
+> Status: **v0.4 Debug Studio Core — source/hierarchy, structural connectivity, waveform/source cross-probing, targeted VCD value probing, and assertion correlation in progress**
 
 ## What Works Today
 
@@ -28,7 +28,6 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
-- APB transaction extraction directly from VCD waveforms at configurable clock edges
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -39,8 +38,10 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
+- Targeted VCD signal value probing with exact/unique-name resolution, time windows, and bounded change capture
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
+- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
 
 ## Quick Start
 
@@ -86,6 +87,9 @@ zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project waveform-probe tb_top.dut.count --start 0 --end 1000
+zddv --project my_project crossprobe tb_top.dut.count
+zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
@@ -110,8 +114,6 @@ zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
 zddv --project my_project apb-analyze apb_trace.json
-zddv --project my_project apb-waveform --input apb.vcd
-zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 ```
 
 ## Verification Flow
@@ -280,7 +282,8 @@ separately from Verilator's annotation threshold.
 - [ ] AXI4 / AXI4-Lite protocol analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
-- [ ] Waveform cross-probing
+- [x] Waveform-to-source cross-probing
+- [x] Targeted VCD value-change probing
 - [ ] UVM-aware result model
 
 ### APB Trace Analysis
@@ -310,21 +313,6 @@ zddv --project my_project apb-analyze apb_trace.json
 The JSON report is written to `.zddv/protocols/apb/latest.json` by default and
 contains reconstructed transactions, wait-state counts, error responses, and
 cycle-localized protocol violations.
-
-ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
-signals on PCLK edges, emits the same normalized trace model, then runs the same
-protocol checker. If exactly one waveform scope contains PCLK, PSEL, and PENABLE,
-the scope is selected automatically; otherwise use `--scope`.
-
-```bash
-zddv --project my_project apb-waveform --input apb.vcd
-zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
-```
-
-The normalized extracted trace is written to
-`.zddv/protocols/apb/waveform-trace.json` and the analyzed report to
-`.zddv/protocols/apb/waveform-latest.json`. Waveform timestamps are preserved
-alongside logical sample cycles and transaction start/end cycles.
 
 ### Assertion Result Markers
 
@@ -382,6 +370,25 @@ codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
 declaration boundary rather than loading value-change samples. FST is currently
 recorded as metadata-only until a converter or simulator-native adapter is added.
 
+### Targeted VCD Value Probing
+
+`zddv waveform-probe` streams only requested VCD signals from the value-change
+section instead of loading the complete waveform. A signal can be selected by exact
+hierarchical path or by a unique leaf name; ambiguous leaf names are rejected and
+must be disambiguated with the full path. Optional inclusive `--start` / `--end`
+timestamps and `--max-changes` bounds keep debug queries deterministic on large
+waveforms.
+
+```bash
+zddv --project my_project waveform-probe tb_top.dut.count --run <run-id>
+zddv --project my_project waveform-probe count clk --input trace.vcd --start 100 --end 500
+```
+
+Probe reports are written under `.zddv/waveforms/probes/` and retain the waveform
+timescale, normalized signal metadata, exact timestamps, values, and truncation
+status. This complements `crossprobe`, which maps waveform signals back to RTL
+source locations.
+
 ### Debug Studio Drivers/Loads Navigation
 
 `zddv connectivity` writes a normalized source-level structural connectivity
@@ -399,6 +406,21 @@ metadata where applicable.
 This is deliberately a conservative **source-level** view, not elaborated
 connectivity. Generate choices, macros, binds, interface/modport semantics,
 complex lvalues, and other constructs require later simulator-AST enrichment.
+
+### Debug Studio Cross-Probing
+
+`zddv crossprobe <signal>` correlates a waveform signal with the normalized
+source hierarchy and searches the resolved SystemVerilog design unit for the
+signal declaration. Full waveform paths, source-style suffix paths, and unique
+short signal names are supported. Ambiguous short names are rejected so debug
+navigation does not silently select the wrong signal.
+
+The report records the waveform signal, matched hierarchy path, RTL unit,
+source declaration, source-level driver/load evidence, match type, and the
+design/connectivity/waveform index artifacts used as evidence. Source lookup is
+intentionally conservative: when the scope matches but a declaration cannot be
+identified on a single source line, ZDDV returns a partial result instead of
+claiming an exact source location.
 
 ### Assertion-to-Waveform Debug Correlation
 
