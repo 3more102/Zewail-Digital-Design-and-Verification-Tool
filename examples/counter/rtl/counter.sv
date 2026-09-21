@@ -1,4 +1,4 @@
-module counter #(
+`timescale 1ns/1ps\n\nmodule counter #(
     parameter int WIDTH = 4
 ) (
     input  logic             clk,
