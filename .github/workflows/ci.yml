@@ -66,6 +66,12 @@ jobs:
           zddv --project examples/counter assertions --limit 20
           zddv --project examples/counter assertions --status PASS --limit 20 | grep -q counter_sequence
 
+      - name: Import functional coverage
+        run: |
+          zddv --project examples/counter fcov-import functional_coverage.json
+          zddv --project examples/counter fcov-history --limit 10 | grep -q counter-example
+          zddv --project examples/counter fcov-holes --limit 10 | grep -q wraparound
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
