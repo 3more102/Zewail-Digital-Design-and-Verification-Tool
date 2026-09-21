@@ -7,6 +7,7 @@ import sys
 
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
+from zddv.connectivity import query_connectivity, write_connectivity_index
 from zddv.coverage import (
     merge_verilator_coverage,
     parse_verilator_coverage,
@@ -110,6 +111,37 @@ def cmd_hierarchy(args) -> int:
         print(line)
     print(f"Index: {result['path']}")
     return 0 if result["hierarchy"].get("resolved", False) else 1
+
+
+def cmd_net(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_connectivity_index(project)
+    matches = query_connectivity(result, args.signal, unit=args.unit)
+
+    for entry in matches:
+        print(f"NET {entry['unit']}.{entry['signal']}")
+        print(f"  DRIVERS ({len(entry['drivers'])})")
+        if entry["drivers"]:
+            for ref in entry["drivers"]:
+                print(
+                    f"    {ref['file']}:{ref['line']} "
+                    f"[{ref['kind']}] {ref['detail']}"
+                )
+        else:
+            print("    -")
+
+        print(f"  LOADS ({len(entry['loads'])})")
+        if entry["loads"]:
+            for ref in entry["loads"]:
+                print(
+                    f"    {ref['file']}:{ref['line']} "
+                    f"[{ref['kind']}] {ref['detail']}"
+                )
+        else:
+            print("    -")
+
+    print(f"Connectivity index: {result['path']}")
+    return 0
 
 
 def cmd_waveform_index(args) -> int:
@@ -610,6 +642,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the source-level design hierarchy",
     )
     p_hierarchy.set_defaults(func=cmd_hierarchy)
+
+    p_net = sub.add_parser(
+        "net",
+        help="Show source-level drivers and loads for a signal",
+    )
+    p_net.add_argument("signal", help="Signal name to query")
+    p_net.add_argument(
+        "--unit",
+        default=None,
+        help="Optional module/interface/program name; omit to show all matching units",
+    )
+    p_net.set_defaults(func=cmd_net)
 
     p_waveform_index = sub.add_parser(
         "waveform-index",
