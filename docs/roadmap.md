@@ -49,7 +49,7 @@ Elaborated hierarchy enrichment remains planned through simulator-adapter AST da
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
-- [ ] Waveform index.
+- [x] Waveform index (VCD scopes/signals).
 - [ ] Drivers/loads navigation.
 - [ ] Assertion-to-waveform correlation.
 - [ ] Protocol transaction reconstruction.
