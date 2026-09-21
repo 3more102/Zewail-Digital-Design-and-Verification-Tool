@@ -78,6 +78,22 @@ The source-level index is deliberately separate from simulator elaboration.
 Later adapters may enrich this model with elaborated hierarchy and tool-specific
 AST evidence without changing the CLI/GUI-facing contract.
 
+## v0.4 Waveform Index Contract
+
+The Debug Studio waveform index is a compact metadata layer, not a duplicate
+waveform database. For VCD inputs it records:
+
+- file size and SHA-256 provenance
+- VCD date/version/timescale metadata
+- scopes and declared signals with type, width, range, and hierarchical name
+- per-signal activity counts with first/last values and source waveform lines
+- first/last simulation time and sparse timestamp checkpoints
+
+The normalized index is written beside the selected run waveform as
+`waveform.index.json` when the latest recorded run is used. The current parser
+supports VCD only; FST and commercial waveform formats should enter through
+format-specific adapters while preserving this normalized model.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
