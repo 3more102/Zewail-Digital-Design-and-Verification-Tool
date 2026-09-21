@@ -1,0 +1,59 @@
+$timescale 1ns $end
+$scope module tb $end
+$scope module apb $end
+$var wire 1 a PCLK $end
+$var wire 1 b PSEL $end
+$var wire 1 c PENABLE $end
+$var wire 1 d PREADY $end
+$var wire 1 e PWRITE $end
+$var wire 8 f PADDR [7:0] $end
+$var wire 16 g PWDATA [15:0] $end
+$var wire 16 h PRDATA [15:0] $end
+$var wire 2 i PSTRB [1:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0a
+0b
+0c
+1d
+0e
+b00000000 f
+b0000000000000000 g
+b0000000000000000 h
+b00 i
+#5
+1b
+0c
+1d
+1e
+b00010000 f
+b1100101011111110 g
+b11 i
+1a
+#10
+0a
+#15
+1c
+0d
+1a
+#20
+0a
+#25
+1d
+1a
+#30
+0a
+#35
+0c
+0e
+b00100000 f
+b00 i
+1a
+#40
+0a
+#45
+1c
+b0000000001010101 h
+1a
