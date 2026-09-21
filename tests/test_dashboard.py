@@ -2,7 +2,12 @@ from pathlib import Path
 
 from zddv.config import initialize_project
 from zddv.dashboard import generate_html_report
-from zddv.storage import record_coverage_snapshot, record_run, run_statistics
+from zddv.storage import (
+    record_coverage_snapshot,
+    record_functional_coverage_bins,
+    record_run,
+    run_statistics,
+)
 
 
 def _record(run_id: str, status: str, seed: int, log: Path) -> dict:
@@ -60,6 +65,38 @@ def test_statistics_and_html_report(tmp_path: Path):
         },
     )
 
+    record_functional_coverage_bins(
+        project,
+        [
+            {
+                "run_id": "run-2",
+                "bin_index": 0,
+                "created_at": "2026-09-21T20:00:02+00:00",
+                "covergroup": "packet_cg",
+                "coverpoint": "opcode",
+                "bin_name": "READ",
+                "hits": 1,
+                "goal": 1,
+                "message": None,
+                "log_path": str(fail_log),
+                "log_line": 2,
+            },
+            {
+                "run_id": "run-2",
+                "bin_index": 1,
+                "created_at": "2026-09-21T20:00:02+00:00",
+                "covergroup": "packet_cg",
+                "coverpoint": "opcode",
+                "bin_name": "RESERVED",
+                "hits": 0,
+                "goal": 1,
+                "message": None,
+                "log_path": str(fail_log),
+                "log_line": 3,
+            },
+        ],
+    )
+
     stats = run_statistics(project)
     assert stats["total"] == 2
     assert stats["passed"] == 1
@@ -73,7 +110,11 @@ def test_statistics_and_html_report(tmp_path: Path):
     assert "ZDDV Verification Report" in content
     assert "ASSERT mismatch packet=# expected=# actual=#" in content
     assert "Coverage hit rate" in content
+    assert "Functional coverage" in content
+    assert "packet_cg" in content
+    assert "RESERVED" in content
     assert "80.0%" in content
     assert "cov-dashboard" in content
     assert len(result["failure_groups"]) == 1
+    assert result["functional_coverage"]["coverage_rate"] == 50.0
     assert result["latest_coverage"]["snapshot_id"] == "cov-dashboard"
