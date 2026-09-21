@@ -60,6 +60,40 @@ CREATE INDEX IF NOT EXISTS idx_assertions_status
 CREATE INDEX IF NOT EXISTS idx_assertions_name
     ON assertion_events(assertion_name);
 
+CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    total_bins INTEGER NOT NULL,
+    covered_bins INTEGER NOT NULL,
+    coverage_rate REAL NOT NULL,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcov_created_at
+    ON functional_coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS functional_coverage_bins (
+    snapshot_id TEXT NOT NULL,
+    bin_index INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    coverpoint TEXT NOT NULL,
+    bin_name TEXT NOT NULL,
+    hits INTEGER NOT NULL,
+    goal INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, bin_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcov_bins_status
+    ON functional_coverage_bins(status);
+
+CREATE INDEX IF NOT EXISTS idx_fcov_bins_coverpoint
+    ON functional_coverage_bins(coverpoint);
+
 CREATE TABLE IF NOT EXISTS coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -349,6 +383,114 @@ def assertion_statistics(project: ProjectConfig) -> dict[str, Any]:
         "failed": failed,
         "pass_rate": 100.0 * passed / total if total else 0.0,
     }
+
+
+def record_functional_coverage_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO functional_coverage_snapshots (
+                snapshot_id, created_at, project, source, total_bins,
+                covered_bins, coverage_rate, input_path, normalized_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                int(record["total_bins"]),
+                int(record["covered_bins"]),
+                float(record["coverage_rate"]),
+                record["input_path"],
+                record["normalized_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM functional_coverage_bins WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO functional_coverage_bins (
+                snapshot_id, bin_index, scope, coverpoint, bin_name,
+                hits, goal, status, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["bin_index"]),
+                    item["scope"],
+                    item["coverpoint"],
+                    item["bin_name"],
+                    int(item["hits"]),
+                    int(item["goal"]),
+                    item["status"],
+                    json.dumps(item.get("metadata", {}), sort_keys=True),
+                )
+                for item in record["bins"]
+            ],
+        )
+    return path
+
+
+def list_functional_coverage_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, created_at, project, source, total_bins,
+                   covered_bins, coverage_rate, input_path, normalized_path
+            FROM functional_coverage_snapshots
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_functional_coverage_bins(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    if status is not None and status not in {"COVERED", "UNCOVERED"}:
+        raise ValueError(f"Unsupported functional coverage status: {status}")
+
+    query = """
+        SELECT snapshot_id, bin_index, scope, coverpoint, bin_name,
+               hits, goal, status, metadata_json
+        FROM functional_coverage_bins
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if status is not None:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY scope, coverpoint, bin_name, bin_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
 
 
 def record_coverage_snapshot(
