@@ -32,9 +32,10 @@ Current status: v0.2 is feature-complete with SQLite run history, selective reru
 ## v0.3 — Verification Results
 
 Current status: normalized Verilator coverage ingestion, SQLite coverage snapshots,
-coverage history, coverage merge, and failure clustering are implemented.
+coverage history, coverage merge, runtime assertion-event ingestion, and failure
+clustering are implemented.
 
-- [ ] Assertions database.
+- [x] Assertions database for runtime violation events.
 - [x] Code-coverage ingestion.
 - [ ] Functional-coverage schema.
 - [x] Coverage merge.
