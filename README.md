@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
 - AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
+- AXI4 exclusive-access checks for size/alignment restrictions, read-before-write sequencing, EXOKAY legality, and read-response consistency
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
@@ -295,7 +296,8 @@ separately from Verilator's annotation threshold.
 - [x] AXI4-Lite normalized-trace protocol analysis
 - [x] AXI4 burst normalized-trace foundation
 - [x] AXI4 burst VCD waveform extraction
-- [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
+- [x] AXI4 exclusive-access restrictions and observable sequence/response checks
+- [ ] Topology-dependent AXI4 optional-sideband/coherency-adjacent checks
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
@@ -359,8 +361,11 @@ without WID, BID/RID response correlation, read-data interleaving across
 different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
 and the requirement that each AXI burst remain inside one 4KB address region.
 
-This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
-coverage.
+The analyzer also checks core AXI4 exclusive-access semantics: exclusive transaction
+size/alignment limits, read-before-write sequence timing, matching observable
+read/write attributes, EXOKAY legality, and the rule that an exclusive read cannot mix
+OKAY and EXOKAY beats. Topology-dependent cache reachability and ACE/AXI5 extensions
+remain outside this normalized-trace scope.
 
 ```bash
 zddv --project my_project axi4-analyze axi4_trace.json
