@@ -156,6 +156,9 @@ def run_regression(
                 "waveform": (
                     str(result.waveform_path) if result.waveform_path else None
                 ),
+                "coverage": (
+                    str(result.coverage_path) if result.coverage_path else None
+                ),
             }
             for result in ordered
         ],
