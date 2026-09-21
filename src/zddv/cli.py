@@ -7,7 +7,7 @@ import sys
 from zddv import __version__
 from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
-from zddv.regression import run_regression
+from zddv.regression import rerun_from_summary, run_regression
 from zddv.simulator import VerilatorBackend
 from zddv.storage import database_path, list_runs
 
@@ -107,15 +107,40 @@ def cmd_run(args) -> int:
     return result.returncode
 
 
-def cmd_regress(args) -> int:
-    project = load_project(_project_arg(args))
-    backend = _backend(project.simulator)
-    summary = run_regression(project, backend, args.regression_file)
+def _print_regression_summary(summary: dict) -> None:
     print(
         f"REGRESSION {summary['status']}: "
         f"{summary['passed']}/{summary['total']} passed"
     )
     print(f"Summary: {summary['summary_path']}")
+    print(f"JUnit: {summary['junit_path']}")
+    groups = summary.get("failure_groups", [])
+    if groups:
+        print(f"Failure groups: {len(groups)}")
+        for group in groups[:5]:
+            print(f"  {group['count']}x {group['signature']}")
+
+
+def cmd_regress(args) -> int:
+    project = load_project(_project_arg(args))
+    backend = _backend(project.simulator)
+    summary = run_regression(project, backend, args.regression_file)
+    _print_regression_summary(summary)
+    return 0 if summary["status"] == "PASS" else 1
+
+
+def cmd_rerun(args) -> int:
+    project = load_project(_project_arg(args))
+    backend = _backend(project.simulator)
+    statuses = tuple(args.status or ("FAIL", "TIMEOUT"))
+    summary = rerun_from_summary(
+        project,
+        backend,
+        args.summary_file,
+        statuses=statuses,
+        jobs=args.jobs,
+    )
+    _print_regression_summary(summary)
     return 0 if summary["status"] == "PASS" else 1
 
 
@@ -207,6 +232,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_rerun = sub.add_parser(
+        "rerun",
+        help="Rerun selected outcomes from a previous regression summary",
+    )
+    p_rerun.add_argument("summary_file", help="Regression JSON summary")
+    p_rerun.add_argument(
+        "--status",
+        action="append",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+        help="Outcome to rerun; repeat to select multiple (default: FAIL + TIMEOUT)",
+    )
+    p_rerun.add_argument("--jobs", type=int, default=1, help="Parallel rerun workers")
+    p_rerun.set_defaults(func=cmd_rerun)
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
