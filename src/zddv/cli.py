@@ -9,6 +9,7 @@ from zddv.config import initialize_project, load_project, save_project
 from zddv.coverage import merge_verilator_coverage
 from zddv.regression import run_regression
 from zddv.simulator import VerilatorBackend
+from zddv.storage import database_path, list_runs
 
 
 def _backend(name: str):
@@ -134,6 +135,28 @@ def cmd_coverage(args) -> int:
     return 0
 
 
+def cmd_runs(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_runs(project, limit=args.limit, status=args.status)
+    print(f"Results DB: {database_path(project)}")
+    if not rows:
+        print("No runs found.")
+        return 0
+
+    print(f"{'STATUS':<8} {'TEST':<24} {'SEED':<10} {'TIME(ms)':>10}  RUN ID")
+    for row in rows:
+        test = row["test_name"] or "-"
+        seed = "-" if row["seed"] is None else str(row["seed"])
+        duration = "-"
+        if row["duration_ms"] is not None:
+            duration = f"{row['duration_ms']:.1f}"
+        print(
+            f"{row['status']:<8} {test[:24]:<24} {seed:<10} "
+            f"{duration:>10}  {row['run_id']}"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -187,6 +210,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
+
+    p_runs = sub.add_parser("runs", help="Show verification run history")
+    p_runs.add_argument("--limit", type=int, default=20)
+    p_runs.add_argument(
+        "--status",
+        choices=("PASS", "FAIL", "TIMEOUT"),
+        default=None,
+    )
+    p_runs.set_defaults(func=cmd_runs)
 
     return parser
 
