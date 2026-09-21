@@ -12,7 +12,7 @@ from zddv.storage import (
 def test_source_index_reconstructs_project_local_hierarchy(tmp_path: Path):
     child = tmp_path / "child.sv"
     child.write_text(
-        "module child(input logic a); endmodule\\n",
+        "module child(input logic a); endmodule\n",
         encoding="utf-8",
     )
     top = tmp_path / "top.sv"
@@ -43,7 +43,7 @@ def test_design_index_is_persisted_in_sqlite(tmp_path: Path):
     tb.mkdir()
 
     (rtl / "leaf.sv").write_text(
-        "module leaf(input logic a); endmodule\\n",
+        "module leaf(input logic a); endmodule\n",
         encoding="utf-8",
     )
     (rtl / "wrapper.sv").write_text(
