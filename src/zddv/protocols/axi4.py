@@ -615,10 +615,18 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     read_request = observed_read["request"]
                     read_attrs = exclusive_attributes(read_request)
                     write_attrs = exclusive_attributes(request)
+                    required_names = ("id", "address", "len", "size", "burst", "lock")
+                    optional_names = ("region", "cache", "prot")
                     mismatched = [
-                        name for name in read_attrs
+                        name for name in required_names
                         if read_attrs[name] != write_attrs[name]
                     ]
+                    mismatched.extend(
+                        name for name in optional_names
+                        if read_attrs[name] is not None
+                        and write_attrs[name] is not None
+                        and read_attrs[name] != write_attrs[name]
+                    )
                     request["exclusive_read_match"] = {
                         "observed": True,
                         "read_protocol_index": read_request["index"],
@@ -626,6 +634,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         "attributes_match": not mismatched,
                         "mismatched_attributes": mismatched,
                     }
+                    completed_exclusive_reads.pop(request["id"], None)
                 else:
                     request["exclusive_read_match"] = {"observed": False}
             aw_queue.append(request)
