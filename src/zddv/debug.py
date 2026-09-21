@@ -31,7 +31,10 @@ def _signal_hints(
         )
         if value
     )
-    tokens = {match.group("name") for match in _HINT_RE.finditer(text)}
+    raw_tokens = {match.group("name") for match in _HINT_RE.finditer(text)}
+    tokens = set(raw_tokens)
+    for token in raw_tokens:
+        tokens.update(part for part in re.split(r"[._]", token) if part)
     if not tokens:
         return []
 
