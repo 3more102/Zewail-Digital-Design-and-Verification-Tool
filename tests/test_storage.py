@@ -2,10 +2,13 @@ from pathlib import Path
 
 from zddv.config import initialize_project
 from zddv.storage import (
+    assertion_statistics,
     database_path,
+    list_assertion_events,
     list_coverage_snapshots,
     list_run_records,
     list_runs,
+    record_assertion_events,
     record_coverage_snapshot,
     record_run,
 )
@@ -104,3 +107,53 @@ def test_record_and_list_coverage_snapshots(tmp_path: Path):
     assert rows[0]["snapshot_id"] == "cov-1"
     assert rows[0]["hit_rate"] == 75.0
     assert rows[0]["by_type"]["line"]["hit"] == 8
+
+
+
+def test_record_and_list_assertion_events(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run = _record("run-assert", "FAIL", 8)
+    record_run(project, run)
+    record_assertion_events(
+        project,
+        run,
+        [
+            {
+                "status": "PASS",
+                "property_name": "p_boot",
+                "scope": None,
+                "source_file": None,
+                "source_line": None,
+                "source_column": None,
+                "sim_time": None,
+                "message": "boot complete",
+                "raw_text": "ZDDV_ASSERT PASS p_boot :: boot complete",
+                "parser": "zddv-marker",
+            },
+            {
+                "status": "FAIL",
+                "property_name": None,
+                "scope": "TOP.tb",
+                "source_file": "tb.sv",
+                "source_line": 42,
+                "source_column": 7,
+                "sim_time": "25",
+                "message": "grant missing",
+                "raw_text": "Assertion failed in TOP.tb: grant missing",
+                "parser": "verilator",
+            },
+        ],
+    )
+    rows = list_assertion_events(project, limit=10)
+    assert len(rows) == 2
+    assert {row["status"] for row in rows} == {"PASS", "FAIL"}
+    assert rows[0]["test_name"] == "smoke"
+    failed = list_assertion_events(project, limit=10, status="FAIL")
+    assert len(failed) == 1
+    assert failed[0]["source_line"] == 42
+    assert assertion_statistics(project) == {
+        "total": 2,
+        "passed": 1,
+        "failed": 1,
+        "named_properties": 1,
+    }
