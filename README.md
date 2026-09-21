@@ -31,7 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, and core exclusive-access semantics
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Compatibility path for packaged Verilator 5.020 coverage generation
@@ -298,7 +298,8 @@ separately from Verilator's annotation threshold.
 - [x] AXI4-Lite normalized-trace protocol analysis
 - [x] AXI4 burst normalized-trace foundation
 - [x] AXI4 burst VCD waveform extraction
-- [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
+- [x] AXI4 exclusive-access geometry, response, and observed-sequence checks
+- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checks
 - [x] Async-FIFO CDC normalized-event invariant analysis
 - [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
@@ -362,6 +363,13 @@ AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
 different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
 and the requirement that each AXI burst remain inside one 4KB address region.
+
+Exclusive accesses add checks for the AXI4 limits of 16 transfers and 128 total
+bytes, power-of-two total transfer size, total-size address alignment, read-before-
+write completion for an observed same-ID sequence, matching core read/write
+attributes, and OKAY/EXOKAY consistency. A failed exclusive write returning OKAY
+remains a legal protocol outcome. Optional coherency/domain/snoop/MMU attributes
+are not yet modeled exhaustively.
 
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage.
