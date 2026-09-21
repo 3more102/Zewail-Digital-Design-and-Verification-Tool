@@ -80,6 +80,84 @@ def summarize_coverage_points(points: list[dict]) -> dict:
     }
 
 
+def analyze_coverage_holes(
+    project: ProjectConfig,
+    *,
+    point_type: str | None = None,
+    limit: int = 100,
+    output: str | Path | None = None,
+) -> dict:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"Merged coverage was not found at {merged_path}. "
+            "Run 'zddv coverage' first."
+        )
+
+    points = parse_verilator_coverage(merged_path)
+    if not points:
+        raise RuntimeError(
+            f"No coverage points could be parsed from {merged_path}."
+        )
+
+    holes = sorted(
+        (point for point in points if not point["hit"]),
+        key=lambda point: (
+            str(point.get("type") or "unknown"),
+            str(point.get("name") or ""),
+        ),
+    )
+
+    by_type: dict[str, int] = defaultdict(int)
+    for point in holes:
+        by_type[str(point.get("type") or "unknown")] += 1
+
+    matching = holes
+    if point_type:
+        matching = [
+            point
+            for point in holes
+            if str(point.get("type") or "unknown") == point_type
+        ]
+
+    shown = matching[:limit]
+    output_path = (
+        Path(output)
+        if output is not None
+        else project.root / ".zddv" / "coverage" / "holes.json"
+    )
+    if not output_path.is_absolute():
+        output_path = project.root / output_path
+    output_path = output_path.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "project": project.name,
+        "simulator": project.simulator,
+        "source": str(merged_path),
+        "total_points": len(points),
+        "total_holes": len(holes),
+        "point_type": point_type,
+        "matching_holes": len(matching),
+        "shown_holes": len(shown),
+        "by_type": dict(sorted(by_type.items())),
+        "holes": [
+            {
+                "type": str(point.get("type") or "unknown"),
+                "name": str(point.get("name") or ""),
+                "count": int(point.get("count") or 0),
+            }
+            for point in shown
+        ],
+    }
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {"path": str(output_path), "report": payload}
+
+
 def merge_verilator_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("verilator_coverage")
     if tool is None:
