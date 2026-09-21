@@ -13,6 +13,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
+from zddv.design_index import index_project
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.regression import run_regression
@@ -97,6 +98,48 @@ def cmd_lint(args) -> int:
     print(f"Log: {result['log']}")
     print(f"Summary: {result['summary']}")
     return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = index_project(project)
+    hierarchy = result["hierarchy"]
+
+    print(
+        f"INDEX: {len(result['files'])} file(s), "
+        f"{len(result['units'])} design unit(s), "
+        f"{len(result['instances'])} instance(s)"
+    )
+    print(
+        f"HIERARCHY: top={hierarchy['top']} "
+        f"found={'yes' if hierarchy['top_found'] else 'no'}, "
+        f"{len(hierarchy['nodes'])} node(s), "
+        f"{len(hierarchy['edges'])} edge(s)"
+    )
+    print(f"JSON: {result['json_path']}")
+    print(f"Database: {result['database_path']}")
+
+    if result["duplicate_unit_names"]:
+        print(
+            "Duplicate units: "
+            + ", ".join(result["duplicate_unit_names"])
+        )
+
+    unresolved = result["unresolved_instances"]
+    if unresolved:
+        print(f"Unresolved instances: {len(unresolved)}")
+        for item in unresolved[: args.show_unresolved]:
+            print(
+                f"  {item['parent']}.{item['name']} -> "
+                f"{item['child_type']} "
+                f"({item['source']}:{item['line']})"
+            )
+        if len(unresolved) > args.show_unresolved:
+            print(
+                f"  ... {len(unresolved) - args.show_unresolved} more"
+            )
+
+    return 0
 
 
 def cmd_build(args) -> int:
@@ -479,6 +522,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_index = sub.add_parser(
+        "index",
+        help="Index SystemVerilog sources and design hierarchy",
+    )
+    p_index.add_argument(
+        "--show-unresolved",
+        type=int,
+        default=10,
+        help="Maximum unresolved instances to print",
+    )
+    p_index.set_defaults(func=cmd_index)
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
