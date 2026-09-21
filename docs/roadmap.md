@@ -62,10 +62,10 @@ implemented. Elaborated connectivity and waveform-driven protocol extraction rem
 
 ## v0.5 — Protocol Verification
 
-Current status: normalized-trace transaction analyzers are implemented for APB and
-AXI4-Lite, with a burst-aware AXI4 foundation, direct VCD extraction, and asynchronous-
-FIFO dynamic CDC invariant checks now implemented. Exhaustive AXI4 optional semantics,
-structural CDC signoff, and UCIe transaction analysis remain planned.
+Current status: normalized-trace analyzers are implemented for APB, AXI4-Lite,
+burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/link-health
+foundation. Exhaustive AXI4 optional semantics, structural CDC signoff, and
+specification-complete UCIe checking remain planned.
 
 - [x] APB normalized-trace reconstruction and protocol checks.
 - [x] AXI4-Lite five-channel transaction reconstruction and protocol checks.
@@ -73,7 +73,8 @@ structural CDC signoff, and UCIe transaction analysis remain planned.
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [ ] Exhaustive AXI4 optional-sideband and exclusive-access checking.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
-- [ ] UCIe-oriented transaction analysis.
+- [x] UCIe public 68B/256B FLIT trace and link-health foundation.
+- [ ] Specification-complete UCIe protocol/PHY conformance checking.
 
 Each pack should support reusable checks, assertions, transaction extraction, coverage goals, and debug summaries.
 

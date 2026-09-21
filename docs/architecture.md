@@ -195,6 +195,41 @@ logical sample cycles. The burst analyzer then propagates those timestamps into
 violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains an
 input adapter; protocol semantics remain simulator-independent in the AXI4 core.
 
+## v0.5 UCIe Public FLIT Trace Foundation
+
+`zddv ucie-analyze <trace.json>` consumes a simulator-independent normalized
+FLIT trace. This first contract intentionally uses only facts documented in public
+UCIe Consortium material: public UCIe material describes link initialization as
+negotiating operating parameters including width, lane numbering, frequency, and
+protocol support, while the Consortium's introductory webinar Q&A describes FLITs
+as 68 or 256 bytes with ACK/NAK carried in a 2-byte header and CRC information in
+the FLIT.
+
+The normalized public profile therefore records:
+
+- trace-order cycle and optional timestamp;
+- TX/RX direction;
+- 68-byte or 256-byte FLIT record size;
+- the public 2-byte header model;
+- monitor-normalized ACK/NAK indication;
+- explicit monitor CRC health;
+- optional negotiated width, lane numbering, frequency, and protocol metadata.
+
+Trace-contract violations are kept separate from link-health observations. A malformed
+direction, unsupported public-profile size, non-monotonic ordering, header mismatch, or
+missing normalized ACK/NAK/CRC field makes the trace FAIL. A NAK or CRC failure marks
+link health as DEGRADED but is not independently called a UCIe protocol violation,
+because public sources do not provide enough information to infer retry correctness.
+
+This is not a UCIe conformance checker. It does not encode evaluation-copy-only rules
+for PHY electrical behavior, training-state timing, retry sequencing, protocol mappings,
+lane repair, or exact CRC construction.
+
+Public references:
+
+- https://www.uciexpress.org/specifications
+- https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.

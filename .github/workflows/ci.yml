@@ -174,6 +174,15 @@ jobs:
           grep -q '"violations": 0' examples/counter/.zddv/cdc/async-fifo/latest.json
           grep -q '"not_static_cdc_signoff": true' examples/counter/.zddv/cdc/async-fifo/latest.json
 
+      - name: Analyze UCIe public FLIT trace
+        run: |
+          zddv --project examples/counter ucie-analyze ../ucie_trace.json
+          test -s examples/counter/.zddv/protocols/ucie/latest.json
+          grep -q '"protocol": "UCIe"' examples/counter/.zddv/protocols/ucie/latest.json
+          grep -q '"health": "DEGRADED"' examples/counter/.zddv/protocols/ucie/latest.json
+          grep -q '"flits": 3' examples/counter/.zddv/protocols/ucie/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/protocols/ucie/latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
