@@ -79,6 +79,12 @@ jobs:
           zddv --project examples/counter coverage
           test -s examples/counter/.zddv/coverage/metrics.json
 
+      - name: Generate coverage-hole report
+        run: |
+          zddv --project examples/counter coverage-holes --limit 20
+          test -s examples/counter/.zddv/coverage/holes.json
+          test -s examples/counter/.zddv/coverage/holes.txt
+
       - name: Show coverage history
         run: zddv --project examples/counter coverage-history --limit 10
 
