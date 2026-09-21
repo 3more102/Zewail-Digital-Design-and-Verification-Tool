@@ -13,6 +13,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
+from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file
@@ -83,6 +84,30 @@ def cmd_doctor(args) -> int:
     except RuntimeError as exc:
         print(f"[FAIL] {exc}")
         return 1
+
+
+def cmd_index(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_design_index(project)
+    summary = result["summary"]
+    print(
+        f"DESIGN INDEX: {summary['files']} file(s), {summary['units']} unit(s), "
+        f"{summary['instances']} instance(s)"
+    )
+    if summary["duplicate_unit_names"]:
+        print(f"Duplicate unit names: {summary['duplicate_unit_names']}")
+    print(f"Index: {result['path']}")
+    return 0
+
+
+def cmd_hierarchy(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_design_index(project)
+    print(f"HIERARCHY: top={project.top}")
+    for line in hierarchy_lines(result["hierarchy"]):
+        print(line)
+    print(f"Index: {result['path']}")
+    return 0 if result["hierarchy"].get("resolved", False) else 1
 
 
 def cmd_lint(args) -> int:
@@ -323,7 +348,6 @@ def cmd_assertions(args) -> int:
     return 0
 
 
-
 def cmd_apb_analyze(args) -> int:
     project = load_project(_project_arg(args))
     result = analyze_apb_file(
@@ -351,6 +375,7 @@ def cmd_apb_analyze(args) -> int:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
+
 
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
@@ -507,6 +532,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_index = sub.add_parser(
+        "index",
+        help="Build the normalized source/design index",
+    )
+    p_index.set_defaults(func=cmd_index)
+
+    p_hierarchy = sub.add_parser(
+        "hierarchy",
+        help="Build and print the source-level design hierarchy",
+    )
+    p_hierarchy.set_defaults(func=cmd_hierarchy)
+
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
 
@@ -598,7 +635,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fcov_holes.add_argument("--limit", type=int, default=50)
     p_fcov_holes.set_defaults(func=cmd_fcov_holes)
-
 
     p_apb = sub.add_parser(
         "apb-analyze",

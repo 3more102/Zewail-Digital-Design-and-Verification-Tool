@@ -63,6 +63,21 @@ Every run receives a unique run ID and directory. A run produces:
 
 This run directory becomes the atomic unit for future regression, coverage, debug, and failure-clustering features.
 
+## v0.4 Design Index Contract
+
+The Debug Studio core uses a normalized design index at
+`.zddv/design/index.json`. The source-level index contains:
+
+- source file paths, line counts, byte counts, and SHA-256 hashes
+- module, interface, program, and package definitions with source ranges
+- known design-unit instantiations with source lines
+- duplicate design-unit detection
+- a recursive hierarchy rooted at the configured project top
+
+The source-level index is deliberately separate from simulator elaboration.
+Later adapters may enrich this model with elaborated hierarchy and tool-specific
+AST evidence without changing the CLI/GUI-facing contract.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
