@@ -1,0 +1,38 @@
+{
+  "source": "example-axi4-monitor",
+  "samples": [
+    {
+      "cycle": 0,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWID": 1,
+      "AWADDR": "0x100",
+      "AWLEN": 1,
+      "AWSIZE": 2,
+      "AWBURST": "INCR"
+    },
+    {
+      "cycle": 1,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x11223344",
+      "WSTRB": "0xF",
+      "WLAST": 0
+    },
+    {
+      "cycle": 2,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x55667788",
+      "WSTRB": "0xF",
+      "WLAST": 1
+    },
+    {
+      "cycle": 3,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BID": 1,
+      "BRESP": "OKAY"
+    }
+  ]
+}
