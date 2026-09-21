@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.3 verification-results foundation — normalized coverage database in progress**
+> Status: **v0.3 verification-results foundation — coverage + assertion results database in progress**
 
 ## What Works Today
 
@@ -25,6 +25,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized Verilator coverage metrics stored as SQLite snapshots
 - Coverage history/trend CLI with per-type point breakdown
 - Compatibility path for packaged Verilator 5.020 coverage generation
+- Structured Verilator assertion-failure parsing with per-run `assertions.json`
+- SQLite assertion-event history linked to verification runs
+- Assertion history CLI and HTML dashboard summaries
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
@@ -84,6 +87,7 @@ zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
+zddv --project my_project assertions --limit 100
 ```
 
 ## Verification Flow
@@ -108,13 +112,18 @@ Simulator Adapter
                   ▼
               Run Engine
                   │
-          ┌───────┼────────┐
-          │       │        │
-         log   waveform  coverage.dat
-          │       │        │
-          └───────┼────────┘
-                  ▼
-               run.json
+          ┌────────┼─────────────┐
+          │        │             │
+         log    waveform      coverage.dat
+          │        │             │
+          └────┬───┴───────┬─────┘
+               │           │
+               ▼           ▼
+         assertions.json  run.json
+               │           │
+               └─────┬─────┘
+                     ▼
+               results.db
                   │
                   ▼
           Regression Engine
@@ -245,7 +254,7 @@ separately from Verilator's annotation threshold.
 - [x] Per-run coverage artifacts
 - [x] Multi-run coverage merge
 - [x] Normalized coverage metrics/database
-- [ ] Assertion result database
+- [x] Assertion result database (runtime violation events)
 - [ ] Coverage-hole analysis
 - [ ] APB protocol analysis
 - [ ] AXI4 / AXI4-Lite protocol analysis
