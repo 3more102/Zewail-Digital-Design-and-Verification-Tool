@@ -1,0 +1,55 @@
+{
+  "source": "example-axi4-exclusive-sequence",
+  "samples": [
+    {
+      "cycle": 0,
+      "ARVALID": 1,
+      "ARREADY": 1,
+      "ARID": 7,
+      "ARADDR": "0x100",
+      "ARLEN": 0,
+      "ARSIZE": 2,
+      "ARBURST": "INCR",
+      "ARLOCK": 1,
+      "ARCACHE": 0,
+      "ARPROT": 2
+    },
+    {
+      "cycle": 1,
+      "RVALID": 1,
+      "RREADY": 1,
+      "RID": 7,
+      "RDATA": "0x11223344",
+      "RRESP": "EXOKAY",
+      "RLAST": 1
+    },
+    {
+      "cycle": 2,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWID": 7,
+      "AWADDR": "0x100",
+      "AWLEN": 0,
+      "AWSIZE": 2,
+      "AWBURST": "INCR",
+      "AWLOCK": 1,
+      "AWCACHE": 0,
+      "AWPROT": 2
+    },
+    {
+      "cycle": 3,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0x55667788",
+      "WSTRB": "0xF",
+      "WLAST": 1
+    },
+    {
+      "cycle": 4,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BID": 7,
+      "BRESP": "EXOKAY"
+    }
+  ]
+}
