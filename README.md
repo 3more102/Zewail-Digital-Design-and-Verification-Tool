@@ -31,7 +31,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst-trace foundation with IDs, burst le\n- Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behaviorngths/types, WLAST/RLAST, and 4KB-boundary checks
+- AXI4 burst-trace foundation with IDs, burst lengths/types, WLAST/RLAST, and 4KB-boundary checks
+- Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
@@ -122,7 +123,8 @@ zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
 zddv --project my_project axi4lite-analyze axi4lite_trace.json
-zddv --project my_project axi4-analyze axi4_trace.json\nzddv --project my_project async-fifo-analyze async_fifo_cdc_trace.json
+zddv --project my_project axi4-analyze axi4_trace.json
+zddv --project my_project async-fifo-analyze async_fifo_cdc_trace.json
 zddv --project my_project axi4-waveform --input axi4.vcd
 zddv --project my_project axi4-waveform --run <run-id> --scope tb.axi
 zddv --project my_project axi4lite-waveform --input axi4lite.vcd
@@ -262,7 +264,8 @@ docs/                  Architecture and roadmap
 - [x] JSON build/run metadata
 - [x] Waveform artifact handling
 - [x] Self-checking counter example
-- [ ] RTL FIFO example\n- [x] Async-FIFO CDC normalized-event invariant checker
+- [ ] RTL FIFO example
+- [x] Async-FIFO CDC normalized-event invariant checker
 
 ### Phase 2 — Regression
 
@@ -296,7 +299,8 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 burst normalized-trace foundation
 - [x] AXI4 burst VCD waveform extraction
 - [ ] Exhaustive AXI4 optional-sideband/exclusive/coherency-adjacent checks
-- [x] Async-FIFO CDC normalized-event invariant analysis\n- [ ] UCIe transaction analysis
+- [x] Async-FIFO CDC normalized-event invariant analysis
+- [ ] UCIe transaction analysis
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
