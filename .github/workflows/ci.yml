@@ -157,6 +157,15 @@ jobs:
           grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/axi4/latest.json
           grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/latest.json
 
+      - name: Analyze AXI4 exclusive-access trace
+        run: |
+          zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json
+          test -s examples/counter/.zddv/protocols/axi4/latest.json
+          grep -q '"exclusive_read_bursts": 1' examples/counter/.zddv/protocols/axi4/latest.json
+          grep -q '"exclusive_write_bursts": 1' examples/counter/.zddv/protocols/axi4/latest.json
+          grep -q '"exclusive_write_successes": 1' examples/counter/.zddv/protocols/axi4/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/latest.json
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
