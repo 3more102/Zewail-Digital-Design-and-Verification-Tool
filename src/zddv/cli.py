@@ -535,6 +535,7 @@ def cmd_uvm_analyze(args) -> int:
         args.path,
         source=args.source,
         output=args.output,
+        run_id=args.run_id,
     )
     summary = result["summary"]
     test_name = result.get("test_name") or "-"
@@ -543,6 +544,12 @@ def cmd_uvm_analyze(args) -> int:
         f"I/W/E/F={summary['infos']}/{summary['warnings']}/"
         f"{summary['errors']}/{summary['fatals']}"
     )
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
     print(
         f"Counts: {result['count_source']}  "
         f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
@@ -566,14 +573,15 @@ def cmd_uvm_history(args) -> int:
         project,
         limit=args.limit,
         status=args.status,
+        run_id=args.run_id,
     )
     if not rows:
         print("No UVM log snapshots found.")
         return 0
 
     print(
-        f"{'STATUS':<6} {'TEST':<28} {'I/W/E/F':<20} "
-        f"{'COUNT SOURCE':<18} SNAPSHOT"
+        f"{'STATUS':<6} {'TEST':<24} {'I/W/E/F':<20} "
+        f"{'RUN':<24} {'COUNT SOURCE':<18} SNAPSHOT"
     )
     for row in rows:
         counts = (
@@ -581,12 +589,12 @@ def cmd_uvm_history(args) -> int:
             f"{row['error_count']}/{row['fatal_count']}"
         )
         test_name = row["test_name"] or "-"
+        run_id = row["run_id"] or "-"
         print(
-            f"{row['status']:<6} {test_name[:28]:<28} {counts:<20} "
-            f"{row['count_source']:<18} {row['snapshot_id']}"
+            f"{row['status']:<6} {test_name[:24]:<24} {counts:<20} "
+            f"{run_id[:24]:<24} {row['count_source']:<18} {row['snapshot_id']}"
         )
     return 0
-
 
 def cmd_async_fifo_analyze(args) -> int:
     project = load_project(_project_arg(args))
@@ -1320,7 +1328,18 @@ def build_parser() -> argparse.ArgumentParser:
         "uvm-analyze",
         help="Normalize UVM report messages and final severity summary from a log",
     )
-    p_uvm.add_argument("path", help="UVM simulation log file")
+    p_uvm.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="UVM simulation log file; optional when --run is supplied",
+    )
+    p_uvm.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
     p_uvm.add_argument(
         "--source",
         default=None,
@@ -1342,6 +1361,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--status",
         choices=("PASS", "FAIL"),
         default=None,
+    )
+    p_uvm_history.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Filter UVM snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_history.set_defaults(func=cmd_uvm_history)
 

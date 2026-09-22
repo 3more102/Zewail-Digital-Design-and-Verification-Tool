@@ -26,7 +26,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
-- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, and history CLI
+- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -124,6 +124,9 @@ zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
+zddv --project my_project uvm-analyze uvm.log --source questa
+zddv --project my_project uvm-analyze --run <run-id>
+zddv --project my_project uvm-history --run <run-id>
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50

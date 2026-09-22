@@ -107,6 +107,14 @@ CREATE INDEX IF NOT EXISTS idx_uvm_messages_severity
 CREATE INDEX IF NOT EXISTS idx_uvm_messages_report_id
     ON uvm_report_messages(report_id);
 
+CREATE TABLE IF NOT EXISTS uvm_run_links (
+    snapshot_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_run_links_run
+    ON uvm_run_links(run_id);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -496,6 +504,20 @@ def record_uvm_log_snapshot(
                 record["report_path"],
             ),
         )
+        run_id = record.get("run_id")
+        if run_id is not None:
+            db.execute(
+                """
+                INSERT OR REPLACE INTO uvm_run_links (snapshot_id, run_id)
+                VALUES (?, ?)
+                """,
+                (record["snapshot_id"], str(run_id)),
+            )
+        else:
+            db.execute(
+                "DELETE FROM uvm_run_links WHERE snapshot_id = ?",
+                (record["snapshot_id"],),
+            )
         db.execute(
             "DELETE FROM uvm_report_messages WHERE snapshot_id = ?",
             (record["snapshot_id"],),
@@ -531,6 +553,7 @@ def list_uvm_log_snapshots(
     *,
     limit: int = 20,
     status: str | None = None,
+    run_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
@@ -538,17 +561,24 @@ def list_uvm_log_snapshots(
         raise ValueError(f"Unsupported UVM status: {status}")
 
     query = """
-        SELECT snapshot_id, created_at, project, source, test_name, status,
-               count_source, info_count, warning_count, error_count,
-               fatal_count, total_reports, input_path, normalized_path,
-               report_path
-        FROM uvm_log_snapshots
+        SELECT s.snapshot_id, s.created_at, s.project, s.source, s.test_name,
+               s.status, s.count_source, s.info_count, s.warning_count,
+               s.error_count, s.fatal_count, s.total_reports, s.input_path,
+               s.normalized_path, s.report_path, l.run_id
+        FROM uvm_log_snapshots AS s
+        LEFT JOIN uvm_run_links AS l ON l.snapshot_id = s.snapshot_id
     """
+    clauses: list[str] = []
     params: list[Any] = []
     if status is not None:
-        query += " WHERE status = ?"
+        clauses.append("s.status = ?")
         params.append(status)
-    query += " ORDER BY created_at DESC LIMIT ?"
+    if run_id is not None:
+        clauses.append("l.run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY s.created_at DESC LIMIT ?"
     params.append(limit)
 
     with _connect(project) as db:
