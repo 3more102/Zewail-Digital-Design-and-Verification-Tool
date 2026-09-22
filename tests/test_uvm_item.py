@@ -5,6 +5,11 @@ from pathlib import Path
 
 from zddv.cli import main
 from zddv.config import initialize_project
+from zddv.storage import (
+    list_uvm_item_handshake_events,
+    list_uvm_item_handshake_snapshots,
+    record_run,
+)
 from zddv.uvm_item import analyze_uvm_item_file, parse_uvm_item_data
 
 
@@ -195,3 +200,119 @@ def test_cli_analyzes_item_handshake_trace(tmp_path: Path):
     payload = json.loads(latest.read_text(encoding="utf-8"))
     assert payload["source"] == "cli-test"
     assert payload["summary"]["violations"] == 0
+
+
+def test_analyze_persists_item_snapshot_and_events(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "items-persist.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "source": "uvm-helper",
+                "events": [
+                    _event("item-1", "GRANT", time="1 ns"),
+                    _event("item-1", "REQUEST", time="1 ns"),
+                    _event("item-1", "ITEM_DONE", time="8 ns"),
+                    _event("item-1", "RESPONSE", time="9 ns"),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_item_file(project, trace)
+
+    snapshots = list_uvm_item_handshake_snapshots(project, limit=10)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+    assert snapshots[0]["item_count"] == 1
+    assert snapshots[0]["completed_count"] == 1
+    assert snapshots[0]["responded_count"] == 1
+
+    events = list_uvm_item_handshake_events(project, result["snapshot_id"])
+    assert [event["event"] for event in events] == [
+        "GRANT",
+        "REQUEST",
+        "ITEM_DONE",
+        "RESPONSE",
+    ]
+    assert events[0]["item_id"] == "item-1"
+    assert events[0]["transaction_id"] == "7"
+
+
+def _record_item_run(project, run_id: str) -> None:
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    log = run_dir / "simulation.log"
+    log.write_text("simulation complete\n", encoding="utf-8")
+    record_run(
+        project,
+        {
+            "run_id": run_id,
+            "created_at": "2026-09-22T06:00:00+00:00",
+            "project": project.name,
+            "simulator": "questa",
+            "simulator_version": "Questa test",
+            "top": "tb_top",
+            "test": "item_case",
+            "seed": 23,
+            "status": "PASS",
+            "returncode": 0,
+            "duration_ms": 1.0,
+            "run_dir": str(run_dir),
+            "log": str(log),
+            "waveform": None,
+            "coverage": None,
+            "timeout_s": 10.0,
+            "command": ["vsim"],
+            "plusargs": [],
+        },
+    )
+
+
+def test_cli_item_history_and_run_correlation(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    _record_item_run(project, "run-item")
+    trace = project.root / "items-history.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "events": [
+                    _event("item-1", "GRANT"),
+                    _event("item-1", "REQUEST"),
+                    _event("item-1", "ITEM_DONE"),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-analyze",
+            str(trace),
+            "--run",
+            "run-item",
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM ITEM PASS" in output
+    assert "Run: run-item" in output
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-history",
+            "--run",
+            "run-item",
+        ]
+    )
+    assert rc == 0
+    history = capsys.readouterr().out
+    assert "run-item" in history
+    assert "PASS" in history
+    assert "1/0/0/0" in history
