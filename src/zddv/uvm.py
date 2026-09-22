@@ -178,7 +178,7 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
             "This parser normalizes standard UVM report messages and the final severity summary without depending on a simulator vendor.",
             "The final complete UVM Report Summary is authoritative for severity counts when present; otherwise visible report messages are counted.",
             "Phase, objection, sequence, and transaction lifecycle reconstruction are not yet modeled.",
-            "Simulator exit status remains separate evidence and can be correlated by a later run-aware ingestion layer.",
+            "When linked to a recorded ZDDV run, simulator status and return code are retained as separate evidence from the UVM severity verdict.",
         ],
     }
 
