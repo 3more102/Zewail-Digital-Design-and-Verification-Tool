@@ -34,6 +34,7 @@ from zddv.storage import (
     assertion_statistics,
     database_path,
     list_assertion_events,
+    list_coverage_score_snapshots,
     list_coverage_snapshots,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
@@ -371,15 +372,28 @@ def cmd_coverage(args) -> int:
     print(f"Summary: {result['summary']}")
     metrics = result.get("metrics")
     if metrics is not None:
-        print(
-            f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
-            f"({metrics['hit_rate']:.1f}%)"
-        )
-        if metrics.get("tool_total_coverage") is not None:
+        if {"hit_points", "total_points", "hit_rate"} <= metrics.keys():
+            print(
+                f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
+                f"({metrics['hit_rate']:.1f}%)"
+            )
+            if metrics.get("tool_total_coverage") is not None:
+                print(
+                    "Simulator-reported total coverage: "
+                    f"{metrics['tool_total_coverage']:.2f}%"
+                )
+        elif metrics.get("tool_total_coverage") is not None:
             print(
                 "Simulator-reported total coverage: "
                 f"{metrics['tool_total_coverage']:.2f}%"
             )
+            by_metric = metrics.get("by_metric") or {}
+            if by_metric:
+                detail = ", ".join(
+                    f"{name}={value:.2f}%"
+                    for name, value in sorted(by_metric.items())
+                )
+                print(f"Coverage metric scores: {detail}")
         print(f"Metrics: {result['metrics_path']}")
         if result.get("snapshot_id"):
             print(f"Snapshot: {result['snapshot_id']}")
@@ -424,6 +438,27 @@ def cmd_coverage(args) -> int:
 
 def cmd_coverage_history(args) -> int:
     project = load_project(_project_arg(args))
+    if project.simulator.strip().lower() == "vcs":
+        rows = list_coverage_score_snapshots(project, limit=args.limit)
+        if not rows:
+            print("No coverage score snapshots found.")
+            return 0
+
+        print(f"{'SCORE':>8} {'INPUTS':>6}  SNAPSHOT")
+        for row in rows:
+            print(
+                f"{row['score']:>7.2f}% {row['input_count']:>6}  "
+                f"{row['snapshot_id']}"
+            )
+            by_metric = row.get("by_metric") or {}
+            if by_metric:
+                detail = ", ".join(
+                    f"{name}={value:.2f}%"
+                    for name, value in sorted(by_metric.items())
+                )
+                print(f"         {detail}")
+        return 0
+
     rows = list_coverage_snapshots(project, limit=args.limit)
     if not rows:
         print("No coverage snapshots found.")

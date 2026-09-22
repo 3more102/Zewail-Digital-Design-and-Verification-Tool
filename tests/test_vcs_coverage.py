@@ -6,9 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_history
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_vcs_coverage
+from zddv.coverage import merge_vcs_coverage, parse_vcs_urg_dashboard
+from zddv.storage import list_coverage_score_snapshots
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -68,7 +69,17 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
         assert not stale_merged.exists()
         assert not stale_report.exists()
         (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
-        (Path(cwd) / command[command.index("-report") + 1]).mkdir()
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        report_dir.mkdir()
+        (report_dir / "dashboard.txt").write_text(
+            """Unified Coverage Report
+
+Total Coverage Summary
+SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
+97.74  99.03  97.75  98.53  100.00  99.01  98.63  91.19
+""",
+            encoding="utf-8",
+        )
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -90,18 +101,28 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
     assert captured["cwd"] == out_dir
     assert Path(result["merged"]).is_dir()
     assert Path(result["report_dir"]).is_dir()
-    assert result["metrics"] is None
-    assert result["snapshot_id"] is None
-    assert result["metrics_status"] == "pending-normalization"
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
+    assert result["metrics"]["by_metric"]["line"] == pytest.approx(99.03)
+    assert result["metrics"]["by_metric"]["group"] == pytest.approx(91.19)
+    assert result["snapshot_id"] is not None
+    assert Path(result["summary"]).name == "dashboard.txt"
+
+    snapshots = list_coverage_score_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+    assert snapshots[0]["score"] == pytest.approx(97.74)
+    assert snapshots[0]["by_metric"]["branch"] == pytest.approx(99.01)
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
     )
     assert manifest["status"] == "merged-report-captured"
-    assert manifest["metrics_status"] == "pending-normalization"
+    assert manifest["metrics_status"] == "normalized"
     assert manifest["input_count"] == 2
     assert manifest["inputs"] == inputs
     assert manifest["command"] == command
+    assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
@@ -177,3 +198,139 @@ def test_merge_vcs_coverage_requires_expected_outputs(tmp_path: Path, monkeypatc
 
     with pytest.raises(RuntimeError, match="VCS coverage merge/report failed"):
         merge_vcs_coverage(project)
+
+
+
+def test_parse_vcs_urg_dashboard_accepts_missing_metric_placeholder(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
+89.75 99.33 93.67 100.00 -- 98.40 99.51 47.58
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(89.75)
+    assert "fsm" not in metrics["by_metric"]
+    assert metrics["by_metric"]["branch"] == pytest.approx(98.40)
+    assert metrics["by_metric"]["group"] == pytest.approx(47.58)
+
+
+def test_parse_vcs_urg_dashboard_rejects_ambiguous_summary(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Total Coverage Summary
+SCORE LINE COND
+not-a-score-row
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="score row could not be parsed"):
+        parse_vcs_urg_dashboard(dashboard)
+
+
+def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage = (project.root / project.run_dir / "run-a" / "coverage.vdb").resolve()
+    coverage.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
+    )
+
+    def fake_run(command, cwd):
+        (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
+        (Path(cwd) / command[command.index("-report") + 1]).mkdir()
+        return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_vcs_coverage(project)
+
+    assert result["metrics"] is None
+    assert result["snapshot_id"] is None
+    assert result["metrics_status"] == "dashboard-missing"
+    assert Path(result["report_dir"]).is_dir()
+    assert list_coverage_score_snapshots(project, limit=5) == []
+
+
+def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    monkeypatch.setattr(
+        "zddv.cli.merge_coverage",
+        lambda loaded: {
+            "inputs": ["run-a/coverage.vdb", "run-b/coverage.vdb"],
+            "merged": "/tmp/coverage.vdb",
+            "summary": "/tmp/urg-report/dashboard.txt",
+            "metrics_path": "/tmp/vcs-coverage.json",
+            "metrics": {
+                "tool_total_coverage": 97.74,
+                "by_metric": {
+                    "line": 99.03,
+                    "condition": 97.75,
+                    "branch": 99.01,
+                },
+            },
+            "snapshot_id": "cov-score-test",
+            "metrics_status": "normalized",
+            "report": "",
+        },
+    )
+
+    rc = cmd_coverage(SimpleNamespace(project=str(project.root)))
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Simulator-reported total coverage: 97.74%" in output
+    assert "branch=99.01%" in output
+    assert "condition=97.75%" in output
+    assert "line=99.03%" in output
+    assert "Snapshot: cov-score-test" in output
+    assert "Coverage points:" not in output
+
+
+def test_vcs_coverage_history_uses_score_native_snapshots(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    monkeypatch.setattr(
+        "zddv.cli.list_coverage_score_snapshots",
+        lambda loaded, limit: [
+            {
+                "snapshot_id": "cov-score-test",
+                "score": 97.74,
+                "input_count": 2,
+                "by_metric": {"line": 99.03, "branch": 99.01},
+            }
+        ],
+    )
+
+    rc = cmd_coverage_history(
+        SimpleNamespace(project=str(project.root), limit=5)
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "97.74%" in output
+    assert "cov-score-test" in output
+    assert "branch=99.01%" in output
+    assert "line=99.03%" in output
+    assert "HIT/TOTAL" not in output
