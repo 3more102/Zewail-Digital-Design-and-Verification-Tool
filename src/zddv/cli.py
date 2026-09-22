@@ -559,10 +559,6 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
-            if not points:
-                raise RuntimeError(
-                    f"No normalized coverage points found in {source_path}."
-                )
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -575,6 +571,10 @@ def cmd_coverage_holes(args) -> int:
                     f"{source_path}. This adapter supports documented "
                     "Rows: ... FEC Target... detail tables; other layouts "
                     "remain unnormalized."
+                )
+            if not points:
+                raise RuntimeError(
+                    f"No normalized coverage points found in {source_path}."
                 )
             report = write_coverage_hole_report(
                 points,
