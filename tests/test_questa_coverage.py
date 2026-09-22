@@ -486,14 +486,17 @@ def test_write_questa_statement_hole_report_uses_merged_ucdb(
     )
 
     command = captured["command"]
-    assert command[:6] == [
+    assert command[:8] == [
         "/opt/questa/bin/vcover",
         "report",
         "-xml",
         "-notimestamps",
+        "-setdefault",
+        "byinstance",
         "-code",
         "s",
     ]
+    assert "-zeros" not in command
     assert command[-1] == str(merged.resolve())
     assert report["source"] == "questa-vcover-xml"
     assert report["total_holes"] == 1
