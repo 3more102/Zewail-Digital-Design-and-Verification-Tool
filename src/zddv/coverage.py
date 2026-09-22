@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.storage import record_coverage_snapshot
@@ -43,6 +44,22 @@ _QUESTA_KIND_ALIASES = {
     "covergroup": "covergroup",
     "directives": "directive",
     "directive": "directive",
+    "coverpoint": "covergroup",
+    "coverpoint_bin": "covergroup",
+    "cross": "covergroup",
+    "cross_bin": "covergroup",
+    "bin": "covergroup",
+}
+_QUESTA_POINT_KINDS = {
+    "branch",
+    "condition",
+    "expression",
+    "statement",
+    "toggle",
+    "fsm",
+    "assertion",
+    "directive",
+    "covergroup",
 }
 
 
@@ -215,6 +232,197 @@ def parse_questa_coverage_summary(text: str) -> dict:
     }
 
 
+def _xml_local_name(value: str) -> str:
+    return value.rsplit("}", 1)[-1].strip().lower().replace("-", "_")
+
+
+def _xml_attributes(element: ET.Element) -> dict[str, str]:
+    return {
+        _xml_local_name(str(key)): str(value).strip()
+        for key, value in element.attrib.items()
+    }
+
+
+def _parse_xml_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    match = re.search(r"-?\d+", value)
+    return int(match.group(0)) if match is not None else None
+
+
+def _questa_kind_from_xml(
+    tag: str,
+    attrs: dict[str, str],
+    inherited_kind: str | None,
+) -> str:
+    raw = (
+        attrs.get("coverage_type")
+        or attrs.get("coveragetype")
+        or attrs.get("metric")
+        or attrs.get("kind")
+        or attrs.get("type")
+        or tag
+    )
+    normalized = re.sub(r"[^a-z0-9]+", "_", raw.strip().lower()).strip("_")
+
+    if normalized in {"bin", "coverpoint_bin", "cross_bin"}:
+        return "covergroup"
+    if normalized in _QUESTA_KIND_ALIASES:
+        return _QUESTA_KIND_ALIASES[normalized]
+    if "statement" in normalized or normalized in {"stmt", "line"}:
+        return "statement"
+    if "branch" in normalized:
+        return "branch"
+    if "condition" in normalized:
+        return "condition"
+    if "expression" in normalized or normalized == "expr":
+        return "expression"
+    if "toggle" in normalized:
+        return "toggle"
+    if "fsm" in normalized or "state" in normalized or "transition" in normalized:
+        return "fsm"
+    if "assert" in normalized:
+        return "assertion"
+    if "directive" in normalized or normalized == "cover":
+        return "directive"
+    if normalized in {"covergroup", "coverpoint", "cross"}:
+        return "covergroup"
+    return inherited_kind or "unknown"
+
+
+def _questa_xml_hit_count(attrs: dict[str, str]) -> int | None:
+    for key in (
+        "hits",
+        "hit_count",
+        "hitcount",
+        "count",
+        "cover_count",
+        "covercount",
+        "covered_count",
+        "coveredcount",
+    ):
+        value = _parse_xml_int(attrs.get(key))
+        if value is not None:
+            return value
+
+    status = (attrs.get("status") or attrs.get("state") or "").strip().lower()
+    if status in {"zero", "uncovered", "missed", "unhit", "not_covered"}:
+        return 0
+    if status in {"covered", "hit", "passed"}:
+        return 1
+    return None
+
+
+def parse_questa_coverage_xml(text: str) -> list[dict]:
+    """Normalize item-level coverage evidence from vcover XML output."""
+    root = ET.fromstring(text)
+    points: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def walk(
+        element: ET.Element,
+        path_parts: list[str],
+        inherited_kind: str | None,
+    ) -> None:
+        tag = _xml_local_name(str(element.tag))
+        attrs = _xml_attributes(element)
+        kind = _questa_kind_from_xml(tag, attrs, inherited_kind)
+
+        label = (
+            attrs.get("path")
+            or attrs.get("fullname")
+            or attrs.get("full_name")
+            or attrs.get("name")
+            or attrs.get("id")
+        )
+        next_parts = list(path_parts)
+        if label and (not next_parts or next_parts[-1] != label):
+            next_parts.append(label)
+
+        children = list(element)
+        count = _questa_xml_hit_count(attrs)
+        container_tag = tag in {
+            "coverage",
+            "coveragereport",
+            "report",
+            "instance",
+            "scope",
+            "designunit",
+            "du",
+            "covergroup",
+            "coverpoint",
+            "cross",
+        }
+        if (
+            kind in _QUESTA_POINT_KINDS
+            and count is not None
+            and not (container_tag and children)
+        ):
+            name = attrs.get("path") or "/".join(next_parts)
+            source = (
+                attrs.get("source")
+                or attrs.get("file")
+                or attrs.get("filename")
+                or attrs.get("srcfile")
+            )
+            line = attrs.get("line") or attrs.get("lineno") or attrs.get("line_number")
+            if source and line:
+                location = f"{source}:{line}"
+                name = f"{name}@{location}" if name else location
+            elif source and not name:
+                name = source
+
+            if not name:
+                name = f"{kind}:{len(points)}"
+
+            key = (kind, name)
+            if key not in seen:
+                seen.add(key)
+                points.append(
+                    {
+                        "name": name,
+                        "count": max(0, int(count)),
+                        "hit": int(count) > 0,
+                        "type": kind,
+                    }
+                )
+
+        child_kind = kind if kind in _QUESTA_POINT_KINDS else inherited_kind
+        for child in children:
+            walk(child, next_parts, child_kind)
+
+    walk(root, [], None)
+    return points
+
+
+def load_normalized_coverage_points(project: ProjectConfig) -> list[dict]:
+    simulator = project.simulator.strip().lower()
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    if simulator == "verilator":
+        merged_path = out_dir / "coverage.dat"
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            )
+        return parse_verilator_coverage(merged_path)
+
+    if simulator in {"questa", "questasim"}:
+        points_path = out_dir / "points.json"
+        if not points_path.exists():
+            raise RuntimeError(
+                f"Normalized Questa coverage points not found at {points_path}. "
+                "Run 'zddv coverage' first."
+            )
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Invalid normalized coverage point file: {points_path}")
+        return [dict(item) for item in payload]
+
+    raise RuntimeError(
+        f"Coverage point loading is not implemented for simulator: {project.simulator}"
+    )
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -235,6 +443,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
 
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
+    details_path = out_dir / "details.xml"
+    points_path = out_dir / "points.json"
     metrics_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_files]
 
@@ -264,6 +474,33 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
 
+    details_cmd = [
+        tool,
+        "report",
+        "-xml",
+        "-output",
+        str(details_path),
+        str(merged_path),
+    ]
+    details = _run(details_cmd, project.root)
+    if details.returncode != 0 or not details_path.exists():
+        raise RuntimeError(
+            "Questa item-level coverage report failed:\n"
+            + "$ "
+            + " ".join(details_cmd)
+            + "\n"
+            + (details.stdout or "").strip()
+        )
+    try:
+        points = parse_questa_coverage_xml(
+            details_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except ET.ParseError as exc:
+        raise RuntimeError(
+            f"Questa XML coverage report could not be parsed: {details_path}: {exc}"
+        ) from exc
+    points_path.write_text(json.dumps(points, indent=2), encoding="utf-8")
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -279,6 +516,9 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "details": str(details_path),
+        "points": str(points_path),
+        "item_points": len(points),
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -294,9 +534,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "inputs": inputs,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "details_path": str(details_path),
+        "points_path": str(points_path),
         "metrics_path": str(metrics_path),
         "report": report.stdout,
         "metrics": metrics,
+        "points": points,
         "snapshot_id": snapshot_id,
     }
 
