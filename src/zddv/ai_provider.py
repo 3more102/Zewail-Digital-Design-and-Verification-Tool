@@ -271,11 +271,54 @@ def build_model_request(context: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_model_request_preview(
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build a local review artifact for the exact provider-neutral request."""
+    request = build_model_request(context)
+    return {
+        "schema_version": 1,
+        "analysis": "ai_provider_request_preview",
+        "request_sha256": _canonical_sha256(request),
+        "context_evidence_sha256": context["provenance"]["evidence_sha256"],
+        "request": request,
+        "policy": {
+            "external_transmission": False,
+            "review_required_before_external_use": True,
+            "automatic_model_invocation": False,
+            "automatic_command_execution": False,
+        },
+        "semantics": (
+            "This artifact contains the exact provider-neutral request ZDDV "
+            "will hash before external invocation. Writing this preview does not "
+            "contact a model provider or transmit project data."
+        ),
+    }
+
+
+def write_model_request_preview(
+    project: ProjectConfig,
+    *,
+    context_path: str | Path,
+    output: str | Path = ".zddv/ai/provider-request.json",
+) -> dict[str, Any]:
+    context = load_ai_context(project, context_path)
+    preview = build_model_request_preview(context)
+    destination = _project_path(project, output)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(preview, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {**preview, "path": str(destination)}
+
+
 def invoke_provider(
     provider: ModelProviderAdapter,
     context: Mapping[str, Any],
     *,
     allow_external: bool,
+    expected_request_sha256: str | None = None,
 ) -> dict[str, Any]:
     metadata = provider.metadata
     if metadata.external_transmission and not allow_external:
@@ -286,6 +329,22 @@ def invoke_provider(
 
     request_payload = build_model_request(context)
     request_sha256 = _canonical_sha256(request_payload)
+
+    request_sha_confirmed = False
+    if metadata.external_transmission:
+        expected = str(expected_request_sha256 or "").strip().lower()
+        if not _SHA256_RE.fullmatch(expected):
+            raise RuntimeError(
+                "External model-provider transmission requires "
+                "--expected-request-sha256 from a reviewed "
+                "ai-provider-request preview."
+            )
+        if expected != request_sha256:
+            raise RuntimeError(
+                "Reviewed request SHA-256 does not match the exact provider request."
+            )
+        request_sha_confirmed = True
+
     response = provider.invoke(request_payload)
     if not isinstance(response, Mapping):
         raise TypeError("model provider must return a mapping")
@@ -301,6 +360,7 @@ def invoke_provider(
             "explicit_external_opt_in": bool(
                 metadata.external_transmission and allow_external
             ),
+            "request_sha_confirmed": request_sha_confirmed,
             "untrusted_model_output": True,
             "response_schema_validated": False,
             "automatic_generated_artifact_staging": False,
@@ -321,6 +381,7 @@ def write_provider_response(
     *,
     context_path: str | Path,
     allow_external: bool,
+    expected_request_sha256: str | None = None,
     output: str | Path = ".zddv/ai/provider-response.json",
 ) -> dict[str, Any]:
     context = load_ai_context(project, context_path)
@@ -328,6 +389,7 @@ def write_provider_response(
         provider,
         context,
         allow_external=allow_external,
+        expected_request_sha256=expected_request_sha256,
     )
     destination = _project_path(project, output)
     destination.parent.mkdir(parents=True, exist_ok=True)
