@@ -8,7 +8,7 @@ from typing import Any
 import uuid
 
 from zddv.config import ProjectConfig
-from zddv.storage import record_uvm_log_snapshot
+from zddv.storage import get_run_record, record_uvm_log_snapshot
 
 
 _SEVERITIES = ("UVM_INFO", "UVM_WARNING", "UVM_ERROR", "UVM_FATAL")
@@ -193,21 +193,38 @@ def parse_uvm_log(path: str | Path, *, source: str = "uvm-log") -> dict[str, Any
 
 def analyze_uvm_log(
     project: ProjectConfig,
-    path: str | Path,
+    path: str | Path | None,
     *,
     source: str | None = None,
     output: str | Path = ".zddv/uvm/latest.json",
+    run_id: str | None = None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
+    run_record: dict[str, Any] | None = None
+    if run_id is not None:
+        run_record = get_run_record(project, run_id)
+        if run_record is None:
+            raise ValueError(f"Unknown run ID: {run_id}")
+
+    if path is None:
+        if run_record is None:
+            raise ValueError("A UVM log path or --run must be provided")
+        input_path = Path(run_record["log_path"])
+    else:
+        input_path = Path(path)
+        if not input_path.is_absolute():
+            input_path = project.root / input_path
+
     input_path = input_path.resolve()
     if not input_path.is_file():
         raise FileNotFoundError(input_path)
 
     report = parse_uvm_log(
         input_path,
-        source=source or "uvm-log",
+        source=source or (
+            str(run_record["simulator"])
+            if run_record is not None
+            else "uvm-log"
+        ),
     )
 
     created_at = datetime.now(timezone.utc).isoformat()
@@ -234,6 +251,15 @@ def analyze_uvm_log(
         "input_path": str(input_path),
         **report,
     }
+    if run_record is not None:
+        record.update(
+            {
+                "run_id": run_record["run_id"],
+                "run_status": run_record["status"],
+                "run_returncode": int(run_record["returncode"]),
+                "simulator": run_record["simulator"],
+            }
+        )
     record["normalized_path"] = str(normalized_path)
     record["report_path"] = str(destination)
 
@@ -242,3 +268,4 @@ def analyze_uvm_log(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_log_snapshot(project, record)
     return record
+
