@@ -8,6 +8,8 @@ from typing import Any
 import uuid
 
 from zddv.config import ProjectConfig
+from zddv.storage import record_formal_result_snapshot
+
 from zddv.formal.base import (
     FormalCheckRequest,
     FormalCheckResult,
@@ -256,4 +258,5 @@ def analyze_formal_result_file(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    record_formal_result_snapshot(project, record)
     return record
