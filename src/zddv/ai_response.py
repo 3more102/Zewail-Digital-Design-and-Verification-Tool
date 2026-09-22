@@ -6,7 +6,11 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
-from zddv.ai_provider import build_model_request, load_ai_context
+from zddv.ai_provider import (
+    build_model_request,
+    load_ai_context,
+    model_evidence_references,
+)
 from zddv.config import ProjectConfig
 from zddv.generated_artifacts import normalize_generation_proposal
 
@@ -76,44 +80,6 @@ def _validate_string_list(
     if len(set(result)) != len(result):
         raise ValueError(f"{label} must not contain duplicate entries")
     return result
-
-
-def _allowed_evidence_refs(context: Mapping[str, Any]) -> set[str]:
-    evidence = context.get("evidence")
-    if not isinstance(evidence, Mapping):
-        raise ValueError("AI context evidence must be an object")
-
-    refs: set[str] = set()
-    run = evidence.get("run")
-    if isinstance(run, Mapping):
-        run_id = run.get("run_id")
-        if isinstance(run_id, str) and run_id.strip():
-            refs.add(f"run:{run_id.strip()}")
-
-    candidates = evidence.get("candidates")
-    if isinstance(candidates, list):
-        for item in candidates:
-            if isinstance(item, Mapping):
-                rank = item.get("rank")
-                if isinstance(rank, int) and rank >= 1:
-                    refs.add(f"candidate:{rank}")
-
-    probes = evidence.get("debug_probe_suggestions")
-    if isinstance(probes, list):
-        for item in probes:
-            if isinstance(item, Mapping):
-                rank = item.get("rank")
-                if isinstance(rank, int) and rank >= 1:
-                    refs.add(f"probe:{rank}")
-
-    limitations = evidence.get("limitations")
-    if isinstance(limitations, list):
-        for index, _ in enumerate(limitations, start=1):
-            refs.add(f"limitation:{index}")
-
-    if not refs:
-        raise ValueError("AI context exposes no evidence references")
-    return refs
 
 
 def _validate_evidence_refs(
@@ -249,7 +215,7 @@ def validate_ai_response_payload(
             "AI response analysis must be 'zddv_ai_rca_response'"
         )
 
-    allowed_refs = _allowed_evidence_refs(context)
+    allowed_refs = set(model_evidence_references(context))
     observed_facts = _validate_statement_items(
         payload.get("observed_facts"),
         label="observed_facts",
