@@ -385,13 +385,13 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     multibit_indices: list[int] = []
     multibit_terms: dict[tuple[str, int, int, str, int], dict] = {}
 
-    hit_token = re.compile(r"^(?:\\*{3})?\\d[\\d,]*(?:\\*{3})?$")
+    hit_token = re.compile(r"^(?:\*{3})?\d[\d,]*(?:\*{3})?$")
     multibit_index_header = re.compile(
-        r"\\bi\\s*=\\s*(?P<indices>(?:<\\s*\\d+\\s*>\\s*)+)",
+        r"\bi\s*=\s*(?P<indices>(?:<\s*\d+\s*>\s*)+)",
         re.IGNORECASE,
     )
     multibit_row = re.compile(
-        r"^\\s*Row\\s+(?P<row>\\d+):\\s+(?P<target>\\S+)\\s+(?P<body>.*?)\\s*$",
+        r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<body>.*?)\s*$",
         re.IGNORECASE,
     )
     target_polarity = re.compile(
@@ -466,7 +466,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 multibit_indices = [
                     int(value)
                     for value in re.findall(
-                        r"<\\s*(\\d+)\\s*>",
+                        r"<\s*(\d+)\s*>",
                         index_header.group("indices"),
                     )
                 ]
