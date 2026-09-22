@@ -12,6 +12,7 @@ from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
+    parse_questa_code_coverage_holes,
     parse_verilator_coverage,
     write_coverage_hole_report,
 )
@@ -419,20 +420,42 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
-        raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
+    simulator = project.simulator.strip().lower()
+
+    if simulator == "verilator":
+        merged_path = (
+            project.root / ".zddv" / "coverage" / "coverage.dat"
+        ).resolve()
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_verilator_coverage(merged_path)
+        source_label = str(merged_path)
+    elif simulator in {"questa", "questasim"}:
+        zero_detail_path = (
+            project.root / ".zddv" / "coverage" / "zeros.txt"
+        ).resolve()
+        if not zero_detail_path.exists():
+            raise RuntimeError(
+                f"Questa zero-hit detail report not found at {zero_detail_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_questa_code_coverage_holes(
+            zero_detail_path.read_text(encoding="utf-8", errors="replace")
         )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
+        source_label = str(zero_detail_path)
+    else:
         raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            "Coverage-hole itemization is not implemented for simulator: "
+            f"{project.simulator}"
         )
 
-    points = parse_verilator_coverage(merged_path)
-    if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+    if simulator == "verilator" and not points:
+        raise RuntimeError(
+            f"No normalized coverage points found in {source_label}."
+        )
 
     output = Path(args.output)
     if not output.is_absolute():
@@ -461,7 +484,6 @@ def cmd_coverage_holes(args) -> int:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
     return 0
-
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
