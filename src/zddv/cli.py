@@ -47,6 +47,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_arbitration import analyze_uvm_arbitration_file
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
@@ -995,6 +996,50 @@ def cmd_uvm_sequence_history(args) -> int:
     return 0
 
 
+def cmd_uvm_arbitration_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_arbitration_file(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM ARBITRATION {result['status']}: "
+        f"{summary['rounds']} round(s), "
+        f"{summary['sequencers']} sequencer(s), "
+        f"{summary['sequences']} sequence(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Contention: contended={summary['contended_rounds']} "
+        f"uncontended={summary['uncontended_rounds']} "
+        f"observed-max-wait={summary['observed_max_wait_rounds']}"
+    )
+    fairness_limit = result["fairness"]["max_wait_rounds_limit"]
+    if fairness_limit is not None:
+        print(f"Fairness bound: {fairness_limit} round(s)")
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    for violation in result["violations"][: args.show]:
+        sequence_id = violation.get("sequence_id") or "-"
+        print(
+            f"[{violation['code']}] round={violation['round_index']} "
+            f"id={violation['round_id']} sequence={sequence_id} "
+            f"{violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
 def cmd_async_fifo_analyze(args) -> int:
     project = load_project(_project_arg(args))
     result = analyze_async_fifo_file(project, args.path, output=args.output)
@@ -1932,6 +1977,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter sequence lifecycle snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_sequence_history.set_defaults(func=cmd_uvm_sequence_history)
+
+    p_uvm_arbitration = sub.add_parser(
+        "uvm-arbitration-analyze",
+        help="Analyze explicit UVM sequencer arbitration rounds from JSON",
+    )
+    p_uvm_arbitration.add_argument(
+        "path",
+        help="Normalized UVM arbitration-round JSON file",
+    )
+    p_uvm_arbitration.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID to correlate with this arbitration snapshot",
+    )
+    p_uvm_arbitration.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label overriding the JSON source",
+    )
+    p_uvm_arbitration.add_argument(
+        "--output",
+        default=".zddv/uvm/arbitration/latest.json",
+        help="Normalized UVM arbitration JSON report path",
+    )
+    p_uvm_arbitration.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of arbitration violations to print",
+    )
+    p_uvm_arbitration.set_defaults(func=cmd_uvm_arbitration_analyze)
 
     p_async_fifo = sub.add_parser(
         "async-fifo-analyze",
