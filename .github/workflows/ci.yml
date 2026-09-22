@@ -112,6 +112,14 @@ jobs:
           zddv --project examples/counter assertions --limit 20
           zddv --project examples/counter assertions --status PASS --limit 20 | grep -q counter_sequence
 
+      - name: Normalize formal VCD trace
+        run: |
+          zddv --project examples/counter formal-vcd-trace ../formal_trace.vcd --property top.p_req_ack --kind assert --source ci-formal-vcd --signal state
+          test -s examples/counter/.zddv/formal/counterexamples/latest.json
+          grep -q '"trace_kind": "counterexample"' examples/counter/.zddv/formal/counterexamples/latest.json
+          grep -q '"top.state"' examples/counter/.zddv/formal/counterexamples/latest.json
+          grep -q '"last_time": 10' examples/counter/.zddv/formal/counterexamples/latest.json
+
       - name: Import functional coverage
         run: |
           zddv --project examples/counter fcov-import functional_coverage.json
