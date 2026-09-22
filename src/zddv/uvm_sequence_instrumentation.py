@@ -59,7 +59,7 @@ package zddv_uvm_sequence_trace_pkg;
     end
     else begin
       $display(
-        "ZDDV_UVM_SEQUENCE {\\"sequence_id\\":\\"%s\\",\\"sequence\\":\\"%s\\",\\"sequencer\\":%s,\\"parent_sequence_id\\":%s,\\"state\\":\\"%s\\",\\"time\\":\\"%0t\\",\\"metadata\\":{\\"instrumentation\\":\\"zddv_uvm_sequence_trace_pkg\\"}}",
+        "ZDDV_UVM_SEQUENCE {\"sequence_id\":\"%s\",\"sequence\":\"%s\",\"sequencer\":%s,\"parent_sequence_id\":%s,\"state\":\"%s\",\"time\":\"%0t\",\"metadata\":{\"instrumentation\":\"zddv_uvm_sequence_trace_pkg\"}}",
         zddv_json_escape(sequence_id),
         zddv_json_escape(sequence_name),
         zddv_json_string_or_null(sequencer_name),
