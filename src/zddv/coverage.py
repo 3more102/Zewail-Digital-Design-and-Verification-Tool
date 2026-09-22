@@ -728,6 +728,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
+    multibit_expression_path = out_dir / "multibit-expression.txt"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -837,6 +838,21 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             zero_detail_cmd,
             cwd=project.root,
             output=zero_detail_path,
+        ),
+        "multibit_expression": _capture_questa_report_file(
+            [
+                tool,
+                "report",
+                "-details",
+                "-multibitverbose",
+                "-code",
+                "e",
+                "-output",
+                str(multibit_expression_path),
+                str(merged_path),
+            ],
+            cwd=project.root,
+            output=multibit_expression_path,
         ),
     }
 
