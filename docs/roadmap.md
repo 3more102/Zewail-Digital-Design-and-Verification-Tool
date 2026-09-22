@@ -164,7 +164,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Provider-neutral RCA context bundle composed only from deterministic ZDDV evidence.
 - [x] Canonical evidence SHA-256 provenance for downstream review.
 - [x] Explicit policy flags disabling automatic external transmission, model invocation, and command execution.
-- [ ] Opt-in pluggable model-provider adapters.
+- [x] Opt-in pluggable model-provider adapter registry with SHA-confirmed external transmission and a guarded HTTP JSON gateway adapter.
 - [ ] Schema-validated model-response ingestion with evidence references.
 - [ ] Human review gate before any model-proposed debug action or generated verification artifact is applied.
 
