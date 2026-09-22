@@ -92,6 +92,20 @@ _QUESTA_FEC_ROW = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_MULTIBIT_INDEX_HEADER = re.compile(
+    r"^\s*i\s*=\s*(?P<indices>(?:<\s*\d+\s*>\s*)+)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_MULTIBIT_INDEX = re.compile(r"<\s*(?P<index>\d+)\s*>")
+_QUESTA_MULTIBIT_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<body>.+?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_HIT_TOKEN = re.compile(
+    r"^(?:\*{2,3})?\d[\d,]*(?:\*{2,3})?$"
+)
+
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -196,6 +210,8 @@ def build_coverage_hole_report(
                         "expression",
                         "fec_context",
                         "fec_target",
+                        "bit_index",
+                        "multibit",
                         "evidence",
                     )
                     if key in point and point[key] is not None
@@ -378,6 +394,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     fec_item: int | None = None
     fec_context = ""
     in_fec_rows = False
+    multibit_indices: list[int] = []
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
@@ -388,6 +405,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_item = None
             fec_context = ""
             in_fec_rows = False
+            multibit_indices = []
             continue
 
         if not source_file:
@@ -430,12 +448,78 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_item = int(item.group("item"))
             fec_context = (item.group("detail") or "").strip()
             in_fec_rows = False
+            multibit_indices = []
             continue
 
         normalized_line = raw_line.strip().lower()
         if normalized_line.startswith("rows:") and "fec target" in normalized_line:
             in_fec_rows = True
+            multibit_indices = []
             continue
+
+        multibit_header = _QUESTA_MULTIBIT_INDEX_HEADER.match(raw_line)
+        if in_fec_rows and kind == "expression" and multibit_header is not None:
+            multibit_indices = [
+                int(match.group("index"))
+                for match in _QUESTA_MULTIBIT_INDEX.finditer(
+                    multibit_header.group("indices")
+                )
+            ]
+            continue
+
+        if (
+            in_fec_rows
+            and kind == "expression"
+            and multibit_indices
+            and fec_line is not None
+            and fec_item is not None
+        ):
+            multibit_row = _QUESTA_MULTIBIT_ROW.match(raw_line)
+            if multibit_row is not None:
+                body_tokens = multibit_row.group("body").split()
+                hit_tokens = body_tokens[: len(multibit_indices)]
+                if (
+                    len(hit_tokens) == len(multibit_indices)
+                    and all(_QUESTA_HIT_TOKEN.fullmatch(token) for token in hit_tokens)
+                ):
+                    row_number = int(multibit_row.group("row"))
+                    target = multibit_row.group("target").strip()
+                    evidence = " ".join(
+                        body_tokens[len(multibit_indices) :]
+                    ).strip()
+                    for bit_index, hit_token in zip(
+                        multibit_indices,
+                        hit_tokens,
+                    ):
+                        hits = int(
+                            hit_token.replace("*", "").replace(",", "")
+                        )
+                        name = (
+                            f"{source_file}:{fec_line}:{fec_item}:"
+                            f"row{row_number}:i{bit_index} {target}"
+                        )
+                        if evidence:
+                            name += f" {evidence}"
+                        points.append(
+                            {
+                                "name": name,
+                                "count": hits,
+                                "hit": hits > 0,
+                                "type": "expression",
+                                "source_file": source_file,
+                                "line": fec_line,
+                                "item": fec_item,
+                                "row": row_number,
+                                "bit_index": bit_index,
+                                "multibit": True,
+                                "fec_context": fec_context,
+                                "fec_target": target,
+                                "evidence": evidence,
+                                "detail": evidence,
+                                "expression": fec_context,
+                            }
+                        )
+                    continue
 
         row = _QUESTA_FEC_ROW.match(raw_line)
         if (
@@ -724,6 +808,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
     code_report_path = out_dir / "code-details.txt"
+    multibit_expression_report_path = out_dir / "expression-multibit.txt"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
@@ -774,6 +859,41 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         parse_questa_code_coverage_report(code_report.stdout or "")
         if code_report.returncode == 0
         else []
+    )
+
+    multibit_expression_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-multibitverbose",
+        "-code",
+        "e",
+        str(merged_path),
+    ]
+    multibit_expression_report = _run(multibit_expression_cmd, project.root)
+    multibit_expression_report_path.write_text(
+        multibit_expression_report.stdout or "",
+        encoding="utf-8",
+    )
+    multibit_expression_points = (
+        [
+            point
+            for point in parse_questa_code_coverage_report(
+                multibit_expression_report.stdout or ""
+            )
+            if point.get("multibit")
+        ]
+        if multibit_expression_report.returncode == 0
+        else []
+    )
+    code_points.extend(multibit_expression_points)
+    multibit_expression_status = (
+        "ok"
+        if multibit_expression_report.returncode == 0
+        and multibit_expression_points
+        else "empty"
+        if multibit_expression_report.returncode == 0
+        else "tool-error"
     )
     code_detail_status = (
         "ok"
@@ -860,6 +980,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_report": str(multibit_expression_report_path),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_returncode": int(
+            multibit_expression_report.returncode
+        ),
+        "multibit_expression_points": len(multibit_expression_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -888,6 +1014,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_report": str(multibit_expression_report_path),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_returncode": int(
+            multibit_expression_report.returncode
+        ),
+        "multibit_expression_points": len(multibit_expression_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
