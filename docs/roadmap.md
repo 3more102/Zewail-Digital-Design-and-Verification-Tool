@@ -83,11 +83,16 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 
 ## v0.6 — UVM and Commercial Simulator Adapters
 
-- Questa adapter.
-- VCS adapter.
-- Xcelium adapter.
-- UVM test metadata.
-- Sequence/phase/objection-aware result ingestion where supported.
+Current status: simulator-independent UVM report-log ingestion is implemented with
+test-name extraction, severity-summary normalization, SQLite snapshot/message history,
+CLI analysis/history commands, focused tests, and CI coverage. Commercial simulator
+adapters and lifecycle-aware UVM semantics remain planned.
+
+- [ ] Questa adapter.
+- [ ] VCS adapter.
+- [ ] Xcelium adapter.
+- [x] UVM test metadata and report-severity ingestion.
+- [ ] Sequence/phase/objection-aware result ingestion where supported.
 
 ## v0.7 — Formal
 
