@@ -1,0 +1,51 @@
+{
+  "property": "tb_counter.dut.p_count_progress",
+  "property_kind": "assert",
+  "trace_kind": "counterexample",
+  "source": "example-formal",
+  "time_unit": "1 ns",
+  "signals": [
+    {
+      "name": "tb_counter.clk",
+      "width": 1,
+      "metadata": {
+        "scope": "tb_counter",
+        "reference": "clk",
+        "var_type": "wire"
+      }
+    },
+    {
+      "name": "tb_counter.dut.count",
+      "width": 4,
+      "metadata": {
+        "scope": "tb_counter.dut",
+        "reference": "count",
+        "range": "[3:0]",
+        "var_type": "wire"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "time": 0,
+      "values": {
+        "tb_counter.clk": "0",
+        "tb_counter.dut.count": "0000"
+      },
+      "metadata": {}
+    },
+    {
+      "step": 1,
+      "time": 5,
+      "values": {
+        "tb_counter.clk": "1",
+        "tb_counter.dut.count": "0001"
+      },
+      "metadata": {}
+    }
+  ],
+  "metadata": {
+    "format": "normalized-example"
+  }
+}
