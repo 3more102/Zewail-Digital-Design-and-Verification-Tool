@@ -123,7 +123,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
 - [x] Normalized sequence-item handshake analysis with run correlation, SQLite event/violation persistence, history filtering, and violation queries.
-- [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction.
+- [x] Observed grant order plus explicit ARB_REQUEST contention/bypass evidence and opt-in bypass bounds.
+- [ ] Automatic non-marker sequence/item instrumentation adapters and vendor-policy-aware arbitration reconstruction.
 
 ## v0.7 — Formal
 
