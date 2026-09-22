@@ -6,6 +6,21 @@ ZDDV can analyze explicit, simulator-independent sequence-item handshake evidenc
 zddv --project <project> uvm-item-analyze <trace.json>
 ```
 
+ZDDV can also consume explicit item evidence directly from ordinary UVM report logs when instrumentation emits the dedicated `[ZDDV_ITEM]` report ID:
+
+```text
+zddv --project <project> uvm-item-log <simulation.log>
+zddv --project <project> uvm-item-log --run <run-id>
+```
+
+The payload is a shell-like list of `key=value` tokens. `event` and `item_id` are required; `sequence_id`, `sequence`, `sequencer`, `item`, `transaction_id`, and `time` are optional. Unknown keys are preserved as metadata. Values containing spaces may be quoted. If `time` is omitted, the UVM report timestamp is retained.
+
+Example:
+
+```text
+UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=GRANT item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17
+```
+
 Each analysis is also persisted in the project SQLite database. Query recent snapshots with:
 
 ```text
@@ -62,6 +77,6 @@ This is an observed grant-order reconstruction only. ZDDV does not infer the seq
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
+This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. The `ZDDV_ITEM` adapter is explicit instrumentation, so ZDDV does not guess vendor-private log formats. Automatic interception of UVM sequence/sequencer calls, arbitration mode/priority/fairness inference, waiting-queue reconstruction, delta-cycle timing validation, and transaction-payload equality remain outside this layer.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
