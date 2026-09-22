@@ -272,6 +272,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "functional_bins": 3,
             "functional_snapshot_id": "fcov-test",
             "functional_report": "/tmp/functional.txt",
+            "detailed_code_coverage_evidence": {
+                "xml": {"status": "captured", "path": "/tmp/details.xml"},
+                "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
+            },
         },
     )
 
@@ -282,6 +286,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+    assert "Detailed code coverage XML: captured /tmp/details.xml" in output
+    assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
