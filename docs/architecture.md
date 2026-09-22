@@ -310,9 +310,15 @@ partial traces, correlates snapshots with recorded runs, and persists state even
 SQLite tables. ZDDV also accepts explicit normalized sequence-item handshake evidence (`GRANT`,
 `REQUEST`, `ITEM_DONE`, and optional `RESPONSE`), validates ordering and stable identity, correlates
 item snapshots with recorded runs, and persists both snapshot summaries and per-event evidence in
-SQLite with `uvm-item-history` filtering. Automatic instrumentation/adapters plus arbitration
-priority/fairness reconstruction remain future layers. See `docs/uvm-sequence-trace.md` and
-`docs/uvm-item-trace.md`.
+SQLite with `uvm-item-history` filtering. An opt-in UVM 1800.2 base-sequence adapter can now
+emit lifecycle plus standard `start_item`/`finish_item`/`get_response` markers automatically once
+a sequence adopts the generated base class; it uses public virtual UVM APIs and does not patch
+`uvm_pkg`. Arbitration analysis already validates explicit FIFO/strict-priority evidence when the
+trace supplies a UVM arbitration mode, while random/weighted/user winner choice remains
+observational. Direct low-level `wait_for_grant`/`send_request` flows, response-handler callbacks,
+hidden queues, lock/grab state, and vendor transcript semantics are still not inferred. See
+`docs/uvm-sequence-trace.md`, `docs/uvm-item-trace.md`, `docs/uvm-arbitration-trace.md`, and
+`docs/uvm-auto-instrumentation.md`.
 
 ## Next Architectural Steps
 
