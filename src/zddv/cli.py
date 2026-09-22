@@ -383,6 +383,16 @@ def cmd_coverage(args) -> int:
         print(f"Functional snapshot: {result['functional_snapshot_id']}")
         if result.get("functional_report"):
             print(f"Functional report: {result['functional_report']}")
+    code_detail_status = result.get("code_detail_status")
+    if code_detail_status is not None:
+        print(
+            "Normalized Questa statement/branch coverage: "
+            f"{code_detail_status} "
+            f"{result.get('code_detail_points', 0)} point(s), "
+            f"{result.get('code_detail_holes', 0)} hole(s)"
+        )
+        if result.get("code_report"):
+            print(f"Questa statement/branch detail: {result['code_report']}")
     detailed = result.get("detailed_code_coverage_evidence") or {}
     if detailed:
         xml = detailed.get("xml", {})
