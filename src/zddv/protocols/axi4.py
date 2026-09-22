@@ -81,6 +81,26 @@ def _scalar(value: Any) -> Any:
     return value
 
 
+_AXI4_LEGAL_CACHE_ENCODINGS = frozenset({
+    0x0, 0x1, 0x2, 0x3, 0x6, 0x7, 0xA, 0xB, 0xE, 0xF
+})
+
+
+def _decode_axi4_cache_attributes(value: Any) -> dict[str, Any] | None:
+    scalar = _scalar(value)
+    if not isinstance(scalar, int) or not 0 <= scalar <= 0xF:
+        return None
+    return {
+        "encoding": scalar,
+        "bufferable": bool(scalar & 0x1),
+        "modifiable": bool(scalar & 0x2),
+        "read_allocate": bool(scalar & 0x4),
+        "write_allocate": bool(scalar & 0x8),
+        "cache_lookup_required": bool(scalar & 0xC),
+        "reserved": scalar not in _AXI4_LEGAL_CACHE_ENCODINGS,
+    }
+
+
 def _decode_response(value: Any) -> tuple[int | None, str]:
     if isinstance(value, str):
         name = value.strip().upper()
@@ -349,7 +369,18 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     expected=f"0..{limit}",
                     actual=value,
                 )
+            elif suffix == "CACHE" and value not in _AXI4_LEGAL_CACHE_ENCODINGS:
+                add_violation(
+                    "reserved_cache_encoding",
+                    sample,
+                    f"{field} uses a reserved AXI4 AxCACHE encoding",
+                    channel=prefix,
+                    signal=field,
+                    expected="0x0/0x1/0x2/0x3/0x6/0x7/0xA/0xB/0xE/0xF",
+                    actual=value,
+                )
 
+        values["cache_attributes"] = _decode_axi4_cache_attributes(values["cache"])
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -525,6 +556,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "time": sample.get("time"),
             "region": sidebands["region"],
             "cache": sidebands["cache"],
+            "cache_attributes": sidebands["cache_attributes"],
             "prot": sidebands["prot"],
             "qos": sidebands["qos"],
         }
@@ -669,7 +701,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         read_times = [beat.get("time") for beat in beats]
         if any(value is not None for value in read_times):
             tx["read_times"] = read_times
-        for key in ("cache", "prot", "qos", "region"):
+        for key in ("cache", "cache_attributes", "prot", "qos", "region"):
             if request.get(key) is not None:
                 tx[key] = request[key]
         if request.get("prot") is not None:
@@ -804,7 +836,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["w_times"] = w_times
                 if sample.get("time") is not None:
                     tx["response_time"] = sample["time"]
-                for key in ("cache", "prot", "qos", "region"):
+                for key in ("cache", "cache_attributes", "prot", "qos", "region"):
                     if request.get(key) is not None:
                         tx[key] = request[key]
                 if request.get("prot") is not None:
@@ -949,7 +981,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_semantics",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
         "summary": {
@@ -974,8 +1006,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION, and AxREGION is checked for 4KB-space consistency.",
-            "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected and B/M/RA/WA semantics are decoded; AxREGION is checked for 4KB-space consistency.",
+            "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
