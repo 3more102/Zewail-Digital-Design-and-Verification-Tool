@@ -67,6 +67,21 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_SOURCE_HOLE_TYPES = (
+    "branch",
+    "condition",
+    "expression",
+    "statement",
+)
+_QUESTA_ZERO_DETAIL_HEADER = re.compile(
+    r"^\s*(?P<kind>Statement|Branch|Condition|Expression)\s+"
+    r"Coverage\s+for\s+file\s+(?P<file>.+?)\s+--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_ZERO_ITEM_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<body>.*\*\*\*0\*\*\*.*)\s*$"
+)
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -161,6 +176,21 @@ def build_coverage_hole_report(
                 "type": str(point.get("type") or "unknown"),
                 "name": str(point.get("name") or ""),
                 "count": int(point.get("count", 0)),
+                **(
+                    {"source_file": str(point["source_file"])}
+                    if point.get("source_file") is not None
+                    else {}
+                ),
+                **(
+                    {"line": int(point["line"])}
+                    if point.get("line") is not None
+                    else {}
+                ),
+                **(
+                    {"detail": str(point["detail"])}
+                    if point.get("detail") is not None
+                    else {}
+                ),
             }
             for point in shown
         ],
@@ -299,6 +329,67 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_zero_coverage_report(text: str) -> list[dict]:
+    """Normalize source-linked zero-hit B/C/E/S items from vcover text evidence."""
+    points: list[dict] = []
+    current_file = ""
+    current_kind = ""
+    occurrence: dict[tuple[str, int, str], int] = defaultdict(int)
+
+    for raw_line in text.splitlines():
+        detail = _QUESTA_ZERO_DETAIL_HEADER.match(raw_line)
+        if detail is not None:
+            current_file = detail.group("file").strip()
+            current_kind = _normalize_questa_coverage_kind(
+                detail.group("kind")
+            )
+            continue
+
+        if not current_file or current_kind not in _QUESTA_SOURCE_HOLE_TYPES:
+            continue
+
+        row = _QUESTA_ZERO_ITEM_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        line_no = int(row.group("line"))
+        body = row.group("body").strip()
+        key = (current_file, line_no, current_kind)
+        occurrence[key] += 1
+        item_no = occurrence[key]
+        points.append(
+            {
+                "name": f"{current_file}:{line_no}:{current_kind}:{item_no}",
+                "count": 0,
+                "hit": False,
+                "type": current_kind,
+                "source_file": current_file,
+                "line": line_no,
+                "detail": body,
+            }
+        )
+
+    return points
+
+
+def _questa_zero_hole_expectation(
+    metrics: dict,
+) -> tuple[dict[str, int], dict[str, int]]:
+    expected: dict[str, int] = {}
+    unsupported: dict[str, int] = {}
+    for kind, values in dict(metrics.get("by_type") or {}).items():
+        total = int(values.get("total", 0))
+        hit = int(values.get("hit", 0))
+        misses = max(0, total - hit)
+        if misses == 0:
+            continue
+        if kind in _QUESTA_SOURCE_HOLE_TYPES:
+            expected[str(kind)] = misses
+        else:
+            unsupported[str(kind)] = misses
+    return dict(sorted(expected.items())), dict(sorted(unsupported.items()))
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -353,6 +444,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
+    code_items_path = out_dir / "code-items.json"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -438,6 +530,49 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         ),
     }
 
+    expected_by_type, unsupported_type_misses = _questa_zero_hole_expectation(
+        metrics
+    )
+    expected_zero_items = sum(expected_by_type.values())
+    zero_evidence = detailed_code_coverage_evidence["zero_detail"]
+    code_points: list[dict] = []
+    parsed_by_type: dict[str, int] = {}
+    if zero_evidence["status"] == "captured":
+        zero_text = Path(zero_evidence["path"]).read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+        code_points = parse_questa_zero_coverage_report(zero_text)
+        counts: dict[str, int] = defaultdict(int)
+        for point in code_points:
+            counts[str(point["type"])] += 1
+        parsed_by_type = dict(sorted(counts.items()))
+        code_items_status = (
+            "ok"
+            if parsed_by_type == expected_by_type
+            else "count-mismatch"
+        )
+    else:
+        code_items_status = "evidence-unavailable"
+
+    code_items_payload = {
+        "source": "questa-vcover-zeros-details",
+        "status": code_items_status,
+        "input": str(merged_path),
+        "report": zero_evidence["path"],
+        "supported_types": list(_QUESTA_SOURCE_HOLE_TYPES),
+        "expected_by_type": expected_by_type,
+        "parsed_by_type": parsed_by_type,
+        "expected_zero_items": expected_zero_items,
+        "parsed_zero_items": len(code_points),
+        "unsupported_type_misses": unsupported_type_misses,
+        "points": code_points,
+    }
+    code_items_path.write_text(
+        json.dumps(code_items_payload, indent=2),
+        encoding="utf-8",
+    )
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -457,6 +592,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "code_items": str(code_items_path),
+        "code_items_status": code_items_status,
+        "source_code_hole_items": len(code_points),
+        "source_code_hole_expected": expected_zero_items,
+        "source_code_hole_unsupported": unsupported_type_misses,
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -480,6 +620,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "code_items": str(code_items_path),
+        "code_items_status": code_items_status,
+        "source_code_hole_items": len(code_points),
+        "source_code_hole_expected": expected_zero_items,
+        "source_code_hole_unsupported": unsupported_type_misses,
     }
 
 
