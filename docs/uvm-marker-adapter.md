@@ -35,7 +35,7 @@ simulator result, and return code through the existing persistence layers.
 
 ## Automatic simulator ingestion
 
-The Questa and VCS adapters invoke the marker adapter automatically when a run log
+The Questa, VCS, and Xcelium adapters invoke the marker adapter automatically when a run log
 contains a `ZDDV_UVM_` marker. Ordinary UVM report normalization remains
 independent and continues to run when standard `UVM_` report text is present.
 
