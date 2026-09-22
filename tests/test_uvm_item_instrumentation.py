@@ -20,7 +20,7 @@ def test_generator_writes_portable_helper_and_registers_first(tmp_path: Path):
     assert generated.is_file()
     text = generated.read_text(encoding="utf-8")
     assert "package zddv_uvm_item_trace_pkg;" in text
-    assert r'ZDDV_UVM_ITEM {\\"item_id\\"' in text
+    assert r'ZDDV_UVM_ITEM {\"item_id\"' in text
     assert "function automatic string zddv_json_escape" in text
     assert "zddv_uvm_item_arb_request" in text
     assert "\"ARB_REQUEST\"" in text
@@ -101,11 +101,11 @@ def test_generated_marker_shape_matches_existing_log_adapter_contract(tmp_path: 
     result = write_uvm_item_instrumentation(project)
     text = Path(result["path"]).read_text(encoding="utf-8")
 
-    assert r'\\"event\\"' in text
-    assert r'\\"sequence_id\\"' in text
-    assert r'\\"sequence\\"' in text
-    assert r'\\"sequencer\\"' in text
-    assert r'\\"item\\"' in text
-    assert r'\\"transaction_id\\"' in text
-    assert r'\\"time\\"' in text
-    assert r'\\"metadata\\"' in text
+    assert r'\"event\"' in text
+    assert r'\"sequence_id\"' in text
+    assert r'\"sequence\"' in text
+    assert r'\"sequencer\"' in text
+    assert r'\"item\"' in text
+    assert r'\"transaction_id\"' in text
+    assert r'\"time\"' in text
+    assert r'\"metadata\"' in text
