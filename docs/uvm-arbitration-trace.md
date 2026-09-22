@@ -34,6 +34,24 @@ Policy validation is opt-in through explicit `mode` evidence. ZDDV does not infe
 
 Missing priority or request-order evidence skips the corresponding deterministic check rather than producing a failure. Duplicate request-order values are reported as ambiguous when that order is needed for a FIFO check.
 
+## Explicit log-marker adapter
+
+The same decision evidence can be emitted inside a simulator/UVM log with an explicit marker:
+
+```text
+ZDDV_UVM_ARBITRATION {"decision_id":"arb-17","sequencer":"uvm_test_top.env.seqr","granted_request_id":"req-b","mode":"UVM_SEQ_ARB_STRICT_FIFO","contenders":[{"request_id":"req-a","sequence_id":"seq-a","sequence":"background_seq","priority":100,"request_order":0},{"request_id":"req-b","sequence_id":"seq-b","sequence":"urgent_seq","priority":300,"request_order":1}],"time":"120 ns"}
+```
+
+Everything after `ZDDV_UVM_ARBITRATION` on that line must be one JSON object using the same fields as one standalone `decisions[]` entry. Other log lines are ignored. ZDDV records the actual source `log_line` in decision metadata and does not reinterpret ordinary simulator or UVM messages as arbitration evidence.
+
+```text
+zddv --project <project> uvm-arbitration-log-analyze simulation.log
+zddv --project <project> uvm-arbitration-log-analyze --run <run-id>
+zddv --project <project> uvm-arbitration-log-analyze simulation.log --fairness-bound 3
+```
+
+When `--run` is supplied without a path, ZDDV reads the simulation log recorded for that run and retains run status, return code, simulator, and snapshot correlation. The adapter still recognizes only explicit markers; it does not infer arbitration decisions from vendor-specific log prose.
+
 ## Fairness bound
 
 `fairness_bound` is optional and may be supplied in the JSON or overridden by `--fairness-bound`. It is the maximum number of **observed arbitration decisions that a request may lose** while it is present as a contender. A request granted after two earlier losses therefore has `lost_decisions=2`.
