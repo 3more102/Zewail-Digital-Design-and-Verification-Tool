@@ -87,7 +87,25 @@ Persisted property rows retain the original status, normalized interpretation,
 explicit/effective depth, message, and trace path/role. History filters do not
 upgrade bounded evidence into an unbounded proof claim.
 
+## Counterexample and witness artifact import
+
+The simulator-independent trace container can also be ingested from normalized
+JSON with the CLI:
+
+```text
+zddv --project <project> formal-counterexample counterexample.json
+zddv --project <project> formal-counterexample witness.json --source adapter-name
+```
+
+The normalized artifact is written to
+`.zddv/formal/counterexamples/latest.json` by default. It retains the property
+name/kind, trace role, signal catalog, ordered steps, optional time/cycle
+coordinates, source label, and the SHA-256 of the input file. Signal values stay
+as textual logic tokens; ZDDV does not invent radix, signedness, or vendor trace
+semantics.
+
 ## Current boundary
 
-This slice does not execute a formal engine, parse counterexample waveforms, provide tool-specific result ingestion, or claim formal coverage. Those remain separate
-v0.7 milestones.
+This slice does not parse vendor-native counterexample waveforms, provide
+tool-specific result ingestion beyond the explicit bounded SymbiYosys execution
+adapter, or claim formal coverage. Those remain separate v0.7 milestones.
