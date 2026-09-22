@@ -135,7 +135,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [ ] Bounded checks.
 - [x] Normalized property/cover result persistence and history.
 - [ ] Tool-specific formal result ingestion.
-- [ ] Counterexample artifact model.
+- [x] Normalized counterexample/witness artifact model and JSON CLI ingestion.
 - [ ] Formal coverage.
 
 ## v0.8 — Intelligent Debug
