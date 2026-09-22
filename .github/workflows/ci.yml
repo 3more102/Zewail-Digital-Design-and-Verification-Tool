@@ -104,6 +104,12 @@ jobs:
       - name: Run seeded regression
         run: zddv --project examples/counter regress examples/counter/regression.toml
 
+      - name: Build evidence triage report
+        run: |
+          zddv --project examples/counter triage --limit 20
+          test -s examples/counter/.zddv/debug/failure-triage.json
+          grep -q '"ranking_semantics":' examples/counter/.zddv/debug/failure-triage.json
+
       - name: Show run database
         run: zddv --project examples/counter runs --limit 10
 
