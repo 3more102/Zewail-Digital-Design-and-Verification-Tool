@@ -1,0 +1,61 @@
+{
+  "source": "example-explicit-arbitration",
+  "mode": "UVM_SEQ_ARB_STRICT_FIFO",
+  "fairness_max_wait_rounds": 2,
+  "rounds": [
+    {
+      "round_id": "arb-0",
+      "sequencer": "uvm_test_top.env.seqr",
+      "winner_sequence_id": "seq-b",
+      "time": "100 ns",
+      "contenders": [
+        {
+          "sequence_id": "seq-a",
+          "sequence": "background_seq",
+          "priority": 100,
+          "request_order": 0
+        },
+        {
+          "sequence_id": "seq-b",
+          "sequence": "urgent_seq",
+          "priority": 300,
+          "request_order": 1
+        }
+      ]
+    },
+    {
+      "round_id": "arb-1",
+      "sequencer": "uvm_test_top.env.seqr",
+      "winner_sequence_id": "seq-b",
+      "time": "120 ns",
+      "contenders": [
+        {
+          "sequence_id": "seq-a",
+          "sequence": "background_seq",
+          "priority": 100,
+          "request_order": 0
+        },
+        {
+          "sequence_id": "seq-b",
+          "sequence": "urgent_seq",
+          "priority": 300,
+          "request_order": 1
+        }
+      ]
+    },
+    {
+      "round_id": "arb-2",
+      "sequencer": "uvm_test_top.env.seqr",
+      "winner_sequence_id": "seq-a",
+      "time": "140 ns",
+      "contenders": [
+        {
+          "sequence_id": "seq-a",
+          "sequence": "background_seq",
+          "priority": 100,
+          "request_order": 0
+        }
+      ]
+    }
+  ]
+}
