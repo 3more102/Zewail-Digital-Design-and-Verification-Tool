@@ -30,6 +30,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized Verilator coverage metrics stored as SQLite snapshots
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
+- Coverage-hole test-intent suggestions derived only from retained normalized hole evidence
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -719,6 +720,17 @@ artifact, and any resolved RTL driver/declaration evidence.
 When no waveform artifact or exact signal hint exists, the report emits explicit
 blockers instead of inventing a signal or time window. Probe suggestions are written
 to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
+
+### Evidence-Backed Coverage Test Suggestions
+
+After `zddv coverage-holes` writes normalized hole evidence, `zddv coverage-suggest-tests`
+turns those exact holes into reviewable verification intents. Explicit toggle transitions,
+FSM states/transitions, FEC targets, truth-table rows, and source locations are preserved
+when present. Missing semantic detail is not filled in with guessed stimulus values.
+
+The command writes `.zddv/coverage/test-suggestions.json`. It does not generate or execute
+testbench code; each suggestion is marked for review and retains the originating hole as
+evidence. Executable generated tests/assertions remain a separate opt-in milestone.
 
 ### Phase 4 — Advanced Verification
 
