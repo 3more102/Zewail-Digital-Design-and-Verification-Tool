@@ -270,8 +270,18 @@ The first contract deliberately does not infer vendor-specific proof semantics. 
 only stable concepts: BMC/prove/cover request modes; optional bounds, property filters and
 timeouts; assertion PASS/FAIL/UNKNOWN/ERROR states; cover
 COVERED/UNCOVERED/UNKNOWN/ERROR states; tool command/evidence paths; and overall
-PASS/FAIL/UNKNOWN/ERROR status. Concrete engines, persistence, bounded execution, and
-counterexample artifact normalization are follow-on milestones.
+PASS/FAIL/UNKNOWN/ERROR status.
+
+The first concrete execution backend is SymbiYosys bounded model checking. ZDDV
+generates a finite-depth `.sby` job with `mode bmc`, an explicit user-supplied
+`depth`, the `smtbmc` engine, project source staging, and `prep -top` for the
+configured top. The `formal-bmc` CLI retains the generated configuration, native
+SBY work directory, and combined tool log. A terminal SBY
+`DONE (PASS|FAIL|UNKNOWN|ERROR, rc=...)` marker is the only source for a completed
+normalized result; an external timeout is `UNKNOWN`, and missing terminal evidence
+is `ERROR`. A bounded PASS means only that no failing assertion was found within
+the configured depth; it is not promoted to an unbounded proof. Property-level
+tool ingestion and counterexample modeling remain separate milestones.
 
 ## Simulator Adapter Rule
 
