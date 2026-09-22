@@ -70,7 +70,7 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch|Condition|Expression)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>Statement|Branch|Condition|Expression|FSM)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
@@ -90,6 +90,28 @@ _QUESTA_FEC_ROW = re.compile(
     r"(?P<target>\S+)"
     r"(?:\s+(?P<detail>.*?))?\s*$",
     re.IGNORECASE,
+)
+_QUESTA_FSM_ID = re.compile(
+    r"^\s*FSM_ID\s*:\s*(?P<fsm_id>\S.*?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_SECTION = re.compile(
+    r"^\s*(?P<covered>Covered|Uncovered)\s+"
+    r"(?P<kind>States|Transitions)\s*:\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_COVERED_STATE = re.compile(
+    r"^\s*(?P<state>\S+)\s+(?P<hits>\d[\d,]*)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_STATE = re.compile(r"^\s*(?P<state>\S+)\s*$")
+_QUESTA_FSM_COVERED_TRANSITION = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<transition_id>\d+)\s+"
+    r"(?P<hits>\d[\d,]*)\s+"
+    r"(?P<transition>.+?\s+->\s+.+?)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_TRANSITION = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<transition_id>\d+)\s+"
+    r"(?P<transition>.+?\s+->\s+.+?)\s*$"
 )
 
 
@@ -196,6 +218,11 @@ def build_coverage_hole_report(
                         "expression",
                         "fec_context",
                         "fec_target",
+                        "fsm_id",
+                        "fsm_kind",
+                        "state",
+                        "transition",
+                        "transition_id",
                         "evidence",
                     )
                     if key in point and point[key] is not None
@@ -364,12 +391,13 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize statement/branch plus scalar condition/expression FEC rows.
+    """Normalize documented Questa code-detail rows into item-level points.
 
-    FEC rows are accepted only after the explicit Rows/FEC Target table
-    header. This avoids treating truth-table or other diagnostic rows as
-    normalized coverage points. Multibit FEC layouts are intentionally left
-    unnormalized until their exact row semantics are verified.
+    Statement/branch rows and scalar condition/expression FEC rows are
+    normalized conservatively. FSM state/transition rows follow the documented
+    v2024.2 text-report sections and keep covered/uncovered evidence explicit.
+    Multibit FEC layouts remain unnormalized until their exact row semantics
+    are verified.
     """
     points: list[dict] = []
     kind = ""
@@ -378,6 +406,8 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     fec_item: int | None = None
     fec_context = ""
     in_fec_rows = False
+    fsm_id = ""
+    fsm_section = ""
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
@@ -388,6 +418,8 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_item = None
             fec_context = ""
             in_fec_rows = False
+            fsm_id = ""
+            fsm_section = ""
             continue
 
         if not source_file:
@@ -419,6 +451,124 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                     "detail": detail,
                 }
             )
+            continue
+
+        if kind == "fsm":
+            id_match = _QUESTA_FSM_ID.match(raw_line)
+            if id_match is not None:
+                fsm_id = id_match.group("fsm_id").strip()
+                fsm_section = ""
+                continue
+
+            section = _QUESTA_FSM_SECTION.match(raw_line)
+            if section is not None:
+                fsm_section = (
+                    f"{section.group('covered').strip().lower()}_"
+                    f"{section.group('kind').strip().lower()}"
+                )
+                continue
+
+            stripped = raw_line.strip()
+            if stripped.endswith(":"):
+                fsm_section = ""
+                continue
+            if not fsm_id or not fsm_section:
+                continue
+
+            if fsm_section == "covered_states":
+                row = _QUESTA_FSM_COVERED_STATE.match(raw_line)
+                if row is None:
+                    continue
+                state = row.group("state").strip()
+                hits = int(row.group("hits").replace(",", ""))
+                points.append(
+                    {
+                        "name": f"{source_file}:{fsm_id}:state:{state}",
+                        "count": hits,
+                        "hit": hits > 0,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "state",
+                        "state": state,
+                    }
+                )
+                continue
+
+            if fsm_section == "uncovered_states":
+                row = _QUESTA_FSM_UNCOVERED_STATE.match(raw_line)
+                if row is None:
+                    continue
+                state = row.group("state").strip()
+                if state.lower() == "state" or not state.strip("-"):
+                    continue
+                points.append(
+                    {
+                        "name": f"{source_file}:{fsm_id}:state:{state}",
+                        "count": 0,
+                        "hit": False,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "state",
+                        "state": state,
+                    }
+                )
+                continue
+
+            if fsm_section == "covered_transitions":
+                row = _QUESTA_FSM_COVERED_TRANSITION.match(raw_line)
+                if row is None:
+                    continue
+                line_number = int(row.group("line"))
+                transition_id = int(row.group("transition_id"))
+                hits = int(row.group("hits").replace(",", ""))
+                transition = row.group("transition").strip()
+                points.append(
+                    {
+                        "name": (
+                            f"{source_file}:{line_number}:{fsm_id}:"
+                            f"transition:{transition_id} {transition}"
+                        ),
+                        "count": hits,
+                        "hit": hits > 0,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "line": line_number,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "transition",
+                        "transition_id": transition_id,
+                        "transition": transition,
+                    }
+                )
+                continue
+
+            if fsm_section == "uncovered_transitions":
+                row = _QUESTA_FSM_UNCOVERED_TRANSITION.match(raw_line)
+                if row is None:
+                    continue
+                line_number = int(row.group("line"))
+                transition_id = int(row.group("transition_id"))
+                transition = row.group("transition").strip()
+                points.append(
+                    {
+                        "name": (
+                            f"{source_file}:{line_number}:{fsm_id}:"
+                            f"transition:{transition_id} {transition}"
+                        ),
+                        "count": 0,
+                        "hit": False,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "line": line_number,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "transition",
+                        "transition_id": transition_id,
+                        "transition": transition,
+                    }
+                )
+                continue
+
             continue
 
         if kind not in {"condition", "expression"}:
@@ -762,7 +912,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "-details",
         "-dumptables",
         "-code",
-        "sbce",
+        "sbcef",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
