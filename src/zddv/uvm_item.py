@@ -7,7 +7,7 @@ from typing import Any
 import uuid
 
 from zddv.config import ProjectConfig
-from zddv.storage import get_run_record
+from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 
 _ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
@@ -244,7 +244,6 @@ def parse_uvm_item_data(
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
             "Response payload comparison, arbitration priority/fairness, request/grant timing, and delta-cycle constraints are outside this foundation.",
-            "This foundation writes JSON evidence only; SQLite persistence/history is intentionally deferred.",
         ],
     }
 
@@ -322,4 +321,5 @@ def analyze_uvm_item_file(
     serialized = json.dumps(record, indent=2) + "\n"
     normalized_path.write_text(serialized, encoding="utf-8")
     destination.write_text(serialized, encoding="utf-8")
+    record_uvm_item_handshake_snapshot(project, record)
     return record
