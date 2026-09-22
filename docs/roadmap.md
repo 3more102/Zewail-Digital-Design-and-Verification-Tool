@@ -95,7 +95,7 @@ timestamps; persists normalized snapshots/messages in SQLite; correlates snapsho
 simulation runs; and exposes `uvm-analyze` plus `uvm-history`. The Questa foundation supports
 native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD capture, assertion
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. UCDB
-normalization/merge/reporting and lifecycle-aware UVM semantics remain planned.
+normalization/merge/reporting and phase/objection lifecycle trace normalization is implemented; sequence-aware UVM semantics remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
@@ -104,7 +104,8 @@ normalization/merge/reporting and lifecycle-aware UVM semantics remain planned.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
-- [ ] Sequence/phase/objection-aware result ingestion where supported.
+- [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
+- [ ] Sequence-aware UVM result ingestion where supported.
 
 ## v0.7 — Formal
 
