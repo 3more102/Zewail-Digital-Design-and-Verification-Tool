@@ -593,6 +593,21 @@ missing toggle direction can be named, and an FSM transition already present in 
 coverage evidence can be used as the objective. ZDDV does not invent DUT behavior,
 generate test code, or execute the suggested stimulus automatically.
 
+### Review-Only Generated Assertion/Test Templates
+
+After reviewing the coverage suggestions, template generation is an explicit separate step:
+
+```bash
+zddv --project my_project coverage-generate --kind both --show 20
+```
+
+The default output directory is `.zddv/coverage/generated/`. ZDDV writes a
+`manifest.json` plus comment-only `.sv.template` files under `tests/` and/or
+`assertions/`. The files remain intentionally inert: ZDDV does not choose a clock,
+reset condition, DUT hierarchy binding, assertion predicate, UVM base class, stimulus,
+or self-check. It also never adds the files to the project build or executes them.
+Existing generated artifacts are not overwritten unless `--force` is explicitly used.
+
 ### Assertion Result Markers
 
 ZDDV can ingest simulator-independent assertion results from testbench logs using a
