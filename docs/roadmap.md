@@ -98,7 +98,7 @@ ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. M
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
 functional-coverage database. Machine-readable XML detail output, complementary zero-hit source/file-line evidence, multibit-expression evidence, and a dedicated by-instance toggle detail report are retained when available. Documented statement and branch detail, scalar condition/expression FEC rows, multibit-expression input-term-bit rows, FSM state/transition rows, and native by-instance binary/extended toggle transition counters are normalized into the shared coverage-hole model; multibit-condition and enumerated/unknown toggle layouts remain evidence-only until their exact native schemas are verified.
-Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction remain planned.
+Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented. The portable opt-in UVM base-sequence adapter now emits lifecycle and standard item-handshake evidence automatically through public UVM virtual APIs, while explicit arbitration-mode evidence drives FIFO/strict-priority checks and project-defined fairness analysis. Low-level direct handshake APIs, response-handler callbacks, hidden queues, lock/grab state, and random/weighted/user winner prediction remain outside the evidence boundary.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
@@ -134,7 +134,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
 - [x] Normalized sequence-item handshake analysis with run correlation, SQLite event/violation persistence, history filtering, and violation queries.
 - [x] Observed grant order plus explicit ARB_REQUEST contention/bypass evidence and opt-in bypass bounds.
-- [ ] Automatic sequence/item instrumentation adapters and vendor-policy-aware arbitration reconstruction.
+- [x] Opt-in automatic sequence/item instrumentation adapter plus evidence-gated UVM arbitration-policy/fairness reconstruction.
 
 ## v0.7 — Formal
 
