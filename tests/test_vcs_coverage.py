@@ -8,7 +8,11 @@ import pytest
 
 from zddv.cli import cmd_coverage, cmd_coverage_history
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_vcs_coverage, parse_vcs_urg_dashboard
+from zddv.coverage import (
+    merge_vcs_coverage,
+    parse_vcs_urg_dashboard,
+    parse_vcs_urg_modinfo,
+)
 from zddv.storage import list_coverage_score_snapshots
 
 
@@ -84,6 +88,35 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 """,
             encoding="utf-8",
         )
+        (report_dir / "modinfo.txt").write_text(
+            """Line Coverage for Module : top
+Line No.  Total  Covered  Percent
+TOTAL 12 10 83.33
+
+Cond Coverage for Module : top
+Total  Covered  Percent
+Conditions 8 6 75.00
+
+Toggle Coverage for Module : top
+Total  Covered  Percent
+Totals 3 2 66.67
+Total Bits 24 20 83.33
+Total Bits 0->1 12 10 83.33
+Total Bits 1->0 12 10 83.33
+
+FSM Coverage for Module : top
+Summary for FSM :: state_q
+Total  Covered  Percent
+States 3 3 100.00 (Not included in score)
+Transitions 4 3 75.00
+Sequences 2 1 50.00
+
+Branch Coverage for Module : top
+Line No.  Total  Covered  Percent
+Branches 7 5 71.43
+""",
+            encoding="utf-8",
+        )
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -120,6 +153,21 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "hit_rate": pytest.approx(92.98),
     }
     assert result["metrics"]["count_status"] == "normalized"
+    assert result["metrics"]["code_count_status"] == "normalized"
+    assert result["metrics"]["by_metric_counts"]["line"] == {
+        "covered": 10,
+        "total": 12,
+        "hit_rate": pytest.approx(83.3333333333),
+    }
+    assert result["metrics"]["by_metric_counts"]["condition"]["covered"] == 6
+    assert result["metrics"]["by_metric_counts"]["toggle"]["total"] == 24
+    assert result["metrics"]["by_metric_counts"]["fsm"] == {
+        "covered": 4,
+        "total": 6,
+        "hit_rate": pytest.approx(66.6666666667),
+    }
+    assert result["metrics"]["by_metric_counts"]["branch"]["covered"] == 5
+    assert result["code_count_status"] == "normalized"
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -131,6 +179,9 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert snapshots[0]["by_metric_counts"]["group"]["covered"] == 491
     assert snapshots[0]["by_metric_counts"]["group"]["total"] == 528
     assert snapshots[0]["by_metric_counts"]["group_instance"]["covered"] == 490
+    assert snapshots[0]["by_metric_counts"]["line"]["covered"] == 10
+    assert snapshots[0]["by_metric_counts"]["toggle"]["total"] == 24
+    assert snapshots[0]["by_metric_counts"]["fsm"]["total"] == 6
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -143,6 +194,84 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
     assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
+    assert manifest["metrics"]["by_metric_counts"]["line"]["total"] == 12
+    assert manifest["metrics"]["by_metric_counts"]["fsm"]["covered"] == 4
+    assert manifest["code_count_status"] == "normalized"
+    assert manifest["code_counts"]["source"] == "urg-modinfo-module-definitions"
+
+
+def test_parse_vcs_urg_modinfo_aggregates_module_definition_counts(
+    tmp_path: Path,
+):
+    modinfo = tmp_path / "modinfo.txt"
+    modinfo.write_text(
+        """Line Coverage for Module : top
+Line No.  Total  Covered  Percent
+TOTAL 12 10 83.33
+
+Cond Coverage for Module : top
+Total  Covered  Percent
+Conditions 8 6 75.00
+
+Toggle Coverage for Module : top
+Total  Covered  Percent
+Totals 3 2 66.67
+Total Bits 24 20 83.33
+Total Bits 0->1 12 10 83.33
+Total Bits 1->0 12 10 83.33
+
+FSM Coverage for Module : top
+Summary for FSM :: state_q
+Total  Covered  Percent
+States 3 3 100.00 (Not included in score)
+Transitions 4 3 75.00
+Sequences 2 1 50.00
+Summary for FSM :: state_r
+Transitions 1 1 100.00
+Sequences 0 0 100.00
+
+Branch Coverage for Module : top
+Line No.  Total  Covered  Percent
+Branches 7 5 71.43
+
+Line Coverage for Module self-instances : top
+TOTAL 999 999 100.00
+
+Line Coverage for Module : child
+TOTAL 5 5 100.00
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_modinfo(modinfo)
+
+    assert metrics["source"] == "urg-modinfo-module-definitions"
+    assert metrics["count_status"] == "normalized"
+    assert metrics["by_metric_counts"]["line"] == {
+        "covered": 15,
+        "total": 17,
+        "hit_rate": pytest.approx(88.2352941176),
+    }
+    assert metrics["by_metric_counts"]["condition"] == {
+        "covered": 6,
+        "total": 8,
+        "hit_rate": pytest.approx(75.0),
+    }
+    assert metrics["by_metric_counts"]["toggle"] == {
+        "covered": 20,
+        "total": 24,
+        "hit_rate": pytest.approx(83.3333333333),
+    }
+    assert metrics["by_metric_counts"]["fsm"] == {
+        "covered": 5,
+        "total": 7,
+        "hit_rate": pytest.approx(71.4285714286),
+    }
+    assert metrics["by_metric_counts"]["branch"] == {
+        "covered": 5,
+        "total": 7,
+        "hit_rate": pytest.approx(71.4285714286),
+    }
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
