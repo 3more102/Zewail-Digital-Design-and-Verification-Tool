@@ -13,6 +13,7 @@ from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_auto import ingest_uvm_marker_evidence
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -318,6 +319,15 @@ class QuestaBackend(SimulatorBackend):
                 source="questa-run",
                 run_id=run_id,
             )
+        record["uvm_marker_ingestion"] = ingest_uvm_marker_evidence(
+            project,
+            run_id=run_id,
+            log_path=log_path,
+        )
+        (run_dir / "run.json").write_text(
+            json.dumps(record, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
         return RunResult(
             run_id=run_id,
