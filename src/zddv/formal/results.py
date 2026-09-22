@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 import uuid
 
@@ -14,6 +15,7 @@ from zddv.formal.base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.storage import record_formal_result_snapshot
 
 
@@ -159,6 +161,99 @@ def _trace_role(item: FormalPropertyResult) -> str | None:
     return "EVIDENCE"
 
 
+def _trace_output_name(index: int, property_name: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", property_name).strip("._-")
+    return f"{index:04d}-{(stem or 'property')[:80]}.json"
+
+
+def _resolve_trace_path(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    trace_path: Path,
+) -> Path:
+    if trace_path.is_absolute():
+        return trace_path.resolve()
+
+    run_candidate = (result.run_dir / trace_path).resolve()
+    if run_candidate.is_file():
+        return run_candidate
+    return (project.root / trace_path).resolve()
+
+
+def _normalize_result_vcd_traces(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    record: dict[str, Any],
+    *,
+    snapshot_id: str,
+) -> None:
+    """Best-effort normalization of explicit property VCD evidence.
+
+    A formal result remains persistable when a trace is missing, unsupported, or
+    malformed. The per-property evidence records the normalization status instead
+    of strengthening or discarding the backend result.
+    """
+
+    property_records = record.get("properties", [])
+    for index, (item, property_record) in enumerate(
+        zip(result.properties, property_records)
+    ):
+        trace_record = property_record.get("trace")
+        role = _trace_role(item)
+        if (
+            not isinstance(trace_record, dict)
+            or item.trace_path is None
+            or role not in {"COUNTEREXAMPLE", "WITNESS"}
+        ):
+            continue
+
+        trace_path = _resolve_trace_path(project, result, item.trace_path)
+        normalization: dict[str, Any] = {
+            "format": "vcd",
+            "resolved_path": str(trace_path),
+        }
+        trace_record["normalization"] = normalization
+
+        if trace_path.suffix.lower() != ".vcd":
+            normalization["status"] = "UNSUPPORTED_FORMAT"
+            continue
+        if not trace_path.is_file():
+            normalization["status"] = "MISSING"
+            continue
+
+        destination = (
+            project.root
+            / ".zddv"
+            / "formal"
+            / "traces"
+            / snapshot_id
+            / _trace_output_name(index, item.name)
+        )
+        try:
+            normalized = ingest_formal_vcd_trace(
+                project,
+                trace_path,
+                property_name=item.name,
+                property_kind=item.kind,
+                source=f"{result.backend}:{result.engine or 'formal'}",
+                output=destination,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            normalization["status"] = "ERROR"
+            normalization["error"] = str(exc)
+            continue
+
+        normalization.update(
+            {
+                "status": "NORMALIZED",
+                "path": normalized["normalized_path"],
+                "input_sha256": normalized["input_sha256"],
+                "trace_kind": normalized["trace_kind"],
+                "summary": normalized["summary"],
+            }
+        )
+
+
 def formal_result_to_record(result: FormalCheckResult) -> dict[str, Any]:
     """Serialize normalized formal evidence without strengthening its claims."""
 
@@ -274,6 +369,13 @@ def persist_formal_result(
     record = formal_result_to_record(result)
     record["top"] = project.top
     record["design_fingerprint"] = formal_design_fingerprint(project)
+    snapshot_id = uuid.uuid4().hex
+    _normalize_result_vcd_traces(
+        project,
+        result,
+        record,
+        snapshot_id=snapshot_id,
+    )
 
     report_path = Path(output)
     if not report_path.is_absolute():
@@ -283,7 +385,7 @@ def persist_formal_result(
 
     record.update(
         {
-            "snapshot_id": uuid.uuid4().hex,
+            "snapshot_id": snapshot_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "project": project.name,
             "input_path": str(source_path),
