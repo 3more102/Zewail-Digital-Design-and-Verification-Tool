@@ -3,12 +3,122 @@ from pathlib import Path
 from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.storage import (
-    list_uvm_lifecycle_events,
     list_uvm_log_snapshots,
+    list_uvm_objection_events,
+    list_uvm_phase_events,
     list_uvm_report_messages,
+    list_uvm_sequence_report_events,
     record_run,
 )
 from zddv.uvm import analyze_uvm_log, parse_uvm_log_text
+
+
+def test_parses_standard_uvm_phase_and_objection_lifecycle():
+    result = parse_uvm_log_text(
+        """
+UVM_INFO @ 0: reporter [PH/TRC/STRT] Phase 'common.run' (id=42) Starting phase
+UVM_INFO @ 0: run [OBJTN_TRC] Object uvm_test_top raised 1 objection(s): count=1 total=1
+UVM_INFO @ 0: run [OBJTN_TRC] Object uvm_top added 1 objection(s) to its total (raised from source object uvm_test_top): count=0 total=1
+UVM_INFO @ 100: run [OBJTN_TRC] Object uvm_test_top dropped 1 objection(s): count=0 total=0
+UVM_INFO @ 100: run [OBJTN_TRC] Object uvm_test_top all_dropped 1 objection(s): count=0 total=0
+UVM_INFO @ 100: reporter [PH/TRC/EXE/ALLDROP] Phase 'common.run' (id=42) PHASE EXIT ALL_DROPPED
+UVM_INFO @ 100: reporter [PH/TRC/DONE] Phase 'common.run' (id=42) Completed phase
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert [item["action"] for item in lifecycle["phase_events"]] == [
+        "started",
+        "exit_all_dropped",
+        "done",
+    ]
+    assert lifecycle["phase_events"][0]["phase"] == "common.run"
+    assert lifecycle["phase_events"][0]["phase_id"] == 42
+
+    assert [item["action"] for item in lifecycle["objection_events"]] == [
+        "raised",
+        "propagated_raise",
+        "dropped",
+        "all_dropped",
+    ]
+    assert lifecycle["objection_events"][1]["object"] == "uvm_top"
+    assert lifecycle["objection_events"][1]["source_object"] == "uvm_test_top"
+    assert lifecycle["summary"]["direct_raises"] == 1
+    assert lifecycle["summary"]["direct_drops"] == 1
+    assert lifecycle["summary"]["all_dropped"] == 1
+    assert lifecycle["summary"]["propagated_events"] == 1
+    assert lifecycle["summary"]["max_observed_total"] == 1
+
+
+def test_parses_explicit_uvm_sequence_report_context():
+    result = parse_uvm_log_text(
+        """
+UVM_INFO seq.sv(10) @ 5 ns: uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent
+UVM_WARNING seq.sv(12) @ 8 ns: uvm_test_top.env.seqr@@smoke_seq [SEQ_WARN] retry
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["summary"]["sequence_report_events"] == 2
+    assert lifecycle["summary"]["sequences_seen"] == ["smoke_seq"]
+    assert lifecycle["summary"]["sequencers_seen"] == ["uvm_test_top.env.seqr"]
+
+    first = lifecycle["sequence_report_events"][0]
+    assert first["sequencer"] == "uvm_test_top.env.seqr"
+    assert first["sequence"] == "smoke_seq"
+    assert first["severity"] == "UVM_INFO"
+    assert first["report_id"] == "SEQ"
+    assert first["message"] == "item sent"
+    assert first["evidence"] == "uvm_report_context"
+
+
+def test_persists_uvm_sequence_report_context(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "uvm_sequence.log"
+    log.write_text(
+        "UVM_INFO seq.sv(10) @ 5 ns: "
+        "uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_log(project, log, source="questa")
+    rows = list_uvm_sequence_report_events(project, result["snapshot_id"])
+
+    assert len(rows) == 1
+    assert rows[0]["sequencer"] == "uvm_test_top.env.seqr"
+    assert rows[0]["sequence_name"] == "smoke_seq"
+    assert rows[0]["severity"] == "UVM_INFO"
+    assert rows[0]["report_id"] == "SEQ"
+    assert rows[0]["message"] == "item sent"
+    assert rows[0]["evidence"] == "uvm_report_context"
+
+
+def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "uvm_lifecycle.log"
+    log.write_text(
+        "UVM_INFO @ 0: reporter [PH/TRC/STRT] "
+        "Phase 'common.run' (id=7) Starting phase\n"
+        "UVM_INFO @ 0: run [OBJTN_TRC] "
+        "Object uvm_test_top raised 1 objection(s): count=1 total=1\n"
+        "UVM_INFO @ 25: run [OBJTN_TRC] "
+        "Object uvm_test_top dropped 1 objection(s): count=0 total=0\n"
+        "UVM_INFO @ 25: reporter [PH/TRC/DONE] "
+        "Phase 'common.run' (id=7) Completed phase\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_log(project, log, source="questa")
+    phases = list_uvm_phase_events(project, result["snapshot_id"])
+    objections = list_uvm_objection_events(project, result["snapshot_id"])
+
+    assert [row["action"] for row in phases] == ["started", "done"]
+    assert phases[0]["phase_name"] == "common.run"
+    assert phases[0]["phase_instance_id"] == 7
+    assert [row["action"] for row in objections] == ["raised", "dropped"]
+    assert objections[0]["objection_name"] == "run"
+    assert objections[0]["object_name"] == "uvm_test_top"
+    assert objections[0]["total_count"] == 1
 
 
 def test_parses_uvm_summary_and_test_metadata():
@@ -47,134 +157,6 @@ def test_parses_uvm_summary_and_test_metadata():
     assert warning["message"] == "delayed response"
     assert warning["time"] == "15 ns"
     assert warning["source_location"] == "monitor.sv(42)"
-
-
-def test_extracts_phase_objection_and_sequence_lifecycle_evidence():
-    result = parse_uvm_log_text(
-        """
-UVM_INFO uvm_phase.svh(1124) @ 0 ns: reporter [PH/TRC/STRT] Phase 'common.run' (id=93) Starting phase
-UVM_INFO @ 0 ns: run [OBJTN_TRC] Object uvm_test_top raised 1 objection(s) (starting smoke_seq): count=1 total=1
-UVM_INFO seq.sv(10) @ 5 ns: uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent
-UVM_INFO @ 10 ns: run [OBJTN_TRC] Object uvm_test_top dropped 1 objection(s) (finished smoke_seq): count=0 total=0
-UVM_INFO uvm_phase.svh(1381) @ 10 ns: reporter [PH/TRC/DONE] Phase 'common.run' (id=93) Completed phase
---- UVM Report Summary ---
-** Report counts by severity
-UVM_INFO : 5
-UVM_WARNING : 0
-UVM_ERROR : 0
-UVM_FATAL : 0
-"""
-    )
-
-    assert result["status"] == "PASS"
-    assert result["lifecycle_summary"] == {
-        "phase_events": 2,
-        "objection_events": 2,
-        "sequence_events": 1,
-        "total_events": 5,
-    }
-
-    phases = [
-        item for item in result["lifecycle_events"]
-        if item["kind"] == "phase"
-    ]
-    assert [item["action"] for item in phases] == ["START", "DONE"]
-    assert [item["name"] for item in phases] == ["common.run", "common.run"]
-    assert phases[0]["metadata"]["phase_id"] == 93
-
-    objections = [
-        item for item in result["lifecycle_events"]
-        if item["kind"] == "objection"
-    ]
-    assert [item["action"] for item in objections] == ["RAISE", "DROP"]
-    assert objections[0]["name"] == "uvm_test_top"
-    assert objections[0]["count"] == 1
-    assert objections[0]["total"] == 1
-    assert objections[0]["description"] == "starting smoke_seq"
-    assert objections[1]["count"] == 0
-    assert objections[1]["total"] == 0
-
-    sequence = next(
-        item for item in result["lifecycle_events"]
-        if item["kind"] == "sequence"
-    )
-    assert sequence["action"] == "REPORT"
-    assert sequence["name"] == "smoke_seq"
-    assert sequence["metadata"]["sequencer"] == "uvm_test_top.env.seqr"
-    assert sequence["metadata"]["evidence"] == "uvm_report_context"
-
-
-def test_persists_uvm_lifecycle_events_and_history_counts(tmp_path: Path, capsys):
-    project = initialize_project(tmp_path / "demo")
-    log = project.root / "lifecycle.log"
-    log.write_text(
-        "UVM_INFO uvm_phase.svh(1124) @ 0 ns: reporter [PH/TRC/STRT] "
-        "Phase 'common.run' (id=93) Starting phase\n"
-        "UVM_INFO @ 0 ns: run [OBJTN_TRC] Object uvm_test_top raised "
-        "1 objection(s) (starting smoke_seq): count=1 total=1\n"
-        "UVM_INFO seq.sv(10) @ 5 ns: "
-        "uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent\n"
-        "UVM_INFO @ 10 ns: run [OBJTN_TRC] Object uvm_test_top dropped "
-        "1 objection(s) (finished smoke_seq): count=0 total=0\n"
-        "UVM_INFO uvm_phase.svh(1381) @ 10 ns: reporter [PH/TRC/DONE] "
-        "Phase 'common.run' (id=93) Completed phase\n"
-        "--- UVM Report Summary ---\n"
-        "** Report counts by severity\n"
-        "UVM_INFO : 5\n"
-        "UVM_WARNING : 0\n"
-        "UVM_ERROR : 0\n"
-        "UVM_FATAL : 0\n",
-        encoding="utf-8",
-    )
-
-    result = analyze_uvm_log(project, log, source="questa")
-
-    events = list_uvm_lifecycle_events(project, result["snapshot_id"])
-    assert len(events) == 5
-    assert [item["kind"] for item in events] == [
-        "phase",
-        "objection",
-        "sequence",
-        "objection",
-        "phase",
-    ]
-    assert list_uvm_lifecycle_events(
-        project,
-        result["snapshot_id"],
-        kind="sequence",
-    )[0]["metadata"]["sequencer"] == "uvm_test_top.env.seqr"
-
-    snapshots = list_uvm_log_snapshots(project, limit=1)
-    assert snapshots[0]["phase_events"] == 2
-    assert snapshots[0]["objection_events"] == 2
-    assert snapshots[0]["sequence_events"] == 1
-
-    rc = main(
-        [
-            "--project",
-            str(project.root),
-            "uvm-analyze",
-            str(log),
-            "--source",
-            "questa",
-        ]
-    )
-    assert rc == 0
-    assert "Lifecycle: phase=2 objection=2 sequence=1" in capsys.readouterr().out
-
-    rc = main(
-        [
-            "--project",
-            str(project.root),
-            "uvm-history",
-            "--limit",
-            "1",
-        ]
-    )
-    assert rc == 0
-    history = capsys.readouterr().out
-    assert "P/O/S" in history
-    assert "2/2/1" in history
 
 
 def test_complete_summary_is_authoritative_over_visible_messages():
@@ -297,6 +279,7 @@ def test_uvm_cli_and_history(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "UVM PASS: test=cli_case" in output
     assert "I/W/E/F=1/0/0/0" in output
+    assert "Lifecycle:" not in output
 
     rc = main(
         [

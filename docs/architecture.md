@@ -259,19 +259,6 @@ Public references:
 - https://www.uciexpress.org/specifications
 - https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
 
-## UVM Lifecycle Evidence
-
-UVM log normalization stores report messages and a separate lifecycle-event stream. Standard
-phase-trace report IDs such as `PH/TRC/*` are normalized into phase events, while
-`OBJTN_TRC` messages are normalized into objection actions with object and total counts.
-These events remain linked to the same UVM snapshot and, when available, the same recorded
-simulation run.
-
-Sequence evidence is intentionally narrower. Standard UVM provides phase and objection trace
-controls, but no universal sequence-trace plusarg. ZDDV therefore records a sequence event only
-when an existing UVM report component exposes an explicit `sequencer@@sequence` context. Such
-events are labeled as report evidence rather than inferred sequence start/end lifecycle.
-
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
@@ -279,6 +266,19 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 Current executable backends:
 - **Verilator**: executable binary flow with optional waveform/code-coverage artifacts.
 - **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, assertion-log ingestion, and run-linked UVM log ingestion. When project coverage is enabled, the adapter instruments compilation with `+cover`, runs with `-coverage`, keeps the simulator alive after `$finish` with `-onfinish stop`, and saves a per-run `coverage.ucdb`. The coverage engine merges those UCDBs with `vcover merge`, parses only the numeric `vcover report -summary` table, stores aggregate per-type bins/hits in the existing coverage snapshot schema, and preserves Questa's weighted total coverage separately. Item-level UCDB hole normalization is not yet implemented.
+
+### UVM Lifecycle Normalization
+
+The UVM log ingestion layer remains simulator-independent. In addition to severity/test
+metadata, it recognizes standard phase-trace report IDs emitted by `+UVM_PHASE_TRACE`
+and objection-trace reports tagged `OBJTN_TRC` by `+UVM_OBJECTION_TRACE`. Normalized
+phase and objection events retain log-line/time evidence and are persisted in dedicated
+SQLite tables alongside the source report messages. When a normal UVM report component
+already contains an explicit `sequencer@@sequence` context, ZDDV stores that as conservative
+sequence report evidence in a dedicated SQLite table. It does not infer sequence start/end
+from those reports. Full sequence lifecycle reconstruction remains a separate future layer
+because there is no equivalent single portable sequence trace switch with one stable report
+contract.
 
 ## Next Architectural Steps
 

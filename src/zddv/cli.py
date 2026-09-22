@@ -560,13 +560,20 @@ def cmd_uvm_analyze(args) -> int:
         f"Counts: {result['count_source']}  "
         f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
     )
-    lifecycle = result["lifecycle_summary"]
-    print(
-        "Lifecycle: "
-        f"phase={lifecycle['phase_events']} "
-        f"objection={lifecycle['objection_events']} "
-        f"sequence={lifecycle['sequence_events']}"
-    )
+    lifecycle = result["lifecycle"]["summary"]
+    if (
+        lifecycle["phase_events"]
+        or lifecycle["objection_events"]
+        or lifecycle["sequence_report_events"]
+    ):
+        print(
+            "Lifecycle: "
+            f"phases={lifecycle['phase_events']} "
+            f"objections={lifecycle['objection_events']} "
+            f"sequence-reports={lifecycle['sequence_report_events']} "
+            f"phase-names={len(lifecycle['phases_seen'])} "
+            f"max-objection-total={lifecycle['max_observed_total']}"
+        )
     for event in result["messages"]:
         if event["severity"] not in {"UVM_WARNING", "UVM_ERROR", "UVM_FATAL"}:
             continue
@@ -594,7 +601,7 @@ def cmd_uvm_history(args) -> int:
 
     print(
         f"{'STATUS':<6} {'TEST':<24} {'I/W/E/F':<20} "
-        f"{'P/O/S':<11} {'RUN':<24} {'COUNT SOURCE':<18} SNAPSHOT"
+        f"{'RUN':<24} {'COUNT SOURCE':<18} SNAPSHOT"
     )
     for row in rows:
         counts = (
@@ -603,14 +610,9 @@ def cmd_uvm_history(args) -> int:
         )
         test_name = row["test_name"] or "-"
         run_id = row["run_id"] or "-"
-        lifecycle = (
-            f"{row['phase_events']}/{row['objection_events']}/"
-            f"{row['sequence_events']}"
-        )
         print(
             f"{row['status']:<6} {test_name[:24]:<24} {counts:<20} "
-            f"{lifecycle:<11} {run_id[:24]:<24} "
-            f"{row['count_source']:<18} {row['snapshot_id']}"
+            f"{run_id[:24]:<24} {row['count_source']:<18} {row['snapshot_id']}"
         )
     return 0
 

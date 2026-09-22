@@ -107,30 +107,6 @@ CREATE INDEX IF NOT EXISTS idx_uvm_messages_severity
 CREATE INDEX IF NOT EXISTS idx_uvm_messages_report_id
     ON uvm_report_messages(report_id);
 
-CREATE TABLE IF NOT EXISTS uvm_lifecycle_events (
-    snapshot_id TEXT NOT NULL,
-    event_index INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    action TEXT NOT NULL,
-    name TEXT NOT NULL,
-    component TEXT,
-    time_text TEXT,
-    report_id TEXT,
-    description TEXT,
-    count_value INTEGER,
-    total_value INTEGER,
-    log_line INTEGER NOT NULL,
-    raw TEXT NOT NULL,
-    metadata_json TEXT NOT NULL,
-    PRIMARY KEY (snapshot_id, event_index)
-);
-
-CREATE INDEX IF NOT EXISTS idx_uvm_lifecycle_kind
-    ON uvm_lifecycle_events(kind);
-
-CREATE INDEX IF NOT EXISTS idx_uvm_lifecycle_name
-    ON uvm_lifecycle_events(name);
-
 CREATE TABLE IF NOT EXISTS uvm_run_links (
     snapshot_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL
@@ -138,6 +114,72 @@ CREATE TABLE IF NOT EXISTS uvm_run_links (
 
 CREATE INDEX IF NOT EXISTS idx_uvm_run_links_run
     ON uvm_run_links(run_id);
+
+CREATE TABLE IF NOT EXISTS uvm_phase_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    phase_name TEXT NOT NULL,
+    phase_instance_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT,
+    time_text TEXT,
+    report_id TEXT NOT NULL,
+    message_event_index INTEGER NOT NULL,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_phase_events_phase
+    ON uvm_phase_events(phase_name);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_phase_events_action
+    ON uvm_phase_events(action);
+
+CREATE TABLE IF NOT EXISTS uvm_objection_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    objection_name TEXT,
+    object_name TEXT NOT NULL,
+    source_object TEXT NOT NULL,
+    action TEXT NOT NULL,
+    delta INTEGER NOT NULL,
+    object_count INTEGER NOT NULL,
+    total_count INTEGER NOT NULL,
+    time_text TEXT,
+    message_event_index INTEGER NOT NULL,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_action
+    ON uvm_objection_events(action);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_source
+    ON uvm_objection_events(source_object);
+
+CREATE TABLE IF NOT EXISTS uvm_sequence_report_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    sequencer TEXT NOT NULL,
+    sequence_name TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    report_id TEXT,
+    message TEXT,
+    time_text TEXT,
+    message_event_index INTEGER NOT NULL,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequence
+    ON uvm_sequence_report_events(sequence_name);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequencer
+    ON uvm_sequence_report_events(sequencer);
 
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
@@ -569,36 +611,102 @@ def record_uvm_log_snapshot(
                 for item in record["messages"]
             ],
         )
+
+        lifecycle = record.get("lifecycle", {})
+        phase_events = lifecycle.get("phase_events", [])
+        objection_events = lifecycle.get("objection_events", [])
+        sequence_report_events = lifecycle.get("sequence_report_events", [])
+
         db.execute(
-            "DELETE FROM uvm_lifecycle_events WHERE snapshot_id = ?",
+            "DELETE FROM uvm_phase_events WHERE snapshot_id = ?",
             (record["snapshot_id"],),
         )
         db.executemany(
             """
-            INSERT INTO uvm_lifecycle_events (
-                snapshot_id, event_index, kind, action, name, component,
-                time_text, report_id, description, count_value, total_value,
-                log_line, raw, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO uvm_phase_events (
+                snapshot_id, event_index, phase_name, phase_instance_id,
+                action, detail, time_text, report_id, message_event_index,
+                log_line, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     record["snapshot_id"],
                     int(item["event_index"]),
-                    item["kind"],
+                    item["phase"],
+                    int(item["phase_id"]),
                     item["action"],
-                    item["name"],
-                    item.get("component"),
+                    item.get("detail"),
                     item.get("time"),
-                    item.get("report_id"),
-                    item.get("description"),
-                    item.get("count"),
-                    item.get("total"),
+                    item["report_id"],
+                    int(item["message_event_index"]),
                     int(item["log_line"]),
                     item["raw"],
-                    json.dumps(item.get("metadata", {}), sort_keys=True),
                 )
-                for item in record.get("lifecycle_events", [])
+                for item in phase_events
+            ],
+        )
+
+        db.execute(
+            "DELETE FROM uvm_objection_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_objection_events (
+                snapshot_id, event_index, objection_name, object_name,
+                source_object, action, delta, object_count, total_count,
+                time_text, message_event_index, log_line, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item.get("objection"),
+                    item["object"],
+                    item["source_object"],
+                    item["action"],
+                    int(item["delta"]),
+                    int(item["count"]),
+                    int(item["total"]),
+                    item.get("time"),
+                    int(item["message_event_index"]),
+                    int(item["log_line"]),
+                    item["raw"],
+                )
+                for item in objection_events
+            ],
+        )
+
+        db.execute(
+            "DELETE FROM uvm_sequence_report_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_sequence_report_events (
+                snapshot_id, event_index, sequencer, sequence_name, severity,
+                report_id, message, time_text, message_event_index, log_line,
+                raw, evidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["sequencer"],
+                    item["sequence"],
+                    item["severity"],
+                    item.get("report_id"),
+                    item.get("message"),
+                    item.get("time"),
+                    int(item["message_event_index"]),
+                    int(item["log_line"]),
+                    item["raw"],
+                    item["evidence"],
+                )
+                for item in sequence_report_events
             ],
         )
     return path
@@ -620,19 +728,7 @@ def list_uvm_log_snapshots(
         SELECT s.snapshot_id, s.created_at, s.project, s.source, s.test_name,
                s.status, s.count_source, s.info_count, s.warning_count,
                s.error_count, s.fatal_count, s.total_reports, s.input_path,
-               s.normalized_path, s.report_path, l.run_id,
-               (
-                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
-                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'phase'
-               ) AS phase_events,
-               (
-                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
-                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'objection'
-               ) AS objection_events,
-               (
-                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
-                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'sequence'
-               ) AS sequence_events
+               s.normalized_path, s.report_path, l.run_id
         FROM uvm_log_snapshots AS s
         LEFT JOIN uvm_run_links AS l ON l.snapshot_id = s.snapshot_id
     """
@@ -685,38 +781,61 @@ def list_uvm_report_messages(
     return [dict(row) for row in rows]
 
 
-def list_uvm_lifecycle_events(
+def list_uvm_phase_events(
     project: ProjectConfig,
     snapshot_id: str,
-    *,
-    kind: str | None = None,
 ) -> list[dict[str, Any]]:
-    allowed = {"phase", "objection", "sequence"}
-    if kind is not None and kind not in allowed:
-        raise ValueError(f"Unsupported UVM lifecycle kind: {kind}")
-
-    query = """
-        SELECT snapshot_id, event_index, kind, action, name, component,
-               time_text, report_id, description, count_value, total_value,
-               log_line, raw, metadata_json
-        FROM uvm_lifecycle_events
-        WHERE snapshot_id = ?
-    """
-    params: list[Any] = [snapshot_id]
-    if kind is not None:
-        query += " AND kind = ?"
-        params.append(kind)
-    query += " ORDER BY event_index"
-
     with _connect(project) as db:
-        rows = db.execute(query, params).fetchall()
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, phase_name, phase_instance_id,
+                   action, detail, time_text, report_id, message_event_index,
+                   log_line, raw
+            FROM uvm_phase_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        item["metadata"] = json.loads(item.pop("metadata_json"))
-        result.append(item)
-    return result
+
+def list_uvm_objection_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, objection_name, object_name,
+                   source_object, action, delta, object_count, total_count,
+                   time_text, message_event_index, log_line, raw
+            FROM uvm_objection_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_sequence_report_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, sequencer, sequence_name, severity,
+                   report_id, message, time_text, message_event_index,
+                   log_line, raw, evidence
+            FROM uvm_sequence_report_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def record_functional_coverage_snapshot(
