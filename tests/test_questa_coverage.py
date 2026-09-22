@@ -290,6 +290,14 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             output = Path(command[command.index("-output") + 1])
             output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
+        if command[1:7] == ["report", "-details", "-byinstance", "-code", "t", "-all"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("toggle detail fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="toggle report written\n")
+        if command[1:6] == ["report", "-details", "-byinstance", "-code", "f"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("fsm detail fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="fsm report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -343,6 +351,29 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("zeros.txt")),
         result["merged"],
     ]
+    assert commands[6] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-details",
+        "-byinstance",
+        "-code",
+        "t",
+        "-all",
+        "-output",
+        str(Path(result["merged"]).with_name("toggle-details.txt")),
+        result["merged"],
+    ]
+    assert commands[7] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-details",
+        "-byinstance",
+        "-code",
+        "f",
+        "-output",
+        str(Path(result["merged"]).with_name("fsm-details.txt")),
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -361,8 +392,12 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     evidence = payload["detailed_code_coverage_evidence"]
     assert evidence["xml"]["status"] == "captured"
     assert evidence["zero_detail"]["status"] == "captured"
+    assert evidence["toggle_detail"]["status"] == "captured"
+    assert evidence["fsm_detail"]["status"] == "captured"
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
     assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
+    assert Path(evidence["toggle_detail"]["path"]).read_text(encoding="utf-8") == "toggle detail fixture\n"
+    assert Path(evidence["fsm_detail"]["path"]).read_text(encoding="utf-8") == "fsm detail fixture\n"
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
