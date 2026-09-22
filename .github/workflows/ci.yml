@@ -266,6 +266,8 @@ jobs:
           grep -q '"violations": 0' examples/counter/.zddv/uvm/items/latest.json
           grep -q '"completed": 2' examples/counter/.zddv/uvm/items/latest.json
           grep -q '"partial": 1' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"model": "observed_grant_order"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
       - name: Verify concurrent async FIFO RTL example
