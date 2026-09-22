@@ -11,6 +11,8 @@ from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_coverage,
     merge_xcelium_coverage,
+    parse_xcelium_imc_block_coverage,
+    parse_xcelium_imc_expression_coverage,
     parse_xcelium_imc_summary,
     parse_xcelium_imc_toggle_coverage_points,
 )
@@ -25,6 +27,41 @@ name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average 
 tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
 """
 
+
+IMC_BLOCK_DETAIL = """IMC(64): test build
+Coverage Report: Block Coverage
+Instance name: tb_top.dut
+Type name: dut
+File name:
+/proj/rtl/dut.sv
+Number of covered blocks: 1 of 2
+Number of uncovered blocks: 1 of 2
+Count Block Line
+Kind Origin Source Code
+----------------------------------------------
+0 24 138 true part of 137 begin
+1 25 140 code block 139 ready <= req;
+"""
+
+IMC_EXPRESSION_DETAIL = """IMC(64): test build
+Coverage Report: Expression Coverage
+Instance name: tb_top.dut
+Type name: dut
+File name: rtl/dut.sv
+Number of covered expressions: 1 of 1
+Number of uncovered expressions: 0 of 1
+index | grade | line | expression
+---------------------------------
+1.1 | 66.67% (2/3/3) | 42 | select ? data_a : data_b
+index: 1.1 grade: 66.67% (2/3/3) line: 42 source: assign y = select ? data_a : data_b;
+select ? data_a : data_b
+<1----> <2----> <3---->
+index | hit | rval | <1> <2> <3>
+--------------------------------
+1.1.1 | 4 | 1 | 0 - 1
+1.1.2 | 0 | 0 | 0 - 0
+1.1.3 | IGN | 1 | 1 1 -
+"""
 
 IMC_TOGGLE_DETAIL = """IMC(64): test build
 Coverage Report: Toggle Coverage
@@ -233,6 +270,42 @@ def test_merge_xcelium_coverage_retains_detail_tool_error_as_evidence(
     )
 
 
+def test_parse_xcelium_imc_block_coverage_keeps_source_evidence():
+    points = parse_xcelium_imc_block_coverage(IMC_BLOCK_DETAIL)
+    assert len(points) == 2
+    uncovered, covered = points
+    assert uncovered["scope"] == "tb_top.dut"
+    assert uncovered["type_name"] == "dut"
+    assert uncovered["source_file"] == "/proj/rtl/dut.sv"
+    assert uncovered["line"] == 138
+    assert uncovered["block"] == 24
+    assert uncovered["origin_line"] == 137
+    assert uncovered["detail"] == "true part of"
+    assert uncovered["source_code"] == "begin"
+    assert uncovered["count"] == 0
+    assert uncovered["hit"] is False
+    assert covered["line"] == 140
+    assert covered["count"] == 1
+    assert covered["hit"] is True
+
+
+def test_parse_xcelium_imc_expression_truth_rows():
+    points = parse_xcelium_imc_expression_coverage(IMC_EXPRESSION_DETAIL)
+    assert len(points) == 2
+    assert points[0]["scope"] == "tb_top.dut"
+    assert points[0]["source_file"] == "rtl/dut.sv"
+    assert points[0]["line"] == 42
+    assert points[0]["expression_index"] == "1.1"
+    assert points[0]["truth_row"] == "1.1.1"
+    assert points[0]["count"] == 4
+    assert points[0]["hit"] is True
+    assert points[1]["truth_row"] == "1.1.2"
+    assert points[1]["count"] == 0
+    assert points[1]["hit"] is False
+    assert "rval=0" in points[1]["fec_target"]
+    assert all(point["truth_row"] != "1.1.3" for point in points)
+
+
 def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
     points = parse_xcelium_imc_toggle_coverage_points(IMC_TOGGLE_DETAIL)
 
@@ -247,6 +320,108 @@ def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
     assert points[2]["name"] == "tb_top.dut.ready"
     assert points[2]["hit"] is True
     assert points[2]["count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("point_type", "fixture"),
+    [
+        ("block", IMC_BLOCK_DETAIL),
+        ("expression", IMC_EXPRESSION_DETAIL),
+    ],
+)
+def test_xcelium_coverage_holes_cli_supports_verified_item_tables(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    point_type: str,
+    fixture: str,
+):
+    project = _project(tmp_path)
+    detail_path = (
+        project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+    )
+    detail_path.parent.mkdir(parents=True)
+    detail_path.write_text(fixture, encoding="utf-8")
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/holes.json",
+            point_type=point_type,
+            limit=200,
+            show=20,
+        )
+    )
+    assert rc == 0
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["filter_type"] == point_type
+    assert payload["total_holes"] == 1
+    assert payload["by_type"] == {point_type: 1}
+    assert f"Coverage holes ({point_type}): 1" in capsys.readouterr().out
+
+
+def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    detail_path = (
+        project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+    )
+    detail_path.parent.mkdir(parents=True)
+    detail_path.write_text(
+        "\n".join((IMC_BLOCK_DETAIL, IMC_EXPRESSION_DETAIL, IMC_TOGGLE_DETAIL)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/all-holes.json",
+            point_type=None,
+            limit=200,
+            show=20,
+        )
+    )
+    assert rc == 0
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "all-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["total_holes"] == 4
+    assert payload["by_type"] == {
+        "block": 1,
+        "expression": 1,
+        "toggle": 2,
+    }
+
+
+def test_xcelium_coverage_holes_cli_rejects_unverified_metric(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    with pytest.raises(
+        RuntimeError,
+        match="supports --type block, expression, or toggle",
+    ):
+        cmd_coverage_holes(
+            SimpleNamespace(
+                project=str(project.root),
+                output=".zddv/coverage/holes.json",
+                point_type="fsm",
+                limit=20,
+                show=20,
+            )
+        )
 
 
 def test_xcelium_coverage_holes_cli_writes_toggle_holes(
