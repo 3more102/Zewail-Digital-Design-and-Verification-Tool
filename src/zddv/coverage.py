@@ -1121,43 +1121,43 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
 
 
 _VCS_URG_CODE_HEADER = re.compile(
-    r"^\\s*(?P<kind>Line|Branch|Cond(?:ition)?|Toggle|FSM)\\s+Coverage\\s+"
-    r"for\\s+(?P<scope_type>Module|Instance)\\s*:\\s*(?P<scope>.+?)\\s*$",
+    r"^\s*(?P<kind>Line|Branch|Cond(?:ition)?|Toggle|FSM)\s+Coverage\s+"
+    r"for\s+(?P<scope_type>Module|Instance)\s*:\s*(?P<scope>.+?)\s*$",
     re.IGNORECASE,
 )
 _VCS_URG_ANY_COVERAGE_SECTION = re.compile(
-    r"^\\s*.+?\\s+Coverage\\s+for\\s+(?:Module|Instance)\\s*:\\s*.+?\\s*$",
+    r"^\s*.+?\s+Coverage\s+for\s+(?:Module|Instance)\s*:\s*.+?\s*$",
     re.IGNORECASE,
 )
 _VCS_URG_CODE_TOTAL_ROWS = {
     "line": re.compile(
-        r"^\\s*TOTAL\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*TOTAL\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
     "condition": re.compile(
-        r"^\\s*Conditions\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*Conditions\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
     "toggle": re.compile(
-        r"^\\s*Total\\s+Bits\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*Total\s+Bits\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
     "fsm": re.compile(
-        r"^\\s*Transitions\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*Transitions\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
     "branch": re.compile(
-        r"^\\s*Branches\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*Branches\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
 }
