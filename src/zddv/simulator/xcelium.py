@@ -162,7 +162,6 @@ class XceliumBackend(SimulatorBackend):
         plusargs: list[str] | None = None,
         timeout_s: float | None = None,
     ) -> RunResult:
-        self._require_supported_project(project)
         library_dir = self._library_dir(project)
         if not library_dir.exists():
             build = self.build(project)
