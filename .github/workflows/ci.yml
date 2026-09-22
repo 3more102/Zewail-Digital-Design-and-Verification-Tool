@@ -344,6 +344,14 @@ jobs:
           zddv --project examples/counter coverage-holes --show 10
           test -s examples/counter/.zddv/coverage/holes.json
 
+      - name: Suggest tests for explicit coverage holes
+        run: |
+          zddv --project examples/counter coverage-suggest --limit 20 --show 5
+          test -s examples/counter/.zddv/coverage/test-suggestions.json
+          grep -q '"analysis": "coverage_hole_test_suggestions"' examples/counter/.zddv/coverage/test-suggestions.json
+          grep -q '"automatic_test_generation": false' examples/counter/.zddv/coverage/test-suggestions.json
+          grep -q '"review_required": true' examples/counter/.zddv/coverage/test-suggestions.json
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50
