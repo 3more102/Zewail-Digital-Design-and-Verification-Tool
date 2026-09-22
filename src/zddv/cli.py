@@ -52,6 +52,7 @@ from zddv.uvm_arbitration import analyze_uvm_arbitration_file
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_item_instrumentation import write_uvm_item_instrumentation
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
+from zddv.uvm_sequence_instrumentation import write_uvm_sequence_instrumentation
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
 
@@ -1050,6 +1051,22 @@ def cmd_uvm_arbitration_history(args) -> int:
             f"{row['max_wait_decisions']:>7} {bound:>5} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
         )
+    return 0
+
+
+def cmd_uvm_sequence_instrument(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_uvm_sequence_instrumentation(
+        project,
+        output=args.output,
+        add_source=args.add_source,
+        force=args.force,
+    )
+    print(f"UVM sequence instrumentation: {result['path']}")
+    print(f"Marker: {result['marker']}")
+    if result["project_path"] is not None:
+        state = "added" if result["added_to_project"] else "already present"
+        print(f"Project source: {result['project_path']} ({state})")
     return 0
 
 
@@ -2144,6 +2161,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter arbitration snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_arbitration_history.set_defaults(func=cmd_uvm_arbitration_history)
+
+    p_uvm_sequence_instrument = sub.add_parser(
+        "uvm-sequence-instrument",
+        help="Generate the portable ZDDV_UVM_SEQUENCE SystemVerilog trace helper",
+    )
+    p_uvm_sequence_instrument.add_argument(
+        "--output",
+        default="tb/zddv_uvm_sequence_trace_pkg.sv",
+        help="Generated SystemVerilog helper path",
+    )
+    p_uvm_sequence_instrument.add_argument(
+        "--no-add-source",
+        dest="add_source",
+        action="store_false",
+        help="Do not add the generated helper to testbench source order",
+    )
+    p_uvm_sequence_instrument.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing generated helper",
+    )
+    p_uvm_sequence_instrument.set_defaults(
+        func=cmd_uvm_sequence_instrument,
+        add_source=True,
+    )
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",

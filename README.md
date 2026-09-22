@@ -33,7 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
-- Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
+- Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, history CLI, explicit log-marker ingestion, and a generated portable SystemVerilog instrumentation helper
 - Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, history filtering, explicit log-marker ingestion, and a generated portable SystemVerilog instrumentation helper
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
@@ -169,6 +169,7 @@ zddv --project my_project uvm-item-instrument
 zddv --project my_project uvm-item-log-analyze simulation.log
 zddv --project my_project uvm-item-log-analyze --run <run-id>
 zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
+zddv --project my_project uvm-sequence-instrument
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-log-analyze simulation.log
@@ -377,6 +378,7 @@ separately from Verilator's annotation threshold.
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
 - [x] Portable SystemVerilog item instrumentation helper targeting the explicit `ZDDV_UVM_ITEM` marker contract
+- [x] Portable SystemVerilog sequence instrumentation helper targeting the explicit `ZDDV_UVM_SEQUENCE` marker contract
 - [x] Observed UVM grant order plus explicit ARB_REQUEST contention/bypass evidence
 - [ ] Automatic sequence/item instrumentation adapters and vendor-policy-aware arbitration reconstruction
 
