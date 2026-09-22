@@ -16,6 +16,7 @@ from zddv.coverage import (
     parse_questa_toggle_coverage_xml,
     parse_xcelium_imc_block_coverage,
     parse_xcelium_imc_expression_coverage,
+    parse_xcelium_imc_fsm_coverage,
     parse_xcelium_imc_toggle_coverage_points,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
@@ -1010,11 +1011,11 @@ def cmd_coverage_holes(args) -> int:
                 limit=args.limit,
             )
     elif simulator in {"xcelium", "xrun"}:
-        supported_types = {"block", "expression", "toggle"}
+        supported_types = {"block", "expression", "fsm", "toggle"}
         if args.point_type is not None and args.point_type not in supported_types:
             raise RuntimeError(
                 "Xcelium item-level coverage currently supports "
-                "--type block, expression, or toggle."
+                "--type block, expression, fsm, or toggle."
             )
         source_path = (
             project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
@@ -1028,18 +1029,19 @@ def cmd_coverage_holes(args) -> int:
         parsers = {
             "block": parse_xcelium_imc_block_coverage,
             "expression": parse_xcelium_imc_expression_coverage,
+            "fsm": parse_xcelium_imc_fsm_coverage,
             "toggle": parse_xcelium_imc_toggle_coverage_points,
         }
         if args.point_type is None:
             points = [
                 point
-                for point_type in ("block", "expression", "toggle")
+                for point_type in ("block", "expression", "fsm", "toggle")
                 for point in parsers[point_type](detail_text)
             ]
         else:
             points = parsers[args.point_type](detail_text)
         if not points:
-            requested = args.point_type or "block/expression/toggle"
+            requested = args.point_type or "block/expression/fsm/toggle"
             raise RuntimeError(
                 f"No normalized Xcelium {requested} rows found in "
                 f"{source_path}. Unrecognized IMC detail layouts remain "
