@@ -93,6 +93,14 @@ _QUESTA_FEC_ROW = re.compile(
 )
 
 
+_QUESTA_MULTIBIT_FEC_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_MULTIBIT_INDEX = re.compile(r"<(?P<index>\d+)>")
+_QUESTA_HIT_TOKEN = re.compile(r"^(?:\*{3})?\d[\d,]*(?:\*{3})?$")
+
+
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -197,6 +205,10 @@ def build_coverage_hole_report(
                         "fec_context",
                         "fec_target",
                         "evidence",
+                        "bit",
+                        "multibit",
+                        "fec_hits",
+                        "fec_conditions",
                     )
                     if key in point and point[key] is not None
                 },
@@ -364,12 +376,14 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize statement/branch plus scalar condition/expression FEC rows.
+    """Normalize Questa statement/branch and documented FEC detail rows.
 
-    FEC rows are accepted only after the explicit Rows/FEC Target table
-    header. This avoids treating truth-table or other diagnostic rows as
-    normalized coverage points. Multibit FEC layouts are intentionally left
-    unnormalized until their exact row semantics are verified.
+    Scalar condition/expression rows are accepted only after the explicit
+    Rows/Hits/FEC Target table header. Multibit expression rows follow
+    Questa's documented multibit-verbose layout: one FEC-target row per
+    logical state and one hit-count column per bit index. ZDDV collapses each
+    _0/_1 pair into the vendor's input-term-bit coverage unit, which is
+    covered only when both state rows have a non-zero hit count.
     """
     points: list[dict] = []
     kind = ""
@@ -378,16 +392,85 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     fec_item: int | None = None
     fec_context = ""
     in_fec_rows = False
+    in_multibit_rows = False
+    multibit_indices: list[int] = []
+    multibit_rows: list[dict] = []
+
+    def flush_multibit_points() -> None:
+        nonlocal multibit_indices, multibit_rows
+        if (
+            kind != "expression"
+            or fec_line is None
+            or fec_item is None
+            or not multibit_indices
+            or not multibit_rows
+        ):
+            multibit_indices = []
+            multibit_rows = []
+            return
+
+        grouped: dict[str, dict[str, dict]] = {}
+        for row in multibit_rows:
+            target = str(row["target"])
+            match = re.match(r"^(?P<base>.+)\[i\]_(?P<state>[01])$", target)
+            if match is None:
+                continue
+            grouped.setdefault(match.group("base"), {})[match.group("state")] = row
+
+        for base, states in grouped.items():
+            if set(states) != {"0", "1"}:
+                continue
+            zero = states["0"]
+            one = states["1"]
+            zero_hits = list(zero["hits"])
+            one_hits = list(one["hits"])
+            if len(zero_hits) != len(multibit_indices) or len(one_hits) != len(multibit_indices):
+                continue
+
+            for column, bit_index in enumerate(multibit_indices):
+                zero_count = int(zero_hits[column])
+                one_count = int(one_hits[column])
+                hit = zero_count > 0 and one_count > 0
+                target = f"{base}[{bit_index}]"
+                evidence = f"{target} _0={zero_count} _1={one_count}"
+                points.append(
+                    {
+                        "name": f"{source_file}:{fec_line}:{fec_item}:{target}",
+                        "count": int(hit),
+                        "hit": hit,
+                        "type": "expression",
+                        "source_file": source_file,
+                        "line": fec_line,
+                        "item": fec_item,
+                        "bit": bit_index,
+                        "expression": fec_context,
+                        "fec_context": fec_context,
+                        "fec_target": target,
+                        "fec_hits": {"0": zero_count, "1": one_count},
+                        "fec_conditions": {
+                            "0": str(zero.get("detail") or ""),
+                            "1": str(one.get("detail") or ""),
+                        },
+                        "multibit": True,
+                        "evidence": evidence,
+                        "detail": evidence,
+                    }
+                )
+
+        multibit_indices = []
+        multibit_rows = []
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
+            flush_multibit_points()
             kind = header.group("kind").strip().lower()
             source_file = header.group("file").strip()
             fec_line = None
             fec_item = None
             fec_context = ""
             in_fec_rows = False
+            in_multibit_rows = False
             continue
 
         if not source_file:
@@ -426,15 +509,57 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
 
         item = _QUESTA_FEC_ITEM.match(raw_line)
         if item is not None:
+            flush_multibit_points()
             fec_line = int(item.group("line"))
             fec_item = int(item.group("item"))
             fec_context = (item.group("detail") or "").strip()
             in_fec_rows = False
+            in_multibit_rows = False
             continue
 
         normalized_line = raw_line.strip().lower()
+        if normalized_line.startswith("rows: fec target") and kind == "expression":
+            in_fec_rows = False
+            in_multibit_rows = True
+            multibit_indices = []
+            multibit_rows = []
+            continue
         if normalized_line.startswith("rows:") and "fec target" in normalized_line:
             in_fec_rows = True
+            in_multibit_rows = False
+            continue
+
+        if in_multibit_rows:
+            indices = [
+                int(match.group("index"))
+                for match in _QUESTA_MULTIBIT_INDEX.finditer(raw_line)
+            ]
+            if indices and raw_line.strip().lower().startswith("i"):
+                multibit_indices = indices
+                continue
+
+            row = _QUESTA_MULTIBIT_FEC_ROW.match(raw_line)
+            if row is None or not multibit_indices:
+                continue
+            tokens = row.group("rest").split()
+            width = len(multibit_indices)
+            if len(tokens) < width:
+                continue
+            hit_tokens = tokens[:width]
+            if not all(_QUESTA_HIT_TOKEN.match(token) for token in hit_tokens):
+                continue
+            hits = [
+                int(token.replace("*", "").replace(",", ""))
+                for token in hit_tokens
+            ]
+            multibit_rows.append(
+                {
+                    "row": int(row.group("row")),
+                    "target": row.group("target").strip(),
+                    "hits": hits,
+                    "detail": " ".join(tokens[width:]).strip(),
+                }
+            )
             continue
 
         row = _QUESTA_FEC_ROW.match(raw_line)
@@ -471,6 +596,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
         point[kind] = fec_context
         points.append(point)
 
+    flush_multibit_points()
     return points
 
 
@@ -856,6 +982,28 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         ),
     }
 
+    multibit_evidence = detailed_code_coverage_evidence["multibit_expression"]
+    multibit_expression_points: list[dict] = []
+    if multibit_evidence["status"] == "captured":
+        multibit_expression_points = [
+            point
+            for point in parse_questa_code_coverage_report(
+                multibit_expression_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            )
+            if point.get("type") == "expression"
+            and point.get("multibit") is True
+        ]
+        multibit_expression_status = (
+            "ok" if multibit_expression_points else "empty"
+        )
+    elif multibit_evidence["status"] == "failed":
+        multibit_expression_status = "tool-error"
+    else:
+        multibit_expression_status = "missing"
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -876,6 +1024,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_report": str(multibit_expression_path),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_points": len(multibit_expression_points),
+        "multibit_expression_holes": sum(
+            not point["hit"] for point in multibit_expression_points
+        ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -904,6 +1058,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_report": str(multibit_expression_path),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_points": len(multibit_expression_points),
+        "multibit_expression_holes": sum(
+            not point["hit"] for point in multibit_expression_points
+        ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
