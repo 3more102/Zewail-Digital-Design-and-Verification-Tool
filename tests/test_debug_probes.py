@@ -126,6 +126,28 @@ def test_suggests_only_explicit_waveform_signal_probe(tmp_path: Path):
     assert "does not invent" in result["semantics"]
 
 
+def test_keeps_exact_signal_probe_when_rtl_crossprobe_is_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    _failure(project, "run-partial")
+
+    def fail_crossprobe(*args, **kwargs):
+        raise RuntimeError("source cross-probe unavailable")
+
+    monkeypatch.setattr("zddv.root_cause.build_crossprobe", fail_crossprobe)
+
+    result = suggest_debug_probes(project, run_id="run-partial")
+
+    assert result["summary"]["suggestions"] == 1
+    assert result["blockers"] == []
+    suggestion = result["suggestions"][0]
+    assert suggestion["signal"].endswith(".count")
+    assert suggestion["source_candidate_kind"] == "assertion_anchor"
+    assert suggestion["evidence"]["signal_hint_match"] == "exact-name"
+
+
 def test_withholds_probe_when_run_has_no_waveform(tmp_path: Path):
     project = _project(tmp_path)
     _failure(project, "run-no-wave", waveform_enabled=False)
