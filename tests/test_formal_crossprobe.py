@@ -178,7 +178,7 @@ def test_write_formal_trace_crossprobe_report_preserves_input_provenance(
     assert result["summary"]["matched"] == 1
     assert result["input_path"] == str(path.resolve())
     assert len(result["input_sha256"]) == 64
-    assert result["design_index_path"].endswith("design-index.json")
+    assert result["design_index_path"].endswith("index.json")
     assert result["connectivity_index_path"].endswith("connectivity.json")
     assert Path(result["report_path"]).is_file()
 
