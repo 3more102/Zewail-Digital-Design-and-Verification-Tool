@@ -8,7 +8,9 @@ import pytest
 
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    load_normalized_coverage_points,
     merge_questa_coverage,
+    parse_questa_code_coverage_xml,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -30,6 +32,21 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
 """
+
+QUESTA_CODE_XML = """<?xml version="1.0"?>
+<report lines="1" byInstance="1">
+  <instance path="/tb/dut" du="dut">
+    <source_table files="1">
+      <file fn="0" path="rtl/dut.sv"></file>
+    </source_table>
+    <statement_data>
+      <stmt fn="0" ln="10" st="1" hits="3"></stmt>
+      <stmt fn="0" ln="11" st="2" hits="0"></stmt>
+    </statement_data>
+  </instance>
+</report>
+"""
+
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
@@ -65,6 +82,22 @@ def _project(tmp_path: Path) -> ProjectConfig:
         waveform=False,
         coverage=True,
     )
+
+
+def test_parse_questa_code_xml_normalizes_statement_points(tmp_path: Path):
+    report = tmp_path / "code.xml"
+    report.write_text(QUESTA_CODE_XML, encoding="utf-8")
+
+    points = parse_questa_code_coverage_xml(report)
+
+    assert len(points) == 2
+    assert points[0]["type"] == "statement"
+    assert points[0]["count"] == 3
+    assert points[0]["hit"] is True
+    assert points[0]["metadata"]["file"] == "rtl/dut.sv"
+    assert points[0]["metadata"]["line"] == 10
+    assert points[1]["count"] == 0
+    assert points[1]["hit"] is False
 
 
 def test_parse_questa_summary_preserves_tool_score_separately():
@@ -152,6 +185,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        if command[1] == "report" and "-xml" in command:
+            out_path = Path(command[command.index("-output") + 1])
+            out_path.write_text(QUESTA_CODE_XML, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="code report complete\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -177,6 +214,16 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-details",
         result["merged"],
     ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-details",
+        "-codeAll",
+        "-output",
+        result["code_report"],
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -188,9 +235,26 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["by_type"]["expression"]["hit"] == 1143
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
+    assert payload["points"] == result["points_path"]
+    assert payload["item_metrics"]["total_points"] == 5
+    assert payload["item_metrics"]["hit_points"] == 3
+    assert payload["item_metrics"]["by_type"]["statement"]["total"] == 2
+    assert payload["item_metrics"]["by_type"]["covergroup_bin"]["total"] == 3
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
+    assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_XML
+    points = load_normalized_coverage_points(project)
+    assert len(points) == 5
+    assert sum(point["hit"] for point in points) == 3
+    assert any(
+        point["type"] == "statement" and not point["hit"]
+        for point in points
+    )
+    assert any(
+        point["type"] == "covergroup_bin" and not point["hit"]
+        for point in points
+    )
 
     snapshots = list_coverage_snapshots(project, limit=5)
     assert len(snapshots) == 1
