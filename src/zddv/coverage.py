@@ -10,6 +10,7 @@ import subprocess
 import uuid
 
 from zddv.config import ProjectConfig
+from zddv.functional_coverage import ingest_functional_coverage_payload
 from zddv.storage import record_coverage_snapshot
 
 
@@ -44,6 +45,22 @@ _QUESTA_KIND_ALIASES = {
     "directives": "directive",
     "directive": "directive",
 }
+
+_QUESTA_CVG_SCOPE = re.compile(
+    r"^Covergroup instance\s+(?P<scope>.+?)\s+"
+    r"\d+(?:\.\d+)?%\s+\d+(?:\.\d+)?\s+(?:-\s+)?\S+\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CVG_POINT = re.compile(
+    r"^(?P<kind>Coverpoint|Cross)\s+(?P<name>.+?)\s+"
+    r"\d+(?:\.\d+)?%\s+\d+(?:\.\d+)?\s+(?:-\s+)?\S+\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CVG_BIN = re.compile(
+    r"^(?P<label>.+?)\s+(?P<hits>\d+)\s+(?P<goal>\d+)\s+"
+    r"(?:-\s+)?(?P<status>ZERO|Covered|Uncovered)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -215,6 +232,75 @@ def parse_questa_coverage_summary(text: str) -> dict:
     }
 
 
+def parse_questa_functional_coverage(text: str) -> dict:
+    """Normalize detailed Questa covergroup bin rows into ZDDV's bin schema."""
+    bins: list[dict] = []
+    scope = ""
+    coverpoint = ""
+    point_kind = ""
+
+    for raw_line in text.splitlines():
+        line = re.sub(r"\s+", " ", raw_line.replace("|", " ")).strip()
+        if not line:
+            continue
+
+        scope_match = _QUESTA_CVG_SCOPE.match(line)
+        if scope_match is not None:
+            scope = scope_match.group("scope").strip()
+            coverpoint = ""
+            point_kind = ""
+            continue
+
+        point_match = _QUESTA_CVG_POINT.match(line)
+        if point_match is not None:
+            if not scope:
+                continue
+            coverpoint = point_match.group("name").strip()
+            point_kind = point_match.group("kind").strip().lower()
+            continue
+
+        if not scope or not coverpoint:
+            continue
+
+        lowered = line.lower()
+        if lowered.startswith(("ignore_bin ", "illegal_bin ")):
+            continue
+
+        bin_match = _QUESTA_CVG_BIN.match(line)
+        if bin_match is None:
+            continue
+
+        label = bin_match.group("label").strip()
+        lowered_label = label.lower()
+        if lowered_label.startswith(
+            ("covered/total bins:", "missing/total bins:", "% hit:")
+        ):
+            continue
+        if lowered_label.startswith("bin "):
+            label = label[4:].strip()
+        if not label:
+            continue
+
+        hits = int(bin_match.group("hits"))
+        goal = int(bin_match.group("goal"))
+        bins.append(
+            {
+                "scope": scope,
+                "coverpoint": coverpoint,
+                "bin": label,
+                "hits": hits,
+                "goal": goal,
+                "metadata": {
+                    "simulator": "questa",
+                    "point_kind": point_kind,
+                    "reported_status": bin_match.group("status"),
+                },
+            }
+        )
+
+    return {"source": "questa-vcover", "bins": bins}
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -235,6 +321,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
 
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
+    functional_report_path = out_dir / "functional.txt"
     metrics_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_files]
 
@@ -264,6 +351,32 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
 
+    functional_report_cmd = [
+        tool,
+        "report",
+        "-cvg",
+        "-details",
+        "-noignorebin",
+        "-nozeroweights",
+        str(merged_path),
+    ]
+    functional_report = _run(functional_report_cmd, project.root)
+    functional_report_path.write_text(functional_report.stdout, encoding="utf-8")
+    if functional_report.returncode != 0:
+        raise RuntimeError(
+            f"Questa functional coverage report failed. See {functional_report_path}"
+        )
+
+    functional_payload = parse_questa_functional_coverage(functional_report.stdout)
+    functional_snapshot = None
+    if functional_payload["bins"]:
+        functional_snapshot = ingest_functional_coverage_payload(
+            project,
+            functional_payload,
+            input_path=functional_report_path,
+            source="questa-vcover",
+        )
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -279,6 +392,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "functional_report": str(functional_report_path),
+        "functional_bin_count": len(functional_payload["bins"]),
+        "functional_snapshot_id": (
+            functional_snapshot["snapshot_id"] if functional_snapshot else None
+        ),
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -294,6 +412,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "inputs": inputs,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "functional_report": str(functional_report_path),
+        "functional_bin_count": len(functional_payload["bins"]),
+        "functional_snapshot_id": (
+            functional_snapshot["snapshot_id"] if functional_snapshot else None
+        ),
         "metrics_path": str(metrics_path),
         "report": report.stdout,
         "metrics": metrics,
