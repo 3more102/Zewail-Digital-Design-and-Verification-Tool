@@ -322,8 +322,8 @@ module tb_async_fifo;
         // generation itself cannot race between the clock-domain workers.
         for (i = 0; i < STRESS_COUNT; i = i + 1) begin
             stress_data[i] = DATA_WIDTH'($urandom());
-            write_gap[i] = $urandom_range(0, 2);
-            read_gap[i] = $urandom_range(0, 3);
+            write_gap[i] = $urandom_range(2, 0);
+            read_gap[i] = $urandom_range(3, 0);
         end
 
         // True dual-clock stress: producer and consumer progress independently.
