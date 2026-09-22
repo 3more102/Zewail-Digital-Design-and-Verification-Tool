@@ -31,6 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Deterministic coverage-hole test-intent suggestions that retain source evidence, require review, and never execute stimulus automatically
+- Disabled-by-default verification scaffolds for test/assertion review, with explicit opt-in emission to `.sv.disabled` files and no automatic source modification or execution
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -592,6 +593,24 @@ the hole type plus available RTL/FEC/FSM/toggle evidence. For example, an explic
 missing toggle direction can be named, and an FSM transition already present in the
 coverage evidence can be used as the objective. ZDDV does not invent DUT behavior,
 generate test code, or execute the suggested stimulus automatically.
+
+### Reviewable Generated Verification Scaffolds
+
+`coverage-scaffold` turns the evidence-backed coverage suggestions into a review
+bundle containing disabled test and assertion/cover templates:
+
+```bash
+zddv --project my_project coverage-scaffold
+zddv --project my_project coverage-scaffold --emit-dir .zddv/coverage/review-scaffolds
+```
+
+Without `--emit-dir`, ZDDV writes only
+`.zddv/coverage/review-bundle.json`; no code files are emitted. Supplying
+`--emit-dir` is the explicit opt-in for code emission. Even then, the generated
+artifacts use the `.sv.disabled` suffix, are never added to project sources, and
+contain commented review/TODO scaffolds rather than invented clocks, resets,
+stimulus, expected DUT behavior, or property semantics. An engineer must edit,
+review, enable, and run any resulting verification code manually.
 
 ### Assertion Result Markers
 
