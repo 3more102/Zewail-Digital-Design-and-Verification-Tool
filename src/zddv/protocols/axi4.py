@@ -509,7 +509,12 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
         if valid_addr and beat_bytes is not None and burst in {"FIXED", "INCR", "WRAP"}:
             if burst == "FIXED":
-                end_addr = addr + beat_bytes - 1
+                # An unaligned FIXED transfer only accesses the remaining byte
+                # lanes in its naturally aligned transfer container.  Using
+                # addr + beat_bytes - 1 here would invent bytes beyond that
+                # container and can falsely report a 4KB crossing at 0x...FFF.
+                aligned = addr - (addr % beat_bytes)
+                end_addr = aligned + beat_bytes - 1
             elif burst == "INCR":
                 aligned = addr - (addr % beat_bytes)
                 end_addr = aligned + beats * beat_bytes - 1
