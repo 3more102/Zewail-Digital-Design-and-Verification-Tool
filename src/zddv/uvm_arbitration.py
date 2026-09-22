@@ -8,6 +8,7 @@ import uuid
 
 from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_arbitration_snapshot
+from zddv.uvm_item import parse_uvm_item_file, parse_uvm_item_log
 
 
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "item_id", "priority", "sequencer")
@@ -302,48 +303,175 @@ def parse_uvm_arbitration_data(
     }
 
 
-def parse_uvm_arbitration_file(
-    path: str | Path,
+def _item_event_contender(
+    event: dict[str, Any],
+    *,
+    context: str,
+) -> dict[str, Any]:
+    sequence_id = event.get("sequence_id")
+    sequence = event.get("sequence")
+    sequencer = event.get("sequencer")
+    missing = [
+        field
+        for field, value in (
+            ("sequence_id", sequence_id),
+            ("sequence", sequence),
+            ("sequencer", sequencer),
+        )
+        if value is None
+    ]
+    if missing:
+        raise ValueError(
+            f"{context} requires explicit {', '.join(missing)} for arbitration adaptation"
+        )
+
+    metadata = dict(event.get("metadata") or {})
+    priority = metadata.get("priority")
+    if priority is not None and (
+        isinstance(priority, bool) or not isinstance(priority, int)
+    ):
+        raise ValueError(f"{context}.metadata.priority must be null or an integer")
+
+    contender_metadata = dict(metadata)
+    contender_metadata.setdefault("source_event_index", int(event["event_index"]))
+    contender_metadata.setdefault("source_event", event["event"])
+    if event.get("item") is not None:
+        contender_metadata.setdefault("item_name", event["item"])
+    if event.get("transaction_id") is not None:
+        contender_metadata.setdefault("transaction_id", event["transaction_id"])
+
+    return {
+        "request_id": event["item_id"],
+        "sequence_id": sequence_id,
+        "sequence": sequence,
+        "item_id": event["item_id"],
+        "priority": priority,
+        "sequencer": sequencer,
+        "metadata": contender_metadata,
+    }
+
+
+def reconstruct_uvm_arbitration_from_item_report(
+    item_report: dict[str, Any],
     *,
     source: str | None = None,
-    fairness_bound: int | None = None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
-    return parse_uvm_arbitration_data(
-        payload,
-        source=source,
-        fairness_bound=fairness_bound,
-    )
+    if not isinstance(item_report, dict) or item_report.get("analysis") != "uvm_item_handshake":
+        raise ValueError("Expected a normalized UVM item-handshake report")
+    if item_report.get("status") != "PASS":
+        raise ValueError(
+            "UVM item evidence must pass handshake validation before arbitration adaptation"
+        )
+
+    events = item_report.get("events")
+    if not isinstance(events, list):
+        raise ValueError("Normalized UVM item report must contain an events array")
+
+    pending: dict[str, dict[str, Any]] = {}
+    decisions: list[dict[str, Any]] = []
+    skipped_grants_missing_identity = 0
+    request_events = 0
+
+    for event in events:
+        event_type = event["event"]
+        item_id = event["item_id"]
+
+        if event_type == "ARB_REQUEST":
+            request_events += 1
+            contender = _item_event_contender(
+                event,
+                context=f"events[{event['event_index']}] ARB_REQUEST",
+            )
+            pending[item_id] = contender
+            continue
+
+        if event_type != "GRANT":
+            continue
+
+        granted = pending.get(item_id)
+        if granted is None:
+            try:
+                granted = _item_event_contender(
+                    event,
+                    context=f"events[{event['event_index']}] GRANT",
+                )
+            except ValueError:
+                skipped_grants_missing_identity += 1
+                continue
+
+        sequencer = granted["sequencer"]
+        contenders = [
+            dict(candidate)
+            for candidate in pending.values()
+            if candidate["sequencer"] == sequencer
+        ]
+        if not any(candidate["request_id"] == item_id for candidate in contenders):
+            contenders.append(dict(granted))
+
+        decision_metadata = {
+            "adapter": "uvm-item-evidence",
+            "source_event_index": int(event["event_index"]),
+            "source_event": "GRANT",
+        }
+        event_metadata = event.get("metadata") or {}
+        if "log_line" in event_metadata:
+            decision_metadata["log_line"] = event_metadata["log_line"]
+
+        decisions.append(
+            {
+                "decision_id": f"item-grant-{event['event_index']}",
+                "sequencer": sequencer,
+                "granted_request_id": item_id,
+                "time": event.get("time"),
+                "contenders": contenders,
+                "metadata": decision_metadata,
+            }
+        )
+        pending.pop(item_id, None)
+
+    selected_source = source or f"{item_report.get('source', 'uvm-item')}:arbitration"
+    return {
+        "source": selected_source,
+        "decisions": decisions,
+        "adapter": {
+            "model": "uvm_item_pending_set_to_arbitration_decisions",
+            "input_analysis": item_report["analysis"],
+            "input_source": item_report.get("source"),
+            "source_events": len(events),
+            "arbitration_request_events": request_events,
+            "generated_decisions": len(decisions),
+            "skipped_grants_missing_identity": skipped_grants_missing_identity,
+            "pending_requests_at_end": len(pending),
+            "pending_request_ids": sorted(pending),
+            "limitations": [
+                "Pending contenders come only from explicit ARB_REQUEST evidence.",
+                "A fully identified GRANT without ARB_REQUEST contributes only the granted request itself unless other explicit requests are pending on that sequencer.",
+                "A GRANT lacking enough identity to form a canonical contender is skipped rather than guessed.",
+            ],
+        },
+    }
 
 
-def analyze_uvm_arbitration_file(
+def _resolve_arbitration_run(
     project: ProjectConfig,
-    path: str | Path,
+    run_id: str | None,
+) -> dict[str, Any] | None:
+    if run_id is None:
+        return None
+    run_record = get_run_record(project, run_id)
+    if run_record is None:
+        raise ValueError(f"Unknown run ID: {run_id}")
+    return run_record
+
+
+def _persist_uvm_arbitration_analysis(
+    project: ProjectConfig,
+    report: dict[str, Any],
+    input_path: Path,
     *,
-    source: str | None = None,
-    fairness_bound: int | None = None,
-    output: str | Path = ".zddv/uvm/arbitration/latest.json",
-    run_id: str | None = None,
+    output: str | Path,
+    run_record: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
-
-    run_record: dict[str, Any] | None = None
-    if run_id is not None:
-        run_record = get_run_record(project, run_id)
-        if run_record is None:
-            raise ValueError(f"Unknown run ID: {run_id}")
-
-    report = parse_uvm_arbitration_file(
-        input_path,
-        source=source,
-        fairness_bound=fairness_bound,
-    )
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-arb-%Y%m%dT%H%M%S")
@@ -385,3 +513,139 @@ def analyze_uvm_arbitration_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_arbitration_snapshot(project, record)
     return record
+
+
+def parse_uvm_arbitration_file(
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    return parse_uvm_arbitration_data(
+        payload,
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+
+
+def analyze_uvm_arbitration_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    run_record = _resolve_arbitration_run(project, run_id)
+    report = parse_uvm_arbitration_file(
+        input_path,
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )
+
+
+def analyze_uvm_arbitration_from_item_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    run_record = _resolve_arbitration_run(project, run_id)
+    item_report = parse_uvm_item_file(input_path)
+    payload = reconstruct_uvm_arbitration_from_item_report(
+        item_report,
+        source=source,
+    )
+    report = parse_uvm_arbitration_data(
+        payload,
+        source=payload["source"],
+        fairness_bound=fairness_bound,
+    )
+    report["input_mode"] = "uvm-item-evidence-adapter"
+    report["adapter"] = payload["adapter"]
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )
+
+
+def analyze_uvm_arbitration_from_item_log(
+    project: ProjectConfig,
+    path: str | Path | None,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    run_record = _resolve_arbitration_run(project, run_id)
+    if path is None:
+        if run_record is None:
+            raise ValueError("A UVM item log path or --run must be provided")
+        input_path = Path(run_record["log_path"])
+    else:
+        input_path = Path(path)
+        if not input_path.is_absolute():
+            input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    item_source = (
+        f"{run_record['simulator']}-uvm-item-log"
+        if run_record is not None
+        else "uvm-item-log-marker"
+    )
+    item_report = parse_uvm_item_log(input_path, source=item_source)
+    payload = reconstruct_uvm_arbitration_from_item_report(
+        item_report,
+        source=source,
+    )
+    report = parse_uvm_arbitration_data(
+        payload,
+        source=payload["source"],
+        fairness_bound=fairness_bound,
+    )
+    report["input_mode"] = "uvm-item-log-arbitration-adapter"
+    report["adapter"] = payload["adapter"]
+    if "marker" in item_report:
+        report["marker"] = item_report["marker"]
+    if "marker_lines" in item_report:
+        report["marker_lines"] = item_report["marker_lines"]
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )
