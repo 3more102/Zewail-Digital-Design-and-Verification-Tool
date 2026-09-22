@@ -120,7 +120,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
-- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction.
+- [x] Normalized sequence-item handshake persistence and explicit arbitration request/grant evidence with contention and bypass metrics.
+- [ ] Automatic sequence/item instrumentation adapters and vendor-policy-aware arbitration reconstruction.
 
 ## v0.7 — Formal
 
