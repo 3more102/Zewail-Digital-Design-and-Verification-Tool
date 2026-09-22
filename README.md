@@ -16,7 +16,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
 - Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, isolated per-run native coverage databases, IMC multi-run merge/report evidence, and normalized Overall Average/Covered score history
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch plus scalar condition/expression FEC source-linked `coverage-holes`; multibit condition/expression rows and toggle/FSM item normalization remain pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit/multibit-expression evidence, and normalized statement/branch plus scalar condition/expression and documented multibit-expression operand-bit FEC source-linked `coverage-holes`; multibit condition and toggle/FSM item normalization remain pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -691,7 +691,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
 - [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting
-- [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization
+- [x] Questa documented multibit-expression operand-bit FEC normalization and coverage-hole reporting
+- [ ] Questa multibit condition plus toggle/FSM item-level normalization
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
