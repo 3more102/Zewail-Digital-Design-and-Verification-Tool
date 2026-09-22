@@ -1,0 +1,31 @@
+{
+  "source": "zddv-example-wstrb",
+  "data_width_bits": 32,
+  "samples": [
+    {
+      "cycle": 0,
+      "AWVALID": 1,
+      "AWREADY": 1,
+      "AWID": 1,
+      "AWADDR": "0x101",
+      "AWLEN": 0,
+      "AWSIZE": 2,
+      "AWBURST": "INCR"
+    },
+    {
+      "cycle": 1,
+      "WVALID": 1,
+      "WREADY": 1,
+      "WDATA": "0xAABBCC00",
+      "WSTRB": "0xE",
+      "WLAST": 1
+    },
+    {
+      "cycle": 2,
+      "BVALID": 1,
+      "BREADY": 1,
+      "BID": 1,
+      "BRESP": "OKAY"
+    }
+  ]
+}
