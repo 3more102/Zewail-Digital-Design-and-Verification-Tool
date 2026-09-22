@@ -96,7 +96,7 @@ simulation runs; and exposes `uvm-analyze` plus `uvm-history`. The Questa founda
 native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD capture, assertion
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented;
-item-level UCDB normalization/holes remain planned; phase/objection lifecycle normalization and explicit sequence report-context evidence are implemented, while sequence start/end semantics remain planned.
+item-level UCDB normalization/holes remain planned; phase/objection lifecycle normalization, explicit sequence report-context evidence, and normalized sequence state lifecycle ingestion are implemented; automatic sequence instrumentation and sequence-item arbitration reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
@@ -108,7 +108,8 @@ item-level UCDB normalization/holes remain planned; phase/objection lifecycle no
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
-- [ ] Sequence start/end lifecycle reconstruction where supported.
+- [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
+- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction.
 
 ## v0.7 — Formal
 
