@@ -349,6 +349,13 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
+      - name: Generate review-only coverage templates
+        run: |
+          zddv --project examples/counter coverage-generate --kind both --limit 5 --show 10
+          test -s examples/counter/.zddv/coverage/generated/manifest.json
+          find examples/counter/.zddv/coverage/generated -name '*.sv.template' -type f | grep -q .
+          ! find examples/counter/.zddv/coverage/generated -name '*.sv' -type f | grep -q .
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50
