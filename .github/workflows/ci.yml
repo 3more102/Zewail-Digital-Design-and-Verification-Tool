@@ -249,6 +249,16 @@ jobs:
           grep -q '"errors": 0' examples/counter/.zddv/uvm/latest.json
           zddv --project examples/counter uvm-history --limit 5 | grep -q 'zddv_uvm_smoke'
 
+      - name: Analyze UVM marker log adapter
+        run: |
+          zddv --project examples/counter uvm-marker-analyze ../uvm_marker_trace.log --source example-marker
+          test -s examples/counter/.zddv/uvm/markers/latest.json
+          grep -q '"status": "PASS"' examples/counter/.zddv/uvm/markers/latest.json
+          grep -q '"sequence_events": 6' examples/counter/.zddv/uvm/markers/latest.json
+          grep -q '"item_events": 3' examples/counter/.zddv/uvm/markers/latest.json
+          test -s examples/counter/.zddv/uvm/sequences/latest.json
+          test -s examples/counter/.zddv/uvm/items/latest.json
+
       - name: Analyze UVM sequence state lifecycle trace
         run: |
           zddv --project examples/counter uvm-sequence-analyze ../uvm_sequence_trace.json --source example-sequence
