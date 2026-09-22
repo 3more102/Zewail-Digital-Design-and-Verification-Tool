@@ -549,6 +549,14 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition/expression/FSM detail: {result['code_report']}")
+    multibit_status = result.get("multibit_expression_status")
+    if multibit_status is not None:
+        print(
+            "Normalized Questa multibit expression terms: "
+            f"{multibit_status} "
+            f"{result.get('multibit_expression_points', 0)} term(s), "
+            f"{result.get('multibit_expression_holes', 0)} hole(s)"
+        )
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -692,6 +700,33 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
+            if args.point_type in {None, "expression"}:
+                multibit_path = (
+                    project.root
+                    / ".zddv"
+                    / "coverage"
+                    / "multibit-expression.txt"
+                ).resolve()
+                if multibit_path.exists():
+                    points.extend(
+                        point
+                        for point in parse_questa_code_coverage_report(
+                            multibit_path.read_text(
+                                encoding="utf-8",
+                                errors="replace",
+                            )
+                        )
+                        if point.get("coverage_unit")
+                        == "multibit_expression_term"
+                    )
+                    deduplicated: dict[tuple[str, str], dict] = {}
+                    for point in points:
+                        key = (
+                            str(point.get("type") or ""),
+                            str(point.get("name") or ""),
+                        )
+                        deduplicated[key] = point
+                    points = list(deduplicated.values())
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -701,8 +736,8 @@ def cmd_coverage_holes(args) -> int:
             ):
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Scalar FEC rows are supported; multibit "
-                    "FEC tables are not normalized yet."
+                    f"{source_path}. Expression holes also consume documented "
+                    "multibit evidence when multibit-expression.txt is available."
                 )
             if (
                 args.point_type == "fsm"
