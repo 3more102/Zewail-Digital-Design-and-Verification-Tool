@@ -157,6 +157,15 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Coverage-hole test suggestions derived only from normalized explicit hole evidence.
 - [x] Generated assertion/test artifacts staged for review and applied only by explicit SHA-confirmed opt-in.
 
+## v0.9 — AI-Assisted Debug Foundation
+
+- [x] Provider-neutral RCA context bundle composed only from deterministic ZDDV evidence.
+- [x] Canonical evidence SHA-256 provenance for downstream review.
+- [x] Explicit policy flags disabling automatic external transmission, model invocation, and command execution.
+- [ ] Opt-in pluggable model-provider adapters.
+- [ ] Schema-validated model-response ingestion with evidence references.
+- [ ] Human review gate before any model-proposed debug action or generated verification artifact is applied.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
