@@ -1,0 +1,57 @@
+{
+  "source": "example-uvm-arbitration",
+  "mode": "UVM_SEQ_ARB_STRICT_FIFO",
+  "events": [
+    {
+      "request_id": "req-1",
+      "event": "REQUEST",
+      "sequence_id": "seq-low",
+      "sequence": "background_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 100,
+      "time": "10 ns"
+    },
+    {
+      "request_id": "req-2",
+      "event": "REQUEST",
+      "sequence_id": "seq-hi-a",
+      "sequence": "urgent_seq_a",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 200,
+      "time": "11 ns"
+    },
+    {
+      "request_id": "req-3",
+      "event": "REQUEST",
+      "sequence_id": "seq-hi-b",
+      "sequence": "urgent_seq_b",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 200,
+      "time": "12 ns"
+    },
+    {
+      "request_id": "req-2",
+      "event": "GRANT",
+      "sequence_id": "seq-hi-a",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 200,
+      "time": "13 ns"
+    },
+    {
+      "request_id": "req-3",
+      "event": "GRANT",
+      "sequence_id": "seq-hi-b",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 200,
+      "time": "14 ns"
+    },
+    {
+      "request_id": "req-1",
+      "event": "GRANT",
+      "sequence_id": "seq-low",
+      "sequencer": "uvm_test_top.env.seqr",
+      "priority": 100,
+      "time": "15 ns"
+    }
+  ]
+}
