@@ -590,8 +590,28 @@ zddv --project my_project coverage-suggest --show 20
 The default output is `.zddv/coverage/test-suggestions.json`. Suggestions preserve
 the hole type plus available RTL/FEC/FSM/toggle evidence. For example, an explicit
 missing toggle direction can be named, and an FSM transition already present in the
-coverage evidence can be used as the objective. ZDDV does not invent DUT behavior,
-generate test code, or execute the suggested stimulus automatically.
+coverage evidence can be used as the objective. ZDDV does not invent DUT behavior or
+execute suggested stimulus automatically.
+
+Reviewed intents can be converted into an inert SystemVerilog review template:
+
+```bash
+# Preview only: no generated source file is written.
+zddv --project my_project coverage-template --show 10
+
+# Explicit opt-in after reviewing the source suggestions.
+zddv --project my_project coverage-template --materialize
+```
+
+The default materialized artifact is
+`.zddv/generated/coverage-tests.svt`. The `.svt` extension is mandatory so the
+artifact is not accidentally picked up by ordinary `*.sv` source globs. The file
+contains a package of empty task scaffolds with the explicit coverage objective and
+evidence recorded as comments. It contains no `initial` blocks, no DUT stimulus,
+no assertions, and no automatic execution. A human must add legal design-aware
+stimulus and self-checking behavior, then explicitly copy accepted code into the
+verification environment. Assertion synthesis remains disabled unless explicit
+property semantics are available; ZDDV does not invent assertion behavior.
 
 ### Assertion Result Markers
 
