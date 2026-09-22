@@ -179,8 +179,14 @@ against AxLEN, FIXED/INCR/WRAP burst geometry, WRAP length/alignment, and the 4K
 burst-boundary rule. Legal SLVERR/DECERR responses remain transaction outcomes
 rather than protocol violations.
 
-ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive
-exclusive/system-ordering semantics remain outside this first AXI4 contract.
+Optional AWUSER, WUSER, BUSER, ARUSER, and RUSER values are transported as opaque
+channel payload. When present, they participate in the same VALID/READY stability
+checks as the rest of their channel and are preserved in reconstructed transaction
+evidence. Their width and meaning remain implementation-defined, so ZDDV does not
+invent semantic legality rules for their bit values.
+
+ACE coherency, AXI5 additions, QoS policy, and exhaustive exclusive/system-ordering
+semantics remain outside this AXI4 contract.
 
 ## v0.5 AXI4 Waveform Extraction Contract
 
