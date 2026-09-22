@@ -9,6 +9,7 @@ import sys
 from zddv import __version__
 from zddv.ai_context import write_ai_rca_context
 from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
+from zddv.ai_response import export_reviewed_generation_proposal, ingest_ai_provider_response, review_validated_ai_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
@@ -474,6 +475,70 @@ def cmd_ai_provider_run(args) -> int:
     print("Automatic command execution: disabled")
     print(f"Request SHA-256: {result['request_sha256']}")
     print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_response_ingest(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_ai_provider_response(
+        project,
+        response_path=args.response,
+        context_path=args.context,
+        output=args.output,
+    )
+    payload = result["validated_payload"]
+    print(
+        f"AI RESPONSE VALIDATED: facts={len(payload['observed_facts'])} "
+        f"hypotheses={len(payload['hypotheses'])} "
+        f"checks={len(payload['next_checks'])} "
+        f"proposals={len(payload['generated_proposals'])}"
+    )
+    print("Status: VALIDATED_UNREVIEWED")
+    print("Human review: required")
+    print("Automatic staging: disabled")
+    print(f"Validated SHA-256: {result['validated_payload_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_response_review(args) -> int:
+    project = load_project(_project_arg(args))
+    result = review_validated_ai_response(
+        project,
+        args.path,
+        expected_sha256=args.expected_sha256,
+        approve_reviewed=args.approve_reviewed,
+        output_root=args.output_root,
+    )
+    print(
+        f"AI RESPONSE REVIEW: {result['status']} "
+        f"proposals={result['generated_proposals']}"
+    )
+    print(f"Review ID: {result['review_id']}")
+    print(f"Validated SHA-256: {result['validated_payload_sha256']}")
+    print("Automatic staging: disabled")
+    print(f"Review record: {result['path']}")
+    return 0
+
+
+def cmd_ai_proposal_export(args) -> int:
+    project = load_project(_project_arg(args))
+    result = export_reviewed_generation_proposal(
+        project,
+        args.review,
+        proposal_index=args.proposal,
+        output=args.output,
+    )
+    proposal = result["proposal"]
+    print(
+        f"AI PROPOSAL EXPORTED: kind={proposal['kind']} "
+        f"name={proposal['name']}"
+    )
+    print(f"Review ID: {result['review_id']}")
+    print(f"Proposal: {result['path']}")
+    print("Staged: no")
+    print("Applied: no")
+    print("Execution: disabled")
     return 0
 
 
@@ -2866,6 +2931,82 @@ def build_parser() -> argparse.ArgumentParser:
         help="Raw untrusted provider-response JSON path",
     )
     p_ai_provider_run.set_defaults(func=cmd_ai_provider_run)
+
+    p_ai_response_ingest = sub.add_parser(
+        "ai-response-ingest",
+        help=(
+            "Strictly validate raw provider JSON and evidence references "
+            "without approving it"
+        ),
+    )
+    p_ai_response_ingest.add_argument(
+        "--response",
+        required=True,
+        help="Raw ai_provider_response_raw JSON path",
+    )
+    p_ai_response_ingest.add_argument(
+        "--context",
+        required=True,
+        help="Exact ai-rca-context JSON used for the provider request",
+    )
+    p_ai_response_ingest.add_argument(
+        "--output",
+        default=".zddv/ai/validated-response.json",
+        help="Schema-validated, unreviewed AI response JSON path",
+    )
+    p_ai_response_ingest.set_defaults(func=cmd_ai_response_ingest)
+
+    p_ai_response_review = sub.add_parser(
+        "ai-response-review",
+        help="Record human approval of an exact schema-validated AI payload",
+    )
+    p_ai_response_review.add_argument(
+        "path",
+        help="Validated AI response JSON path",
+    )
+    p_ai_response_review.add_argument(
+        "--expected-sha256",
+        required=True,
+        help="Exact SHA-256 of the reviewed validated payload",
+    )
+    p_ai_response_review.add_argument(
+        "--approve-reviewed",
+        action="store_true",
+        help="Explicitly confirm human review of the exact validated payload",
+    )
+    p_ai_response_review.add_argument(
+        "--output-root",
+        default=".zddv/ai/reviews",
+        help="Review-record directory; must remain under .zddv/ai/reviews",
+    )
+    p_ai_response_review.set_defaults(func=cmd_ai_response_review)
+
+    p_ai_proposal_export = sub.add_parser(
+        "ai-proposal-export",
+        help=(
+            "Export one approved AI-generated assertion/test proposal for "
+            "the separate generated-stage flow"
+        ),
+    )
+    p_ai_proposal_export.add_argument(
+        "review",
+        help="Approved AI response review record",
+    )
+    p_ai_proposal_export.add_argument(
+        "--proposal",
+        type=int,
+        required=True,
+        help="1-based generated proposal index",
+    )
+    p_ai_proposal_export.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Optional proposal JSON path; must remain under "
+            ".zddv/ai/proposals"
+        ),
+    )
+    p_ai_proposal_export.set_defaults(func=cmd_ai_proposal_export)
 
     p_generated_stage = sub.add_parser(
         "generated-stage",
