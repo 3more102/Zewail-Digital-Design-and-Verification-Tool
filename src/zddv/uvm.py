@@ -29,6 +29,29 @@ _RUNNING_TEST_RE = re.compile(
     r"\bRunning\s+test\s+(?P<test>[A-Za-z_][A-Za-z0-9_$:.-]*)",
     re.IGNORECASE,
 )
+_PHASE_TRACE_RE = re.compile(
+    r"^Phase '(?P<phase>[^']+)' \(id=(?P<phase_id>\d+)\) (?P<detail>.*)$"
+)
+_PHASE_STATE_BY_REPORT_ID = {
+    "PH/TRC/SCHEDULED": "SCHEDULED",
+    "PH/TRC/STRT": "STARTED",
+    "PH_READY_TO_END": "READY_TO_END",
+    "PH_END": "ENDED",
+    "PH/TRC/DONE": "DONE",
+}
+_OBJECTION_DIRECT_RE = re.compile(
+    r"^Object (?P<object>\S+) (?P<action>raised|dropped) (?P<delta>\d+) "
+    r"(?P<objection>.+?) objection\(s\)"
+    r"(?: \((?P<description>.*?)\))?: "
+    r"count=(?P<count>\d+)\s+total=(?P<total>\d+)$"
+)
+_OBJECTION_PROPAGATED_RE = re.compile(
+    r"^Object (?P<object>\S+) (?P<verb>added|subtracted) (?P<delta>\d+) "
+    r"(?P<objection>.+?) objection\(s\) (?P<direction>to|from) its total "
+    r"\((?P<action>raised|dropped) from source object (?P<source>[^,)]+)"
+    r"(?:, (?P<description>.*?))?\): "
+    r"count=(?P<count>\d+)\s+total=(?P<total>\d+)$"
+)
 
 
 def _empty_counts() -> dict[str, int]:
@@ -85,6 +108,101 @@ def _parse_message(
         "source_location": source_location,
         "log_line": line_number,
         "raw": _strip_simulator_prefix(line),
+    }
+
+
+def _parse_phase_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    report_id = event.get("report_id")
+    state = _PHASE_STATE_BY_REPORT_ID.get(str(report_id))
+    message = event.get("message")
+    if state is None or not isinstance(message, str):
+        return None
+
+    match = _PHASE_TRACE_RE.match(message)
+    if not match:
+        return None
+
+    detail = match.group("detail").strip()
+    return {
+        "event_index": int(event["event_index"]),
+        "report_id": report_id,
+        "phase": match.group("phase"),
+        "phase_id": int(match.group("phase_id")),
+        "state": state,
+        "premature": state == "ENDED" and "PREMATURELY" in detail.upper(),
+        "time": event.get("time"),
+        "log_line": int(event["log_line"]),
+        "detail": detail,
+    }
+
+
+def _parse_objection_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    if event.get("report_id") != "OBJTN_TRC":
+        return None
+    message = event.get("message")
+    if not isinstance(message, str):
+        return None
+
+    match = _OBJECTION_DIRECT_RE.match(message)
+    propagated = False
+    if match is None:
+        match = _OBJECTION_PROPAGATED_RE.match(message)
+        propagated = match is not None
+    if match is None:
+        return None
+
+    groups = match.groupdict()
+    action = groups["action"]
+    return {
+        "event_index": int(event["event_index"]),
+        "action": action,
+        "object": groups["object"],
+        "source_object": groups.get("source") or groups["object"],
+        "objection": groups["objection"].strip(),
+        "delta": int(groups["delta"]),
+        "count": int(groups["count"]),
+        "total": int(groups["total"]),
+        "description": (groups.get("description") or "").strip() or None,
+        "propagated": propagated,
+        "time": event.get("time"),
+        "log_line": int(event["log_line"]),
+    }
+
+
+def _extract_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    phase_events: list[dict[str, Any]] = []
+    objection_events: list[dict[str, Any]] = []
+
+    for event in messages:
+        phase_event = _parse_phase_event(event)
+        if phase_event is not None:
+            phase_events.append(phase_event)
+
+        objection_event = _parse_objection_event(event)
+        if objection_event is not None:
+            objection_events.append(objection_event)
+
+    phases = sorted({event["phase"] for event in phase_events})
+    return {
+        "phase_trace_detected": any(
+            str(event.get("report_id") or "").startswith("PH")
+            for event in messages
+        ),
+        "objection_trace_detected": any(
+            event.get("report_id") == "OBJTN_TRC"
+            for event in messages
+        ),
+        "phase_event_count": len(phase_events),
+        "objection_event_count": len(objection_events),
+        "objection_raise_events": sum(
+            1 for event in objection_events if event["action"] == "raised"
+        ),
+        "objection_drop_events": sum(
+            1 for event in objection_events if event["action"] == "dropped"
+        ),
+        "phases": phases,
+        "phase_events": phase_events,
+        "objection_events": objection_events,
     }
 
 
@@ -145,6 +263,7 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
         if selected_counts["UVM_ERROR"] > 0 or selected_counts["UVM_FATAL"] > 0
         else "PASS"
     )
+    lifecycle = _extract_lifecycle(messages)
 
     return {
         "analysis": "uvm_log",
@@ -174,10 +293,12 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
             else None
         ),
         "messages": messages,
+        "lifecycle": lifecycle,
         "limitations": [
             "This parser normalizes standard UVM report messages and the final severity summary without depending on a simulator vendor.",
             "The final complete UVM Report Summary is authoritative for severity counts when present; otherwise visible report messages are counted.",
-            "Phase, objection, sequence, and transaction lifecycle reconstruction are not yet modeled.",
+            "Phase-state and objection activity are normalized when standard +UVM_PHASE_TRACE and +UVM_OBJECTION_TRACE report messages are present.",
+            "Sequence and transaction lifecycle reconstruction are not yet modeled because no equivalent portable trace stream is assumed.",
             "Simulator exit status remains separate evidence and can be correlated by a later run-aware ingestion layer.",
         ],
     }
