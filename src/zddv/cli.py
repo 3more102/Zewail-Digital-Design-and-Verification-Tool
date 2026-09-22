@@ -365,6 +365,10 @@ def cmd_coverage(args) -> int:
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
+    if result.get("details"):
+        print(f"Detailed coverage XML: {result['details']}")
+    elif result.get("details_capture") == "unavailable":
+        print("Detailed coverage XML: unavailable")
     metrics = result["metrics"]
     print(
         f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
