@@ -306,6 +306,15 @@ def test_parse_uvm_sequence_log_markers_preserves_line_provenance():
     assert result["events"][0]["metadata"]["log_line"] == 2
 
 
+def test_sequence_marker_log_line_provenance_overrides_payload_metadata():
+    event = _event("seq-spoof", "spoof_seq", "UVM_BODY")
+    event["metadata"] = {"log_line": 999, "tag": "payload"}
+    result = parse_uvm_sequence_log_text(_sequence_marker(event))
+
+    assert result["events"][0]["metadata"]["log_line"] == 1
+    assert result["events"][0]["metadata"]["tag"] == "payload"
+
+
 def test_parse_uvm_sequence_log_rejects_malformed_marker():
     try:
         parse_uvm_sequence_log_text('ZDDV_UVM_SEQUENCE {"sequence_id":')
