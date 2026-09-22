@@ -22,6 +22,7 @@ from zddv.coverage import (
     write_coverage_hole_report,
     write_questa_statement_hole_report,
 )
+from zddv.coverage_suggestions import write_coverage_test_suggestions
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -1164,6 +1165,38 @@ def cmd_coverage_holes(args) -> int:
     print(f"Report: {report['path']}")
     return 0
 
+
+
+def cmd_coverage_suggest(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    result = write_coverage_test_suggestions(
+        source,
+        output,
+        limit=args.limit,
+    )
+    print(
+        "COVERAGE TEST SUGGESTIONS: "
+        f"{result['suggestion_count']} from "
+        f"{result['source_reported_holes']} reported hole(s)"
+    )
+    for suggestion in result["suggestions"][: max(0, args.show)]:
+        print(
+            f"{suggestion['rank']:>3} "
+            f"{suggestion['coverage_type']:<12} "
+            f"{suggestion['hole_name']}"
+        )
+        print(f"    {suggestion['intent']}")
+    print(f"Report: {result['path']}")
+    return 0
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
@@ -2785,6 +2818,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+
+    p_coverage_suggest = sub.add_parser(
+        "coverage-suggest",
+        help="Suggest reviewable test intents from normalized coverage holes",
+    )
+    p_coverage_suggest.add_argument(
+        "--input",
+        default=".zddv/coverage/holes.json",
+        help="Coverage-hole JSON report; run coverage-holes first",
+    )
+    p_coverage_suggest.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of hole-derived suggestions to write",
+    )
+    p_coverage_suggest.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of suggestions to print in the terminal",
+    )
+    p_coverage_suggest.add_argument(
+        "--output",
+        default=".zddv/coverage/test-suggestions.json",
+        help="Reviewable suggestion JSON report path",
+    )
+    p_coverage_suggest.set_defaults(func=cmd_coverage_suggest)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
