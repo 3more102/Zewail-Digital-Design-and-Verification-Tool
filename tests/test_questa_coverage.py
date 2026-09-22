@@ -6,12 +6,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, main
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    build_coverage_hole_report,
     merge_questa_coverage,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
+    parse_questa_statement_coverage_xml,
+    write_questa_statement_hole_report,
 )
 from zddv.storage import (
     list_coverage_snapshots,
@@ -334,3 +337,140 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
+
+def test_parse_questa_statement_xml_preserves_instance_source_location(tmp_path: Path):
+    xml = tmp_path / "details.xml"
+    xml.write_text(
+        """<?xml version="1.0"?>
+<coverage_report>
+  <code_coverage_report lines="1" byInstance="1">
+    <instanceData path="/tb/a" du="a">
+      <sourceTable files="1"><fileMap fn="0" path="rtl/a.sv" /></sourceTable>
+      <stmt fn="0" ln="5" st="1" hits="0" />
+      <stmt fn="0" ln="6" st="1" hits="3" />
+    </instanceData>
+    <instanceData path="/tb/b" du="b">
+      <sourceTable files="1"><fileMap fn="0" path="rtl/b.sv" /></sourceTable>
+      <stmt fn="0" ln="7" st="2" hits="0" />
+    </instanceData>
+  </code_coverage_report>
+</coverage_report>
+""",
+        encoding="utf-8",
+    )
+
+    points = parse_questa_statement_coverage_xml(xml)
+
+    assert [point["name"] for point in points] == [
+        "/tb/a|rtl/a.sv:5:stmt1",
+        "/tb/a|rtl/a.sv:6:stmt1",
+        "/tb/b|rtl/b.sv:7:stmt2",
+    ]
+    holes = build_coverage_hole_report(points, point_type="statement")
+    assert holes["total_holes"] == 2
+    assert holes["holes"][0]["file"] == "rtl/a.sv"
+    assert holes["holes"][0]["line"] == 5
+    assert holes["holes"][1]["file"] == "rtl/b.sv"
+    assert holes["holes"][1]["statement"] == 2
+
+
+def test_parse_questa_statement_xml_handles_namespaced_legacy_shape(tmp_path: Path):
+    xml = tmp_path / "details.xml"
+    xml.write_text(
+        """<?xml version="1.0"?>
+<report xmlns="http://model.com/coverage" lines="1" byInstance="1">
+  <instance path="/tb/dut" du="dut">
+    <source_table files="1"><file fn="0" path="rtl/dut.sv"></file></source_table>
+    <statement_data><stmt fn="0" ln="39" st="1" hits="0"></stmt></statement_data>
+  </instance>
+</report>
+""",
+        encoding="utf-8",
+    )
+
+    assert parse_questa_statement_coverage_xml(xml) == [
+        {
+            "type": "statement",
+            "name": "/tb/dut|rtl/dut.sv:39:stmt1",
+            "count": 0,
+            "hit": False,
+            "scope": "/tb/dut",
+            "file": "rtl/dut.sv",
+            "line": 39,
+            "statement": 1,
+        }
+    ]
+
+
+def test_write_questa_statement_holes_reuses_retained_detailed_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    out_dir = project.root / ".zddv" / "coverage"
+    out_dir.mkdir(parents=True)
+    (out_dir / "coverage.ucdb").write_text("merged\n", encoding="utf-8")
+    (out_dir / "zeros.txt").write_text("zero evidence\n", encoding="utf-8")
+    (out_dir / "details.xml").write_text(
+        """<coverage_report><code_coverage_report>
+<instanceData path="/tb/dut"><sourceTable><fileMap fn="0" path="rtl/dut.sv"/></sourceTable>
+<stmt fn="0" ln="20" st="1" hits="0"/><stmt fn="0" ln="21" st="1" hits="4"/>
+</instanceData></code_coverage_report></coverage_report>""",
+        encoding="utf-8",
+    )
+
+    output = out_dir / "holes.json"
+    report = write_questa_statement_hole_report(project, output, limit=10)
+
+    assert report["total_holes"] == 1
+    assert report["holes"][0]["name"] == "/tb/dut|rtl/dut.sv:20:stmt1"
+    assert report["xml"] == str((out_dir / "details.xml").resolve())
+    assert report["zeros"] == str((out_dir / "zeros.txt").resolve())
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["holes"][0]["line"] == 20
+
+
+def test_coverage_holes_cli_routes_questa_statement_evidence(
+    tmp_path: Path, monkeypatch, capsys
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    monkeypatch.setattr(
+        "zddv.cli.write_questa_statement_hole_report",
+        lambda loaded, output, *, limit: {
+            "filter_type": "statement",
+            "total_holes": 1,
+            "reported_holes": 1,
+            "by_type": {"statement": 1},
+            "holes": [{"type": "statement", "name": "rtl/dut.sv:20:stmt1", "count": 0}],
+            "xml": "/tmp/details.xml",
+            "zeros": "/tmp/zeros.txt",
+            "path": str(output),
+        },
+    )
+
+    rc = main([
+        "--project", str(project.root), "coverage-holes",
+        "--type", "statement", "--limit", "7", "--show", "2",
+    ])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (statement): 1 unhit point(s)" in output
+    assert "Detailed coverage XML: /tmp/details.xml" in output
+    assert "Zero-detail evidence: /tmp/zeros.txt" in output
+
+
+def test_coverage_holes_cli_rejects_nonstatement_questa_type(
+    tmp_path: Path, monkeypatch, capsys
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = main([
+        "--project", str(project.root), "coverage-holes", "--type", "toggle",
+    ])
+
+    assert rc == 2
+    assert (
+        "Questa item-level coverage currently supports --type statement only."
+        in capsys.readouterr().err
+    )
+
