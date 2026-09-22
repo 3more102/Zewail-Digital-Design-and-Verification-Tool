@@ -299,6 +299,38 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def _capture_questa_details_xml(
+    tool: str,
+    merged_path: Path,
+    out_dir: Path,
+    cwd: Path,
+) -> dict:
+    """Retain Questa's documented XML coverage report as raw evidence."""
+    details_path = out_dir / "details.xml"
+    if details_path.exists():
+        details_path.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-xml",
+        "-output",
+        str(details_path),
+        str(merged_path),
+    ]
+    result = _run(command, cwd)
+    captured = result.returncode == 0 and details_path.exists()
+    if not captured and details_path.exists():
+        details_path.unlink()
+
+    return {
+        "status": "xml" if captured else "unavailable",
+        "path": str(details_path) if captured else None,
+        "command": command,
+        "output": result.stdout or "",
+    }
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -375,6 +407,13 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             )
             functional_snapshot_id = functional_record["snapshot_id"]
 
+    details = _capture_questa_details_xml(
+        tool,
+        merged_path,
+        out_dir,
+        project.root,
+    )
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -393,7 +432,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "details": details["path"],
+        "details_capture": details["status"],
+        "details_command": details["command"],
     }
+    if details["status"] != "xml":
+        payload["details_error"] = details["output"].strip()
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     record_coverage_snapshot(
@@ -415,6 +459,13 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "details": details["path"],
+        "details_capture": details["status"],
+        "details_error": (
+            details["output"].strip()
+            if details["status"] != "xml"
+            else None
+        ),
     }
 
 
