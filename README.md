@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM result ingestion plus native Questa build/run orchestration on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with standard phase/objection lifecycle reconstruction plus native Questa build/run orchestration**
 
 ## What Works Today
 
@@ -27,7 +27,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
-- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
+- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` lifecycle reconstruction, SQLite persistence, run correlation, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -504,6 +504,32 @@ zddv --project my_project async-fifo-analyze examples/async_fifo_cdc_trace.json
 
 The default report is `.zddv/cdc/async-fifo/latest.json`.
 
+
+### UVM Report and Lifecycle Ingestion
+
+`zddv uvm-analyze <log>` normalizes standard UVM report messages and the final
+severity summary. `--run <run-id>` can resolve a recorded simulation log and keeps
+the UVM snapshot linked to the simulator run while preserving the UVM severity
+verdict and simulator exit status as separate evidence.
+
+When a test is run with UVM's portable tracing switches `+UVM_PHASE_TRACE` and
+`+UVM_OBJECTION_TRACE`, the same ingestion pass reconstructs phase-state evidence
+and objection raise/drop activity from standard UVM report IDs. Phase events cover
+SCHEDULED, STARTED, READY_TO_END, ENDED, and DONE transitions emitted by the UVM
+reference implementation. Objection events retain source object, objection name,
+delta, source/total counts, description, propagation flag, log line, and timestamp.
+
+Report messages, phase events, objection events, and optional run correlation are
+persisted under one UVM snapshot identity in SQLite.
+
+```bash
+zddv --project my_project uvm-analyze simulation.log --source uvm-standard-trace
+zddv --project my_project uvm-analyze --run <run-id>
+zddv --project my_project uvm-history --limit 20
+```
+
+Sequence and transaction lifecycle reconstruction remain separate work because ZDDV
+does not assume a non-standard portable sequence trace stream.
 
 ### Assertion Result Markers
 
