@@ -1810,7 +1810,10 @@ def _parse_imc_grade(token: str) -> float | None:
         return None
     if not value.endswith("%"):
         raise ValueError(f"Unexpected IMC grade token: {token}")
-    return float(value[:-1])
+    grade = float(value[:-1])
+    if not 0.0 <= grade <= 100.0:
+        raise ValueError(f"IMC grade is outside 0..100: {token}")
+    return grade
 
 
 def _parse_imc_count(token: str | None) -> tuple[dict | None, dict | None]:
@@ -1835,6 +1838,10 @@ def _parse_imc_count(token: str | None) -> tuple[dict | None, dict | None]:
         return None, evidence
 
     covered, total = parts
+    if covered > total:
+        raise ValueError(
+            f"IMC covered count exceeds total: {covered}/{total}"
+        )
     normalized = {
         "covered": covered,
         "total": total,
@@ -1985,7 +1992,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 ),
                 f"load -run {_imc_quote_path(merged_path)}",
                 (
-                    'report -summary -inst "*..." '
+                    "report -summary -cumulative on -inst -local off "
                     f"-out {_imc_quote_path(summary_path)}"
                 ),
                 "exit",
