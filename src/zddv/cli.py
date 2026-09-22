@@ -859,44 +859,6 @@ def cmd_uvm_arbitration_analyze(args) -> int:
     print(
         f"UVM ARBITRATION {result['status']}: "
         f"mode={result['mode']} "
-        f"requests={summary['requests']} grants={summary['grants']} "
-        f"pending={summary['pending']} violations={summary['violations']}"
-    )
-    print(
-        f"Fairness evidence: max_bypass={summary['max_bypass_observed']} "
-        f"limit={summary['max_bypass_limit']}"
-    )
-    if result.get("run_id"):
-        print(
-            f"Run: {result['run_id']} "
-            f"(simulator-status={result['run_status']}, "
-            f"returncode={result['run_returncode']})"
-        )
-    for violation in result["violations"][: args.show]:
-        print(
-            f"[{violation['code']}] event={violation['event_index']} "
-            f"request={violation['request_id']} {violation['message']}"
-        )
-    if len(result["violations"]) > args.show:
-        print(f"... {len(result['violations']) - args.show} more violation(s)")
-    print(f"Report: {result['report_path']}")
-    return 0 if result["status"] == "PASS" else 1
-
-
-def cmd_uvm_arbitration_analyze(args) -> int:
-    project = load_project(_project_arg(args))
-    result = analyze_uvm_arbitration_file(
-        project,
-        args.path,
-        source=args.source,
-        output=args.output,
-        run_id=args.run_id,
-        max_bypass=args.max_bypass,
-    )
-    summary = result["summary"]
-    print(
-        f"UVM ARBITRATION {result['status']}: "
-        f"mode={result['mode']} "
         f"{summary['requests']} request(s), "
         f"{summary['grants']} grant(s), "
         f"{summary['violations']} violation(s)"
@@ -1861,6 +1823,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_uvm_arb = sub.add_parser(
         "uvm-arb-analyze",
+        aliases=["uvm-arbitration-analyze"],
         help="Analyze explicit UVM sequencer arbitration REQUEST/GRANT evidence",
     )
     p_uvm_arb.add_argument(
@@ -1896,44 +1859,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of arbitration/fairness violations to print",
     )
     p_uvm_arb.set_defaults(func=cmd_uvm_arbitration_analyze)
-
-    p_uvm_arbitration = sub.add_parser(
-        "uvm-arbitration-analyze",
-        help="Analyze normalized UVM sequencer arbitration REQUEST/GRANT evidence",
-    )
-    p_uvm_arbitration.add_argument(
-        "path",
-        help="Normalized UVM arbitration event JSON file",
-    )
-    p_uvm_arbitration.add_argument(
-        "--run",
-        dest="run_id",
-        default=None,
-        help="Optional recorded ZDDV run ID to correlate with this arbitration snapshot",
-    )
-    p_uvm_arbitration.add_argument(
-        "--source",
-        default=None,
-        help="Optional adapter/source label overriding the JSON source",
-    )
-    p_uvm_arbitration.add_argument(
-        "--output",
-        default=".zddv/uvm/arbitration/latest.json",
-        help="Normalized UVM arbitration JSON report path",
-    )
-    p_uvm_arbitration.add_argument(
-        "--max-bypass",
-        type=int,
-        default=None,
-        help="Optional ZDDV fairness-policy limit for how many grants may bypass a pending request",
-    )
-    p_uvm_arbitration.add_argument(
-        "--show",
-        type=int,
-        default=20,
-        help="Maximum number of arbitration violations to print",
-    )
-    p_uvm_arbitration.set_defaults(func=cmd_uvm_arbitration_analyze)
 
     p_uvm_arbitration_history = sub.add_parser(
         "uvm-arbitration-history",
