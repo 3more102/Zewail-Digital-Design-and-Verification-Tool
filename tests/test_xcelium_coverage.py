@@ -89,6 +89,17 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
     assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
     assert result["metrics"]["by_metric"]["overall_covered"] == pytest.approx(82.50)
+    assert result["metrics"]["by_metric"]["code_average"] == pytest.approx(80.0)
+    assert result["metrics"]["by_metric"]["code_covered"] == pytest.approx(75.0)
+    assert "fsm_average" not in result["metrics"]["by_metric"]
+    assert result["metrics"]["by_metric"]["functional_covered"] == pytest.approx(90.0)
+    assert result["metrics"]["by_metric_counts"]["overall_covered"] == {
+        "covered": 33,
+        "total": 40,
+        "hit_rate": pytest.approx(82.5),
+    }
+    assert result["metrics"]["by_metric_counts"]["code_covered"]["covered"] == 18
+    assert result["metrics"]["by_metric_counts"]["functional_covered"]["total"] == 10
     assert Path(result["merged"]).name == "xcelium-imc-merged"
     assert Path(result["summary"]).name == "summary.txt"
 
@@ -101,6 +112,10 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert second.as_posix() in script
     assert "load -run" in script
     assert 'report -summary -inst "*..."' in script
+    assert "-metrics all" in script
+    assert "-cumulative on" in script
+    assert "-showempty on" in script
+    assert "-local off" in script
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
@@ -118,6 +133,9 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
     assert snapshots[0]["score"] == pytest.approx(82.50)
     assert snapshots[0]["by_metric"]["overall_average"] == pytest.approx(86.25)
+    assert snapshots[0]["by_metric"]["code_covered"] == pytest.approx(75.0)
+    assert snapshots[0]["by_metric_counts"]["overall_covered"]["covered"] == 33
+    assert snapshots[0]["by_metric_counts"]["functional_covered"]["total"] == 10
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
@@ -164,6 +182,29 @@ def test_merge_xcelium_coverage_requires_imc(tmp_path: Path, monkeypatch):
     with pytest.raises(RuntimeError, match="Cadence IMC was not found"):
         merge_xcelium_coverage(project)
 
+
+
+def test_parse_xcelium_imc_summary_preserves_reported_counts():
+    report = """Legend: Metric* means cumulative
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+-------------------------------------------------------------------------------------------------------------------------------
+dut 91.25% 89.00% (89/100) 80.00% 75.00% (75/100) n/a n/a 100.00% 100.00% (8/8)
+"""
+
+    metrics = parse_xcelium_imc_summary(report)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(89.0)
+    assert metrics["by_metric"]["overall_average"] == pytest.approx(91.25)
+    assert metrics["by_metric"]["overall_covered"] == pytest.approx(89.0)
+    assert metrics["by_metric"]["code_average"] == pytest.approx(80.0)
+    assert metrics["by_metric"]["functional_covered"] == pytest.approx(100.0)
+    assert "fsm_covered" not in metrics["by_metric"]
+    assert metrics["by_metric_counts"]["overall_covered"] == {
+        "covered": 89,
+        "total": 100,
+        "hit_rate": pytest.approx(89.0),
+    }
+    assert metrics["by_metric_counts"]["functional_covered"]["total"] == 8
 
 
 def test_parse_xcelium_imc_summary_requires_documented_header():
