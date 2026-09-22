@@ -11,7 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
-- Formal adapter API with normalized check/property/result contracts (execution backends pending)
+- Formal adapter API with normalized check/property/result contracts, normalized JSON evidence import, SQLite snapshot/property persistence, and filtered formal-history CLI (execution backends pending)
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -155,6 +155,8 @@ zddv --project my_project failures --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
+zddv --project my_project formal-import formal-result.json
+zddv --project my_project formal-history --status FAIL --mode bmc
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
 zddv --project my_project assertions --limit 100
@@ -700,7 +702,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
 - [x] Xcelium Overall Average/Covered metric normalization into percentage-native coverage history
-- [ ] Formal adapter API
+- [x] Formal adapter API
+- [x] Formal normalized result persistence/history
+- [ ] Tool-specific formal execution/result ingestion
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
