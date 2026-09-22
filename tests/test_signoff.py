@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from zddv.cli import main
@@ -39,12 +40,17 @@ def _run_record(
     }
 
 
-def _coverage_snapshot(percent: float) -> dict:
+def _coverage_snapshot(
+    percent: float,
+    *,
+    snapshot_id: str = "cov-signoff",
+    created_at: str = "2026-09-22T20:10:00+00:00",
+) -> dict:
     total = 100
     hit = int(percent)
     return {
-        "snapshot_id": "cov-signoff",
-        "created_at": "2026-09-22T20:10:00+00:00",
+        "snapshot_id": snapshot_id,
+        "created_at": created_at,
         "project": "demo",
         "simulator": "verilator",
         "input_count": 1,
@@ -124,6 +130,127 @@ def test_signoff_coverage_requirement_and_threshold(tmp_path: Path):
     assert blocked_checks["coverage"]["status"] == "FAIL"
     assert ready["summary"]["review_state"] == "READY_FOR_REVIEW"
     assert ready_checks["coverage"]["status"] == "PASS"
+
+
+def test_signoff_pinned_runs_are_exact_and_missing_pin_blocks(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-pass", "PASS", seed=1))
+    record_run(project, _run_record("run-fail", "FAIL", seed=2))
+
+    default = build_verification_signoff_bundle(project, run_limit=10)
+    pinned = build_verification_signoff_bundle(
+        project,
+        run_ids=["run-pass"],
+    )
+    missing = build_verification_signoff_bundle(
+        project,
+        run_ids=["run-pass", "run-missing"],
+    )
+
+    assert default["summary"]["review_state"] == "BLOCKED"
+    assert pinned["summary"]["review_state"] == "READY_FOR_REVIEW"
+    assert pinned["policy"]["run_selection"] == {
+        "mode": "pinned",
+        "run_ids": ["run-pass"],
+    }
+    assert [row["run_id"] for row in pinned["evidence"]["runs"]] == ["run-pass"]
+
+    missing_check = {
+        item["name"]: item for item in missing["checks"]
+    }["simulation"]
+    assert missing["summary"]["review_state"] == "BLOCKED"
+    assert missing_check["status"] == "MISSING"
+    assert missing_check["details"]["missing_run_ids"] == ["run-missing"]
+
+
+def test_signoff_pins_exact_coverage_snapshot_instead_of_latest(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-pass", "PASS"))
+    record_coverage_snapshot(
+        project,
+        _coverage_snapshot(
+            95.0,
+            snapshot_id="cov-release",
+            created_at="2026-09-22T20:10:00+00:00",
+        ),
+    )
+    record_coverage_snapshot(
+        project,
+        _coverage_snapshot(
+            50.0,
+            snapshot_id="cov-latest",
+            created_at="2026-09-22T20:20:00+00:00",
+        ),
+    )
+
+    latest = build_verification_signoff_bundle(project, min_coverage=90.0)
+    pinned = build_verification_signoff_bundle(
+        project,
+        min_coverage=90.0,
+        coverage_snapshot_id="cov-release",
+    )
+    missing = build_verification_signoff_bundle(
+        project,
+        coverage_snapshot_id="cov-missing",
+    )
+
+    assert latest["summary"]["review_state"] == "BLOCKED"
+    assert pinned["summary"]["review_state"] == "READY_FOR_REVIEW"
+    assert pinned["evidence"]["coverage"]["snapshot_id"] == "cov-release"
+    assert pinned["policy"]["coverage_snapshot_id"] == "cov-release"
+
+    missing_check = {
+        item["name"]: item for item in missing["checks"]
+    }["coverage"]
+    assert missing["summary"]["review_state"] == "BLOCKED"
+    assert missing_check["status"] == "MISSING"
+    assert missing_check["details"]["requested_snapshot_id"] == "cov-missing"
+
+
+def test_signoff_pinned_missing_formal_and_uvm_are_required(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-pass", "PASS"))
+
+    bundle = build_verification_signoff_bundle(
+        project,
+        formal_snapshot_id="formal-release",
+        uvm_snapshot_id="uvm-release",
+    )
+    checks = {item["name"]: item for item in bundle["checks"]}
+
+    assert bundle["summary"]["review_state"] == "BLOCKED"
+    assert checks["formal"]["status"] == "MISSING"
+    assert checks["formal"]["blocking"] is True
+    assert checks["uvm"]["status"] == "MISSING"
+    assert checks["uvm"]["blocking"] is True
+
+
+def test_signoff_cli_records_pinned_selection_policy(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-pass", "PASS"))
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "signoff",
+            "--run-id",
+            "run-pass",
+            "--output",
+            ".zddv/signoff/pinned.json",
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()
+    payload = json.loads(
+        (project.root / ".zddv" / "signoff" / "pinned.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["policy"]["run_selection"] == {
+        "mode": "pinned",
+        "run_ids": ["run-pass"],
+    }
 
 
 def test_signoff_writer_and_cli(tmp_path: Path, capsys):
