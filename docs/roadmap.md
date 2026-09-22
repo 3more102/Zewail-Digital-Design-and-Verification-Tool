@@ -134,7 +134,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Formal adapter API.
 - [ ] Bounded checks.
 - [ ] Property/cover result persistence and tool-specific ingestion.
-- [ ] Counterexample artifact model.
+- [x] Counterexample artifact model.
 - [ ] Formal coverage.
 
 ## v0.8 — Intelligent Debug
