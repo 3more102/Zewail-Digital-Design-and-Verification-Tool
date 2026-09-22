@@ -25,12 +25,13 @@ def _event(
     sequence_id: str,
     priority: int = 100,
     time: str | None = None,
+    sequencer: str = "uvm_test_top.env.seqr",
 ) -> dict[str, object]:
     return {
         "request_id": request_id,
         "event": event,
         "sequence_id": sequence_id,
-        "sequencer": "uvm_test_top.env.seqr",
+        "sequencer": sequencer,
         "priority": priority,
         "time": time,
     }
@@ -129,6 +130,27 @@ def test_random_mode_is_observational_without_fairness_policy():
     assert result["summary"]["pending"] == 1
 
 
+def test_arbitration_queues_and_bypass_are_scoped_per_sequencer():
+    result = parse_uvm_arbitration_data(
+        {
+            "mode": "UVM_SEQ_ARB_FIFO",
+            "max_bypass": 0,
+            "events": [
+                _event("a1", "REQUEST", sequence_id="seq-a", sequencer="env.seqr_a"),
+                _event("b1", "REQUEST", sequence_id="seq-b", sequencer="env.seqr_b"),
+                _event("b1", "GRANT", sequence_id="seq-b", sequencer="env.seqr_b"),
+                _event("a1", "GRANT", sequence_id="seq-a", sequencer="env.seqr_a"),
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["max_bypass_observed"] == 0
+    assert result["decisions"][0]["sequencer"] == "env.seqr_b"
+    assert result["decisions"][0]["pending_request_ids"] == ["b1"]
+    assert result["decisions"][1]["pending_request_ids"] == ["a1"]
+
+
 def test_optional_fairness_policy_flags_excessive_bypass():
     result = parse_uvm_arbitration_data(
         {
@@ -208,6 +230,7 @@ def test_analyze_writes_snapshot_and_latest_report(tmp_path: Path):
     decisions = list_uvm_arbitration_decisions(project, result["snapshot_id"])
     assert decisions[0]["expected_request_id"] == "r1"
     assert decisions[0]["eligible_request_ids"] == ["r1"]
+    assert decisions[0]["sequencer"] == "uvm_test_top.env.seqr"
     assert list_uvm_arbitration_violations(project, result["snapshot_id"]) == []
 
 def _record_run(project, run_id: str) -> None:
