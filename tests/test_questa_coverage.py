@@ -8,7 +8,9 @@ import pytest
 
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    load_normalized_coverage_points,
     merge_questa_coverage,
+    parse_questa_code_coverage_xml,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -29,6 +31,22 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Statements                    4920      4920         0         1   100.00%
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
+"""
+
+QUESTA_CODE_XML = """<?xml version="1.0"?>
+<coverage_report>
+  <code_coverage_report lines="1" byInstance="1">
+    <instanceData path="/tb/dut" du="dut">
+      <sourceTable files="1">
+        <fileMap fn="0" path="rtl/dut.sv" />
+      </sourceTable>
+      <statement_data>
+        <stmt fn="0" ln="10" st="1" hits="3" />
+        <stmt fn="0" ln="11" st="1" hits="0" />
+      </statement_data>
+    </instanceData>
+  </code_coverage_report>
+</coverage_report>
 """
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
@@ -65,6 +83,24 @@ def _project(tmp_path: Path) -> ProjectConfig:
         waveform=False,
         coverage=True,
     )
+
+
+def test_parse_questa_code_coverage_xml_uses_explicit_item_hits(tmp_path: Path):
+    report = tmp_path / "code.xml"
+    report.write_text(QUESTA_CODE_XML, encoding="utf-8")
+
+    points = parse_questa_code_coverage_xml(report)
+
+    assert len(points) == 2
+    assert [point["type"] for point in points] == ["statement", "statement"]
+    assert points[0]["count"] == 3
+    assert points[0]["hit"] is True
+    assert points[0]["metadata"]["scope"] == "/tb/dut"
+    assert points[0]["metadata"]["file"] == "rtl/dut.sv"
+    assert points[0]["metadata"]["line"] == 10
+    assert points[1]["count"] == 0
+    assert points[1]["hit"] is False
+    assert "rtl/dut.sv::line:11::statement:1" in points[1]["name"]
 
 
 def test_parse_questa_summary_preserves_tool_score_separately():
@@ -150,6 +186,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:3] == ["report", "-xml"]:
+            out_path = Path(command[command.index("-output") + 1])
+            out_path.write_text(QUESTA_CODE_XML, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         raise AssertionError(f"unexpected command: {command}")
@@ -173,6 +213,17 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert commands[2] == [
         "/opt/questa/bin/vcover",
         "report",
+        "-xml",
+        "-details",
+        "-zeros",
+        "-codeAll",
+        "-output",
+        result["code_report"],
+        result["merged"],
+    ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
         "-cvg",
         "-details",
         result["merged"],
@@ -188,6 +239,14 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["by_type"]["expression"]["hit"] == 1143
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
+    assert payload["code_capture"] == "xml"
+    assert payload["code_points"] == 2
+    assert payload["points"] == result["points_path"]
+    assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_XML
+
+    code_points = load_normalized_coverage_points(project)
+    assert len(code_points) == 2
+    assert sum(not point["hit"] for point in code_points) == 1
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -216,3 +275,58 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert len(holes) == 1
     assert holes[0]["coverpoint"] == "APB_cg::type_cp"
     assert holes[0]["bin_name"] == "write"
+
+
+
+def test_merge_questa_coverage_keeps_summary_when_code_xml_is_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    run_dir = (project.root / project.run_dir / "run-a").resolve()
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.ucdb").write_text("run fixture\n", encoding="utf-8")
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True)
+    stale_points = out_dir / "points.json"
+    stale_points.write_text(
+        '[{"name":"stale","count":0,"hit":false,"type":"statement"}]\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/questa/bin/vcover" if name == "vcover" else None,
+    )
+
+    def fake_run(command, cwd):
+        if command[1] == "merge":
+            out_path = Path(command[command.index("-out") + 1])
+            out_path.write_text("merged fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge complete\n")
+        if command[1:3] == ["report", "-summary"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:3] == ["report", "-xml"]:
+            return SimpleNamespace(
+                returncode=1,
+                stdout="detailed XML unavailable\n",
+            )
+        if command[1:4] == ["report", "-cvg", "-details"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_questa_coverage(project)
+
+    assert result["metrics"]["total_points"] == 82535
+    assert result["code_capture"] == "unavailable"
+    assert result["code_points"] == 0
+    assert result["points_path"] is None
+    assert result["code_error"] == "detailed XML unavailable"
+    assert not stale_points.exists()
+    assert result["functional_bins"] == 3
+
+    with pytest.raises(RuntimeError, match="Normalized code-coverage points"):
+        load_normalized_coverage_points(project)
