@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, and automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and documented XML statement/source normalization for statement-level `coverage-holes`; branch/condition/expression/toggle/FSM item holes remain pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -94,9 +94,13 @@ coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
-inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+inspect those normalized bins. ZDDV also requests the documented by-instance XML
+statement report (`vcover report -xml -code s -setdefault byinstance`) and, when
+available, normalizes source file, line, statement index, and hit count into
+`.zddv/coverage/statement-points.json`; `zddv coverage-holes --type statement`
+can query those holes. Questa's weighted total coverage remains a separate
+simulator-reported value. Item-level branch/condition/expression/toggle/FSM
+normalization remains pending.
 
 ## Current CLI
 
