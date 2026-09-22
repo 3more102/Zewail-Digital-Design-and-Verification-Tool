@@ -271,11 +271,19 @@ def _ensure_helper(
     *,
     relative_path: str,
     writer,
+    required_tokens: tuple[str, ...],
 ) -> tuple[Path, bool]:
     destination = (project.root / relative_path).resolve()
     if destination.exists():
         if not destination.is_file():
             raise ValueError(f"Expected instrumentation helper file: {destination}")
+        text = destination.read_text(encoding="utf-8", errors="replace")
+        missing = [token for token in required_tokens if token not in text]
+        if missing:
+            raise ValueError(
+                f"Existing instrumentation helper {destination} is incompatible; "
+                f"missing required API token(s): {', '.join(missing)}"
+            )
         return destination, False
 
     writer(
@@ -328,11 +336,19 @@ def write_uvm_auto_instrumentation(
         project,
         relative_path=DEFAULT_UVM_SEQUENCE_HELPER,
         writer=write_uvm_sequence_instrumentation,
+        required_tokens=(
+            "package zddv_uvm_sequence_trace_pkg;",
+            "task automatic zddv_uvm_sequence_emit",
+        ),
     )
     item_path, item_created = _ensure_helper(
         project,
         relative_path=DEFAULT_UVM_ITEM_HELPER,
         writer=write_uvm_item_instrumentation,
+        required_tokens=(
+            "package zddv_uvm_item_trace_pkg;",
+            "task automatic zddv_uvm_item_emit",
+        ),
     )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -385,6 +401,7 @@ def write_uvm_auto_instrumentation(
         "limitations": [
             "A user sequence must explicitly derive from zddv_instrumented_sequence.",
             "Derived sequences implement zddv_body(); overriding body() bypasses the BODY/ENDED wrapper.",
+            "Overriding start/pre_start/pre_body/post_body/post_start without calling super bypasses the corresponding adapter markers.",
             "Automatic item markers cover inherited start_item/finish_item/get_response calls.",
             "Direct wait_for_grant/send_request flows and response_handler callbacks require explicit instrumentation.",
             "No hidden sequencer queues, arbitration policy, lock/grab state, or vendor transcript semantics are inferred.",
