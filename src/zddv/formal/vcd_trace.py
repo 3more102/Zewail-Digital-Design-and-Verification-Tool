@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 import re
 from typing import Any, Iterable
@@ -9,7 +8,7 @@ from typing import Any, Iterable
 from zddv.config import ProjectConfig
 from zddv.waveform import parse_vcd_header
 
-from .counterexample import normalize_formal_counterexample
+from .counterexample import normalize_formal_counterexample, persist_normalized_formal_trace
 
 
 _SCALAR_CHANGE_RE = re.compile(r"^(?P<value>[01xXzZ])(?P<id>\S+)$")
@@ -257,21 +256,10 @@ def ingest_formal_vcd_trace(
         max_steps=max_steps,
     )
 
-    destination = Path(output)
-    if not destination.is_absolute():
-        destination = project.root / destination
-    destination = destination.resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-
-    record = {
-        **normalized,
-        "project": project.name,
-        "input_path": str(input_path),
-        "input_sha256": _sha256_file(input_path),
-        "normalized_path": str(destination),
-    }
-    destination.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    return persist_normalized_formal_trace(
+        project,
+        normalized,
+        input_path=input_path,
+        input_sha256=_sha256_file(input_path),
+        output=output,
     )
-    return record
