@@ -64,12 +64,23 @@ trace evidence do not make formal-result persistence fail. They remain explicit 
 evidence with a conservative normalization status instead of receiving invented
 counterexample/witness semantics.
 
+## Formal trace cross-probing
+
+`zddv formal-trace-crossprobe <trace.json>` maps normalized formal trace signals through
+the existing ZDDV source hierarchy and structural connectivity indexes. Full hierarchical
+signal paths are used directly; repeated `--signal` selectors may use exact paths or
+unambiguous short names. A successful match reports the RTL declaration plus known
+source-level drivers and loads. `--max-signals` explicitly bounds one report.
+
+This is source-level debug correlation, not elaboration/synthesis equivalence. Generated
+hierarchy, aliases, optimized signals, and vendor-native debug mappings remain outside
+the current claim.
+
 ## Current boundary
 
 The artifact-manifest layer itself remains a classifier/fingerprinter. ZDDV does not yet:
 
 - parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
 - reconstruct semantic formal state transitions beyond timestamped signal values;
-- cross-probe normalized formal trace signals to RTL;
 - persist formal trace samples in SQLite;
 - calculate proof or formal-coverage metrics from a waveform.
