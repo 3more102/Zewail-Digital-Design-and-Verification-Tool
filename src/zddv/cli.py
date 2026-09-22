@@ -47,6 +47,7 @@ from zddv.storage import (
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
 from zddv.uvm_item import analyze_uvm_item_file
+from zddv.uvm_item_markers import analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
@@ -816,6 +817,33 @@ def cmd_uvm_item_analyze(args) -> int:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
+
+def cmd_uvm_item_log_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_item_log(
+        project,
+        args.path,
+        source=args.source,
+        marker=args.marker,
+        trace_output=args.trace_output,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM ITEM LOG {result['status']}: "
+        f"{summary['items']} item(s), "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Markers: {result['marker_events']} event(s) "
+        f"from {result['source_log_path']}"
+    )
+    print(f"Extracted trace: {result['marker_trace_path']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
 
 def cmd_uvm_item_history(args) -> int:
     project = load_project(_project_arg(args))
@@ -1736,6 +1764,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of item-handshake violations to print",
     )
     p_uvm_item.set_defaults(func=cmd_uvm_item_analyze)
+
+    p_uvm_item_log = sub.add_parser(
+        "uvm-item-log-analyze",
+        help="Extract explicit ZDDV UVM item markers from a simulator log and analyze them",
+    )
+    p_uvm_item_log.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Simulator/UVM log file; optional when --run is supplied",
+    )
+    p_uvm_item_log.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
+    p_uvm_item_log.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label for the extracted trace",
+    )
+    p_uvm_item_log.add_argument(
+        "--marker",
+        default="ZDDV_UVM_ITEM",
+        help="Explicit marker token preceding each JSON event",
+    )
+    p_uvm_item_log.add_argument(
+        "--trace-output",
+        default=".zddv/uvm/items/extracted/latest.json",
+        help="Extracted normalized marker-trace JSON path",
+    )
+    p_uvm_item_log.add_argument(
+        "--output",
+        default=".zddv/uvm/items/latest.json",
+        help="Normalized UVM item analysis report path",
+    )
+    p_uvm_item_log.set_defaults(func=cmd_uvm_item_log_analyze)
 
     p_uvm_item_history = sub.add_parser(
         "uvm-item-history",
