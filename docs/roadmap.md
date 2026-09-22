@@ -98,7 +98,7 @@ ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. M
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
 functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail rows are normalized into the shared coverage-hole model; condition/expression/toggle/FSM itemization remains planned.
-Phase/objection lifecycle normalization, explicit sequence report-context evidence, and normalized sequence state lifecycle ingestion are implemented; automatic sequence instrumentation and sequence-item arbitration reconstruction remain planned.
+Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, sequence-item handshake history, and explicit sequencer-arbitration evidence are implemented; automatic simulator instrumentation/adapters remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
