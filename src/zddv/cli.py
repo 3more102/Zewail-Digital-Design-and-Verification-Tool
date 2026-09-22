@@ -24,6 +24,7 @@ from zddv.coverage import (
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
+from zddv.root_cause import write_root_cause_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import (
     FormalCheckRequest,
@@ -313,6 +314,35 @@ def cmd_assertion_waveform(args) -> int:
         )
     if len(result["events"]) > args.show:
         print(f"... {len(result['events']) - args.show} more event(s)")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_root_cause(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_root_cause_report(
+        project,
+        run_id=args.run_id,
+        event_limit=args.event_limit,
+        signal_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"ROOT CAUSE CANDIDATES: run={result['run']['run_id']} "
+        f"candidates={summary['candidates']} "
+        f"rtl-drivers={summary['rtl_driver_candidates']}"
+    )
+    print("Score: evidence richness only; not causal probability.")
+    for candidate in result["candidates"][: args.show]:
+        print(
+            f"#{candidate['rank']} score={candidate['evidence_score']:>3} "
+            f"{candidate['kind']}: {candidate['subject']}"
+        )
+    if len(result["candidates"]) > args.show:
+        print(f"... {len(result['candidates']) - args.show} more candidate(s)")
+    for note in result["limitations"][:5]:
+        print(f"Limitation: {note}")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2308,6 +2338,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON correlation report path",
     )
     p_assertion_waveform.set_defaults(func=cmd_assertion_waveform)
+
+    p_root_cause = sub.add_parser(
+        "root-cause",
+        help="Rank failure root-cause candidates from explicit debug evidence",
+    )
+    p_root_cause.add_argument(
+        "--run",
+        dest="run_id",
+        required=True,
+        help="Exact failing or timed-out run ID",
+    )
+    p_root_cause.add_argument(
+        "--event-limit",
+        type=int,
+        default=100,
+        help="Maximum failing assertion events to inspect",
+    )
+    p_root_cause.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum exact waveform signal hints per assertion",
+    )
+    p_root_cause.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum ranked candidates to print",
+    )
+    p_root_cause.add_argument(
+        "--output",
+        default=".zddv/debug/root-cause.json",
+        help="Evidence-ranked root-cause JSON report path",
+    )
+    p_root_cause.set_defaults(func=cmd_root_cause)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
