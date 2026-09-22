@@ -1006,6 +1006,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     zero_detail_path = out_dir / "zeros.txt"
     multibit_expression_path = out_dir / "multibit-expression.txt"
     toggle_detail_path = out_dir / "toggle-details.txt"
+    toggle_xml_path = out_dir / "toggle-details.xml"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -1146,6 +1147,23 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             ],
             cwd=project.root,
             output=toggle_detail_path,
+        ),
+        "toggle_xml": _capture_questa_report_file(
+            [
+                tool,
+                "report",
+                "-xml",
+                "-details",
+                "-byinstance",
+                "-code",
+                "t",
+                "-all",
+                "-output",
+                str(toggle_xml_path),
+                str(merged_path),
+            ],
+            cwd=project.root,
+            output=toggle_xml_path,
         ),
     }
 
