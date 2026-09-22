@@ -603,6 +603,13 @@ def cmd_coverage(args) -> int:
                 f"{toggle_detail.get('status', 'unknown')} "
                 f"{toggle_detail.get('path', '-')}"
             )
+        toggle_xml = detailed.get("toggle_xml", {})
+        if toggle_xml:
+            print(
+                "Questa toggle XML: "
+                f"{toggle_xml.get('status', 'unknown')} "
+                f"{toggle_xml.get('path', '-')}"
+            )
     report = result["report"].strip()
     if report:
         print(report)
