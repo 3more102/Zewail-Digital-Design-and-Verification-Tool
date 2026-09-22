@@ -13,6 +13,7 @@ _ALLOWED_KINDS = {"assertion", "test"}
 _ALLOWED_LANGUAGE = "systemverilog"
 _ALLOWED_SUFFIXES = {".sv", ".svh"}
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+_DRAFT_ID_RE = re.compile(r"^draft-[0-9a-f]{16}$")
 
 
 def _sha256(data: bytes) -> str:
@@ -210,6 +211,17 @@ def apply_generated_artifact(
     if manifest.get("review_required") is not True or manifest.get("auto_apply") is not False:
         raise ValueError("generated artifact manifest lacks review/opt-in safeguards")
 
+    draft_id = str(manifest.get("draft_id") or "").strip()
+    if not _DRAFT_ID_RE.fullmatch(draft_id):
+        raise ValueError("generated artifact manifest has an invalid draft_id")
+    expected_draft_dir = (
+        project.root / ".zddv" / "generated" / "drafts" / draft_id
+    ).resolve()
+    if manifest_file.parent.resolve() != expected_draft_dir:
+        raise ValueError(
+            "generated artifact manifest path does not match its draft_id"
+        )
+
     content_value = manifest.get("content_path")
     if not isinstance(content_value, str) or not content_value:
         raise ValueError("generated artifact manifest is missing content_path")
@@ -221,6 +233,10 @@ def apply_generated_artifact(
         raise ValueError(
             "generated draft content must remain under .zddv/generated/drafts"
         ) from exc
+    if content_path.parent.resolve() != expected_draft_dir:
+        raise ValueError(
+            "generated draft content path does not match the manifest draft_id"
+        )
     if not content_path.is_file():
         raise FileNotFoundError(content_path)
 
