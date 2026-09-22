@@ -324,7 +324,7 @@ def build_verification_signoff_bundle(
                 "formal",
                 "FAIL"
                 if formal_failed
-                else ("PASS" if require_formal else "PRESENT"),
+                else ("PASS" if formal_required else "PRESENT"),
                 blocking=formal_failed,
                 details={
                     "required": formal_required,
@@ -357,7 +357,7 @@ def build_verification_signoff_bundle(
                 "uvm",
                 "FAIL"
                 if uvm_failed
-                else ("PASS" if require_uvm else "PRESENT"),
+                else ("PASS" if uvm_required else "PRESENT"),
                 blocking=uvm_failed,
                 details={
                     "required": uvm_required,
