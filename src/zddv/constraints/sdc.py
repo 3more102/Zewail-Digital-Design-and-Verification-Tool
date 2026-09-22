@@ -754,7 +754,7 @@ def lint_sdc(
                     matches = [
                         port
                         for port in known_port_set
-                        if fnmatch.fnmatchcase(port, pattern)
+                        if port == pattern or fnmatch.fnmatchcase(port, pattern)
                     ]
                     if not matches:
                         issues.append(
