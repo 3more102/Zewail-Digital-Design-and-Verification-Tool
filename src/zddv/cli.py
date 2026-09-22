@@ -8,6 +8,7 @@ import sys
 
 from zddv import __version__
 from zddv.ai_audit import audit_ai_chain
+from zddv.ai_audit_bundle import export_ai_audit_bundle, verify_ai_audit_bundle
 from zddv.ai_context import write_ai_rca_context
 from zddv.ai_provider import (
     create_provider,
@@ -536,6 +537,43 @@ def cmd_ai_chain_audit(args) -> int:
     print("External transmission: disabled")
     print("Command execution: disabled")
     print(f"Audit report: {result['path']}")
+    return 0
+
+
+def cmd_ai_audit_bundle_export(args) -> int:
+    project = load_project(_project_arg(args))
+    result = export_ai_audit_bundle(
+        project,
+        context_path=args.context,
+        response_path=args.response,
+        validated_path=args.validated,
+        review_path=args.review,
+        proposal_paths=args.proposals,
+        output=args.output,
+    )
+    print(
+        f"AI AUDIT BUNDLE EXPORTED: proposals={len(result['proposal_indices'])}"
+    )
+    print(f"Review ID: {result['review_id']}")
+    print(f"Manifest SHA-256: {result['manifest_sha256']}")
+    print(f"Archive SHA-256: {result['archive_sha256']}")
+    print("Model invocation: disabled")
+    print("External transmission: disabled")
+    print("Command execution: disabled")
+    print(f"Bundle: {result['path']}")
+    return 0
+
+
+def cmd_ai_audit_bundle_verify(args) -> int:
+    result = verify_ai_audit_bundle(args.archive)
+    print(
+        f"AI AUDIT BUNDLE VERIFIED: proposals={len(result['proposal_indices'])}"
+    )
+    print(f"Review ID: {result['review_id']}")
+    print(f"Manifest SHA-256: {result['manifest_sha256']}")
+    print(f"Archive SHA-256: {result['archive_sha256']}")
+    print("Verification mode: portable/read-only")
+    print(f"Bundle: {result['path']}")
     return 0
 
 
@@ -3165,6 +3203,60 @@ def build_parser() -> argparse.ArgumentParser:
         help="Audit JSON path under .zddv/ai/audits",
     )
     p_ai_chain_audit.set_defaults(func=cmd_ai_chain_audit)
+
+    p_ai_audit_bundle_export = sub.add_parser(
+        "ai-audit-bundle-export",
+        help=(
+            "Export a deterministic portable archive for the complete reviewed "
+            "AI provenance chain"
+        ),
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--context",
+        default=".zddv/debug/ai-rca-context.json",
+        help="AI RCA context JSON path",
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--response",
+        default=".zddv/ai/provider-response.json",
+        help="Raw provider-response JSON path",
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--validated",
+        default=".zddv/ai/validated-response.json",
+        help="Schema-validated AI response JSON path",
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--review",
+        required=True,
+        help="Approved AI response review record",
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--proposal",
+        dest="proposals",
+        action="append",
+        required=True,
+        help="Reviewed proposal JSON path; repeat to include multiple proposals",
+    )
+    p_ai_audit_bundle_export.add_argument(
+        "--output",
+        default=".zddv/ai/audits/ai-audit-bundle.zip",
+        help="Portable ZIP path under .zddv/ai/audits",
+    )
+    p_ai_audit_bundle_export.set_defaults(func=cmd_ai_audit_bundle_export)
+
+    p_ai_audit_bundle_verify = sub.add_parser(
+        "ai-audit-bundle-verify",
+        help=(
+            "Verify a portable ZDDV AI provenance bundle without project-local "
+            "path assumptions"
+        ),
+    )
+    p_ai_audit_bundle_verify.add_argument(
+        "archive",
+        help="Portable ZDDV AI audit ZIP archive",
+    )
+    p_ai_audit_bundle_verify.set_defaults(func=cmd_ai_audit_bundle_verify)
 
     p_ai_response_import = sub.add_parser(
         "ai-response-import",
