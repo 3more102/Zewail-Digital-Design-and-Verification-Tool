@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import platform
 import sys
@@ -394,6 +395,14 @@ def cmd_coverage(args) -> int:
             "Zero-hit source detail: "
             f"{zero_detail.get('status', 'unknown')} {zero_detail.get('path', '-')}"
         )
+    normalized_code = result.get("normalized_code_coverage") or {}
+    if normalized_code:
+        print(
+            "Normalized code coverage holes: "
+            f"{normalized_code.get('status', 'unknown')} "
+            f"{normalized_code.get('hole_items', 0)} item(s) "
+            f"{normalized_code.get('path', '-')}"
+        )
     report = result["report"].strip()
     if report:
         print(report)
@@ -419,20 +428,45 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
+    simulator = project.simulator.strip().lower()
+
+    if simulator == "verilator":
+        normalized_path = (
+            project.root / ".zddv" / "coverage" / "coverage.dat"
+        ).resolve()
+        if not normalized_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {normalized_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_verilator_coverage(normalized_path)
+    elif simulator in {"questa", "questasim"}:
+        normalized_path = (
+            project.root / ".zddv" / "coverage" / "code-items.json"
+        ).resolve()
+        if not normalized_path.exists():
+            raise RuntimeError(
+                f"Normalized Questa code coverage not found at {normalized_path}. "
+                "Run 'zddv coverage' first."
+            )
+        payload = json.loads(normalized_path.read_text(encoding="utf-8"))
+        status = str(payload.get("status") or "unknown")
+        if status != "ok":
+            evidence_path = payload.get("evidence_path")
+            detail = f" See {evidence_path}." if evidence_path else ""
+            raise RuntimeError(
+                "Questa detailed code-coverage normalization is unavailable "
+                f"(status={status}).{detail}"
+            )
+        points = list(payload.get("points") or [])
+    else:
         raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
-        )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
-        raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            "Coverage-hole itemization is implemented for Verilator and Questa only."
         )
 
-    points = parse_verilator_coverage(merged_path)
     if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+        print("Coverage holes: 0 unhit point(s)")
+        return 0
 
     output = Path(args.output)
     if not output.is_absolute():
@@ -456,7 +490,11 @@ def cmd_coverage_holes(args) -> int:
         print(f"By type: {breakdown}")
 
     for hole in report["holes"][: args.show]:
-        print(f"[{hole['type']}] {hole['name']}")
+        location = ""
+        if hole.get("source_file") is not None and hole.get("line") is not None:
+            location = f" {hole['source_file']}:{hole['line']}"
+        detail = f" {hole['detail']}" if hole.get("detail") else ""
+        print(f"[{hole['type']}]{location} {hole['name']}{detail}")
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
@@ -1321,7 +1359,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--type",
         dest="point_type",
         default=None,
-        help="Optional normalized coverage point type filter, e.g. line or toggle",
+        help=(
+            "Optional normalized coverage point type filter: line/toggle for "
+            "Verilator; statement/branch/condition/expression/toggle/fsm for Questa"
+        ),
     )
     p_coverage_holes.add_argument(
         "--limit",
