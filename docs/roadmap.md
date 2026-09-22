@@ -98,7 +98,7 @@ ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. M
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
 functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail rows are normalized into the shared coverage-hole model; condition/expression/toggle/FSM itemization remains planned.
-Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence instrumentation and sequence-item arbitration reconstruction remain planned.
+Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, normalized sequence-item handshake persistence/history, observed GRANT-order reconstruction, and an opt-in portable item log instrumentation adapter with Questa/VCS auto-ingestion are implemented. Zero-touch sequence hooks and arbitration policy/priority/fairness analysis remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
@@ -121,7 +121,9 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
 - [x] Normalized sequence-item handshake analysis with run correlation, SQLite event persistence, and history filtering.
-- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction.
+- [x] Observed sequence-item GRANT-order reconstruction from explicit trace evidence.
+- [x] Portable sequence-item SystemVerilog trace helper and `ZDDV_ITEM_TRACE_V1` log adapter with Questa/VCS auto-ingestion.
+- [ ] Zero-touch sequence-state/item hooks and arbitration policy/priority/fairness reconstruction.
 
 ## v0.7 — Formal
 
