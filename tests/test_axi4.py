@@ -727,3 +727,95 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["qos"] == 0xC
     assert tx["region"] == 0x7
     assert tx["awprot"] == 0x2
+
+
+def test_validates_narrow_write_strobes_against_byte_lanes():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 1, "AWADDR": 0x100, "AWLEN": 4, "AWSIZE": 0, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0x11, "WSTRB": 0x1, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0x22, "WSTRB": 0x2, "WLAST": 0},
+                {"cycle": 3, "WVALID": 1, "WREADY": 1, "WDATA": 0x33, "WSTRB": 0x4, "WLAST": 0},
+                {"cycle": 4, "WVALID": 1, "WREADY": 1, "WDATA": 0x44, "WSTRB": 0x8, "WLAST": 0},
+                {"cycle": 5, "WVALID": 1, "WREADY": 1, "WDATA": 0x55, "WSTRB": 0x1, "WLAST": 1},
+                {"cycle": 6, "BVALID": 1, "BREADY": 1, "BID": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    write = result["transactions"][0]
+    assert write["allowed_write_strobes"] == [0x1, 0x2, 0x4, 0x8, 0x1]
+
+
+def test_accepts_unaligned_first_write_with_matching_strobes():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x102, "AWLEN": 1, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0xAAAA, "WSTRB": 0xC, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0xBBBB, "WSTRB": 0xF, "WLAST": 1},
+                {"cycle": 3, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["allowed_write_strobes"] == [0xC, 0xF]
+
+
+def test_reports_write_strobe_outside_transfer_lanes():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x102, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0xAAAA, "WSTRB": 0x3, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert result["status"] == "FAIL"
+    assert "write_strobe_outside_transfer_lanes" in codes
+
+
+def test_reports_write_strobe_width_and_transfer_size_errors():
+    strobe = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x100, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0, "WSTRB": 0x10, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+    assert "invalid_write_strobe" in {
+        item["code"] for item in strobe["violations"]
+    }
+
+    size = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "ARVALID": 1, "ARREADY": 1, "ARADDR": 0x200, "ARLEN": 0, "ARSIZE": 3, "ARBURST": "INCR"},
+            ],
+        }
+    )
+    assert "transfer_size_exceeds_data_bus_width" in {
+        item["code"] for item in size["violations"]
+    }
+
+
+def test_rejects_invalid_data_width_metadata():
+    try:
+        analyze_axi4_trace({"data_width_bits": 30, "samples": []})
+    except ValueError as exc:
+        assert "positive multiple of 8" in str(exc)
+    else:
+        raise AssertionError("Expected invalid data_width_bits to fail")
