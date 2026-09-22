@@ -67,6 +67,21 @@ zddv --project <project> uvm-item-log-analyze --run <run-id>
 When `--run` is supplied without a path, ZDDV reads the simulation log recorded for that run and retains run status, return code, and simulator as correlation evidence.
 
 
+## Portable SystemVerilog instrumentation helper
+
+Generate an opt-in helper that emits the same `ZDDV_UVM_ITEM {json}` contract:
+
+```text
+zddv --project <project> uvm-item-instrument
+```
+
+By default ZDDV writes `tb/zddv_uvm_item_trace_pkg.sv` and inserts that exact file at the front of the project's testbench source list so the package is compiled before ordinary testbench sources. Use `--no-add-source` when source ordering is managed externally, and `--force` to replace an existing generated helper.
+
+The generated package has no dependency on `uvm_pkg`. Call its tasks explicitly from verification code that owns the corresponding semantic point. Use `zddv_uvm_item_grant` after a grant has been obtained, `zddv_uvm_item_request` when the request is submitted, `zddv_uvm_item_done` when driver completion is observed, and `zddv_uvm_item_response` only when explicit response evidence exists. The same stable `item_id` should be used across events for one item. Optional sequence, sequencer, item-name, and transaction-ID fields may be left empty when that context is unavailable.
+
+This helper is explicit instrumentation, not a UVM-library patch or zero-touch hook. It does not infer hidden sequencer queues, arbitration mode, priority, fairness, or timing behavior.
+
+
 ## Partial traces
 
 A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item as partial rather than inventing a failure for evidence that may have been captured after the handshake had already started.
