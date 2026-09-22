@@ -554,6 +554,14 @@ def cmd_uvm_analyze(args) -> int:
         f"Counts: {result['count_source']}  "
         f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
     )
+    lifecycle = result.get("lifecycle", {})
+    print(
+        "Lifecycle: "
+        f"phases={lifecycle.get('phase_event_count', 0)} "
+        f"objections={lifecycle.get('objection_event_count', 0)} "
+        f"phase-trace={'yes' if lifecycle.get('phase_trace_detected') else 'no'} "
+        f"objection-trace={'yes' if lifecycle.get('objection_trace_detected') else 'no'}"
+    )
     for event in result["messages"]:
         if event["severity"] not in {"UVM_WARNING", "UVM_ERROR", "UVM_FATAL"}:
             continue
