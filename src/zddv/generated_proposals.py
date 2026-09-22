@@ -153,6 +153,7 @@ def write_reviewable_verification_proposals(
     *,
     limit: int | None = None,
     emit_dir: str | Path | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     source_path = Path(source).resolve()
     if not source_path.is_file():
@@ -175,11 +176,31 @@ def write_reviewable_verification_proposals(
 
     if emit_dir is not None:
         emission_root = Path(emit_dir).resolve()
-        emission_root.mkdir(parents=True, exist_ok=True)
+        targets: list[tuple[dict[str, Any], Path, Path]] = []
         for proposal in result["proposals"]:
             proposal_id = str(proposal["proposal_id"])
             test_path = emission_root / f"{proposal_id}-test.sv.disabled"
             assertion_path = emission_root / f"{proposal_id}-assertion.sv.disabled"
+            targets.append((proposal, test_path, assertion_path))
+
+        existing = [
+            path
+            for _, test_path, assertion_path in targets
+            for path in (test_path, assertion_path)
+            if path.exists()
+        ]
+        if existing and not force:
+            preview = ", ".join(str(path) for path in existing[:3])
+            if len(existing) > 3:
+                preview += f", ... ({len(existing)} existing files)"
+            raise FileExistsError(
+                f"Refusing to overwrite review scaffold(s): {preview}; "
+                "pass --force to replace them explicitly"
+            )
+
+        emission_root.mkdir(parents=True, exist_ok=True)
+        for proposal, test_path, assertion_path in targets:
+            proposal_id = str(proposal["proposal_id"])
             test_path.write_text(str(proposal["test_scaffold"]), encoding="utf-8")
             assertion_path.write_text(
                 str(proposal["assertion_scaffold"]),
