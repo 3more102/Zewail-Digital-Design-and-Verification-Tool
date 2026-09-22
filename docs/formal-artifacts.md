@@ -64,12 +64,20 @@ trace evidence do not make formal-result persistence fail. They remain explicit 
 evidence with a conservative normalization status instead of receiving invented
 counterexample/witness semantics.
 
+## RTL cross-probing
+
+A normalized trace can be cross-probed into the existing Debug Studio source model with
+`zddv formal-crossprobe`. ZDDV adapts the trace signal catalog to the same hierarchy-aware
+cross-probe engine used for simulation waveforms, so matched signals can expose the RTL
+design unit, declaration line, and source-structural drivers/loads without reparsing or
+inventing formal semantics. Repeated `--signal` selectors restrict the operation; an
+explicit `--max-signals` bound prevents accidentally expanding very large traces.
+
 ## Current boundary
 
 The artifact-manifest layer itself remains a classifier/fingerprinter. ZDDV does not yet:
 
 - parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
 - reconstruct semantic formal state transitions beyond timestamped signal values;
-- cross-probe normalized formal trace signals to RTL;
 - persist formal trace samples in SQLite;
 - calculate proof or formal-coverage metrics from a waveform.
