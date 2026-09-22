@@ -266,6 +266,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 Current executable backends:
 - **Verilator**: executable binary flow with optional waveform/code-coverage artifacts.
 - **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, assertion-log ingestion, and run-linked UVM log ingestion. When project coverage is enabled, the adapter instruments compilation with `+cover`, runs with `-coverage`, keeps the simulator alive after `$finish` with `-onfinish stop`, and saves a per-run `coverage.ucdb`. The coverage engine merges those UCDBs with `vcover merge`, parses only the numeric `vcover report -summary` table, stores aggregate per-type bins/hits in the existing coverage snapshot schema, and preserves Questa's weighted total coverage separately. Item-level UCDB hole normalization is not yet implemented.
+- **Synopsys VCS foundation**: `vcs -sverilog -ntb_opts uvm-1.2` compiles/elaborates the configured top into an isolated `simv` build artifact. Run orchestration transports ZDDV/UVM test selection, `+ntb_random_seed`, arbitrary user plusargs, timeout classification, command-line VCD dumping, assertion-log ingestion, and run-linked UVM log ingestion. Native VCS coverage capture is intentionally not claimed by this foundation; a requested coverage state is persisted as `unsupported` until a normalized VCS coverage path is implemented.
 
 ### UVM Lifecycle Normalization
 
