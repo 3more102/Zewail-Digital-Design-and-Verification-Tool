@@ -8,7 +8,12 @@ import sys
 
 from zddv import __version__
 from zddv.ai_context import write_ai_rca_context
-from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
+from zddv.ai_provider import (
+    create_provider,
+    provider_metadata,
+    write_model_request_preview,
+    write_provider_response,
+)
 from zddv.ai_response import export_reviewed_generation_proposal, ingest_ai_provider_response, review_validated_ai_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
@@ -77,7 +82,6 @@ from zddv.uvm_arbitration import analyze_uvm_arbitration_file, analyze_uvm_arbit
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_marker import analyze_uvm_marker_log
 from zddv.uvm_item_instrumentation import write_uvm_item_instrumentation
-from zddv.uvm_auto_instrumentation import write_uvm_auto_instrumentation
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.uvm_sequence_instrumentation import write_uvm_sequence_instrumentation
 from zddv.waveform import write_waveform_index
@@ -437,6 +441,21 @@ def cmd_ai_providers(args) -> int:
     return 0
 
 
+def cmd_ai_provider_request(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_model_request_preview(
+        project,
+        context_path=args.context,
+        output=args.output,
+    )
+    print("AI PROVIDER REQUEST PREVIEW: LOCAL ONLY")
+    print(f"Request SHA-256: {result['request_sha256']}")
+    print(f"Context evidence SHA-256: {result['context_evidence_sha256']}")
+    print("External transmission: disabled")
+    print(f"Preview: {result['path']}")
+    return 0
+
+
 def cmd_ai_provider_run(args) -> int:
     project = load_project(_project_arg(args))
     provider_kwargs = {}
@@ -462,6 +481,7 @@ def cmd_ai_provider_run(args) -> int:
         provider,
         context_path=args.context,
         allow_external=args.allow_external,
+        expected_request_sha256=args.expected_request_sha256,
         output=args.output,
     )
     policy = result["policy"]
@@ -469,6 +489,10 @@ def cmd_ai_provider_run(args) -> int:
     print(
         "External opt-in: "
         + ("yes" if policy["explicit_external_opt_in"] else "not-required")
+    )
+    print(
+        "Request SHA confirmed: "
+        + ("yes" if policy["request_sha_confirmed"] else "not-required")
     )
     print("Response trust: raw/untrusted")
     print("Schema validation: disabled")
@@ -1991,27 +2015,6 @@ def cmd_uvm_arbitration_history(args) -> int:
     return 0
 
 
-def cmd_uvm_auto_instrument(args) -> int:
-    project = load_project(_project_arg(args))
-    result = write_uvm_auto_instrumentation(
-        project,
-        output=args.output,
-        add_source=args.add_source,
-        force=args.force,
-    )
-    print(f"UVM automatic instrumentation adapter: {result['path']}")
-    print(f"Base class: {result['adapter_class']}")
-    print(
-        "Marker helpers: "
-        f"sequence={result['sequence_helper']} item={result['item_helper']}"
-    )
-    if result["project_path"] is not None:
-        state = "ordered" if result["added_to_project"] else "already ordered"
-        print(f"Project sources: {state}")
-    print("Automatic execution: disabled")
-    return 0
-
-
 def cmd_uvm_sequence_instrument(args) -> int:
     project = load_project(_project_arg(args))
     result = write_uvm_sequence_instrumentation(
@@ -2901,6 +2904,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ai_providers.set_defaults(func=cmd_ai_providers)
 
+    p_ai_provider_request = sub.add_parser(
+        "ai-provider-request",
+        help="Write the exact provider-neutral AI request locally for SHA review",
+    )
+    p_ai_provider_request.add_argument(
+        "--context",
+        required=True,
+        help="Reviewed ai-rca-context JSON path inside the project",
+    )
+    p_ai_provider_request.add_argument(
+        "--output",
+        default=".zddv/ai/provider-request.json",
+        help="Local provider-request preview JSON path",
+    )
+    p_ai_provider_request.set_defaults(func=cmd_ai_provider_request)
+
     p_ai_provider_run = sub.add_parser(
         "ai-provider-run",
         help=(
@@ -2945,6 +2964,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Explicitly allow provider transmission after reviewing the "
             "context bundle"
+        ),
+    )
+    p_ai_provider_run.add_argument(
+        "--expected-request-sha256",
+        default=None,
+        help=(
+            "Exact SHA-256 from ai-provider-request; required for external "
+            "providers"
         ),
     )
     p_ai_provider_run.add_argument(
@@ -3729,31 +3756,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter arbitration snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_arbitration_history.set_defaults(func=cmd_uvm_arbitration_history)
-
-    p_uvm_auto_instrument = sub.add_parser(
-        "uvm-auto-instrument",
-        help="Generate an opt-in UVM base-sequence adapter for automatic lifecycle/item markers",
-    )
-    p_uvm_auto_instrument.add_argument(
-        "--output",
-        default="tb/zddv_uvm_auto_trace_pkg.sv",
-        help="Generated UVM adapter SystemVerilog path",
-    )
-    p_uvm_auto_instrument.add_argument(
-        "--no-add-source",
-        dest="add_source",
-        action="store_false",
-        help="Do not register/order the generated helpers and adapter in project testbench sources",
-    )
-    p_uvm_auto_instrument.add_argument(
-        "--force",
-        action="store_true",
-        help="Replace an existing generated adapter; marker helpers are never overwritten implicitly",
-    )
-    p_uvm_auto_instrument.set_defaults(
-        func=cmd_uvm_auto_instrument,
-        add_source=True,
-    )
 
     p_uvm_sequence_instrument = sub.add_parser(
         "uvm-sequence-instrument",
