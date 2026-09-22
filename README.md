@@ -640,12 +640,26 @@ waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
 remain visible as uncorrelated events rather than being silently dropped.
 
+### Questa Coverage Reporting
+
+With `simulator = "questa"`, `zddv coverage` merges per-run `coverage.ucdb`
+artifacts with `vcover merge`, runs `vcover report -summary`, and records
+normalized aggregate coverage in the common ZDDV coverage history.
+
+After that merge, `zddv coverage-holes` exports statement details through
+`vcover report -xml -code s` and writes zero-hit statement locations to
+`.zddv/coverage/holes.json`. Each normalized hole keeps its instance scope,
+source file, line number, statement index, and hit count. Use
+`--type statement` explicitly when desired; other Questa item types remain
+planned and are rejected rather than silently approximated.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
 - [x] Questa native per-run UCDB coverage capture
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
-- [ ] Questa item-level UCDB normalization and coverage-hole reporting
+- [x] Questa statement-level XML normalization and coverage-hole reporting
+- [ ] Remaining Questa item-level branch/condition/expression/toggle/FSM/functional normalization
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
