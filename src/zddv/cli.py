@@ -23,6 +23,10 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.review_templates import (
+    preview_reviewable_test_template,
+    write_reviewable_test_template,
+)
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -1196,6 +1200,54 @@ def cmd_coverage_suggest(args) -> int:
         )
         print(f"    {suggestion['intent']}")
     print(f"Report: {result['path']}")
+    return 0
+
+
+
+def cmd_coverage_template(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    preview = preview_reviewable_test_template(
+        source,
+        limit=args.limit,
+    )
+    print(
+        "COVERAGE TEST TEMPLATE PREVIEW: "
+        f"{preview['candidate_count']} candidate(s)"
+    )
+    for candidate in preview["candidates"][: max(0, args.show)]:
+        print(
+            f"{candidate['id']} "
+            f"{candidate['coverage_type']:<12} "
+            f"{candidate['hole_name']}"
+        )
+        print(f"    {candidate['intent']}")
+
+    if not args.materialize:
+        print(
+            "DRY RUN: no template file written. "
+            "Use --materialize only after reviewing the source suggestions."
+        )
+        return 0
+
+    result = write_reviewable_test_template(
+        source,
+        output,
+        limit=args.limit,
+    )
+    print(
+        "MATERIALIZED REVIEW TEMPLATE: "
+        f"{result['candidate_count']} candidate(s)"
+    )
+    print(f"Template: {result['path']}")
     return 0
 
 def cmd_fcov_import(args) -> int:
@@ -2847,6 +2899,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewable suggestion JSON report path",
     )
     p_coverage_suggest.set_defaults(func=cmd_coverage_suggest)
+
+    p_coverage_template = sub.add_parser(
+        "coverage-template",
+        help="Preview or explicitly materialize inert review test templates",
+    )
+    p_coverage_template.add_argument(
+        "--input",
+        default=".zddv/coverage/test-suggestions.json",
+        help="Coverage-suggestion JSON report; run coverage-suggest first",
+    )
+    p_coverage_template.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of suggestion-derived candidates to template",
+    )
+    p_coverage_template.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum number of candidate objectives to print",
+    )
+    p_coverage_template.add_argument(
+        "--output",
+        default=".zddv/generated/coverage-tests.svt",
+        help="Review-template path; .svt is required to avoid accidental compilation",
+    )
+    p_coverage_template.add_argument(
+        "--materialize",
+        action="store_true",
+        help="Explicit opt-in to write the inert .svt review template",
+    )
+    p_coverage_template.set_defaults(func=cmd_coverage_template)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
