@@ -1036,3 +1036,56 @@ def test_reports_transfer_size_larger_than_known_data_bus():
     assert violation["signal"] == "ARSIZE"
     assert violation["expected"] == "transfer size <= 4 bytes"
     assert violation["actual"] == 8
+
+
+def test_accepts_all_zero_write_strobe():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 7,
+                 "AWADDR": 0x200, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0, "WSTRB": 0, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 7, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["write_strobe_allowed_masks"] == [0xF]
+
+
+def test_reports_write_strobe_wider_than_data_bus():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 8,
+                 "AWADDR": 0x200, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0, "WSTRB": 0x10, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 8, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "invalid_write_strobe"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["expected"] == "0x0..0xF"
+    assert violation["actual"] == 0x10
+
+
+def test_rejects_nonstandard_axi4_data_width_metadata():
+    try:
+        analyze_axi4_trace({"data_width_bits": 24, "samples": []})
+    except ValueError as exc:
+        assert "8, 16, 32, 64, 128, 256, 512, or 1024" in str(exc)
+    else:
+        raise AssertionError("24-bit AXI data width metadata must be rejected")
+
