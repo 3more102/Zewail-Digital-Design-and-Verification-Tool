@@ -2153,7 +2153,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_formal_sby.add_argument("path", help="SymbiYosys logfile path")
     p_formal_sby.add_argument(
         "--mode",
-        choices=("bmc", "prove", "cover"),
+        choices=("bmc", "cover"),
         required=True,
         help="Formal mode associated with the native SBY run",
     )
@@ -2165,8 +2165,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_formal_sby.add_argument(
         "--output",
-        default=".zddv/formal/sby/latest.json",
-        help="Normalized SBY evidence JSON report path",
+        default=None,
+        help=(
+            "Optional normalized SBY evidence JSON path; "
+            "default creates a unique report under .zddv/formal/sby"
+        ),
     )
     p_formal_sby.set_defaults(func=cmd_formal_sby_analyze)
 
