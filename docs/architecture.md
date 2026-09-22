@@ -273,9 +273,11 @@ The UVM log ingestion layer remains simulator-independent. In addition to severi
 metadata, it recognizes standard phase-trace report IDs emitted by `+UVM_PHASE_TRACE`
 and objection-trace reports tagged `OBJTN_TRC` by `+UVM_OBJECTION_TRACE`. Normalized
 phase and objection events retain log-line/time evidence and are persisted in dedicated
-SQLite tables alongside the source report messages. Sequence lifecycle reconstruction
-remains a separate future layer because there is no equivalent single portable sequence
-trace switch with one stable report contract.
+SQLite tables alongside the source report messages. When a report component itself exposes
+an explicit `sequencer@@sequence` context, ZDDV stores a separate sequence report-evidence
+record with the originating message/time/line linkage. This is intentionally not promoted
+to sequence start/end lifecycle semantics because there is no equivalent single portable
+sequence trace switch with one stable report contract.
 
 ## Next Architectural Steps
 
