@@ -408,8 +408,12 @@ def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
     )
 
     def fake_run(command, cwd):
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        if "-show" in command:
+            report_dir.mkdir()
+            return SimpleNamespace(returncode=0, stdout="URG brief complete\n")
         (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
-        (Path(cwd) / command[command.index("-report") + 1]).mkdir()
+        report_dir.mkdir()
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -420,6 +424,8 @@ def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
     assert result["snapshot_id"] is None
     assert result["metrics_status"] == "dashboard-missing"
     assert Path(result["report_dir"]).is_dir()
+    assert result["brief_status"] == "captured"
+    assert Path(result["brief_report_dir"]).is_dir()
     assert list_coverage_score_snapshots(project, limit=5) == []
 
 
