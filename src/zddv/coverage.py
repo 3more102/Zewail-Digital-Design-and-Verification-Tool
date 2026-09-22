@@ -106,23 +106,12 @@ def _xml_local_name(element: ET.Element) -> str:
 
 
 def _questa_code_point_type(tag: str) -> str | None:
-    aliases = {
-        "stmt": "statement",
-        "statement": "statement",
-        "branch": "branch",
-        "br": "branch",
-        "condition": "condition",
-        "cond": "condition",
-        "expression": "expression",
-        "expr": "expression",
-        "toggle": "toggle",
-        "tog": "toggle",
-        "fsmstate": "fsm_state",
-        "fsm_state": "fsm_state",
-        "fsmtransition": "fsm_transition",
-        "fsm_transition": "fsm_transition",
-    }
-    return aliases.get(tag)
+    # Questa's published XML example explicitly documents stmt records with
+    # fn/ln/st/hits attributes. Keep normalization limited to that verified
+    # shape until equally stable schemas are documented for other code types.
+    if tag in {"stmt", "statement"}:
+        return "statement"
+    return None
 
 
 def parse_questa_code_coverage_xml(path: str | Path) -> list[dict]:
