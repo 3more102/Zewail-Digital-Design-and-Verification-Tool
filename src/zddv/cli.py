@@ -389,11 +389,11 @@ def cmd_formal_bmc(args) -> int:
     backend = SymbiYosysBackend()
     print(f"Formal backend: {backend.version()}")
     result = backend.check(project, request)
-    source_path = result.artifacts[0] if result.artifacts else result.log_path
     record = persist_formal_result(
         project,
         result,
-        input_path=source_path,
+        input_path=result.log_path,
+        output=result.run_dir / "zddv-formal-result.json",
     )
     print(
         f"FORMAL BMC {result.status}: depth={request.depth} "

@@ -216,6 +216,7 @@ def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, 
                 status="PASS",
                 run_dir=run_dir,
                 log_path=run_dir / "formal.log",
+                artifacts=(run_dir / "job.sby",),
             )
 
     monkeypatch.setattr("zddv.cli.SymbiYosysBackend", FakeBackend)
@@ -251,3 +252,6 @@ def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, 
     assert row["bounded_safe_count"] == 0
     assert row["proved_count"] == 0
     assert row["input_path"].endswith("formal.log")
+    assert not row["input_path"].endswith("job.sby")
+    assert row["report_path"].endswith("zddv-formal-result.json")
+    assert Path(row["report_path"]).is_file()

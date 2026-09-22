@@ -143,6 +143,7 @@ zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
 zddv --project my_project formal-bmc --depth 20
+zddv --project my_project formal-history --limit 20
 
 zddv --project my_project run
 zddv --project my_project run --test smoke --seed 100
