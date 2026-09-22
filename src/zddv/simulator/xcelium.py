@@ -287,7 +287,10 @@ class XceliumBackend(SimulatorBackend):
             log_path=log_path,
             created_at=now.isoformat(),
         )
-        if "UVM_" in output:
+        if any(
+            token in (output or "")
+            for token in ("UVM_INFO", "UVM_WARNING", "UVM_ERROR", "UVM_FATAL")
+        ):
             analyze_uvm_log(
                 project,
                 None,
