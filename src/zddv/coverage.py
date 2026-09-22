@@ -1861,8 +1861,8 @@ def parse_xcelium_imc_summary(text: str) -> dict:
     )
     if header_index is None:
         raise ValueError(
-            "IMC summary header with labelled Overall/Code/Fsm/Functional "
-            "Average/Covered columns was not found"
+            "IMC summary header with Overall Average/Covered and labelled "
+            "Code/Fsm/Functional Average/Covered columns was not found"
         )
 
     row = None
