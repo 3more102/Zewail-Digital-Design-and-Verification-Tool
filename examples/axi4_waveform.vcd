@@ -31,6 +31,11 @@ $var wire 2 A RID [1:0] $end
 $var wire 16 B RDATA [15:0] $end
 $var wire 2 C RRESP [1:0] $end
 $var wire 1 D RLAST $end
+$var wire 4 E AWUSER [3:0] $end
+$var wire 4 F WUSER [3:0] $end
+$var wire 2 G BUSER [1:0] $end
+$var wire 4 H ARUSER [3:0] $end
+$var wire 4 I RUSER [3:0] $end
 $upscope $end
 $upscope $end
 $enddefinitions $end
@@ -65,6 +70,11 @@ b00 A
 b0000000000000000 B
 b00 C
 0D
+b0000 E
+b0000 F
+b00 G
+b0000 H
+b0000 I
 #5
 1b
 b01 d
@@ -72,6 +82,7 @@ b000100000000 e
 b00000001 f
 b001 g
 b01 h
+b1010 E
 1a
 #10
 0a
@@ -81,12 +92,14 @@ b01 h
 b0001000100010001 k
 b11 l
 0m
+b0001 F
 1a
 #20
 0a
 #25
 b0010001000100010 k
 1m
+b0010 F
 1a
 #30
 0a
@@ -96,6 +109,7 @@ b0010001000100010 k
 1n
 b01 p
 b00 q
+b11 G
 1a
 #40
 0a
@@ -107,6 +121,7 @@ b001000000000 u
 b00000001 v
 b001 w
 b01 x
+b1011 H
 1a
 #50
 0a
@@ -117,12 +132,14 @@ b10 A
 b0011001100110011 B
 b00 C
 0D
+b0100 I
 1a
 #60
 0a
 #65
 b0100010001000100 B
 1D
+b0101 I
 1a
 #70
 0a
