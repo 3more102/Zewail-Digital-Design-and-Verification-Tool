@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,7 @@ import pytest
 from zddv.cli import main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
-from zddv.formal.sby import render_sby_bmc_config
+from zddv.formal.sby import parse_sby_status_jsonl, render_sby_bmc_config
 from zddv.storage import list_formal_result_snapshots
 
 
@@ -126,6 +127,13 @@ def test_sby_backend_normalizes_terminal_status_and_retains_evidence(
     captured: dict[str, object] = {}
 
     def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            captured["status_command"] = list(command)
+            return SimpleNamespace(
+                returncode=0,
+                output="",
+                timed_out=False,
+            )
         captured["command"] = list(command)
         captured["cwd"] = cwd
         captured["timeout_s"] = timeout_s
@@ -152,12 +160,114 @@ def test_sby_backend_normalizes_terminal_status_and_retains_evidence(
     assert result.returncode == returncode
     assert result.request.depth == 20
     assert result.log_path.read_text(encoding="utf-8") == terminal
-    assert len(result.artifacts) == 1
+    assert len(result.artifacts) == 2
     assert result.artifacts[0].suffix == ".sby"
+    assert result.artifacts[1].name == "property-status.jsonl"
     assert captured["cwd"] == project.root
     assert captured["timeout_s"] == pytest.approx(3.0)
     command = captured["command"]
     assert command[:4] == ["/opt/sby/bin/sby", "-f", "-d", str(result.run_dir)]
+    assert captured["status_command"] == [
+        "/opt/sby/bin/sby",
+        "--statusfmt",
+        "jsonl",
+        "--latest",
+        str(result.run_dir),
+    ]
+
+
+def test_parse_sby_status_jsonl_preserves_assertion_depth_and_trace(tmp_path: Path):
+    trace = (tmp_path / "run" / "engine_0" / "trace.vcd").resolve()
+    payload = json.dumps(
+        {
+            "task_name": "job",
+            "mode": "bmc",
+            "engine": "smtbmc boolector",
+            "name": "dut.p_req_ack",
+            "location": "rtl/dut.sv:12.1-12.24",
+            "kind": "assert",
+            "status": "FAIL",
+            "trace": str(trace),
+            "depth": 7,
+        }
+    )
+
+    properties = parse_sby_status_jsonl(payload, expected_mode="bmc")
+
+    assert len(properties) == 1
+    item = properties[0]
+    assert item.name == "dut.p_req_ack"
+    assert item.kind == "assert"
+    assert item.status == "FAIL"
+    assert item.depth == 7
+    assert item.trace_path == trace
+    assert "engine=smtbmc boolector" in (item.message or "")
+    assert "location=rtl/dut.sv:12.1-12.24" in (item.message or "")
+
+
+def test_sby_backend_queries_status_database_for_property_evidence(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr(
+        "zddv.formal.sby.shutil.which",
+        lambda name: "/opt/sby/bin/sby" if name == "sby" else None,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            captured["status_command"] = list(command)
+            run_dir = Path(command[-1])
+            trace = run_dir / "engine_0" / "trace.vcd"
+            return SimpleNamespace(
+                returncode=0,
+                output=json.dumps(
+                    {
+                        "task_name": "job",
+                        "mode": "bmc",
+                        "engine": "smtbmc boolector",
+                        "name": "dut.p_req_ack",
+                        "location": "rtl/dut.sv:12.1-12.24",
+                        "kind": "assert",
+                        "status": "FAIL",
+                        "trace": str(trace),
+                        "depth": 7,
+                    }
+                )
+                + "\n",
+                timed_out=False,
+            )
+        return SimpleNamespace(
+            returncode=2,
+            output="SBY [job] DONE (FAIL, rc=2)\n",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr("zddv.formal.sby._run_process", fake_process)
+
+    result = SymbiYosysBackend().check(
+        project,
+        FormalCheckRequest(mode="bmc", depth=20),
+    )
+
+    assert result.status == "FAIL"
+    assert len(result.properties) == 1
+    item = result.properties[0]
+    assert item.name == "dut.p_req_ack"
+    assert item.status == "FAIL"
+    assert item.depth == 7
+    assert item.trace_path == result.run_dir / "engine_0" / "trace.vcd"
+    assert result.run_dir / "property-status.jsonl" in result.artifacts
+    assert item.trace_path in result.artifacts
+    assert captured["status_command"] == [
+        "/opt/sby/bin/sby",
+        "--statusfmt",
+        "jsonl",
+        "--latest",
+        str(result.run_dir),
+    ]
 
 
 def test_sby_backend_timeout_is_unknown_not_pass_or_fail(tmp_path: Path, monkeypatch):
