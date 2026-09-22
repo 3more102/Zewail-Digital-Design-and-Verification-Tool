@@ -11,6 +11,20 @@ from zddv.storage import get_run_record, record_uvm_arbitration_snapshot
 
 
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "item_id", "priority", "sequencer")
+_UVM_ARBITRATION_MODES = (
+    "UVM_SEQ_ARB_FIFO",
+    "UVM_SEQ_ARB_WEIGHTED",
+    "UVM_SEQ_ARB_RANDOM",
+    "UVM_SEQ_ARB_STRICT_FIFO",
+    "UVM_SEQ_ARB_STRICT_RANDOM",
+    "UVM_SEQ_ARB_USER",
+)
+_LOCAL_UNSPECIFIED_MODE = "UNSPECIFIED"
+_POLICY_VIOLATION_CODES = {
+    "FIFO_ORDER_VIOLATION",
+    "STRICT_PRIORITY_VIOLATION",
+    "STRICT_FIFO_ORDER_VIOLATION",
+}
 
 
 def _require_text(value: Any, *, field: str, context: str) -> str:
@@ -33,6 +47,29 @@ def _optional_int(value: Any, *, field: str, context: str) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{context}.{field} must be null or an integer")
     return int(value)
+
+
+def _optional_nonnegative_int(value: Any, *, field: str, context: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{context}.{field} must be null or an integer >= 0")
+    return int(value)
+
+
+def _normalize_mode(value: Any, *, context: str) -> str:
+    if value is None:
+        return _LOCAL_UNSPECIFIED_MODE
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{context} must be a non-empty string")
+    mode = value.strip().upper()
+    allowed = set(_UVM_ARBITRATION_MODES) | {_LOCAL_UNSPECIFIED_MODE}
+    if mode not in allowed:
+        raise ValueError(
+            f"{context} must be one of: "
+            f"{', '.join((*_UVM_ARBITRATION_MODES, _LOCAL_UNSPECIFIED_MODE))}"
+        )
+    return mode
 
 
 def _fairness_bound(value: Any) -> int | None:
@@ -65,12 +102,22 @@ def _normalize_contender(
         "sequence": _require_text(item.get("sequence"), field="sequence", context=context),
         "item_id": _optional_text(item.get("item_id"), field="item_id", context=context),
         "priority": _optional_int(item.get("priority"), field="priority", context=context),
+        "request_order": _optional_nonnegative_int(
+            item.get("request_order"),
+            field="request_order",
+            context=context,
+        ),
         "sequencer": sequencer,
         "metadata": dict(metadata),
     }
 
 
-def _normalize_decision(item: Any, *, index: int) -> dict[str, Any]:
+def _normalize_decision(
+    item: Any,
+    *,
+    index: int,
+    default_mode: str,
+) -> dict[str, Any]:
     context = f"decisions[{index}]"
     if not isinstance(item, dict):
         raise ValueError(f"{context} must be an object")
@@ -87,6 +134,10 @@ def _normalize_decision(item: Any, *, index: int) -> dict[str, Any]:
         "decision_index": index,
         "decision_id": _require_text(item.get("decision_id"), field="decision_id", context=context),
         "sequencer": sequencer,
+        "mode": _normalize_mode(
+            item.get("mode", default_mode),
+            context=f"{context}.mode",
+        ),
         "granted_request_id": _require_text(
             item.get("granted_request_id"),
             field="granted_request_id",
@@ -126,9 +177,14 @@ def parse_uvm_arbitration_data(
     bound = _fairness_bound(
         fairness_bound if fairness_bound is not None else payload.get("fairness_bound")
     )
-    decisions = [_normalize_decision(item, index=index) for index, item in enumerate(raw_decisions)]
+    default_mode = _normalize_mode(payload.get("mode"), context="mode")
+    decisions = [
+        _normalize_decision(item, index=index, default_mode=default_mode)
+        for index, item in enumerate(raw_decisions)
+    ]
 
     violations: list[dict[str, Any]] = []
+    policy_checks: list[dict[str, Any]] = []
     requests: dict[str, dict[str, Any]] = {}
     decision_ids: set[str] = set()
     fairness_reported: set[str] = set()
@@ -228,6 +284,116 @@ def parse_uvm_arbitration_data(
             )
             granted_id = None
 
+        unique_contenders = []
+        policy_seen: set[str] = set()
+        for contender in decision["contenders"]:
+            if contender["request_id"] in policy_seen:
+                continue
+            policy_seen.add(contender["request_id"])
+            unique_contenders.append(contender)
+
+        policy = {
+            "decision_index": int(decision["decision_index"]),
+            "decision_id": decision["decision_id"],
+            "mode": decision["mode"],
+            "check_status": "OBSERVATIONAL",
+            "checked_constraints": [],
+            "missing_evidence": [],
+            "eligible_request_ids": [item["request_id"] for item in unique_contenders],
+            "expected_request_ids": None,
+            "highest_priority": None,
+            "earliest_request_order": None,
+            "violation_codes": [],
+        }
+
+        def policy_violation(code: str, message: str) -> None:
+            add_violation(
+                code,
+                decision,
+                message,
+                request_id=decision["granted_request_id"],
+            )
+            policy["violation_codes"].append(code)
+
+        mode = decision["mode"]
+        if granted_id is None:
+            policy["check_status"] = "SKIPPED"
+            policy["missing_evidence"].append("valid_grant")
+        elif mode == "UVM_SEQ_ARB_FIFO":
+            if all(item.get("request_order") is not None for item in unique_contenders):
+                earliest = min(int(item["request_order"]) for item in unique_contenders)
+                expected = [
+                    item["request_id"]
+                    for item in unique_contenders
+                    if int(item["request_order"]) == earliest
+                ]
+                policy["check_status"] = "CHECKED"
+                policy["checked_constraints"].append("fifo_request_order")
+                policy["earliest_request_order"] = earliest
+                policy["expected_request_ids"] = expected
+                if granted_id not in expected:
+                    policy_violation(
+                        "FIFO_ORDER_VIOLATION",
+                        f"FIFO grant {granted_id} did not select an earliest explicit request_order={earliest} contender",
+                    )
+            else:
+                policy["check_status"] = "PARTIAL"
+                policy["missing_evidence"].append("request_order")
+        elif mode in {"UVM_SEQ_ARB_STRICT_FIFO", "UVM_SEQ_ARB_STRICT_RANDOM"}:
+            if all(item.get("priority") is not None for item in unique_contenders):
+                highest = max(int(item["priority"]) for item in unique_contenders)
+                highest_items = [
+                    item for item in unique_contenders if int(item["priority"]) == highest
+                ]
+                highest_ids = [item["request_id"] for item in highest_items]
+                policy["highest_priority"] = highest
+                policy["eligible_request_ids"] = highest_ids
+                policy["checked_constraints"].append("highest_priority")
+                if granted_id not in highest_ids:
+                    policy_violation(
+                        "STRICT_PRIORITY_VIOLATION",
+                        f"Strict arbitration grant {granted_id} is not in the highest explicit priority={highest} contender set",
+                    )
+
+                if mode == "UVM_SEQ_ARB_STRICT_RANDOM":
+                    policy["check_status"] = "CHECKED"
+                    policy["expected_request_ids"] = highest_ids
+                elif len(highest_items) == 1:
+                    policy["check_status"] = "CHECKED"
+                    policy["expected_request_ids"] = highest_ids
+                elif all(item.get("request_order") is not None for item in highest_items):
+                    earliest = min(int(item["request_order"]) for item in highest_items)
+                    expected = [
+                        item["request_id"]
+                        for item in highest_items
+                        if int(item["request_order"]) == earliest
+                    ]
+                    policy["check_status"] = "CHECKED"
+                    policy["checked_constraints"].append("strict_fifo_request_order")
+                    policy["earliest_request_order"] = earliest
+                    policy["expected_request_ids"] = expected
+                    if granted_id in highest_ids and granted_id not in expected:
+                        policy_violation(
+                            "STRICT_FIFO_ORDER_VIOLATION",
+                            f"STRICT_FIFO grant {granted_id} did not select an earliest explicit request_order={earliest} highest-priority contender",
+                        )
+                else:
+                    policy["check_status"] = "PARTIAL"
+                    policy["expected_request_ids"] = highest_ids
+                    policy["missing_evidence"].append("request_order")
+            else:
+                policy["check_status"] = "PARTIAL"
+                policy["missing_evidence"].append("priority")
+        elif mode in {
+            _LOCAL_UNSPECIFIED_MODE,
+            "UVM_SEQ_ARB_RANDOM",
+            "UVM_SEQ_ARB_WEIGHTED",
+            "UVM_SEQ_ARB_USER",
+        }:
+            policy["check_status"] = "OBSERVATIONAL"
+
+        policy_checks.append(policy)
+
         for request_id in seen_in_decision:
             request = requests[request_id]
             if request_id == granted_id:
@@ -273,9 +439,13 @@ def parse_uvm_arbitration_data(
     fairness_violations = sum(
         violation["code"] == "FAIRNESS_BOUND_EXCEEDED" for violation in violations
     )
+    policy_violations = sum(
+        violation["code"] in _POLICY_VIOLATION_CODES for violation in violations
+    )
     return {
         "analysis": "uvm_arbitration_fairness",
         "source": selected_source,
+        "mode": default_mode,
         "status": "FAIL" if violations else "PASS",
         "fairness_bound": bound,
         "summary": {
@@ -285,19 +455,32 @@ def parse_uvm_arbitration_data(
             "pending": sum(request["pending"] for request in normalized_requests),
             "violations": len(violations),
             "fairness_violations": fairness_violations,
+            "policy_violations": policy_violations,
+            "policy_checked_decisions": sum(
+                item["check_status"] == "CHECKED" for item in policy_checks
+            ),
+            "policy_partial_decisions": sum(
+                item["check_status"] == "PARTIAL" for item in policy_checks
+            ),
+            "policy_observational_decisions": sum(
+                item["check_status"] == "OBSERVATIONAL" for item in policy_checks
+            ),
             "max_wait_decisions": max(
                 (int(request["lost_decisions"]) for request in normalized_requests),
                 default=0,
             ),
         },
         "grant_counts_by_sequence": dict(sorted(grant_counts_by_sequence.items())),
+        "policy_checks": policy_checks,
         "decisions": decisions,
         "requests": normalized_requests,
         "violations": violations,
         "limitations": [
             "Input is explicit normalized arbitration evidence; vendor simulator logs are not guessed or reinterpreted.",
             "fairness_bound is a project-defined maximum observed losing-decision count, not an Accellera UVM fairness guarantee or policy default.",
-            "This layer does not infer UVM arbitration mode, weighted/random selection probabilities, delta-cycle timing, or transaction payload semantics.",
+            "UVM arbitration policy is checked only when mode and the required priority/request_order evidence are explicit in the trace.",
+            "Random, weighted, user-defined, and unspecified selections remain observational; ZDDV does not invent a deterministic winner.",
+            "This layer does not infer hidden queues, lock/grab state, weighted/random selection probabilities, delta-cycle timing, or transaction payload semantics.",
         ],
     }
 
