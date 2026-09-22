@@ -154,6 +154,30 @@ def test_apply_rejects_tampered_draft(tmp_path: Path):
         )
 
 
+def test_apply_rejects_tampered_manifest_draft_id_before_writing(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    staged = stage_generated_artifact(project, _proposal(project))
+    manifest_path = Path(staged["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["draft_id"] = "../../escape"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    destination = project.root / "reviewed_generated" / "p_req_ack.sv"
+    with pytest.raises(ValueError, match="invalid draft_id"):
+        apply_generated_artifact(
+            project,
+            manifest_path,
+            destination=None,
+            expected_sha256=staged["content_sha256"],
+            approve_reviewed=True,
+        )
+
+    assert not destination.exists()
+
+
 def test_generation_proposal_rejects_unsupported_kind(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     proposal = project.root / "proposal.json"
