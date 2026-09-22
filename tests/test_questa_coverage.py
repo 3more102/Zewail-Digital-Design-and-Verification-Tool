@@ -8,8 +8,11 @@ import pytest
 
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    build_coverage_hole_report,
+    load_normalized_coverage_points,
     merge_questa_coverage,
     parse_questa_coverage_summary,
+    parse_questa_coverage_xml,
 )
 from zddv.storage import list_coverage_snapshots
 
@@ -24,6 +27,22 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Statements                    4920      4920         0         1   100.00%
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
+"""
+
+QUESTA_DETAILS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<coverageReport>
+  <instance name="tb_top.dut">
+    <statement name="stmt_12" source="rtl/dut.sv" line="12" hits="0" />
+    <branch name="if_ready.true" source="rtl/dut.sv" line="20" hits="4" />
+    <toggle name="ready[0]" hits="0" />
+    <covergroup name="cg_packets">
+      <coverpoint name="opcode">
+        <bin name="READ" hits="3" />
+        <bin name="WRITE" hits="0" />
+      </coverpoint>
+    </covergroup>
+  </instance>
+</coverageReport>
 """
 
 
@@ -59,6 +78,30 @@ def test_parse_questa_summary_preserves_tool_score_separately():
     assert metrics["by_type"]["toggle"]["hit"] == 37574
 
 
+def test_parse_questa_xml_normalizes_item_level_points_and_holes():
+    points = parse_questa_coverage_xml(QUESTA_DETAILS_XML)
+
+    assert len(points) == 5
+    assert {point["type"] for point in points} == {
+        "branch",
+        "covergroup",
+        "statement",
+        "toggle",
+    }
+    statement = next(point for point in points if point["type"] == "statement")
+    assert statement["count"] == 0
+    assert statement["hit"] is False
+    assert statement["name"].endswith("stmt_12@rtl/dut.sv:12")
+
+    holes = build_coverage_hole_report(points)
+    assert holes["total_holes"] == 3
+    assert holes["by_type"] == {
+        "covergroup": 1,
+        "statement": 1,
+        "toggle": 1,
+    }
+
+
 def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     tmp_path: Path,
     monkeypatch,
@@ -88,6 +131,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:3] == ["report", "-xml"]:
+            out_path = Path(command[command.index("-output") + 1])
+            out_path.write_text(QUESTA_DETAILS_XML, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="XML report complete\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -106,6 +153,14 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-summary",
         result["merged"],
     ]
+    assert commands[2] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-output",
+        result["details_path"],
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -115,6 +170,11 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["input_count"] == 2
     assert payload["tool_total_coverage"] == 79.53
     assert payload["by_type"]["expression"]["hit"] == 1143
+    assert payload["item_points"] == 5
+    assert Path(result["details_path"]).read_text(encoding="utf-8") == QUESTA_DETAILS_XML
+    assert load_normalized_coverage_points(project) == result["points"]
+    holes = build_coverage_hole_report(result["points"])
+    assert holes["total_holes"] == 3
 
     snapshots = list_coverage_snapshots(project, limit=5)
     assert len(snapshots) == 1
