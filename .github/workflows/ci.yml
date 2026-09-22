@@ -349,6 +349,111 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
+      - name: Exercise offline AI review trust chain
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("examples/counter")
+          evidence = {"run": {"run_id": "ci-offline"}}
+          encoded = json.dumps(
+              evidence,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=False,
+          ).encode("utf-8")
+          context = {
+              "schema_version": 1,
+              "analysis": "ai_rca_context",
+              "project": "counter",
+              "prompt_contract": [
+                  "Use only evidence present in this bundle.",
+                  "Separate observed facts, hypotheses, unknowns, and proposed next checks.",
+              ],
+              "policy": {
+                  "provider_neutral": True,
+                  "external_transmission": False,
+                  "automatic_model_invocation": False,
+                  "automatic_command_execution": False,
+                  "review_required_before_external_use": True,
+              },
+              "provenance": {
+                  "evidence_sha256": hashlib.sha256(encoded).hexdigest(),
+                  "deterministic": True,
+              },
+              "evidence": evidence,
+          }
+          response = {
+              "schema_version": 1,
+              "analysis": "zddv_ai_rca_response",
+              "observed_facts": [
+                  {
+                      "statement": "The offline CI run evidence is present.",
+                      "evidence_refs": ["run:ci-offline"],
+                  }
+              ],
+              "hypotheses": [],
+              "unknowns": [
+                  "This fixture makes no design-correctness conclusion."
+              ],
+              "next_checks": [
+                  {
+                      "description": "Review the proposal before any apply step.",
+                      "evidence_refs": ["run:ci-offline"],
+                  }
+              ],
+              "generated_proposals": [
+                  {
+                      "kind": "assertion",
+                      "language": "systemverilog",
+                      "name": "ai_offline_review_guard",
+                      "content": "assert property (@(posedge clk) 1'b1);\n",
+                      "target_path": "reviewed_generated/ai_offline_review_guard.sv",
+                      "evidence_refs": ["run:ci-offline"],
+                  }
+              ],
+          }
+          context_path = root / ".zddv" / "debug" / "ai-e2e-context.json"
+          response_path = root / ".zddv" / "ai" / "manual-response-content.json"
+          context_path.parent.mkdir(parents=True, exist_ok=True)
+          response_path.parent.mkdir(parents=True, exist_ok=True)
+          context_path.write_text(json.dumps(context, indent=2), encoding="utf-8")
+          response_path.write_text(json.dumps(response, indent=2), encoding="utf-8")
+          PY
+
+          zddv --project examples/counter ai-response-import \
+            --context .zddv/debug/ai-e2e-context.json \
+            --content .zddv/ai/manual-response-content.json \
+            --provider-label ci-offline \
+            --output .zddv/ai/e2e-provider-response.json
+          grep -q '"provider_invocation_performed": false' examples/counter/.zddv/ai/e2e-provider-response.json
+          grep -q '"untrusted_model_output": true' examples/counter/.zddv/ai/e2e-provider-response.json
+
+          zddv --project examples/counter ai-response-ingest \
+            --response .zddv/ai/e2e-provider-response.json \
+            --context .zddv/debug/ai-e2e-context.json \
+            --output .zddv/ai/e2e-validated-response.json
+          grep -q '"status": "VALIDATED_UNREVIEWED"' examples/counter/.zddv/ai/e2e-validated-response.json
+
+          SHA=$(python -c 'import json; print(json.load(open("examples/counter/.zddv/ai/e2e-validated-response.json"))["validated_payload_sha256"])')
+          zddv --project examples/counter ai-response-review \
+            .zddv/ai/e2e-validated-response.json \
+            --expected-sha256 "$SHA" \
+            --approve-reviewed
+
+          REVIEW=$(realpath "$(find examples/counter/.zddv/ai/reviews -name 'review-*.json' -print -quit)")
+          grep -q '"approved": true' "$REVIEW"
+          zddv --project examples/counter ai-proposal-export "$REVIEW" --proposal 1
+
+          PROPOSAL=$(realpath "$(find examples/counter/.zddv/ai/proposals -name '*.json' -print -quit)")
+          zddv --project examples/counter generated-stage "$PROPOSAL"
+          test ! -e examples/counter/reviewed_generated/ai_offline_review_guard.sv
+          MANIFEST=$(realpath "$(find examples/counter/.zddv/generated/drafts -name manifest.json -print -quit)")
+          test -s "$MANIFEST"
+          grep -q '"execution_enabled": false' "$MANIFEST"
+
       - name: Stage and explicitly apply reviewed generated assertion
         run: |
           zddv --project examples/counter generated-stage generated_assertion_proposal.json
