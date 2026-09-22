@@ -106,8 +106,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
-- [x] Questa statement/branch/condition item/source normalization and coverage-hole reporting.
-- [ ] Questa expression/toggle/FSM item-level normalization.
+- [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting.
+- [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
