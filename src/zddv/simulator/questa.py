@@ -203,6 +203,8 @@ class QuestaBackend(SimulatorBackend):
         ]
         if seed is not None:
             command.extend(["-sv_seed", str(seed)])
+        if project.waveform:
+            command.append("-voptargs=+acc")
         command.append(project.top)
         if test_name:
             command.extend([
@@ -279,12 +281,12 @@ class QuestaBackend(SimulatorBackend):
             log_path=log_path,
             created_at=now.isoformat(),
         )
-        analyze_uvm_log(
-            project,
-            log_path,
-            run_id=run_id,
-            source="questa",
-        )
+        if "UVM_" in (output or ""):
+            analyze_uvm_log(
+                project,
+                log_path,
+                source="questa-run",
+            )
 
         return RunResult(
             run_id=run_id,
