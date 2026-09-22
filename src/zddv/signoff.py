@@ -324,6 +324,15 @@ def write_verification_signoff_bundle(
     if not destination.is_absolute():
         destination = project.root / destination
     destination = destination.resolve()
+    root = project.root.resolve()
+    try:
+        destination.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"Signoff output must remain inside the project root: {destination}"
+        ) from exc
+    if destination == root:
+        raise ValueError("Signoff output must identify a file inside the project root")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         json.dumps(bundle, indent=2, sort_keys=True) + "\n",
