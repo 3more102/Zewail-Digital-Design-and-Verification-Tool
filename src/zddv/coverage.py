@@ -121,6 +121,22 @@ _QUESTA_FSM_UNCOVERED_TRANSITION = re.compile(
     r"(?P<transition>.+?\s+->\s+.+?)\s*$"
 )
 
+_QUESTA_TOGGLE_INSTANCE = re.compile(
+    r"^\s*Toggle\s+Coverage\s+for\s+instance\s+(?P<instance>.+?)\s+--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_TOGGLE_DESIGN_UNIT = re.compile(
+    r"^\s*===\s*Design\s+Unit:\s*(?P<design_unit>.+?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_TOGGLE_ROW = re.compile(
+    r"^\s*(?P<node>.+?)\s+"
+    r"(?P<high_to_low>\d[\d,]*)\s+"
+    r"(?P<low_to_high>\d[\d,]*)\s+"
+    r"(?P<coverage>\d+(?:\.\d+)?)\s*$"
+)
+
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -241,6 +257,11 @@ def build_coverage_hole_report(
                         "type_name",
                         "expression_index",
                         "truth_row",
+                        "instance",
+                        "design_unit",
+                        "node",
+                        "transition",
+                        "reported_coverage",
                     )
                     if key in point and point[key] is not None
                 },
@@ -405,6 +426,87 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
             coverage_kind = ""
 
     return {"source": "questa-vcover", "bins": bins}
+
+
+def parse_questa_toggle_coverage_report(text: str) -> list[dict]:
+    """Normalize explicit by-instance Questa toggle transition rows.
+
+    Each native report row is preserved at the tool's node/range granularity.
+    ZDDV emits one point for each explicitly reported 1H->0L and 0L->1H
+    transition count and never expands bus ranges into inferred per-bit points.
+    """
+
+    points: list[dict] = []
+    instance = ""
+    design_unit = ""
+    in_table = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+
+        design_match = _QUESTA_TOGGLE_DESIGN_UNIT.match(raw_line)
+        if design_match is not None:
+            design_unit = design_match.group("design_unit").strip()
+            continue
+
+        instance_match = _QUESTA_TOGGLE_INSTANCE.match(raw_line)
+        if instance_match is not None:
+            instance = instance_match.group("instance").strip()
+            in_table = False
+            continue
+
+        if not instance:
+            continue
+
+        lowered = line.lower()
+        if "node" in lowered and "1h->0l" in lowered and "0l->1h" in lowered:
+            in_table = True
+            continue
+
+        if not in_table:
+            continue
+
+        if not line or set(line) <= {"-"}:
+            continue
+
+        if lowered.startswith(
+            ("total node count", "toggled node count", "untoggled node count", "toggle coverage")
+        ):
+            in_table = False
+            continue
+
+        row = _QUESTA_TOGGLE_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        node = row.group("node").strip()
+        high_to_low = int(row.group("high_to_low").replace(",", ""))
+        low_to_high = int(row.group("low_to_high").replace(",", ""))
+        reported_coverage = float(row.group("coverage"))
+
+        for transition, count in (
+            ("1H->0L", high_to_low),
+            ("0L->1H", low_to_high),
+        ):
+            points.append(
+                {
+                    "name": f"{instance}:{node}:{transition}",
+                    "count": count,
+                    "hit": count > 0,
+                    "type": "toggle",
+                    "instance": instance,
+                    "design_unit": design_unit or None,
+                    "node": node,
+                    "transition": transition,
+                    "reported_coverage": reported_coverage,
+                    "evidence": (
+                        f"{node} 1H->0L={high_to_low} "
+                        f"0L->1H={low_to_high} coverage={reported_coverage:.2f}"
+                    ),
+                }
+            )
+
+    return points
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
