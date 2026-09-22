@@ -104,7 +104,7 @@ tb 100.00% 97.50% (195/200) 98.00% 96.00% (96/100) n/a n/a 91.00% 90.00% (90/100
     assert first.as_posix() in script
     assert second.as_posix() in script
     assert "load -run" in script
-    assert 'report -summary -inst "*..."' in script
+    assert "report -summary -cumulative on -inst -local off" in script
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
@@ -211,4 +211,22 @@ tb 96.54% 96.08% (58216/60590/5041) 95.00% 94.00% n/a n/a 90.00% 89.00%
 def test_parse_xcelium_imc_summary_rejects_unknown_shape():
     with pytest.raises(ValueError, match="header"):
         parse_xcelium_imc_summary("IMC summary fixture without documented columns\n")
+
+
+def test_parse_xcelium_imc_summary_rejects_out_of_range_grade():
+    text = """name Overall Average Overall Covered Code Average Code Covered Fsm Average Fsm Covered Functional Average Functional Covered
+tb 100.00% 101.00% (101/101) n/a n/a n/a n/a n/a n/a
+"""
+
+    with pytest.raises(ValueError, match="outside 0..100"):
+        parse_xcelium_imc_summary(text)
+
+
+def test_parse_xcelium_imc_summary_rejects_impossible_two_part_count():
+    text = """name Overall Average Overall Covered Code Average Code Covered Fsm Average Fsm Covered Functional Average Functional Covered
+tb 100.00% 100.00% (3/2) n/a n/a n/a n/a n/a n/a
+"""
+
+    with pytest.raises(ValueError, match="exceeds total"):
+        parse_xcelium_imc_summary(text)
 
