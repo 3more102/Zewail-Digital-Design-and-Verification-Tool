@@ -805,6 +805,7 @@ bundle is review-required before any external use.
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
 - [Generated Verification Review Workflow](docs/generated-verification.md)
+- [AI RCA Context](docs/ai-rca-context.md)
 
 ## License
 
