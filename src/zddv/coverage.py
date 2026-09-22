@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+from html import unescape
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -1121,7 +1123,7 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
 
 
 _VCS_URG_MODULE_HEADER = re.compile(
-    r"^\s*(?P<kind>Line|Branch)\s+Coverage\s+for\s+Module\s*:\s*"
+    r"^\s*(?P<kind>Line|Cond(?:ition)?|Toggle|FSM|Branch)\s+Coverage\s+for\s+Module\s*:\s*"
     r"(?P<module>.+?)\s*$",
     re.IGNORECASE,
 )
@@ -1129,41 +1131,106 @@ _VCS_URG_ANY_COVERAGE_SECTION = re.compile(
     r"^\s*.+?\s+Coverage\s+for\s+(?:Module|Instance)\s*:\s*.+?\s*$",
     re.IGNORECASE,
 )
-_VCS_URG_MODULE_TOTAL_ROWS = {
-    "line": re.compile(
-        r"^\s*TOTAL\s+(?P<total>\d[\d,]*)\s+"
-        r"(?P<covered>\d[\d,]*)\s+"
-        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
-        re.IGNORECASE,
-    ),
-    "branch": re.compile(
-        r"^\s*Branches\s+(?P<total>\d[\d,]*)\s+"
-        r"(?P<covered>\d[\d,]*)\s+"
-        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
-        re.IGNORECASE,
-    ),
+_VCS_URG_SUMMARY_TARGETS = {
+    "line": {"total": "line"},
+    "condition": {"conditions": "condition"},
+    "toggle": {"totals": "toggle"},
+    "branch": {"branches": "branch"},
+    "fsm": {
+        "states": "fsm_state",
+        "transitions": "fsm_transition",
+        "sequences": "fsm_sequence",
+    },
 }
+_VCS_URG_FSM_NAME = re.compile(
+    r"Summary\s+for\s+FSM\s*::\s*(?P<name>\S+)",
+    re.IGNORECASE,
+)
+
+
+def _vcs_urg_metric_kind(value: str) -> str:
+    lowered = value.strip().lower()
+    return "condition" if lowered.startswith("cond") else lowered
+
+
+def _vcs_urg_summary_count(
+    line: str,
+    targets: dict[str, str],
+) -> tuple[str, int, int, float | None] | None:
+    normalized = " ".join(line.replace("|", " ").split())
+    for label, metric in targets.items():
+        match = re.match(
+            rf"^{re.escape(label)}\s+"
+            r"(?P<total>\d[\d,]*)\s+"
+            r"(?P<covered>\d[\d,]*)"
+            r"(?:\s+(?P<score>\d+(?:\.\d+)?)%?)?",
+            normalized,
+            re.IGNORECASE,
+        )
+        if match is None:
+            continue
+        total = int(match.group("total").replace(",", ""))
+        covered = int(match.group("covered").replace(",", ""))
+        score_text = match.group("score")
+        score = None if score_text is None else float(score_text)
+        if (
+            total < 0
+            or covered < 0
+            or covered > total
+            or (score is not None and not 0.0 <= score <= 100.0)
+        ):
+            raise ValueError(
+                f"Invalid URG {metric} total: {covered}/{total}"
+            )
+        return metric, covered, total, score
+    return None
+
+
+def _aggregate_vcs_urg_records(
+    records: dict[tuple[str, str, str], dict[str, int | float | str | None]],
+    *,
+    prefix: str,
+) -> dict[str, dict[str, int | float | None]]:
+    aggregates: dict[str, dict[str, int | float | None]] = {}
+    metrics = sorted({key[0] for key in records})
+    for metric in metrics:
+        selected = [
+            record
+            for (record_metric, _, _), record in records.items()
+            if record_metric == metric
+        ]
+        total = sum(int(record["total"]) for record in selected)
+        covered = sum(int(record["covered"]) for record in selected)
+        aggregates[f"{prefix}_{metric}"] = {
+            "covered": covered,
+            "total": total,
+            "hit_rate": (100.0 * covered / total) if total else None,
+        }
+    return aggregates
 
 
 def parse_vcs_urg_module_counts(path: str | Path) -> dict:
-    """Parse documented module-level line/branch totals from URG modinfo.txt.
+    """Parse explicit module-level code-metric totals from URG modinfo.txt.
 
-    Count names are intentionally module_line/module_branch: they describe
-    module-definition report totals and do not replace design-wide dashboard
-    percentage metrics.
+    Module and instance counts are intentionally stored under different metric
+    names. They are evidence from different URG scopes and are never combined
+    into a synthetic design-wide object total.
     """
     source = Path(path)
     lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
-    records: dict[tuple[str, str], dict[str, int | float | str]] = {}
+    records: dict[
+        tuple[str, str, str],
+        dict[str, int | float | str | None],
+    ] = {}
 
     for index, raw_line in enumerate(lines):
         header = _VCS_URG_MODULE_HEADER.match(raw_line)
         if header is None:
             continue
 
-        kind = header.group("kind").lower()
+        kind = _vcs_urg_metric_kind(header.group("kind"))
         module = header.group("module").strip()
-        row_pattern = _VCS_URG_MODULE_TOTAL_ROWS[kind]
+        targets = _VCS_URG_SUMMARY_TARGETS[kind]
 
         end = len(lines)
         for candidate in range(index + 1, len(lines)):
@@ -1171,64 +1238,237 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
                 end = candidate
                 break
 
-        parsed_row = None
+        fsm_name = ""
         for candidate in lines[index + 1 : end]:
-            row = row_pattern.match(candidate)
-            if row is not None:
-                parsed_row = row
-                break
-        if parsed_row is None:
-            continue
+            if kind == "fsm":
+                fsm_match = _VCS_URG_FSM_NAME.search(candidate)
+                if fsm_match is not None:
+                    fsm_name = fsm_match.group("name").strip()
 
-        total = int(parsed_row.group("total").replace(",", ""))
-        covered = int(parsed_row.group("covered").replace(",", ""))
-        score = float(parsed_row.group("score"))
-        if total < 0 or covered < 0 or covered > total or not 0.0 <= score <= 100.0:
-            raise ValueError(
-                f"Invalid URG {kind} module total for {module}: "
-                f"{covered}/{total} ({score}%)"
-            )
-
-        key = (kind, module)
-        record = {
-            "metric": kind,
-            "module": module,
-            "covered": covered,
-            "total": total,
-            "hit_rate": score,
-        }
-        previous = records.get(key)
-        if previous is not None and previous != record:
-            raise ValueError(
-                f"Conflicting URG {kind} module totals for {module}"
-            )
-        records[key] = record
-
-    aggregates: dict[str, dict[str, int | float]] = {}
-    for kind in ("line", "branch"):
-        selected = [
-            record
-            for (record_kind, _), record in records.items()
-            if record_kind == kind
-        ]
-        if not selected:
-            continue
-        total = sum(int(record["total"]) for record in selected)
-        covered = sum(int(record["covered"]) for record in selected)
-        aggregates[f"module_{kind}"] = {
-            "covered": covered,
-            "total": total,
-            "hit_rate": 100.0 * covered / total if total else 0.0,
-        }
+            parsed = _vcs_urg_summary_count(candidate, targets)
+            if parsed is None:
+                continue
+            metric, covered, total, score = parsed
+            identity = fsm_name if kind == "fsm" else ""
+            key = (metric, module, identity)
+            record = {
+                "metric": metric,
+                "module": module,
+                "covered": covered,
+                "total": total,
+                "hit_rate": score,
+            }
+            if identity:
+                record["fsm"] = identity
+            previous = records.get(key)
+            if previous is not None and previous != record:
+                conflict_kind = kind if kind != "condition" else "condition"
+                raise ValueError(
+                    f"Conflicting URG {conflict_kind} module totals for {module}"
+                )
+            records[key] = record
 
     return {
         "source": "urg-modinfo",
         "path": str(source.resolve()),
-        "by_metric_counts": aggregates,
+        "by_metric_counts": _aggregate_vcs_urg_records(
+            records,
+            prefix="module",
+        ),
         "modules": [
             records[key]
-            for key in sorted(records, key=lambda item: (item[0], item[1]))
+            for key in sorted(records, key=lambda item: (item[0], item[1], item[2]))
         ],
+    }
+
+
+class _UrgHtmlTableRows(HTMLParser):
+    """Collect visible cell text from one URG HTML table."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell_parts: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag == "tr":
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell_parts is not None:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._row is not None:
+            text = " ".join("".join(self._cell_parts or []).split())
+            self._row.append(text)
+            self._cell_parts = None
+        elif tag == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(self._row)
+            self._row = None
+            self._cell_parts = None
+
+
+_VCS_URG_INSTANCE_SECTION = re.compile(
+    r"(?P<kind>Line|Cond(?:ition)?|Toggle|FSM|Branch)\s+Coverage\s+for\s+Instance\b",
+    re.IGNORECASE,
+)
+_VCS_URG_HTML_SECTION = re.compile(
+    r"(?:Line|Cond(?:ition)?|Toggle|FSM|Branch)\s+Coverage\s+for\s+(?:Instance|Module)\b",
+    re.IGNORECASE,
+)
+_VCS_URG_HTML_TABLE = re.compile(
+    r"<table\b.*?</table\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _urg_visible_text(fragment: str) -> str:
+    without_tags = re.sub(r"<[^>]+>", " ", fragment)
+    return " ".join(unescape(without_tags).split())
+
+
+def _urg_instance_identity(header_fragment: str, *, fallback: str) -> str:
+    header_text = _urg_visible_text(header_fragment)
+    match = re.search(
+        r"Coverage\s+for\s+Instance\s*:\s*(?P<instance>.+?)"
+        r"(?:\s+Summary\s+for\s+FSM\s*::|$)",
+        header_text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return fallback
+    identity = match.group("instance").strip()
+    return identity or fallback
+
+
+def _parse_vcs_urg_instance_section_counts(
+    html_text: str,
+) -> tuple[list[tuple[str, str, int, int]], int]:
+    records: list[tuple[str, str, int, int]] = []
+    matched_sections = 0
+
+    for section_match in _VCS_URG_INSTANCE_SECTION.finditer(html_text):
+        kind = _vcs_urg_metric_kind(section_match.group("kind"))
+        targets = _VCS_URG_SUMMARY_TARGETS[kind]
+        next_section = _VCS_URG_HTML_SECTION.search(
+            html_text,
+            section_match.end(),
+        )
+        section_end = next_section.start() if next_section is not None else len(html_text)
+        section = html_text[section_match.end() : section_end]
+        tables = list(_VCS_URG_HTML_TABLE.finditer(section))
+        if not tables:
+            continue
+
+        first_table_start = section_match.end() + tables[0].start()
+        instance = _urg_instance_identity(
+            html_text[section_match.start() : first_table_start],
+            fallback=f"offset-{section_match.start()}",
+        )
+        section_matched = False
+
+        for table_index, table_match in enumerate(tables):
+            parser = _UrgHtmlTableRows()
+            parser.feed(table_match.group(0))
+            parser.close()
+            rows = parser.rows
+            has_count_header = any(
+                "total" in {cell.strip().casefold() for cell in row}
+                and "covered" in {cell.strip().casefold() for cell in row}
+                for row in rows
+            )
+            if not has_count_header:
+                continue
+
+            fsm_name = ""
+            if kind == "fsm":
+                context = _urg_visible_text(section[: table_match.start()])
+                names = _VCS_URG_FSM_NAME.findall(context)
+                if names:
+                    fsm_name = str(names[-1]).strip()
+                else:
+                    fsm_name = f"table-{table_index}"
+
+            for row in rows:
+                if not row:
+                    continue
+                metric = targets.get(row[0].strip().casefold())
+                if metric is None:
+                    continue
+                values: list[int] = []
+                for cell in row[1:]:
+                    token = cell.strip().replace(",", "")
+                    if re.fullmatch(r"\d+", token):
+                        values.append(int(token))
+                        if len(values) == 2:
+                            break
+                if len(values) != 2:
+                    continue
+                total, covered = values
+                if covered > total:
+                    raise ValueError(
+                        f"URG instance detail has invalid {metric} count: "
+                        f"{covered}/{total}"
+                    )
+                evidence_key = f"{instance}|{fsm_name}|{metric}"
+                records.append((evidence_key, metric, covered, total))
+                section_matched = True
+
+        if section_matched:
+            matched_sections += 1
+
+    return records, matched_sections
+
+
+def parse_vcs_urg_instance_counts(report_dir: str | Path) -> dict:
+    """Aggregate explicit URG instance-detail code-metric counts from mod*.html."""
+    source = Path(report_dir)
+    html_files = sorted(source.glob("mod*.html"))
+    aggregate: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    seen: dict[str, tuple[str, int, int]] = {}
+    matched_sections = 0
+    duplicate_records = 0
+
+    for html_path in html_files:
+        html_text = html_path.read_text(encoding="utf-8", errors="replace")
+        records, section_count = _parse_vcs_urg_instance_section_counts(html_text)
+        matched_sections += section_count
+        for evidence_key, metric, covered, total in records:
+            previous = seen.get(evidence_key)
+            current = (metric, covered, total)
+            if previous is not None:
+                if previous != current:
+                    raise ValueError(
+                        "Conflicting URG instance-detail counts for "
+                        f"{evidence_key}: {previous[1]}/{previous[2]} vs "
+                        f"{covered}/{total}"
+                    )
+                duplicate_records += 1
+                continue
+            seen[evidence_key] = current
+            aggregate[metric][0] += covered
+            aggregate[metric][1] += total
+
+    normalized: dict[str, dict[str, int | float | None]] = {}
+    for metric, (covered, total) in sorted(aggregate.items()):
+        normalized[f"instance_{metric}"] = {
+            "covered": covered,
+            "total": total,
+            "hit_rate": (100.0 * covered / total) if total else None,
+        }
+
+    return {
+        "by_metric_counts": normalized,
+        "files_scanned": len(html_files),
+        "instance_sections": matched_sections,
+        "unique_records": len(seen),
+        "duplicate_records": duplicate_records,
+        "source": "urg-instance-detail-html",
     }
 
 
@@ -1405,6 +1645,26 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             module_counts_status = "modinfo-unparsed"
             module_counts_error = str(exc)
 
+    instance_counts_status = "instance-detail-missing"
+    instance_counts_error: str | None = None
+    instance_report: dict | None = None
+    try:
+        instance_report = parse_vcs_urg_instance_counts(report_dir)
+        instance_counts = instance_report["by_metric_counts"]
+        if instance_counts:
+            instance_counts_status = "normalized"
+            if metrics is not None:
+                metrics.setdefault("by_metric_counts", {}).update(instance_counts)
+                metrics["instance_report"] = instance_report
+        elif instance_report["files_scanned"]:
+            instance_counts_status = "instance-detail-unparsed"
+            instance_counts_error = (
+                "No documented instance code-metric total rows were found"
+            )
+    except (OSError, ValueError) as exc:
+        instance_counts_status = "instance-detail-unparsed"
+        instance_counts_error = str(exc)
+
     if metrics is not None:
         snapshot_id = (
             datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
@@ -1425,6 +1685,8 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
         "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "module_counts_status": module_counts_status,
+        "instance_counts_status": instance_counts_status,
+        "instance_report": instance_report,
         "command": command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
@@ -1433,6 +1695,8 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         payload["metrics_error"] = metrics_error
     if module_counts_error is not None:
         payload["module_counts_error"] = module_counts_error
+    if instance_counts_error is not None:
+        payload["instance_counts_error"] = instance_counts_error
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     summary_path = dashboard_path if dashboard_path.exists() else report_dir
@@ -1469,6 +1733,9 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "metrics_error": metrics_error,
         "module_counts_status": module_counts_status,
         "module_counts_error": module_counts_error,
+        "instance_counts_status": instance_counts_status,
+        "instance_counts_error": instance_counts_error,
+        "instance_report": instance_report,
     }
 
 
