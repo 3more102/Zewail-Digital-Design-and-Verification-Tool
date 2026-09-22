@@ -56,17 +56,7 @@ class XceliumBackend(SimulatorBackend):
         label = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
         return label[:40] or "test"
 
-    @staticmethod
-    def _require_supported_project(project: ProjectConfig) -> None:
-        if project.coverage:
-            raise RuntimeError(
-                "Xcelium execution is supported, but native Xcelium coverage "
-                "collection/merge is not implemented yet. Disable coverage "
-                "for this backend."
-            )
-
     def build(self, project: ProjectConfig) -> BuildResult:
-        self._require_supported_project(project)
         sources = project.source_files()
         if not sources:
             raise RuntimeError(
@@ -94,6 +84,8 @@ class XceliumBackend(SimulatorBackend):
         ]
         if project.waveform:
             command.extend(["-access", "+rwc"])
+        if project.coverage:
+            command.extend(["-coverage", "all"])
         command.extend(str(path) for path in sources)
 
         completed = subprocess.run(
@@ -118,8 +110,11 @@ class XceliumBackend(SimulatorBackend):
             "sources": [str(path) for path in sources],
             "waveform_requested": project.waveform,
             "waveform_capture": "vcd-tcl" if project.waveform else "disabled",
-            "coverage_requested": False,
-            "coverage_capture": "disabled",
+            "coverage_requested": project.coverage,
+            "coverage_capture": (
+                "instrumented" if project.coverage else "disabled"
+            ),
+            "coverage_metrics": "all" if project.coverage else None,
             "uvm": "xrun-native",
             "command": command,
             "returncode": completed.returncode,
@@ -169,7 +164,6 @@ class XceliumBackend(SimulatorBackend):
         plusargs: list[str] | None = None,
         timeout_s: float | None = None,
     ) -> RunResult:
-        self._require_supported_project(project)
         library_dir = self._library_dir(project)
         if not library_dir.exists():
             build = self.build(project)
@@ -192,6 +186,8 @@ class XceliumBackend(SimulatorBackend):
             run_dir,
             waveform=project.waveform,
         )
+        coverage_workdir = run_dir / "cov_work" if project.coverage else None
+        coverage_test = "zddv" if project.coverage else None
 
         command = [
             self._tool(),
@@ -199,6 +195,16 @@ class XceliumBackend(SimulatorBackend):
             "-xmlibdirname",
             str(library_dir),
         ]
+        if coverage_workdir is not None and coverage_test is not None:
+            command.extend(
+                [
+                    "-covoverwrite",
+                    "-covworkdir",
+                    str(coverage_workdir),
+                    "-covtest",
+                    coverage_test,
+                ]
+            )
         if seed is not None:
             command.extend(["-svseed", str(seed)])
         if input_file is not None:
@@ -246,6 +252,22 @@ class XceliumBackend(SimulatorBackend):
         if not waveform_path.exists():
             waveform_path = None
 
+        coverage_path = (
+            coverage_workdir / "scope" / coverage_test
+            if coverage_workdir is not None and coverage_test is not None
+            else None
+        )
+        if coverage_path is not None:
+            has_ucd = any(coverage_path.glob("*.ucd")) if coverage_path.is_dir() else False
+            has_ucm = any(coverage_path.glob("*.ucm")) if coverage_path.is_dir() else False
+            if not (has_ucd and has_ucm):
+                coverage_path = None
+        coverage_capture = (
+            "ucm-ucd"
+            if coverage_path is not None
+            else ("missing" if project.coverage else "disabled")
+        )
+
         status = (
             "TIMEOUT"
             if timed_out
@@ -270,9 +292,10 @@ class XceliumBackend(SimulatorBackend):
             "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform_path) if waveform_path else None,
-            "coverage_requested": False,
-            "coverage": None,
-            "coverage_capture": "disabled",
+            "coverage_requested": project.coverage,
+            "coverage": str(coverage_path) if coverage_path else None,
+            "coverage_capture": coverage_capture,
+            "coverage_metrics": "all" if project.coverage else None,
             "build_artifact": str(library_dir),
         }
         (run_dir / "run.json").write_text(
@@ -302,7 +325,7 @@ class XceliumBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform_path,
-            coverage_path=None,
+            coverage_path=coverage_path,
             test_name=test_name,
             seed=seed,
         )
