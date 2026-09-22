@@ -596,18 +596,18 @@ missing toggle direction can be named, and an FSM transition already present in 
 coverage evidence can be used as the objective. ZDDV does not invent DUT behavior,
 generate test code, or execute the suggested stimulus automatically.
 
-### Reviewable Generated Verification Scaffolds
+### Reviewable Generated Verification Proposals
 
-`coverage-scaffold` turns the evidence-backed coverage suggestions into a review
+`verification-proposals` turns the evidence-backed coverage suggestions into a review
 bundle containing disabled test and assertion/cover templates:
 
 ```bash
-zddv --project my_project coverage-scaffold
-zddv --project my_project coverage-scaffold --emit-dir .zddv/coverage/review-scaffolds
+zddv --project my_project verification-proposals
+zddv --project my_project verification-proposals --emit-dir .zddv/generated/review
 ```
 
 Without `--emit-dir`, ZDDV writes only
-`.zddv/coverage/review-bundle.json`; no code files are emitted. Supplying
+`.zddv/debug/verification-proposals.json`; no code files are emitted. Supplying
 `--emit-dir` is the explicit opt-in for code emission. Even then, the generated
 artifacts use the `.sv.disabled` suffix, are never added to project sources, and
 contain commented review/TODO scaffolds rather than invented clocks, resets,
