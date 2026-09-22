@@ -430,13 +430,13 @@ def cmd_coverage(args) -> int:
     code_detail_status = result.get("code_detail_status")
     if code_detail_status is not None:
         print(
-            "Normalized Questa statement/branch/condition coverage: "
+            "Normalized Questa statement/branch/condition/expression coverage: "
             f"{code_detail_status} "
             f"{result.get('code_detail_points', 0)} point(s), "
             f"{result.get('code_detail_holes', 0)} hole(s)"
         )
         if result.get("code_report"):
-            print(f"Questa statement/branch/condition detail: {result['code_report']}")
+            print(f"Questa statement/branch/condition/expression detail: {result['code_report']}")
     detailed = result.get("detailed_code_coverage_evidence") or {}
     if detailed:
         xml = detailed.get("xml", {})
@@ -536,10 +536,10 @@ def cmd_coverage_holes(args) -> int:
             limit=args.limit,
         )
     elif simulator in {"questa", "questasim"}:
-        if args.point_type not in {None, "statement", "branch", "condition"}:
+        if args.point_type not in {None, "statement", "branch", "condition", "expression"}:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, --type branch, or --type condition."
+                "--type statement, --type branch, --type condition, or --type expression."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
@@ -562,6 +562,19 @@ def cmd_coverage_holes(args) -> int:
             if not points:
                 raise RuntimeError(
                     f"No normalized coverage points found in {source_path}."
+                )
+            if (
+                args.point_type in {"condition", "expression"}
+                and not any(
+                    str(point.get("type")) == args.point_type
+                    for point in points
+                )
+            ):
+                raise RuntimeError(
+                    f"No normalized Questa {args.point_type} FEC rows found in "
+                    f"{source_path}. This adapter supports documented "
+                    "Rows: ... FEC Target... detail tables; other layouts "
+                    "remain unnormalized."
                 )
             report = write_coverage_hole_report(
                 points,
