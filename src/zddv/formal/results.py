@@ -108,7 +108,7 @@ def _proof_scope(request: FormalCheckRequest) -> str:
     if request.mode == "bmc":
         return "BOUNDED"
     if request.mode == "prove":
-        return "PROOF"
+        return "UNBOUNDED"
     return "COVER"
 
 
