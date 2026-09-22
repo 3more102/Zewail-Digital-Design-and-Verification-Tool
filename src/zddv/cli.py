@@ -23,6 +23,7 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -919,6 +920,45 @@ def cmd_coverage(args) -> int:
     report = result["report"].strip()
     if report:
         print(report)
+    return 0
+
+
+def cmd_xcelium_detail_audit(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    result = write_xcelium_imc_detail_audit(source, output)
+    summary = result["summary"]
+    print(
+        "XCELIUM DETAIL AUDIT: "
+        f"{summary['sections']} section(s); "
+        f"verified={summary['verified_sections']} "
+        f"unverified={summary['unverified_sections']}"
+    )
+    for section in result["sections"][: max(0, args.show)]:
+        print(
+            f"{section['ordinal']:>3} {section['metric']:<12} "
+            f"{section['normalization_status']:<25} "
+            f"lines {section['start_line']}-{section['end_line']} "
+            f"sha256={section['section_sha256'][:12]}"
+        )
+        print(f"    {section['title']}")
+    if summary["unverified_sections"]:
+        print(
+            "Unverified sections remain evidence-only; "
+            "no item-level schema is inferred."
+        )
+    if result["limitations"]:
+        for limitation in result["limitations"]:
+            print(f"NOTE: {limitation}")
+    print(f"Report: {result['path']}")
     return 0
 
 
@@ -2864,6 +2904,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
+
+    p_xcelium_detail_audit = sub.add_parser(
+        "xcelium-detail-audit",
+        help="Inventory native IMC detail sections without guessing unsupported schemas",
+    )
+    p_xcelium_detail_audit.add_argument(
+        "--input",
+        default=".zddv/coverage/xcelium/detail.txt",
+        help="Captured native Xcelium IMC detail report",
+    )
+    p_xcelium_detail_audit.add_argument(
+        "--output",
+        default=".zddv/coverage/xcelium/detail-audit.json",
+        help="Evidence-preserving IMC detail schema audit JSON",
+    )
+    p_xcelium_detail_audit.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of section summaries to print",
+    )
+    p_xcelium_detail_audit.set_defaults(func=cmd_xcelium_detail_audit)
 
     p_coverage_history = sub.add_parser(
         "coverage-history",
