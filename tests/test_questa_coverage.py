@@ -290,6 +290,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             output = Path(command[command.index("-output") + 1])
             output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
+        if command[1:4] == ["report", "-details", "-multibitverbose"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("multibit expression fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="multibit report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -343,6 +347,17 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("zeros.txt")),
         result["merged"],
     ]
+    assert commands[6] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-details",
+        "-multibitverbose",
+        "-code",
+        "e",
+        "-output",
+        str(Path(result["merged"]).with_name("multibit-expression.txt")),
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -361,8 +376,12 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     evidence = payload["detailed_code_coverage_evidence"]
     assert evidence["xml"]["status"] == "captured"
     assert evidence["zero_detail"]["status"] == "captured"
+    assert evidence["multibit_expression"]["status"] == "captured"
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
     assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
+    assert Path(evidence["multibit_expression"]["path"]).read_text(
+        encoding="utf-8"
+    ) == "multibit expression fixture\n"
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -518,6 +537,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
+                "multibit_expression": {
+                    "status": "captured",
+                    "path": "/tmp/multibit-expression.txt",
+                },
             },
         },
     )
@@ -540,6 +563,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     )
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
+    assert (
+        "Questa multibit expression detail: captured /tmp/multibit-expression.txt"
+        in output
+    )
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
@@ -555,6 +582,9 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     out_dir.mkdir(parents=True)
     (out_dir / "details.xml").write_text("stale\n", encoding="utf-8")
     (out_dir / "zeros.txt").write_text("stale\n", encoding="utf-8")
+    (out_dir / "multibit-expression.txt").write_text(
+        "stale\n", encoding="utf-8"
+    )
 
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
@@ -572,7 +602,7 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
-        if "-xml" in command or "-zeros" in command:
+        if "-xml" in command or "-zeros" in command or "-multibitverbose" in command:
             return SimpleNamespace(returncode=2, stdout="unsupported fixture\n")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -586,8 +616,11 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["xml"]["diagnostic"] == "unsupported fixture"
     assert evidence["zero_detail"]["status"] == "failed"
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
+    assert evidence["multibit_expression"]["status"] == "failed"
+    assert evidence["multibit_expression"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
+    assert not Path(evidence["multibit_expression"]["path"]).exists()
 
 
 def test_parse_questa_statement_xml_keeps_file_maps_scoped_per_instance(
