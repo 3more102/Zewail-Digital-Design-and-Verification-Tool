@@ -46,7 +46,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
-from zddv.uvm_item import analyze_uvm_item_file
+from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
@@ -770,15 +770,7 @@ def cmd_uvm_history(args) -> int:
     return 0
 
 
-def cmd_uvm_item_analyze(args) -> int:
-    project = load_project(_project_arg(args))
-    result = analyze_uvm_item_file(
-        project,
-        args.path,
-        source=args.source,
-        output=args.output,
-        run_id=args.run_id,
-    )
+def _print_uvm_item_result(result, *, show: int) -> int:
     summary = result["summary"]
     print(
         f"UVM ITEM {result['status']}: "
@@ -793,21 +785,53 @@ def cmd_uvm_item_analyze(args) -> int:
         f"responded={summary['responded']} "
         f"active={summary['active']} partial={summary['partial']}"
     )
+    if result.get("adapter"):
+        adapter = result["adapter"]
+        print(
+            f"Adapter: {adapter['kind']} "
+            f"report-id={adapter['report_id']} "
+            f"matched={adapter['matched_messages']}"
+        )
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
             f"(simulator-status={result['run_status']}, "
             f"returncode={result['run_returncode']})"
         )
-    for violation in result["violations"][: args.show]:
+    for violation in result["violations"][:show]:
         print(
             f"[{violation['code']}] event={violation['event_index']} "
             f"item={violation['item_id']} {violation['message']}"
         )
-    if len(result["violations"]) > args.show:
-        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    if len(result["violations"]) > show:
+        print(f"... {len(result['violations']) - show} more violation(s)")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_item_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_item_file(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    return _print_uvm_item_result(result, show=args.show)
+
+
+def cmd_uvm_item_log(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_item_log(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    return _print_uvm_item_result(result, show=args.show)
+
 
 def cmd_uvm_item_history(args) -> int:
     project = load_project(_project_arg(args))
@@ -1728,6 +1752,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of item-handshake violations to print",
     )
     p_uvm_item.set_defaults(func=cmd_uvm_item_analyze)
+
+    p_uvm_item_log = sub.add_parser(
+        "uvm-item-log",
+        help="Import explicit ZDDV_ITEM UVM report messages and analyze item handshakes",
+    )
+    p_uvm_item_log.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="UVM simulation log path; omit when --run should supply the recorded log",
+    )
+    p_uvm_item_log.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID; supplies the log when path is omitted",
+    )
+    p_uvm_item_log.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label; defaults to the linked simulator or uvm-item-report",
+    )
+    p_uvm_item_log.add_argument(
+        "--output",
+        default=".zddv/uvm/items/latest.json",
+        help="Normalized UVM item JSON report path",
+    )
+    p_uvm_item_log.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of item-handshake violations to print",
+    )
+    p_uvm_item_log.set_defaults(func=cmd_uvm_item_log)
 
     p_uvm_item_history = sub.add_parser(
         "uvm-item-history",
