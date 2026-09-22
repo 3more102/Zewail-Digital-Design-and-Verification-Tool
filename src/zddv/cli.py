@@ -54,6 +54,7 @@ from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.simulator import get_backend
+from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -2562,6 +2563,32 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_signoff(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_verification_signoff_bundle(
+        project,
+        run_limit=args.run_limit,
+        require_coverage=args.require_coverage,
+        min_coverage=args.min_coverage,
+        require_formal=args.require_formal,
+        require_uvm=args.require_uvm,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"SIGNOFF {summary['review_state']}: "
+        f"runs={summary['selected_runs']} "
+        f"blockers={len(summary['blocking_checks'])}"
+    )
+    for check in result["checks"]:
+        marker = "BLOCK" if check["blocking"] else "INFO"
+        print(f"[{marker}] {check['name']}: {check['status']}")
+    print(f"Evidence SHA-256: {result['provenance']['evidence_sha256']}")
+    print(f"Signoff SHA-256: {result['provenance']['signoff_sha256']}")
+    print(f"Bundle: {result['path']}")
+    return 0 if summary["review_state"] == "READY_FOR_REVIEW" else 1
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -4175,6 +4202,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_failures.set_defaults(func=cmd_failures)
+
+    p_signoff = sub.add_parser(
+        "signoff",
+        help="Build a deterministic verification signoff review bundle",
+    )
+    p_signoff.add_argument(
+        "--run-limit",
+        type=int,
+        default=100,
+        help="Maximum recent persisted simulation runs to include",
+    )
+    p_signoff.add_argument(
+        "--require-coverage",
+        action="store_true",
+        help="Block review when no normalized coverage snapshot is available",
+    )
+    p_signoff.add_argument(
+        "--min-coverage",
+        type=float,
+        default=None,
+        help="Minimum normalized coverage percentage; also requires coverage evidence",
+    )
+    p_signoff.add_argument(
+        "--require-formal",
+        action="store_true",
+        help="Block review when no normalized formal snapshot is available",
+    )
+    p_signoff.add_argument(
+        "--require-uvm",
+        action="store_true",
+        help="Block review when no normalized UVM log snapshot is available",
+    )
+    p_signoff.add_argument(
+        "--output",
+        default=".zddv/signoff/signoff.json",
+        help="Verification signoff bundle JSON path",
+    )
+    p_signoff.set_defaults(func=cmd_signoff)
 
     p_report = sub.add_parser(
         "report",
