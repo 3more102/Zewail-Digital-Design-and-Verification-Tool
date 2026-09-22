@@ -5,6 +5,7 @@ from .base import (
     FormalPropertyResult,
 )
 from .sby import SymbiYosysBackend, render_sby_bmc_config
+from .sby_results import analyze_sby_log, parse_sby_log
 
 __all__ = [
     "FormalBackend",
@@ -13,4 +14,6 @@ __all__ = [
     "FormalPropertyResult",
     "SymbiYosysBackend",
     "render_sby_bmc_config",
+    "analyze_sby_log",
+    "parse_sby_log",
 ]
