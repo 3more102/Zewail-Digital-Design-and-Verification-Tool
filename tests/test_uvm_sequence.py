@@ -347,3 +347,51 @@ def test_uvm_sequence_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path
     assert result["input_mode"] == "explicit-log-marker"
     events = list_uvm_sequence_state_events(project, result["snapshot_id"])
     assert events[0]["metadata"]["log_line"] == 1
+
+
+def test_cli_uvm_sequence_log_analyze_uses_recorded_run_log(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    _record_run(project, "run-sequence-marker-cli")
+    log = project.root / ".zddv" / "runs" / "run-sequence-marker-cli" / "simulation.log"
+    log.write_text(
+        "\n".join(
+            [
+                _sequence_marker(_event("seq-cli", "write_seq", "UVM_BODY")),
+                _sequence_marker(_event("seq-cli", "write_seq", "UVM_ENDED")),
+                _sequence_marker(_event("seq-cli", "write_seq", "UVM_POST_START")),
+                _sequence_marker(_event("seq-cli", "write_seq", "UVM_FINISHED")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-sequence-log-analyze",
+            "--run",
+            "run-sequence-marker-cli",
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM SEQUENCE LOG PASS" in output
+    assert "Run: run-sequence-marker-cli" in output
+    assert "Markers: ZDDV_UVM_SEQUENCE count=4" in output
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-sequence-history",
+            "--run",
+            "run-sequence-marker-cli",
+        ]
+    )
+    assert rc == 0
+    history = capsys.readouterr().out
+    assert "run-sequence-marker-cli" in history
+    assert "PASS" in history
+
