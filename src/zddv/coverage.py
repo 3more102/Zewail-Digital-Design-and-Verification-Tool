@@ -67,6 +67,17 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_CODE_DETAIL_HEADER = re.compile(
+    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"(?P<file>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CODE_DETAIL_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<item>\d+)\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
+    r"(?:\s+(?P<detail>.*?))?\s*$"
+)
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -299,6 +310,58 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_code_coverage_holes(text: str) -> list[dict]:
+    """Normalize zero-hit statement/branch items from vcover detailed text.
+
+    The input is expected to come from a vcover report with zeros and details.
+    Only statement and branch item rows are normalized here. Other code
+    coverage classes remain evidence-only until handled explicitly.
+    """
+    holes: list[dict] = []
+    kind = ""
+    source_file = ""
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            kind = header.group("kind").strip().lower()
+            source_file = header.group("file").strip()
+            continue
+
+        if kind not in {"statement", "branch"} or not source_file:
+            continue
+
+        item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
+        if item is None:
+            continue
+
+        hits = int(item.group("hits").replace("*", "").replace(",", ""))
+        if hits != 0:
+            continue
+
+        line_number = int(item.group("line"))
+        item_number = int(item.group("item"))
+        detail = (item.group("detail") or "").strip()
+        name = f"{source_file}:{line_number}:{item_number}"
+        if detail:
+            name += f" {detail}"
+
+        holes.append(
+            {
+                "name": name,
+                "count": 0,
+                "hit": False,
+                "type": kind,
+                "source_file": source_file,
+                "line": line_number,
+                "item": item_number,
+                "detail": detail,
+            }
+        )
+
+    return holes
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -437,6 +500,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             output=zero_detail_path,
         ),
     }
+    normalized_code_holes: list[dict] = []
+    if detailed_code_coverage_evidence["zero_detail"]["status"] == "captured":
+        normalized_code_holes = parse_questa_code_coverage_holes(
+            zero_detail_path.read_text(encoding="utf-8", errors="replace")
+        )
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -457,6 +525,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "normalized_code_holes": len(normalized_code_holes),
+        "normalized_code_holes_by_type": {
+            kind: sum(item["type"] == kind for item in normalized_code_holes)
+            for kind in ("branch", "statement")
+            if any(item["type"] == kind for item in normalized_code_holes)
+        },
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -480,6 +554,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "normalized_code_holes": len(normalized_code_holes),
+        "normalized_code_holes_by_type": {
+            kind: sum(item["type"] == kind for item in normalized_code_holes)
+            for kind in ("branch", "statement")
+            if any(item["type"] == kind for item in normalized_code_holes)
+        },
     }
 
 
