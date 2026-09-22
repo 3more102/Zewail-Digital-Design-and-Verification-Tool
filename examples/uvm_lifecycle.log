@@ -1,0 +1,18 @@
+# UVM_INFO @ 0: reporter [RNTST] Running test zddv_uvm_lifecycle...
+# UVM_INFO @ 1 ns: reporter [PH/TRC/SCHEDULED] Phase 'common.run' (id=42) Scheduled from phase common
+# UVM_INFO @ 2 ns: reporter [PH/TRC/STRT] Phase 'common.run' (id=42) Starting phase
+# UVM_INFO @ 3 ns: reporter [OBJTN_TRC] Object uvm_test_top raised 1 run_objection objection(s) (starting sequence): count=1  total=1
+# UVM_INFO @ 3 ns: reporter [OBJTN_TRC] Object uvm_top added 1 run_objection objection(s) to its total (raised from source object uvm_test_top, starting sequence): count=0  total=1
+# UVM_INFO @ 8 ns: reporter [OBJTN_TRC] Object uvm_test_top dropped 1 run_objection objection(s) (sequence done): count=0  total=0
+# UVM_INFO @ 8 ns: reporter [OBJTN_TRC] Object uvm_top subtracted 1 run_objection objection(s) from its total (dropped from source object uvm_test_top, sequence done): count=0  total=0
+# UVM_INFO @ 9 ns: reporter [PH_READY_TO_END] Phase 'common.run' (id=42) PHASE READY TO END
+# UVM_INFO @ 10 ns: reporter [PH_END] Phase 'common.run' (id=42) ENDING PHASE
+# UVM_INFO @ 11 ns: reporter [PH/TRC/DONE] Phase 'common.run' (id=42) Completed phase
+#
+# --- UVM Report Summary ---
+#
+# ** Report counts by severity
+# UVM_INFO : 10
+# UVM_WARNING : 0
+# UVM_ERROR : 0
+# UVM_FATAL : 0
