@@ -1,0 +1,44 @@
+{
+  "backend": "example",
+  "engine": "example-formal 1.0",
+  "request": {
+    "mode": "bmc",
+    "depth": 20,
+    "properties": [],
+    "timeout_s": 30.0
+  },
+  "command": [
+    "example-formal",
+    "--mode",
+    "bmc"
+  ],
+  "returncode": 0,
+  "status": "FAIL",
+  "run_dir": ".zddv/formal/runs/run-1",
+  "log_path": ".zddv/formal/runs/run-1/formal.log",
+  "runtime_ms": 12.5,
+  "properties": [
+    {
+      "name": "p_bounded_safe",
+      "kind": "assert",
+      "status": "PASS"
+    },
+    {
+      "name": "p_failure",
+      "kind": "assert",
+      "status": "FAIL",
+      "depth": 7,
+      "trace_path": "artifacts/p_failure.vcd"
+    },
+    {
+      "name": "c_reachable",
+      "kind": "cover",
+      "status": "COVERED",
+      "depth": 12,
+      "trace_path": "artifacts/c_reachable.vcd"
+    }
+  ],
+  "artifacts": [
+    "artifacts/summary.json"
+  ]
+}
