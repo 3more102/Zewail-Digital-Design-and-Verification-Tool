@@ -4,6 +4,10 @@ from .base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from .coverage import (
+    aggregate_formal_cover_coverage,
+    write_formal_cover_coverage_report,
+)
 from .sby import SymbiYosysBackend, render_sby_bmc_config, render_sby_cover_config
 from .sby_results import analyze_sby_log, parse_sby_log
 
@@ -13,6 +17,8 @@ __all__ = [
     "FormalCheckResult",
     "FormalPropertyResult",
     "SymbiYosysBackend",
+    "aggregate_formal_cover_coverage",
+    "write_formal_cover_coverage_report",
     "render_sby_bmc_config",
     "render_sby_cover_config",
     "analyze_sby_log",

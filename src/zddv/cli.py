@@ -25,7 +25,11 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
-from zddv.formal import FormalCheckRequest, SymbiYosysBackend
+from zddv.formal import (
+    FormalCheckRequest,
+    SymbiYosysBackend,
+    write_formal_cover_coverage_report,
+)
 from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.formal.sby_results import analyze_sby_log
@@ -550,6 +554,52 @@ def cmd_formal_history(args) -> int:
             f"{row['backend'][:16]:<16} {row['snapshot_id']}"
         )
     return 0
+
+
+def cmd_formal_coverage(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_formal_cover_coverage_report(
+        project,
+        limit=args.limit,
+        backend=args.backend,
+        depth=args.depth,
+        output=args.output,
+    )
+
+    groups = result["groups"]
+    print(
+        "FORMAL COVERAGE: "
+        f"groups={len(groups)} "
+        f"eligible={result['eligible_snapshots']} "
+        f"considered={result['considered_snapshots']}"
+    )
+    if result["excluded_snapshots"]:
+        detail = ", ".join(
+            f"{name}={count}"
+            for name, count in sorted(result["excluded_snapshots"].items())
+        )
+        print(f"Excluded: {detail}")
+
+    if not groups:
+        print("No comparable complete cover snapshots found.")
+    else:
+        for group in groups:
+            unresolved = group["unknown_goals"] + group["error_goals"]
+            print(
+                f"{group['configuration_id']} "
+                f"backend={group['backend']} "
+                f"engine={group['engine'] or '-'} "
+                f"depth={group['depth']} "
+                f"design={group['design_fingerprint'][:12]} "
+                f"snapshots={group['snapshot_count']} "
+                f"covered={group['covered_goals']}/{group['property_count']} "
+                f"({group['coverage_rate']:.2f}%) "
+                f"unreached={group['unreached_goals']} "
+                f"unresolved={unresolved}"
+            )
+    print(f"Report: {result['report_path']}")
+    return 0
+
 
 def cmd_coverage(args) -> int:
     project = load_project(_project_arg(args))
@@ -2357,6 +2407,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     p_formal_history.set_defaults(func=cmd_formal_history)
+
+    p_formal_coverage = sub.add_parser(
+        "formal-coverage",
+        help="Aggregate mutually comparable finite-depth formal cover snapshots",
+    )
+    p_formal_coverage.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Maximum persisted cover snapshots to consider",
+    )
+    p_formal_coverage.add_argument(
+        "--backend",
+        default=None,
+        help="Optional exact formal backend filter",
+    )
+    p_formal_coverage.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="Optional exact finite cover depth filter",
+    )
+    p_formal_coverage.add_argument(
+        "--output",
+        default=".zddv/formal/coverage.json",
+        help="Aggregate formal coverage JSON report path",
+    )
+    p_formal_coverage.set_defaults(func=cmd_formal_coverage)
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)

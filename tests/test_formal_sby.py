@@ -372,6 +372,7 @@ def test_sby_backend_ingests_cover_reachability_and_witnesses(
     assert result.run_dir.name.startswith("cover-")
     assert "mode cover" in captured["config"]
     assert [item.status for item in result.properties] == ["COVERED", "UNCOVERED"]
+    assert result.property_set_complete is True
     assert result.properties[0].trace_path == Path("/tmp/demo/engine_0/trace0.vcd")
     assert result.artifacts[1].name == "property-status.jsonl"
     assert captured["status_command"] == [
@@ -412,6 +413,7 @@ def test_sby_backend_keeps_malformed_property_status_evidence_without_claims(
 
     assert result.status == "PASS"
     assert result.properties == ()
+    assert result.property_set_complete is False
     assert result.artifacts[1].name == "property-status.jsonl"
     assert result.artifacts[1].read_text(encoding="utf-8") == "{not-json}\n"
 

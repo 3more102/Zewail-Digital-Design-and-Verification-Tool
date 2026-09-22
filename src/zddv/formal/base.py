@@ -104,6 +104,7 @@ class FormalCheckResult:
     artifacts: tuple[Path, ...] = ()
     engine: str | None = None
     runtime_ms: float | None = None
+    property_set_complete: bool = False
 
     def __post_init__(self) -> None:
         backend = str(self.backend).strip()
@@ -136,6 +137,9 @@ class FormalCheckResult:
             if runtime_ms < 0:
                 raise ValueError("formal runtime_ms must be >= 0 when provided")
             object.__setattr__(self, "runtime_ms", runtime_ms)
+
+        if not isinstance(self.property_set_complete, bool):
+            raise ValueError("formal property_set_complete must be a boolean")
 
     @property
     def passed(self) -> bool:
