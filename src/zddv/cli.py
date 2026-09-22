@@ -21,6 +21,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -38,6 +39,7 @@ from zddv.storage import (
     list_coverage_snapshots,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
+    list_formal_result_snapshots,
     list_run_records,
     list_runs,
     list_uvm_arbitration_snapshots,
@@ -1604,6 +1606,55 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_formal_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_formal_result_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL {result['status']}: backend={result['backend']} "
+        f"mode={result['request']['mode']} "
+        f"properties={summary['properties']} "
+        f"counterexamples={summary['counterexamples']} "
+        f"bounded-safe={summary['bounded_safe_assertions']} "
+        f"proved={summary['proved_assertions']} "
+        f"covered-goals={summary['covered_goals']}"
+    )
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Report: {result['report_path']}")
+    print(f"Results DB: {database_path(project)}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_formal_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_formal_result_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        mode=args.mode,
+    )
+    if not rows:
+        print("No formal result snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<8} {'MODE':<6} {'PROPS':>5} {'CEX':>4} "
+        f"{'SAFE':>5} {'PROVED':>6} {'COV':>4} {'BACKEND':<16} SNAPSHOT"
+    )
+    for row in rows:
+        print(
+            f"{row['status']:<8} {row['mode']:<6} {row['property_count']:>5} "
+            f"{row['counterexample_count']:>4} {row['bounded_safe_count']:>5} "
+            f"{row['proved_count']:>6} {row['covered_goal_count']:>4} "
+            f"{row['backend'][:16]:<16} {row['snapshot_id']}"
+        )
+    return 0
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -2513,6 +2564,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of protocol violations to print",
     )
     p_axi4lite_waveform.set_defaults(func=cmd_axi4lite_waveform)
+
+    p_formal_import = sub.add_parser(
+        "formal-import",
+        help="Import normalized formal result evidence into JSON and SQLite history",
+    )
+    p_formal_import.add_argument("path", help="Normalized formal result JSON file")
+    p_formal_import.add_argument(
+        "--output",
+        default=".zddv/formal/latest.json",
+        help="Normalized formal evidence JSON report path",
+    )
+    p_formal_import.set_defaults(func=cmd_formal_import)
+
+    p_formal_history = sub.add_parser(
+        "formal-history",
+        help="Show persisted normalized formal result history",
+    )
+    p_formal_history.add_argument("--limit", type=int, default=20)
+    p_formal_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL", "UNKNOWN", "ERROR"),
+        default=None,
+    )
+    p_formal_history.add_argument(
+        "--mode",
+        choices=("bmc", "prove", "cover"),
+        default=None,
+    )
+    p_formal_history.set_defaults(func=cmd_formal_history)
 
     p_assertions = sub.add_parser(
         "assertions",
