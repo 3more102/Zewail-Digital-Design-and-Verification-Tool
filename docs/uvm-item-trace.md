@@ -85,3 +85,5 @@ ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, inclu
 This layer validates event ordering, duplicate events, stable item identity, explicit marker ingestion, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
+
+The generated helper also exposes `zddv_uvm_item_arb_request(...)` for the optional explicit `ARB_REQUEST` evidence supported by the current analyzer. Emit it when a request becomes eligible/waiting on the sequencer; ZDDV uses it only to reconstruct observed contention/bypass evidence and does not infer a universal fairness policy.
