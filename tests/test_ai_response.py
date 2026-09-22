@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from zddv.ai_response import ingest_provider_response, validate_model_response
+from zddv.cli import main
 from zddv.config import initialize_project
 
 
@@ -186,3 +187,28 @@ def test_ingest_provider_response_rejects_wrong_context_link(tmp_path: Path):
             raw_response_path=raw_path,
             context_path=context_path,
         )
+
+
+def test_ai_response_ingest_cli(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    context_path, raw_path, _ = _write_inputs(project.root)
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "ai-response-ingest",
+            "--response",
+            str(raw_path.relative_to(project.root)),
+            "--context",
+            str(context_path.relative_to(project.root)),
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "AI RESPONSE VALIDATED:" in output
+    assert "Evidence references resolved: yes" in output
+    assert "Model output trust: untrusted" in output
+    assert "Human review required: yes" in output
+    assert (project.root / ".zddv" / "ai" / "validated-response.json").is_file()
