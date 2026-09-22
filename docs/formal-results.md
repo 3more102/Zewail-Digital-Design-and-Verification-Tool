@@ -137,6 +137,14 @@ bounded assertion evidence at the requested depth. For direct cover runs, only n
 `UNCOVERED`. Reported depths and trace paths are retained, so reached covers with traces
 become witness evidence.
 
+When a persisted property carries an explicit VCD counterexample or witness, ZDDV now
+normalizes that waveform automatically into
+`.zddv/formal/traces/<snapshot-id>/<property>.json`. The property evidence retains the
+raw trace path and semantic role plus the resolved path, normalization status, SHA-256,
+trace kind, and normalized trace summary. Missing, unsupported, or malformed trace files
+do not invalidate the formal result; their normalization status is recorded as
+`MISSING`, `UNSUPPORTED_FORMAT`, or `ERROR` instead.
+
 Malformed, conflicting, unsupported, or failed status queries stay as raw evidence and do
 not create normalized property claims. `ERROR` and timeout runs are not queried for
 positive property status.
@@ -189,9 +197,9 @@ snapshot ID used in the calculation.
 
 ## Current boundary
 
-Native VCD counterexample/witness contents are supported through the explicit
-`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
-during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
+Native VCD counterexample/witness contents are supported both through the explicit
+`formal-vcd-trace` importer and automatic per-property normalization during formal-result
+persistence. ZDDV does not claim unbounded reachability/proof coverage from
 finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
 conservative cross-run aggregation are supported. Incomplete property universes,
 snapshots without a design fingerprint, different source revisions, different engines,
