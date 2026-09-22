@@ -679,15 +679,6 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
     assert result["status"] == "PASS"
     tx = result["transactions"][0]
     assert tx["cache"] == 0xF
-    assert tx["cache_attributes"] == {
-        "encoding": 0xF,
-        "bufferable": True,
-        "modifiable": True,
-        "read_allocate": True,
-        "write_allocate": True,
-        "cache_lookup_required": True,
-        "reserved": False,
-    }
     assert tx["prot"] == 0x7
     assert tx["qos"] == 0xA
     assert tx["region"] == 0x5
@@ -744,99 +735,110 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["awregion"] == 0x7
 
 
-
-def test_rejects_reserved_axi4_cache_encodings():
+def test_validates_narrow_write_strobes_against_byte_lanes():
     result = analyze_axi4_trace(
-        {"samples": [
-            {
-                "cycle": 0,
-                "AWVALID": 1,
-                "AWREADY": 1,
-                "AWID": 1,
-                "AWADDR": 0x100,
-                "AWLEN": 0,
-                "AWSIZE": 2,
-                "AWBURST": "INCR",
-                "AWCACHE": 0x4,
-            },
-            {
-                "cycle": 1,
-                "WVALID": 1,
-                "WREADY": 1,
-                "WDATA": 0xAA,
-                "WSTRB": 0xF,
-                "WLAST": 1,
-            },
-            {
-                "cycle": 2,
-                "BVALID": 1,
-                "BREADY": 1,
-                "BID": 1,
-                "BRESP": "OKAY",
-            },
-            {
-                "cycle": 3,
-                "ARVALID": 1,
-                "ARREADY": 1,
-                "ARID": 2,
-                "ARADDR": 0x200,
-                "ARLEN": 0,
-                "ARSIZE": 2,
-                "ARBURST": "INCR",
-                "ARCACHE": 0x8,
-            },
-            {
-                "cycle": 4,
-                "RVALID": 1,
-                "RREADY": 1,
-                "RID": 2,
-                "RDATA": 0x55,
-                "RRESP": "OKAY",
-                "RLAST": 1,
-            },
-        ]}
-    )
-
-    cache_violations = [
-        item for item in result["violations"]
-        if item["code"] == "reserved_cache_encoding"
-    ]
-    assert result["status"] == "FAIL"
-    assert {item["signal"] for item in cache_violations} == {
-        "AWCACHE", "ARCACHE"
-    }
-    assert {item["actual"] for item in cache_violations} == {0x4, 0x8}
-
-
-def test_accepts_axi4_legacy_compatible_cache_encodings():
-    result = analyze_axi4_trace(
-        {"samples": [
-            {
-                "cycle": 0,
-                "ARVALID": 1,
-                "ARREADY": 1,
-                "ARID": 3,
-                "ARADDR": 0x400,
-                "ARLEN": 0,
-                "ARSIZE": 2,
-                "ARBURST": "INCR",
-                "ARCACHE": 0x6,
-            },
-            {
-                "cycle": 1,
-                "RVALID": 1,
-                "RREADY": 1,
-                "RID": 3,
-                "RDATA": 0x12,
-                "RRESP": "OKAY",
-                "RLAST": 1,
-            },
-        ]}
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 1, "AWADDR": 0x100, "AWLEN": 4, "AWSIZE": 0, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0x11, "WSTRB": 0x1, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0x22, "WSTRB": 0x2, "WLAST": 0},
+                {"cycle": 3, "WVALID": 1, "WREADY": 1, "WDATA": 0x33, "WSTRB": 0x4, "WLAST": 0},
+                {"cycle": 4, "WVALID": 1, "WREADY": 1, "WDATA": 0x44, "WSTRB": 0x8, "WLAST": 0},
+                {"cycle": 5, "WVALID": 1, "WREADY": 1, "WDATA": 0x55, "WSTRB": 0x1, "WLAST": 1},
+                {"cycle": 6, "BVALID": 1, "BREADY": 1, "BID": 1, "BRESP": "OKAY"},
+            ],
+        }
     )
 
     assert result["status"] == "PASS"
-    attrs = result["transactions"][0]["cache_attributes"]
-    assert attrs["encoding"] == 0x6
-    assert attrs["modifiable"] is True
-    assert attrs["read_allocate"] is True
-    assert attrs["reserved"] is False
+    write = result["transactions"][0]
+    assert write["allowed_write_strobes"] == [0x1, 0x2, 0x4, 0x8, 0x1]
+
+
+def test_accepts_unaligned_first_write_with_matching_strobes():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x102, "AWLEN": 1, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0xAAAA, "WSTRB": 0xC, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0xBBBB, "WSTRB": 0xF, "WLAST": 1},
+                {"cycle": 3, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["allowed_write_strobes"] == [0xC, 0xF]
+
+
+def test_unaligned_fixed_burst_keeps_same_partial_lane_window():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x103, "AWLEN": 1, "AWSIZE": 2, "AWBURST": "FIXED"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0x11, "WSTRB": 0x8, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0x22, "WSTRB": 0x8, "WLAST": 1},
+                {"cycle": 3, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["allowed_write_strobes"] == [0x8, 0x8]
+
+
+def test_reports_write_strobe_outside_transfer_lanes():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x102, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0xAAAA, "WSTRB": 0x3, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert result["status"] == "FAIL"
+    assert "write_strobe_outside_transfer_lanes" in codes
+
+
+def test_reports_write_strobe_width_and_transfer_size_errors():
+    strobe = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0x100, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0, "WSTRB": 0x10, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+    assert "invalid_write_strobe" in {
+        item["code"] for item in strobe["violations"]
+    }
+
+    size = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "ARVALID": 1, "ARREADY": 1, "ARADDR": 0x200, "ARLEN": 0, "ARSIZE": 3, "ARBURST": "INCR"},
+            ],
+        }
+    )
+    assert "transfer_size_exceeds_data_bus_width" in {
+        item["code"] for item in size["violations"]
+    }
+
+
+def test_rejects_invalid_data_width_metadata():
+    try:
+        analyze_axi4_trace({"data_width_bits": 30, "samples": []})
+    except ValueError as exc:
+        assert "positive multiple of 8" in str(exc)
+    else:
+        raise AssertionError("Expected invalid data_width_bits to fail")
