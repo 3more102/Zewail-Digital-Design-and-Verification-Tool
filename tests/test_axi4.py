@@ -679,6 +679,15 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
     assert result["status"] == "PASS"
     tx = result["transactions"][0]
     assert tx["cache"] == 0xF
+    assert tx["cache_attributes"] == {
+        "encoding": 0xF,
+        "bufferable": True,
+        "modifiable": True,
+        "read_allocate": True,
+        "write_allocate": True,
+        "cache_lookup_required": True,
+        "reserved": False,
+    }
     assert tx["prot"] == 0x7
     assert tx["qos"] == 0xA
     assert tx["region"] == 0x5
@@ -733,3 +742,101 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["awprot"] == 0x2
     assert tx["awqos"] == 0xC
     assert tx["awregion"] == 0x7
+
+
+
+def test_rejects_reserved_axi4_cache_encodings():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWCACHE": 0x4,
+            },
+            {
+                "cycle": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0xAA,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 1,
+                "BRESP": "OKAY",
+            },
+            {
+                "cycle": 3,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x200,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x8,
+            },
+            {
+                "cycle": 4,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0x55,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+        ]}
+    )
+
+    cache_violations = [
+        item for item in result["violations"]
+        if item["code"] == "reserved_cache_encoding"
+    ]
+    assert result["status"] == "FAIL"
+    assert {item["signal"] for item in cache_violations} == {
+        "AWCACHE", "ARCACHE"
+    }
+    assert {item["actual"] for item in cache_violations} == {0x4, 0x8}
+
+
+def test_accepts_axi4_legacy_compatible_cache_encodings():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 3,
+                "ARADDR": 0x400,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x6,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 3,
+                "RDATA": 0x12,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    attrs = result["transactions"][0]["cache_attributes"]
+    assert attrs["encoding"] == 0x6
+    assert attrs["modifiable"] is True
+    assert attrs["read_allocate"] is True
+    assert attrs["reserved"] is False
