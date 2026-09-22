@@ -11,6 +11,7 @@ from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
+    merge_questa_coverage,
     merge_verilator_coverage,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -361,11 +362,15 @@ def cmd_regress(args) -> int:
 
 def cmd_coverage(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator != "verilator":
+    simulator = project.simulator.lower()
+    if simulator == "verilator":
+        result = merge_verilator_coverage(project)
+    elif simulator in {"questa", "questasim"}:
+        result = merge_questa_coverage(project)
+    else:
         raise RuntimeError(
-            "Coverage reporting is currently implemented for Verilator only."
+            f"Coverage reporting is not implemented for simulator '{project.simulator}'."
         )
-    result = merge_verilator_coverage(project)
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
@@ -376,6 +381,11 @@ def cmd_coverage(args) -> int:
     )
     print(f"Metrics: {result['metrics_path']}")
     print(f"Snapshot: {result['snapshot_id']}")
+    if result.get("functional_snapshot_id"):
+        print(
+            "Functional coverage: "
+            f"{result['functional_bins']} bins -> {result['functional_snapshot_id']}"
+        )
     report = result["report"].strip()
     if report:
         print(report)
