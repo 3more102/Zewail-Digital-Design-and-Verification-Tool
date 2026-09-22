@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB coverage capture plus multi-run `vcover merge` and normalized `vcover report -summary` metrics; item-level UCDB hole normalization is still pending
+- Questa per-run UCDB coverage capture plus multi-run `vcover merge`, normalized `vcover report -summary` metrics, and detailed ordinary covergroup-bin ingestion into functional coverage history; code-coverage item-level UCDB hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -61,7 +61,7 @@ Requirements:
 
 - Python 3.11+
 - Verilator available in `PATH` for the default backend
-- Optional Questa/QuestaSim: `vlib`, `vlog`, and `vsim` available in `PATH`
+- Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH`
 
 Install ZDDV for development:
 
@@ -648,7 +648,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
 - [x] Questa native per-run UCDB coverage capture
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
-- [ ] Questa item-level UCDB normalization and coverage-hole reporting
+- [x] Questa detailed covergroup-bin ingestion into functional coverage history
+- [ ] Questa code-coverage item-level UCDB normalization and coverage-hole reporting
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
