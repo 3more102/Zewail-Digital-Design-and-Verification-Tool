@@ -436,7 +436,7 @@ def write_questa_statement_hole_report(
     *,
     limit: int | None = None,
 ) -> dict:
-    """Export statement details from merged UCDB and write normalized zero-hit holes."""
+    """Export by-instance statement XML and write normalized zero-hit holes."""
     tool = shutil.which("vcover")
     if tool is None:
         raise RuntimeError(
@@ -461,9 +461,10 @@ def write_questa_statement_hole_report(
         "report",
         "-xml",
         "-notimestamps",
+        "-setdefault",
+        "byinstance",
         "-code",
         "s",
-        "-zeros",
         "-output",
         str(xml_path),
         str(merged_path),
