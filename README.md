@@ -14,7 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization; native VCS coverage normalization remains pending
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, retained XML/zero-hit source evidence, and conservative source-linked statement/branch/condition/expression hole normalization
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -97,10 +97,13 @@ SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
-evidence: XML output for machine-readable follow-up plus a `-zeros -details`
-report for zero-hit source/file-line evidence. These artifacts are evidence only
-and are not yet normalized into code `coverage-holes`. Questa's weighted total
-coverage remains a separate simulator-reported value.
+evidence: XML output plus a `-zeros -details` source/file-line report. The zero-hit
+report is normalized conservatively for source-linked statement, branch, condition,
+and expression items. ZDDV reconciles parsed item counts against the corresponding
+summary misses and refuses item-level `coverage-holes` when they disagree. Toggle
+and FSM misses remain visible as non-itemized aggregate evidence rather than being
+assigned speculative source locations. Questa's weighted total coverage remains a
+separate simulator-reported value.
 
 ## Current CLI
 
