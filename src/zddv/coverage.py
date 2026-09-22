@@ -66,6 +66,12 @@ _QUESTA_CVG_BIN = re.compile(
     r"(?P<status>\S+)\s*$",
     re.IGNORECASE,
 )
+_QUESTA_CODE_DETAIL = re.compile(
+    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"(?P<file>.+?)\s+--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CODE_ROW = re.compile(r"^\s*(?P<line>\d+)\s+(?P<body>\S.*?)\s*$")
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -161,6 +167,11 @@ def build_coverage_hole_report(
                 "type": str(point.get("type") or "unknown"),
                 "name": str(point.get("name") or ""),
                 "count": int(point.get("count", 0)),
+                **{
+                    key: point[key]
+                    for key in ("source_file", "line", "detail", "item")
+                    if key in point and point[key] is not None
+                },
             }
             for point in shown
         ],
@@ -299,6 +310,53 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_zero_coverage_report(text: str) -> list[dict]:
+    """Normalize statement/branch zero-hit items from Questa -zeros -details text."""
+    points: list[dict] = []
+    current_file = ""
+    current_kind = ""
+    occurrence: dict[tuple[str, int, str], int] = defaultdict(int)
+
+    for raw_line in text.splitlines():
+        detail_match = _QUESTA_CODE_DETAIL.match(raw_line)
+        if detail_match is not None:
+            current_file = detail_match.group("file").strip()
+            current_kind = _normalize_questa_coverage_kind(
+                detail_match.group("kind")
+            )
+            continue
+
+        if current_kind not in {"statement", "branch"} or not current_file:
+            continue
+
+        row = _QUESTA_CODE_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        body = row.group("body").strip()
+        if not body or "count coming in to" in body.lower():
+            continue
+
+        line_no = int(row.group("line"))
+        key = (current_file, line_no, current_kind)
+        occurrence[key] += 1
+        item_no = occurrence[key]
+        points.append(
+            {
+                "name": f"{current_file}:{line_no}:{current_kind}:{item_no}",
+                "count": 0,
+                "hit": False,
+                "type": current_kind,
+                "source_file": current_file,
+                "line": line_no,
+                "item": item_no,
+                "detail": body,
+            }
+        )
+
+    return points
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -353,6 +411,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
+    code_items_path = out_dir / "code-items.json"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -438,6 +497,27 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         ),
     }
 
+    zero_evidence = detailed_code_coverage_evidence["zero_detail"]
+    code_points: list[dict] = []
+    code_items_status = "unavailable"
+    if zero_evidence["status"] == "captured":
+        code_points = parse_questa_zero_coverage_report(
+            zero_detail_path.read_text(encoding="utf-8", errors="replace")
+        )
+        code_items_status = "ok"
+
+    code_items_payload = {
+        "source": "questa-vcover-zeros-details",
+        "status": code_items_status,
+        "supported_types": ["statement", "branch"],
+        "report": str(zero_detail_path),
+        "points": code_points,
+    }
+    code_items_path.write_text(
+        json.dumps(code_items_payload, indent=2),
+        encoding="utf-8",
+    )
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -457,6 +537,10 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "code_items": str(code_items_path),
+        "code_items_status": code_items_status,
+        "code_hole_items": len(code_points),
+        "code_supported_types": ["statement", "branch"],
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -480,6 +564,10 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "code_items": str(code_items_path),
+        "code_items_status": code_items_status,
+        "code_hole_items": len(code_points),
+        "code_supported_types": ["statement", "branch"],
     }
 
 
