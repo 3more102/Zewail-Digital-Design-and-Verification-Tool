@@ -7,9 +7,11 @@ import pytest
 from zddv.ai_provider import (
     ProviderMetadata,
     build_model_request,
+    build_model_response_contract,
     create_provider,
     invoke_provider,
     load_ai_context,
+    model_evidence_references,
     provider_metadata,
     register_provider,
     write_provider_response,
@@ -72,6 +74,50 @@ def test_model_request_preserves_context_and_contract():
     assert request["context"]["provenance"]["evidence_sha256"] == "a" * 64
     assert "Use only evidence present in this bundle." in request["instructions"]
     assert any("analysis only" in item for item in request["instructions"])
+    assert any("strict JSON object" in item for item in request["instructions"])
+    assert any("Markdown fences" in item for item in request["instructions"])
+    contract = request["response_contract"]
+    assert contract["format"] == "strict-json-object"
+    assert contract["markdown_fences_allowed"] is False
+    assert contract["additional_properties_allowed"] is False
+    assert contract["schema"]["analysis"] == "zddv_ai_rca_response"
+    assert contract["allowed_evidence_refs"] == ["run:run-fail"]
+
+
+def test_response_contract_uses_exact_context_evidence_vocabulary():
+    context = _context()
+    context["evidence"] = {
+        "run": {"run_id": "run-fail"},
+        "candidates": [{"rank": 2}, {"rank": 1}],
+        "debug_probe_suggestions": [{"rank": 3}],
+        "limitations": ["first", "second"],
+    }
+
+    refs = model_evidence_references(context)
+    contract = build_model_response_contract(context)
+
+    assert refs == [
+        "candidate:1",
+        "candidate:2",
+        "limitation:1",
+        "limitation:2",
+        "probe:3",
+        "run:run-fail",
+    ]
+    assert contract["allowed_evidence_refs"] == refs
+    assert contract["required"] == [
+        "schema_version",
+        "analysis",
+        "observed_facts",
+        "hypotheses",
+        "unknowns",
+        "next_checks",
+        "generated_proposals",
+    ]
+    assert any(
+        "Unknown evidence references will be rejected." == item
+        for item in contract["semantics"]
+    )
 
 
 def test_external_provider_requires_explicit_opt_in():
