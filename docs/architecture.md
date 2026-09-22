@@ -259,6 +259,19 @@ Public references:
 - https://www.uciexpress.org/specifications
 - https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
 
+## UVM Lifecycle Evidence
+
+UVM log normalization stores report messages and a separate lifecycle-event stream. Standard
+phase-trace report IDs such as `PH/TRC/*` are normalized into phase events, while
+`OBJTN_TRC` messages are normalized into objection actions with object and total counts.
+These events remain linked to the same UVM snapshot and, when available, the same recorded
+simulation run.
+
+Sequence evidence is intentionally narrower. Standard UVM provides phase and objection trace
+controls, but no universal sequence-trace plusarg. ZDDV therefore records a sequence event only
+when an existing UVM report component exposes an explicit `sequencer@@sequence` context. Such
+events are labeled as report evidence rather than inferred sequence start/end lifecycle.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
