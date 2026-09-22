@@ -182,6 +182,7 @@ zddv --project my_project ai-rca-context --run <run-id>
 zddv ai-providers
 zddv --project my_project ai-provider-request --context .zddv/debug/ai-rca-context.json
 zddv --project my_project ai-provider-run --context .zddv/debug/ai-rca-context.json --provider openai-compatible --endpoint https://provider.example/v1/chat/completions --model provider-model --api-key-env PROVIDER_API_KEY --allow-external --expected-request-sha256 <reviewed-request-sha256>
+zddv --project my_project ai-response-import --context .zddv/debug/ai-rca-context.json --content .zddv/ai/manual-response.json --provider-label offline-review
 zddv --project my_project ai-response-ingest --response .zddv/ai/provider-response.json --context .zddv/debug/ai-rca-context.json
 zddv --project my_project ai-response-review .zddv/ai/validated-response.json --expected-sha256 <validated-sha256> --approve-reviewed
 zddv --project my_project ai-proposal-export .zddv/ai/reviews/<review-id>.json --proposal 1

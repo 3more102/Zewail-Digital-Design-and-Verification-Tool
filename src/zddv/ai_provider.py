@@ -399,6 +399,93 @@ def write_provider_response(
     return {**result, "path": str(destination)}
 
 
+
+
+def import_provider_response(
+    project: ProjectConfig,
+    *,
+    context_path: str | Path,
+    content_path: str | Path,
+    provider_label: str = "manual-import",
+    output: str | Path = ".zddv/ai/provider-response.json",
+) -> dict[str, Any]:
+    """Wrap an already-obtained model response without invoking a provider."""
+    context = load_ai_context(project, context_path)
+    source = _project_path(project, content_path)
+    if not source.is_file():
+        raise FileNotFoundError(source)
+
+    raw = source.read_bytes()
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise RuntimeError(
+            f"Imported model response exceeded {_MAX_RESPONSE_BYTES} bytes"
+        )
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(
+            "Imported model response is not valid UTF-8"
+        ) from exc
+    if not content.strip():
+        raise ValueError("Imported model response must not be empty")
+
+    label = " ".join(str(provider_label).split())
+    if not label:
+        raise ValueError("provider_label must not be empty")
+    if len(label) > 128:
+        raise ValueError("provider_label must be <= 128 characters")
+
+    request_payload = build_model_request(context)
+    request_sha256 = _canonical_sha256(request_payload)
+    result = {
+        "schema_version": 1,
+        "analysis": "ai_provider_response_raw",
+        "provider": {
+            "name": label,
+            "description": (
+                "Manually imported model response; ZDDV performed no model "
+                "invocation or external transmission."
+            ),
+            "external_transmission": False,
+            "response_schema_validated": False,
+        },
+        "request_sha256": request_sha256,
+        "context_evidence_sha256": context["provenance"]["evidence_sha256"],
+        "response": {"content": content},
+        "provenance": {
+            "imported_content_sha256": hashlib.sha256(raw).hexdigest(),
+            "imported_content_path": str(source),
+            "provider_invocation_performed": False,
+        },
+        "policy": {
+            "explicit_external_opt_in": False,
+            "request_sha_confirmed": False,
+            "untrusted_model_output": True,
+            "response_schema_validated": False,
+            "automatic_generated_artifact_staging": False,
+            "automatic_command_execution": False,
+            "human_review_required": True,
+        },
+        "semantics": (
+            "This artifact contains manually imported, untrusted model output. "
+            "ZDDV did not invoke a provider or transmit project data. The response "
+            "is locally associated with the exact canonical request and context "
+            "evidence for audit integrity. That association is not proof that an "
+            "external source produced the response from that request. The response "
+            "must still pass ai-response-ingest and explicit SHA-bound human review "
+            "before any generated proposal can enter the staging workflow."
+        ),
+    }
+
+    destination = _project_path(project, output)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {**result, "path": str(destination)}
+
+
 _OPENAI_COMPATIBLE_METADATA = ProviderMetadata(
     name="openai-compatible",
     description=(
