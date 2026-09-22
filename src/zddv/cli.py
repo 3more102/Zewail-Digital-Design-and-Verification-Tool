@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
     write_questa_statement_hole_report,
@@ -654,6 +655,30 @@ def cmd_coverage_holes(args) -> int:
                 point_type=args.point_type,
                 limit=args.limit,
             )
+    elif simulator == "vcs":
+        if args.point_type not in {None, "condition"}:
+            raise RuntimeError(
+                "VCS item-level coverage currently supports --type condition."
+            )
+        report_dir = (
+            project.root / ".zddv" / "coverage" / "urg-report"
+        ).resolve()
+        if not report_dir.exists():
+            raise RuntimeError(
+                f"VCS URG detail report not found at {report_dir}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_vcs_urg_condition_coverage_points(report_dir)
+        if not points:
+            raise RuntimeError(
+                f"No normalized VCS condition truth-table rows found in {report_dir}."
+            )
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type="condition",
+            limit=args.limit,
+        )
     else:
         raise RuntimeError(
             "Coverage-hole itemization is not implemented for simulator: "
