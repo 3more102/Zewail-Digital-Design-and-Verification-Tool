@@ -94,9 +94,11 @@ coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
-inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+inspect those normalized bins. ZDDV also retains detailed Questa code-coverage
+evidence as XML plus a complementary `vcover report -zeros -details -codeAll`
+text artifact with zero-hit source/file-line evidence. These artifacts are not
+yet normalized into `coverage-holes`. Questa's weighted total coverage remains
+a separate simulator-reported value.
 
 ## Current CLI
 
