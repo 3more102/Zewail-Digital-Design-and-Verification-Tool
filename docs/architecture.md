@@ -287,9 +287,14 @@ partial traces, correlates snapshots with recorded runs, and persists state even
 SQLite tables. ZDDV also accepts explicit normalized sequence-item handshake evidence (`GRANT`,
 `REQUEST`, `ITEM_DONE`, and optional `RESPONSE`), validates ordering and stable identity, correlates
 item snapshots with recorded runs, and persists both snapshot summaries and per-event evidence in
-SQLite with `uvm-item-history` filtering. Automatic instrumentation/adapters plus arbitration
-priority/fairness reconstruction remain future layers. See `docs/uvm-sequence-trace.md` and
-`docs/uvm-item-trace.md`.
+SQLite with `uvm-item-history` filtering. A separate explicit REQUEST/GRANT arbitration trace
+models the sequencer's eligible request queue and configured UVM arbitration mode. ZDDV checks
+FIFO, STRICT_FIFO, and STRICT_RANDOM rules deterministically; RANDOM, WEIGHTED, and USER choices
+remain observational. An optional `max_bypass` threshold is a ZDDV project policy rather than a
+UVM-standard fairness guarantee. Arbitration events, decisions, violations, summaries, and run
+correlation are persisted in SQLite. Automatic instrumentation/adapters remain future layers.
+See `docs/uvm-sequence-trace.md`, `docs/uvm-item-trace.md`, and
+`docs/uvm-arbitration-trace.md`.
 
 ## Next Architectural Steps
 
