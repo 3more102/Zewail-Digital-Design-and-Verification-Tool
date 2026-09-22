@@ -136,7 +136,8 @@ def _prepare_failed_run(project) -> str:
     other_dir.mkdir(parents=True, exist_ok=True)
     other_log = other_dir / "simulation.log"
     other_log.write_text(
-        "ERROR mismatch expected 17 got 18\n",
+        "ERROR mismatch expected 17 got 18\n"
+        "ZDDV_ASSERT counter_sequence FAIL count mismatch expected=17 got=18\n",
         encoding="utf-8",
     )
     _record(
