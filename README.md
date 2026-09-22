@@ -59,6 +59,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
 - Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
+- Evidence-backed debug triage for failed/timeout runs, combining recurring failure signatures, failed-assertion waveform hints, RTL/connectivity cross-probes, and exact formal property-name context with deterministic non-probabilistic candidate ranking
 
 ## Quick Start
 
@@ -143,6 +144,7 @@ zddv --project my_project waveform-probe tb_top.dut.count --start 0 --end 1000
 zddv --project my_project crossprobe tb_top.dut.count
 zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
+zddv --project my_project debug-triage --run <failed-run-id>
 zddv --project my_project lint
 zddv --project my_project build
 zddv --project my_project formal-bmc --depth 20
@@ -717,7 +719,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
-- [ ] Automated failure triage
+- [x] Evidence-backed automated failure triage with deterministic localization ranking
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
