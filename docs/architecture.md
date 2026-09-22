@@ -185,6 +185,14 @@ ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGIO
 metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
 observed value must remain constant for requests in the same 4KB address space.
 
+A normalized trace can additionally provide `data_width_bits` using a standard
+AXI data width of 8/16/32/64/128/256/512/1024 bits. With that metadata, ZDDV
+checks that ARSIZE/AWSIZE do not select transfers wider than the interface data
+bus. For accepted write beats, WSTRB must fit the physical strobe width and each
+asserted bit must belong to the byte lanes permitted by the beat address and
+transfer size. Narrow and unaligned transfers therefore receive beat-specific
+allowed masks; deasserted valid lanes, including an all-zero WSTRB, remain legal.
+
 These checks intentionally stop at properties observable from the normalized
 interface trace. ACE coherency, AXI5 additions, USER sidebands, system-level QoS
 policy, topology-dependent cache reachability, and exhaustive system-ordering
@@ -198,10 +206,17 @@ an explicit scope must contain the required five-channel handshake and burst pay
 signals; automatic selection succeeds only when exactly one complete AXI4 scope exists.
 
 The extractor streams selected VCD identifiers only, preserves optional transaction IDs
-and address sidebands when present, and records physical waveform timestamps alongside
-logical sample cycles. The burst analyzer then propagates those timestamps into
+and address sidebands when present, checks that WDATA/RDATA use the same standard AXI
+data width and that WSTRB has one bit per data byte, derives `data_width_bits`, and
+records physical waveform timestamps alongside logical sample cycles. The burst
+analyzer then propagates those timestamps into
 violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains an
 input adapter; protocol semantics remain simulator-independent in the AXI4 core.
+
+The data-width and WSTRB rules follow Arm AMBA AXI and ACE Protocol Specification
+ARM IHI 0022H, including the transfer-size/data-bus constraint and section A3.4.4
+write-strobe rules:
+https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/IHI0022H_amba_axi_protocol_spec.pdf
 
 ## v0.5 UCIe Public FLIT Trace Foundation
 
