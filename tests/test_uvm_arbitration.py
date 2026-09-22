@@ -288,7 +288,7 @@ def test_cli_arbitration_analysis_history_and_run_correlation(tmp_path: Path, ca
         [
             "--project",
             str(project.root),
-            "uvm-arbitration-analyze",
+            "uvm-arb-analyze",
             str(trace),
             "--run",
             "run-arb",
@@ -354,7 +354,7 @@ def test_cli_arbitration_failure_returns_nonzero_and_persists_violation(
         [
             "--project",
             str(project.root),
-            "uvm-arbitration-analyze",
+            "uvm-arb-analyze",
             str(trace),
         ]
     )
