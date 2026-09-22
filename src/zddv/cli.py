@@ -377,6 +377,11 @@ def cmd_coverage(args) -> int:
         )
     print(f"Metrics: {result['metrics_path']}")
     print(f"Snapshot: {result['snapshot_id']}")
+    if result.get("functional_snapshot_id"):
+        print(
+            "Functional coverage: "
+            f"{result['functional_bins']} bins -> {result['functional_snapshot_id']}"
+        )
     report = result["report"].strip()
     if report:
         print(report)
