@@ -12,12 +12,12 @@ from zddv.waveform import parse_vcd_header, select_waveform_run
 
 _CANONICAL_SIGNALS = (
     "AWVALID", "AWREADY", "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST",
-    "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION",
-    "WVALID", "WREADY", "WDATA", "WSTRB", "WLAST",
-    "BVALID", "BREADY", "BID", "BRESP",
+    "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION", "AWUSER",
+    "WVALID", "WREADY", "WDATA", "WSTRB", "WLAST", "WUSER",
+    "BVALID", "BREADY", "BID", "BRESP", "BUSER",
     "ARVALID", "ARREADY", "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST",
-    "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION",
-    "RVALID", "RREADY", "RID", "RDATA", "RRESP", "RLAST",
+    "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
+    "RVALID", "RREADY", "RID", "RDATA", "RRESP", "RLAST", "RUSER",
 )
 
 _REQUIRED_SIGNALS = {
