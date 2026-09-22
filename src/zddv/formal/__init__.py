@@ -6,6 +6,7 @@ from .base import (
 )
 from .sby import SymbiYosysBackend, render_sby_bmc_config, render_sby_cover_config
 from .sby_results import analyze_sby_log, parse_sby_log
+from .vcd_trace import ingest_formal_vcd_trace, parse_formal_vcd_trace
 
 __all__ = [
     "FormalBackend",
@@ -17,4 +18,6 @@ __all__ = [
     "render_sby_cover_config",
     "analyze_sby_log",
     "parse_sby_log",
+    "parse_formal_vcd_trace",
+    "ingest_formal_vcd_trace",
 ]
