@@ -21,6 +21,10 @@ def test_generator_writes_portable_helper_and_registers_first(tmp_path: Path):
     text = generated.read_text(encoding="utf-8")
     assert "package zddv_uvm_item_trace_pkg;" in text
     assert r'ZDDV_UVM_ITEM {\"item_id\"' in text
+    marker_lines = [line for line in text.splitlines() if "ZDDV_UVM_ITEM {" in line]
+    assert len(marker_lines) == 1
+    assert r'\"sequence_id\":%s' in marker_lines[0]
+    assert r'\"metadata\":{\"instrumentation\"' in marker_lines[0]
     assert "function automatic string zddv_json_escape" in text
     assert "zddv_uvm_item_arb_request" in text
     assert "\"ARB_REQUEST\"" in text
