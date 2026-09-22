@@ -84,21 +84,24 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 
 ## v0.6 — UVM and Commercial Simulator Adapters
 
-Current status: the simulator-independent UVM report-log ingestion foundation and the
-first commercial-simulator adapter foundation are implemented. ZDDV extracts standard UVM
-report messages, test names, severity summaries, report IDs, components, source locations, and
-timestamps; persists normalized snapshots/messages in SQLite; correlates snapshots with recorded
+Current status: the simulator-independent UVM report-log ingestion foundation, run correlation,
+standard UVM phase/objection lifecycle reconstruction, and the first commercial-simulator adapter
+foundation are implemented. ZDDV extracts standard UVM report messages, test names, severity
+summaries, report IDs, components, source locations, timestamps, phase-state transitions, and
+objection activity; persists normalized evidence in SQLite; correlates snapshots with recorded
 simulation runs; and exposes `uvm-analyze` plus `uvm-history`. The Questa foundation supports
 native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD capture, assertion
-ingestion, and run-linked UVM ingestion. Questa coverage capture and lifecycle-aware UVM semantics
-remain planned.
+ingestion, and run-linked UVM ingestion. Questa coverage capture and portable sequence/transaction
+lifecycle ingestion remain planned.
 
 - [x] Questa execution adapter foundation (coverage capture pending).
 - [ ] VCS execution adapter.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
-- [ ] Sequence/phase/objection-aware result ingestion where supported.
+- [x] Standard UVM phase-trace lifecycle ingestion.
+- [x] Standard UVM objection-trace lifecycle ingestion.
+- [ ] Sequence/transaction lifecycle ingestion where supported.
 
 ## v0.7 — Formal
 
