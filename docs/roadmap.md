@@ -119,7 +119,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Xcelium execution adapter foundation (xrun elaborate/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] Xcelium native per-run coverage database capture.
 - [x] Xcelium multi-run IMC merge/report evidence retention.
-- [x] Xcelium Overall Average/Covered metric normalization into percentage-native ZDDV coverage history.
+- [x] Xcelium labelled Overall/Code/FSM/Functional Average/Covered IMC summary-grade normalization into percentage-native ZDDV coverage history.
+- [ ] Xcelium item-level coverage-hole normalization.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
