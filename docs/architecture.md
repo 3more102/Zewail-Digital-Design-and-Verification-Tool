@@ -181,9 +181,10 @@ rather than protocol violations.
 
 Observed optional AXI4 request sidebands are validated at the interface boundary.
 ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGION
-(4 bits), preserves them in reconstructed transactions, and exposes both generic
-metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
-observed value must remain constant for requests in the same 4KB address space.
+(4 bits), rejects AxCACHE values reserved by the AXI4 memory-type encoding table,
+preserves the observed sidebands in reconstructed transactions, and exposes both
+generic metadata keys and channel-specific AR/AW aliases. When AxREGION is present,
+its observed value must remain constant for requests in the same 4KB address space.
 
 These checks intentionally stop at properties observable from the normalized
 interface trace. ACE coherency, AXI5 additions, USER sidebands, system-level QoS
