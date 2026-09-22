@@ -131,7 +131,7 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert result["metrics"]["by_metric"]["functional_covered"] == pytest.approx(90.0)
     assert result["metrics"]["by_metric_counts"]["overall_covered"]["covered"] == 33
     assert result["snapshot_id"] is not None
-    assert len(commands) == 2
+    assert len(commands) == 3
 
     runfile = Path(result["runfile"]).read_text(encoding="utf-8").splitlines()
     assert runfile == [
