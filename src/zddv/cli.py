@@ -793,6 +793,14 @@ def cmd_uvm_item_analyze(args) -> int:
         f"responded={summary['responded']} "
         f"active={summary['active']} partial={summary['partial']}"
     )
+    arbitration = result["arbitration"]["summary"]
+    print(
+        f"Arbitration evidence: grants={arbitration['grant_events']} "
+        f"sequencers={arbitration['sequencers_observed']} "
+        f"sequence-ids={arbitration['sequence_ids_observed']} "
+        f"switches={arbitration['sequence_switches']} "
+        f"unscoped={arbitration['unscoped_grant_events']}"
+    )
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
