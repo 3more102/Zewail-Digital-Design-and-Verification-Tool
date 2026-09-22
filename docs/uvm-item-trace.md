@@ -66,6 +66,8 @@ zddv --project <project> uvm-item-log-analyze --run <run-id>
 
 When `--run` is supplied without a path, ZDDV reads the simulation log recorded for that run and retains run status, return code, and simulator as correlation evidence.
 
+When a Questa, VCS, or Xcelium run emits either supported explicit marker, ZDDV automatically performs aggregate post-run marker analysis. Marker-only logs do not create ordinary UVM report snapshots. The same aggregate path is available explicitly through `zddv --project <project> uvm-marker-analyze <simulation.log>` or `--run <run-id>`.
+
 
 ## Partial traces
 
