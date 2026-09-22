@@ -241,6 +241,54 @@ SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
     assert metrics["by_metric"]["group"] == pytest.approx(47.58)
 
 
+def test_parse_vcs_urg_dashboard_preserves_blank_pipe_metric(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH | ASSERT | GROUP
+95.96 | 95.39 | 93.47 | 95.36 |  | 94.22 | 97.71 | 99.60
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(95.96)
+    assert metrics["by_metric"]["toggle"] == pytest.approx(95.36)
+    assert "fsm" not in metrics["by_metric"]
+    assert metrics["by_metric"]["branch"] == pytest.approx(94.22)
+    assert metrics["by_metric"]["group"] == pytest.approx(99.60)
+
+
+def test_parse_vcs_urg_dashboard_preserves_blank_fixed_width_metric(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    header = "SCORE   LINE    COND    TOGGLE   FSM     BRANCH   ASSERT   GROUP"
+    names = ("SCORE", "LINE", "COND", "TOGGLE", "FSM", "BRANCH", "ASSERT", "GROUP")
+    starts = [header.index(name) for name in names]
+    values = ["95.96", "95.39", "93.47", "95.36", "", "94.22", "97.71", "99.60"]
+    row = [" "] * 72
+    for start, value in zip(starts, values, strict=True):
+        row[start : start + len(value)] = value
+    dashboard.write_text(
+        "Unified Coverage Report\n\n"
+        "Total Coverage Summary\n"
+        + header
+        + "\n"
+        + "".join(row).rstrip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(95.96)
+    assert "fsm" not in metrics["by_metric"]
+    assert metrics["by_metric"]["branch"] == pytest.approx(94.22)
+    assert metrics["by_metric"]["group"] == pytest.approx(99.60)
+
+
 def test_parse_vcs_urg_dashboard_parses_documented_group_counts(tmp_path: Path):
     dashboard = tmp_path / "dashboard.txt"
     dashboard.write_text(
