@@ -11,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from zddv.ai_contract import model_response_contract
 from zddv.config import ProjectConfig
 
 
@@ -134,6 +135,14 @@ def load_ai_context(
     evidence_sha = str(provenance.get("evidence_sha256") or "").lower()
     if not _SHA256_RE.fullmatch(evidence_sha):
         raise ValueError("AI context has an invalid evidence_sha256")
+    evidence = context.get("evidence")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("AI context is missing evidence")
+    calculated_sha = _canonical_sha256(evidence)
+    if evidence_sha != calculated_sha:
+        raise ValueError(
+            "AI context evidence_sha256 does not match the canonical evidence payload"
+        )
     return context
 
 
@@ -150,8 +159,10 @@ def build_model_request(context: Mapping[str, Any]) -> dict[str, Any]:
         "instructions": [
             "Return analysis only from the supplied ZDDV evidence bundle.",
             *prompt_contract,
+            "Return one JSON object matching response_contract exactly; do not wrap it in Markdown.",
             "Treat this request as analysis only. Do not claim any generated code was reviewed, applied, compiled, or executed.",
         ],
+        "response_contract": model_response_contract(),
         "context": dict(context),
     }
 
