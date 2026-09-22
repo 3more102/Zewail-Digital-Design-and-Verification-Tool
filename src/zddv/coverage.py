@@ -299,35 +299,32 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
-def _capture_questa_details_xml(
-    tool: str,
-    merged_path: Path,
-    out_dir: Path,
+def _capture_questa_report_file(
+    command: list[str],
+    *,
     cwd: Path,
+    output: Path,
 ) -> dict:
-    """Export Questa's machine-readable detailed coverage report when available."""
-    details_path = out_dir / "details.xml"
-    if details_path.exists():
-        details_path.unlink()
-
-    command = [
-        tool,
-        "report",
-        "-xml",
-        "-output",
-        str(details_path),
-        str(merged_path),
-    ]
+    """Capture an optional vcover report artifact without using stale output."""
+    if output.exists():
+        output.unlink()
     result = _run(command, cwd)
-    captured = result.returncode == 0 and details_path.exists()
-    if not captured and details_path.exists():
-        details_path.unlink()
-
+    if result.returncode != 0:
+        status = "failed"
+    elif not output.exists():
+        status = "missing"
+    else:
+        status = "captured"
     return {
-        "status": "xml" if captured else "unavailable",
-        "path": str(details_path) if captured else None,
+        "status": status,
+        "path": str(output),
+        "returncode": int(result.returncode),
         "command": command,
-        "output": result.stdout or "",
+        "diagnostic": (
+            (result.stdout or "").strip()
+            if status != "captured"
+            else None
+        ),
     }
 
 
@@ -354,6 +351,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     metrics_path = out_dir / "metrics.json"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
+    details_xml_path = out_dir / "details.xml"
+    zero_detail_path = out_dir / "zeros.txt"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -407,12 +406,37 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             )
             functional_snapshot_id = functional_record["snapshot_id"]
 
-    details = _capture_questa_details_xml(
+    details_cmd = [
         tool,
-        merged_path,
-        out_dir,
-        project.root,
-    )
+        "report",
+        "-xml",
+        "-codeAll",
+        "-output",
+        str(details_xml_path),
+        str(merged_path),
+    ]
+    zero_detail_cmd = [
+        tool,
+        "report",
+        "-zeros",
+        "-details",
+        "-codeAll",
+        "-output",
+        str(zero_detail_path),
+        str(merged_path),
+    ]
+    detailed_code_coverage_evidence = {
+        "xml": _capture_questa_report_file(
+            details_cmd,
+            cwd=project.root,
+            output=details_xml_path,
+        ),
+        "zero_detail": _capture_questa_report_file(
+            zero_detail_cmd,
+            cwd=project.root,
+            output=zero_detail_path,
+        ),
+    }
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -432,12 +456,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
-        "details": details["path"],
-        "details_capture": details["status"],
-        "details_command": details["command"],
+        "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
     }
-    if details["status"] != "xml":
-        payload["details_error"] = details["output"].strip()
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     record_coverage_snapshot(
@@ -459,13 +479,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
-        "details": details["path"],
-        "details_capture": details["status"],
-        "details_error": (
-            details["output"].strip()
-            if details["status"] != "xml"
-            else None
-        ),
+        "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
     }
 
 
