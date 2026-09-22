@@ -394,6 +394,13 @@ def cmd_coverage(args) -> int:
             "Zero-hit source detail: "
             f"{zero_detail.get('status', 'unknown')} {zero_detail.get('path', '-')}"
         )
+        xml_schema = detailed.get("xml_schema", {})
+        if xml_schema:
+            print(
+                "Detailed XML schema: "
+                f"{xml_schema.get('status', 'unknown')} "
+                f"{xml_schema.get('path') or '-'}"
+            )
     report = result["report"].strip()
     if report:
         print(report)
