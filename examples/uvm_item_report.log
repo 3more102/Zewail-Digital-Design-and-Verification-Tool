@@ -1,0 +1,4 @@
+UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=GRANT item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17 lane=3
+UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=REQUEST item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17
+UVM_INFO @ 18 ns: uvm_test_top.env.driver [ZDDV_ITEM] event=ITEM_DONE item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17
+UVM_INFO @ 20 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=RESPONSE item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17
