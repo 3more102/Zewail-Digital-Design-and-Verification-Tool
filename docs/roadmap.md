@@ -143,6 +143,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Tool-specific formal result ingestion (native SymbiYosys logfile evidence).
 - [x] Normalized counterexample/witness artifact model and JSON CLI ingestion.
 - [x] Native VCD counterexample/witness normalization with signal selection and provenance.
+- [x] Automatic normalization of attached VCD counterexamples/witnesses during formal-result persistence, with explicit missing/ambiguous/unsupported evidence states.
 - [x] Bounded SymbiYosys cover/reachability execution with machine-readable per-property covered/unreached history.
 - [x] Cross-run formal cover coverage grouped by exact design/backend/engine/depth/property universe compatibility.
 
