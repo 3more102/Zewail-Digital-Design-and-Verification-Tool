@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import platform
 import sys
@@ -1191,33 +1192,80 @@ def cmd_coverage_holes(args) -> int:
                 "Xcelium item-level coverage currently supports "
                 "--type block, expression, or toggle."
             )
-        source_path = (
-            project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+        coverage_dir = (
+            project.root / ".zddv" / "coverage" / "xcelium"
         ).resolve()
-        if not source_path.exists():
-            raise RuntimeError(
-                f"Xcelium IMC detail report not found at {source_path}. "
-                "Run 'zddv coverage' first."
-            )
-        detail_text = source_path.read_text(encoding="utf-8", errors="replace")
-        parsers = {
-            "block": parse_xcelium_imc_block_coverage,
-            "expression": parse_xcelium_imc_expression_coverage,
-            "toggle": parse_xcelium_imc_toggle_coverage_points,
-        }
-        if args.point_type is None:
-            points = [
+        items_path = coverage_dir / "items.json"
+        source_path = coverage_dir / "detail.txt"
+        points: list[dict]
+        evidence_source: Path
+
+        if items_path.exists():
+            try:
+                normalized = json.loads(items_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"Normalized Xcelium item artifact is invalid JSON: {items_path}. "
+                    "Re-run 'zddv coverage'."
+                ) from exc
+            if not isinstance(normalized, dict) or not isinstance(
+                normalized.get("points"), list
+            ):
+                raise RuntimeError(
+                    f"Normalized Xcelium item artifact has an invalid schema: "
+                    f"{items_path}. Re-run 'zddv coverage'."
+                )
+            supported = normalized.get("supported_types")
+            if supported != ["block", "expression", "toggle"]:
+                raise RuntimeError(
+                    f"Normalized Xcelium item artifact has unexpected supported "
+                    f"types: {items_path}. Re-run 'zddv coverage'."
+                )
+            all_points = [
                 point
-                for point_type in ("block", "expression", "toggle")
-                for point in parsers[point_type](detail_text)
+                for point in normalized["points"]
+                if isinstance(point, dict)
+                and point.get("type") in supported_types
             ]
+            points = (
+                all_points
+                if args.point_type is None
+                else [
+                    point
+                    for point in all_points
+                    if point.get("type") == args.point_type
+                ]
+            )
+            evidence_source = items_path
         else:
-            points = parsers[args.point_type](detail_text)
+            if not source_path.exists():
+                raise RuntimeError(
+                    f"Xcelium IMC detail report not found at {source_path}. "
+                    "Run 'zddv coverage' first."
+                )
+            detail_text = source_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            parsers = {
+                "block": parse_xcelium_imc_block_coverage,
+                "expression": parse_xcelium_imc_expression_coverage,
+                "toggle": parse_xcelium_imc_toggle_coverage_points,
+            }
+            if args.point_type is None:
+                points = [
+                    point
+                    for point_type in ("block", "expression", "toggle")
+                    for point in parsers[point_type](detail_text)
+                ]
+            else:
+                points = parsers[args.point_type](detail_text)
+            evidence_source = source_path
+
         if not points:
             requested = args.point_type or "block/expression/toggle"
             raise RuntimeError(
                 f"No normalized Xcelium {requested} rows found in "
-                f"{source_path}. Unrecognized IMC detail layouts remain "
+                f"{evidence_source}. Unrecognized IMC detail layouts remain "
                 "evidence-only."
             )
         report = write_coverage_hole_report(
