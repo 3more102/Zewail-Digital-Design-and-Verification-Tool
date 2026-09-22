@@ -6,12 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
+    parse_questa_statement_coverage_xml,
 )
 from zddv.storage import (
     list_coverage_snapshots,
@@ -50,6 +51,22 @@ TYPE /top/dut/APB_cg                    66.67%        100       -    Uncovered
     Cross APB_cg::write_x_data         100.00%        100       -    Covered
         bin legal_pair                    2          2         Covered
         illegal bin bad_pair              1          1         Covered
+"""
+
+QUESTA_STATEMENT_XML = """<?xml version="1.0" ?>
+<coverage_report>
+  <code_coverage_report lines="1" byInstance="1">
+    <instanceData path="/concat_tester/CHIPBOND/control_inst" du="micro" sec="rtl">
+      <sourceTable files="1">
+        <fileMap fn="0" path="src/Micro.vhd" />
+      </sourceTable>
+      <statements active="3" hits="2" percent="66.7" />
+      <stmt fn="0" ln="83" st="1" hits="2430" />
+      <stmt fn="0" ln="84" st="1" hits="0" />
+      <stmt fn="0" ln="85" st="1" hits="15" />
+    </instanceData>
+  </code_coverage_report>
+</coverage_report>
 """
 
 
@@ -122,6 +139,21 @@ def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     assert payload["bins"][2]["metadata"]["coverage_kind"] == "cross"
 
 
+def test_parse_questa_statement_xml_uses_documented_source_line_fields():
+    points = parse_questa_statement_coverage_xml(QUESTA_STATEMENT_XML)
+
+    assert len(points) == 3
+    assert points[0]["type"] == "statement"
+    assert points[0]["metadata"]["scope"] == "/concat_tester/CHIPBOND/control_inst"
+    assert points[0]["metadata"]["source"] == "src/Micro.vhd"
+    assert points[0]["metadata"]["line"] == 83
+    assert points[0]["count"] == 2430
+    assert points[0]["hit"] is True
+    assert points[1]["metadata"]["line"] == 84
+    assert points[1]["count"] == 0
+    assert points[1]["hit"] is False
+
+
 def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     tmp_path: Path,
     monkeypatch,
@@ -155,7 +187,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
             out_path = Path(command[command.index("-output") + 1])
-            out_path.write_text("<coverage/>\n", encoding="utf-8")
+            payload = QUESTA_STATEMENT_XML if "-code" in command else "<coverage/>\n"
+            out_path.write_text(payload, encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -190,6 +223,18 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         result["details"],
         result["merged"],
     ]
+    assert commands[4] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-code",
+        "s",
+        "-setdefault",
+        "byinstance",
+        "-output",
+        result["statement_report"],
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -205,6 +250,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     assert payload["details_capture"] == "xml"
     assert payload["details"] == result["details"]
+    assert payload["statement_capture"] == "normalized"
+    assert payload["statement_points"] == 3
+    assert payload["statement_holes"] == 1
+    assert Path(payload["statement_points_path"]).exists()
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -256,6 +305,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "functional_bins": 3,
             "functional_snapshot_id": "fcov-test",
             "functional_report": "/tmp/functional.txt",
+            "statement_capture": "normalized",
+            "statement_points": 3,
+            "statement_holes": 1,
+            "statement_report": "/tmp/statements.xml",
         },
     )
 
@@ -266,6 +319,45 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+    assert "Statement coverage points: 3" in output
+    assert "Statement coverage holes: 1" in output
+    assert "Statement coverage XML: /tmp/statements.xml" in output
+
+
+def test_coverage_holes_cli_reads_questa_statement_points(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    out_dir = project.root / ".zddv" / "coverage"
+    out_dir.mkdir(parents=True)
+    points = parse_questa_statement_coverage_xml(QUESTA_STATEMENT_XML)
+    (out_dir / "statement-points.json").write_text(
+        json.dumps(points, indent=2),
+        encoding="utf-8",
+    )
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/holes.json",
+            point_type="statement",
+            limit=None,
+            show=10,
+        )
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (statement): 1 unhit point(s); 1 written" in output
+    assert "[statement]" in output
+    payload = json.loads(
+        (out_dir / "holes.json").read_text(encoding="utf-8")
+    )
+    assert payload["total_holes"] == 1
+    assert payload["holes"][0]["count"] == 0
 
 
 def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
@@ -302,6 +394,10 @@ def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
     assert result["details"] is None
     assert result["details_capture"] == "unavailable"
     assert result["details_error"] == "XML export unavailable"
+    assert result["statement_capture"] == "unavailable"
+    assert result["statement_points"] == 0
+    assert result["statement_holes"] == 0
+    assert result["statement_error"] == "XML export unavailable"
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["details"] is None
