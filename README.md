@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces plus conservative sequence report-context evidence, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -29,7 +29,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
-- UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
+- UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus explicit `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -340,7 +340,7 @@ separately from Verilator's annotation threshold.
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
-- [ ] Sequence-aware UVM result model
+- [x] Conservative sequence-aware UVM report-evidence model when explicit `sequencer@@sequence` context is present
 
 ### APB Trace Analysis
 
