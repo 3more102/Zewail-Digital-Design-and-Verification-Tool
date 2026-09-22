@@ -13,6 +13,7 @@ from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_marker import analyze_uvm_marker_log
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -265,6 +266,13 @@ class VcsBackend(SimulatorBackend):
                 project,
                 None,
                 source="vcs-run",
+                run_id=run_id,
+            )
+        if "ZDDV_UVM_" in (output or ""):
+            analyze_uvm_marker_log(
+                project,
+                None,
+                source="vcs-marker-run",
                 run_id=run_id,
             )
 
