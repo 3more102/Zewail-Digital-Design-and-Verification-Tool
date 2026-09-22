@@ -8,6 +8,7 @@ import uuid
 
 from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_arbitration_snapshot
+from zddv.uvm_item import parse_uvm_item_file, parse_uvm_item_log
 
 
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "item_id", "priority", "sequencer")
@@ -452,6 +453,161 @@ def parse_uvm_arbitration_data(
     }
 
 
+def derive_uvm_item_arbitration_data(
+    item_report: dict[str, Any],
+    *,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Build explicit arbitration decisions from ARB_REQUEST/GRANT item evidence."""
+    events = item_report.get("events")
+    if not isinstance(events, list):
+        raise ValueError("UVM item report must contain normalized events")
+
+    pending: dict[str, dict[str, dict[str, Any]]] = {}
+    incomplete_pending: dict[str, dict[str, dict[str, Any]]] = {}
+    seen_requests: set[str] = set()
+    decisions: list[dict[str, Any]] = []
+
+    requests_seen = 0
+    grants_seen = 0
+    grants_without_request = 0
+    unscoped_requests = 0
+    unscoped_grants = 0
+    incomplete_requests = 0
+    skipped_incomplete_decisions = 0
+
+    def explicit_int(metadata: Any, key: str) -> int | None:
+        if not isinstance(metadata, dict):
+            return None
+        value = metadata.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        return int(value)
+
+    def contender(event: dict[str, Any]) -> dict[str, Any]:
+        event_metadata = event.get("metadata")
+        provenance: dict[str, Any] = {
+            "source_event_index": int(event["event_index"]),
+            "transaction_id": event.get("transaction_id"),
+            "item_type": event.get("item"),
+        }
+        if isinstance(event_metadata, dict) and "log_line" in event_metadata:
+            provenance["log_line"] = event_metadata["log_line"]
+        return {
+            "request_id": event["item_id"],
+            "sequence_id": event["sequence_id"],
+            "sequence": event["sequence"],
+            "item_id": event["item_id"],
+            "priority": explicit_int(event_metadata, "priority"),
+            "request_order": explicit_int(event_metadata, "request_order"),
+            "metadata": provenance,
+        }
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("event")
+        item_id = event.get("item_id")
+        if not isinstance(item_id, str) or not item_id:
+            continue
+
+        if event_type == "ARB_REQUEST":
+            requests_seen += 1
+            if item_id in seen_requests:
+                continue
+            seen_requests.add(item_id)
+
+            sequencer = event.get("sequencer")
+            if not isinstance(sequencer, str) or not sequencer:
+                unscoped_requests += 1
+                continue
+
+            complete = bool(event.get("sequence_id") and event.get("sequence"))
+            target = pending if complete else incomplete_pending
+            target.setdefault(sequencer, {})[item_id] = event
+            if not complete:
+                incomplete_requests += 1
+            continue
+
+        if event_type != "GRANT":
+            continue
+
+        grants_seen += 1
+        sequencer = event.get("sequencer")
+        if not isinstance(sequencer, str) or not sequencer:
+            unscoped_grants += 1
+            continue
+
+        complete_group = pending.setdefault(sequencer, {})
+        incomplete_group = incomplete_pending.setdefault(sequencer, {})
+        if item_id not in complete_group and item_id not in incomplete_group:
+            grants_without_request += 1
+            continue
+
+        if incomplete_group:
+            skipped_incomplete_decisions += 1
+        elif item_id in complete_group:
+            event_metadata = event.get("metadata")
+            mode = (
+                event_metadata.get("arbitration_mode")
+                if isinstance(event_metadata, dict)
+                else None
+            )
+            decision = {
+                "decision_id": f"item-grant-{int(event['event_index'])}",
+                "sequencer": sequencer,
+                "granted_request_id": item_id,
+                "time": event.get("time"),
+                "contenders": [
+                    contender(request_event)
+                    for request_event in complete_group.values()
+                ],
+                "metadata": {
+                    "derived_from": "uvm-item-events",
+                    "grant_event_index": int(event["event_index"]),
+                },
+            }
+            if isinstance(mode, str) and mode.strip():
+                decision["mode"] = mode.strip()
+            if isinstance(event_metadata, dict) and "log_line" in event_metadata:
+                decision["metadata"]["grant_log_line"] = event_metadata["log_line"]
+            decisions.append(decision)
+
+        complete_group.pop(item_id, None)
+        incomplete_group.pop(item_id, None)
+
+    pending_requests = sum(len(items) for items in pending.values()) + sum(
+        len(items) for items in incomplete_pending.values()
+    )
+    selected_source = source or item_report.get("source") or "uvm-item"
+    return {
+        "source": f"{selected_source}-arbitration-bridge",
+        "decisions": decisions,
+        "adapter": {
+            "kind": "uvm-item-arb-request",
+            "item_status": item_report.get("status"),
+            "item_violations": int(
+                item_report.get("summary", {}).get("violations", 0)
+            ),
+            "requests_seen": requests_seen,
+            "grants_seen": grants_seen,
+            "decisions_emitted": len(decisions),
+            "grants_without_request": grants_without_request,
+            "unscoped_requests": unscoped_requests,
+            "unscoped_grants": unscoped_grants,
+            "incomplete_requests": incomplete_requests,
+            "skipped_incomplete_decisions": skipped_incomplete_decisions,
+            "pending_requests": pending_requests,
+        },
+        "limitations": [
+            "Decisions are derived only from explicit ARB_REQUEST and GRANT evidence.",
+            "If any pending contender on a sequencer lacks sequence identity, that grant decision is skipped rather than dropping the unknown contender.",
+            "Priority, request_order, and arbitration mode are propagated only when explicitly present in event metadata.",
+            "The bridge does not infer vendor arbitration mode, hidden requests, lock/grab state, or delta-cycle timing.",
+        ],
+    }
+
+
 def parse_uvm_arbitration_file(
     path: str | Path,
     *,
@@ -467,33 +623,20 @@ def parse_uvm_arbitration_file(
     )
 
 
-def analyze_uvm_arbitration_file(
+def _persist_uvm_arbitration_analysis(
     project: ProjectConfig,
-    path: str | Path,
+    report: dict[str, Any],
+    input_path: Path,
     *,
-    source: str | None = None,
-    fairness_bound: int | None = None,
-    output: str | Path = ".zddv/uvm/arbitration/latest.json",
-    run_id: str | None = None,
+    output: str | Path,
+    run_id: str | None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
-
     run_record: dict[str, Any] | None = None
     if run_id is not None:
         run_record = get_run_record(project, run_id)
         if run_record is None:
             raise ValueError(f"Unknown run ID: {run_id}")
 
-    report = parse_uvm_arbitration_file(
-        input_path,
-        source=source,
-        fairness_bound=fairness_bound,
-    )
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-arb-%Y%m%dT%H%M%S")
@@ -535,3 +678,97 @@ def analyze_uvm_arbitration_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_arbitration_snapshot(project, record)
     return record
+
+
+def analyze_uvm_arbitration_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    report = parse_uvm_arbitration_file(
+        input_path,
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_id=run_id,
+    )
+
+
+def analyze_uvm_arbitration_item_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    log_input: bool = False,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Analyze arbitration by bridging explicit UVM item request/grant evidence."""
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    item_source = source or (
+        "uvm-item-log-marker" if log_input else "uvm-item-json"
+    )
+    item_report = (
+        parse_uvm_item_log(input_path, source=item_source)
+        if log_input
+        else parse_uvm_item_file(input_path, source=item_source)
+    )
+    derived = derive_uvm_item_arbitration_data(
+        item_report,
+        source=item_report["source"],
+    )
+    if not derived["decisions"]:
+        adapter = derived["adapter"]
+        raise ValueError(
+            "No arbitration decisions could be derived from explicit "
+            "ARB_REQUEST/GRANT evidence "
+            f"(requests={adapter['requests_seen']}, "
+            f"grants={adapter['grants_seen']}, "
+            f"incomplete={adapter['incomplete_requests']}, "
+            f"skipped={adapter['skipped_incomplete_decisions']})"
+        )
+
+    report = parse_uvm_arbitration_data(
+        {
+            "source": derived["source"],
+            "decisions": derived["decisions"],
+        },
+        source=derived["source"],
+        fairness_bound=fairness_bound,
+    )
+    report["input_mode"] = (
+        "uvm-item-log-bridge" if log_input else "uvm-item-trace-bridge"
+    )
+    report["item_source"] = item_report["source"]
+    report["adapter"] = derived["adapter"]
+    report["adapter_limitations"] = derived["limitations"]
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_id=run_id,
+    )
