@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB coverage capture when project coverage is enabled; UCDB merge/normalization is still pending
+- Questa per-run UCDB coverage capture plus `vcover` UCDB merge, normalized code-coverage snapshots, and functional-covergroup bin ingestion
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -60,7 +60,7 @@ Requirements:
 
 - Python 3.11+
 - Verilator available in `PATH` for the default backend
-- Optional Questa/QuestaSim: `vlib`, `vlog`, and `vsim` available in `PATH`
+- Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH`
 
 Install ZDDV for development:
 
@@ -88,8 +88,9 @@ zddv --project examples/async_fifo coverage
 
 For a Questa project, setting `coverage = true` in `[run]` enables native
 coverage instrumentation and writes `coverage.ucdb` inside each run directory.
-The `zddv coverage` merge/report command remains Verilator-specific until UCDB
-normalization and merge support are added.
+`zddv coverage` merges those UCDBs with `vcover`, stores normalized code-coverage
+metrics in the common coverage database, and imports ordinary covergroup bins into
+the simulator-independent functional-coverage database when they are reported.
 
 ## Current CLI
 
@@ -253,7 +254,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← build/run foundation implemented
+       ├── Questa     ← build/run + UCDB coverage implemented
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
@@ -641,7 +642,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
 - [x] Questa native per-run UCDB coverage capture
-- [ ] Questa UCDB normalization/merge into ZDDV coverage metrics
+- [x] Questa UCDB merge, normalized code-coverage snapshots, and functional-covergroup ingestion
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
