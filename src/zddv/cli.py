@@ -41,6 +41,7 @@ from zddv.storage import (
     list_run_records,
     list_runs,
     list_uvm_item_handshake_snapshots,
+    list_uvm_item_handshake_violations,
     list_uvm_log_snapshots,
     list_uvm_sequence_lifecycle_snapshots,
 )
@@ -839,6 +840,38 @@ def cmd_uvm_item_history(args) -> int:
             f"{row['event_count']:>6} {row['violation_count']:>5} "
             f"{handshake:<15} {activity:<12} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_uvm_item_violations(args) -> int:
+    project = load_project(_project_arg(args))
+    snapshot_id = args.snapshot
+    if snapshot_id is None:
+        snapshots = list_uvm_item_handshake_snapshots(project, limit=1)
+        if not snapshots:
+            print("No UVM item handshake snapshots found.")
+            return 0
+        snapshot_id = snapshots[0]["snapshot_id"]
+
+    rows = list_uvm_item_handshake_violations(
+        project,
+        snapshot_id,
+        code=args.code,
+        item_id=args.item_id,
+        limit=args.limit,
+    )
+    if not rows:
+        print(f"No UVM item handshake violations found for snapshot {snapshot_id}.")
+        return 0
+
+    print(f"Snapshot: {snapshot_id}")
+    print(f"{'IDX':>4} {'EVENT':>5} {'CODE':<28} {'ITEM':<24} {'TYPE':<10} MESSAGE")
+    for row in rows:
+        print(
+            f"{row['violation_index']:>4} {row['event_index']:>5} "
+            f"{row['code']:<28} {row['item_id'][:24]:<24} "
+            f"{row['event']:<10} {row['message']}"
         )
     return 0
 
@@ -1746,6 +1779,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter item-handshake snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_item_history.set_defaults(func=cmd_uvm_item_history)
+
+    p_uvm_item_violations = sub.add_parser(
+        "uvm-item-violations",
+        help="Show persisted UVM sequence-item handshake violations",
+    )
+    p_uvm_item_violations.add_argument(
+        "--snapshot",
+        default=None,
+        help="Snapshot ID; defaults to the latest UVM item snapshot",
+    )
+    p_uvm_item_violations.add_argument(
+        "--code",
+        default=None,
+        help="Optional exact violation-code filter",
+    )
+    p_uvm_item_violations.add_argument(
+        "--item",
+        dest="item_id",
+        default=None,
+        help="Optional exact item ID filter",
+    )
+    p_uvm_item_violations.add_argument("--limit", type=int, default=100)
+    p_uvm_item_violations.set_defaults(func=cmd_uvm_item_violations)
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",
