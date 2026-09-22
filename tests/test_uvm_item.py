@@ -479,6 +479,17 @@ def test_parse_uvm_item_log_markers_preserves_line_provenance():
     assert result["events"][0]["metadata"]["log_line"] == 2
 
 
+def test_parse_uvm_item_log_uses_actual_line_over_declared_metadata():
+    event = _event("item-1", "GRANT")
+    event["metadata"] = {"log_line": 999, "producer": "testbench"}
+    result = parse_uvm_item_log_text(_marker(event))
+
+    assert result["events"][0]["metadata"] == {
+        "log_line": 1,
+        "producer": "testbench",
+    }
+
+
 def test_parse_uvm_item_log_rejects_malformed_marker():
     try:
         parse_uvm_item_log_text('ZDDV_UVM_ITEM {"item_id":')
