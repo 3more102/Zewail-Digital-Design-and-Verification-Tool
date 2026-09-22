@@ -50,6 +50,7 @@ from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
 from zddv.uvm_arbitration import analyze_uvm_arbitration_file
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
+from zddv.uvm_marker import analyze_uvm_marker_log
 from zddv.uvm_item_instrumentation import write_uvm_item_instrumentation
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.waveform import write_waveform_index
@@ -798,6 +799,38 @@ def cmd_uvm_history(args) -> int:
         )
     return 0
 
+
+
+def cmd_uvm_marker_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_marker_log(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM MARKER {result['status']}: "
+        f"sequence-markers={summary['sequence_marker_lines']} "
+        f"item-markers={summary['item_marker_lines']} "
+        f"analysis-errors={summary['analysis_errors']}"
+    )
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    if result.get("sequence_snapshot_id"):
+        print(f"Sequence snapshot: {result['sequence_snapshot_id']}")
+    if result.get("item_snapshot_id"):
+        print(f"Item snapshot: {result['item_snapshot_id']}")
+    for error in result["analysis_errors"][:20]:
+        print(f"[{error['kind'].upper()}] {error['message']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
 
 def cmd_uvm_item_analyze(args) -> int:
     project = load_project(_project_arg(args))
@@ -1973,6 +2006,35 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_uvm_item_instrument,
         add_source=True,
     )
+
+    p_uvm_marker = sub.add_parser(
+        "uvm-marker-analyze",
+        help="Analyze explicit ZDDV UVM sequence/item markers from a simulation log",
+    )
+    p_uvm_marker.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Simulation log file; optional when --run is supplied",
+    )
+    p_uvm_marker.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
+    p_uvm_marker.add_argument(
+        "--source",
+        default=None,
+        help="Optional source label for marker evidence",
+    )
+    p_uvm_marker.add_argument(
+        "--output",
+        default=".zddv/uvm/markers/latest.json",
+        help="Run-level UVM marker analysis JSON report path",
+    )
+    p_uvm_marker.set_defaults(func=cmd_uvm_marker_analyze)
+
 
     p_uvm_item = sub.add_parser(
         "uvm-item-analyze",
