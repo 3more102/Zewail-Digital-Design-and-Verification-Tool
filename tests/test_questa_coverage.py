@@ -153,6 +153,14 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        if command[1:3] == ["report", "-xml"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("<coverage/>\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="xml report written\n")
+        if command[1:4] == ["report", "-zeros", "-details"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="zero report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -178,6 +186,25 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-details",
         result["merged"],
     ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-codeAll",
+        "-output",
+        str(Path(result["merged"]).with_name("details.xml")),
+        result["merged"],
+    ]
+    assert commands[4] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-zeros",
+        "-details",
+        "-codeAll",
+        "-output",
+        str(Path(result["merged"]).with_name("zeros.txt")),
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -189,6 +216,11 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["by_type"]["expression"]["hit"] == 1143
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
+    evidence = payload["detailed_code_coverage_evidence"]
+    assert evidence["xml"]["status"] == "captured"
+    assert evidence["zero_detail"]["status"] == "captured"
+    assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
+    assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -250,3 +282,47 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+
+
+def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    run_dir = (project.root / project.run_dir / "run-a").resolve()
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.ucdb").write_text("fixture\n", encoding="utf-8")
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True)
+    (out_dir / "details.xml").write_text("stale\n", encoding="utf-8")
+    (out_dir / "zeros.txt").write_text("stale\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/questa/bin/vcover" if name == "vcover" else None,
+    )
+
+    def fake_run(command, cwd):
+        if command[1] == "merge":
+            output = Path(command[command.index("-out") + 1])
+            output.write_text("merged\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge complete\n")
+        if command[1:3] == ["report", "-summary"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:4] == ["report", "-cvg", "-details"]:
+            return SimpleNamespace(returncode=0, stdout="")
+        if "-xml" in command or "-zeros" in command:
+            return SimpleNamespace(returncode=2, stdout="unsupported fixture\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_questa_coverage(project)
+    evidence = result["detailed_code_coverage_evidence"]
+
+    assert evidence["xml"]["status"] == "failed"
+    assert evidence["xml"]["returncode"] == 2
+    assert evidence["zero_detail"]["status"] == "failed"
+    assert not Path(evidence["xml"]["path"]).exists()
+    assert not Path(evidence["zero_detail"]["path"]).exists()
