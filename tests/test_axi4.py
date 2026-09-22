@@ -727,3 +727,127 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["qos"] == 0xC
     assert tx["region"] == 0x7
     assert tx["awprot"] == 0x2
+
+def test_preserves_optional_axi4_user_sidebands_without_interpreting_them():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 0xA,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x200,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARUSER": "read-tag",
+            },
+            {
+                "cycle": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x55,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+                "WUSER": 0x3,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0x66,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+                "RUSER": 0x12,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 1,
+                "BRESP": "OKAY",
+                "BUSER": "write-response-tag",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    assert write["awuser"] == 0xA
+    assert write["wuser"] == [0x3]
+    assert write["buser"] == "write-response-tag"
+    assert read["aruser"] == "read-tag"
+    assert read["ruser"] == [0x12]
+
+
+def test_checks_user_sideband_stability_while_channel_is_stalled():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 0,
+                "AWID": 3,
+                "AWADDR": 0x300,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 1,
+            },
+            {
+                "cycle": 1,
+                "AWVALID": 1,
+                "AWREADY": 0,
+                "AWID": 3,
+                "AWADDR": 0x300,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 2,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 3,
+                "AWADDR": 0x300,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 1,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0xAA,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 3,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "payload_changed_while_stalled"
+        and item["signal"] == "AWUSER"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["channel"] == "AW"
+    assert violation["expected"] == 1
+    assert violation["actual"] == 2
+
