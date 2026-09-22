@@ -48,7 +48,7 @@ A build produces:
 
 - simulator command
 - combined build log
-- executable, when successful
+- executable or simulator-native compiled-library artifact, when successful
 - `build.json` manifest
 
 ### Run
@@ -247,6 +247,10 @@ Public references:
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
+
+Current executable backends:
+- **Verilator**: executable binary flow with optional waveform/code-coverage artifacts.
+- **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, assertion-log ingestion, and run-linked UVM log ingestion. Questa code/functional coverage capture is not yet implemented.
 
 ## Next Architectural Steps
 
