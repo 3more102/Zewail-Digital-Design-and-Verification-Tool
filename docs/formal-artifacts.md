@@ -50,12 +50,24 @@ paths or unambiguous short names.
 The importer snapshots the known selected-signal state after all value changes at each
 VCD timestamp. It does not invent clock cycles, radix, signedness, or property semantics.
 
+## Automatic persistence-time normalization
+
+When a persisted formal result reports a trace for a failed assertion or a covered
+cover property, ZDDV resolves a relative trace path against that formal run directory.
+Existing VCD counterexamples/witnesses are automatically normalized into a
+snapshot-specific JSON trace beside the persisted formal report. The formal property
+record retains the raw path, resolved path, normalization status, normalized output
+path, SHA-256, schema, and compact trace summary.
+
+Missing VCD files, malformed VCD content, unsupported waveform suffixes, and generic
+trace evidence do not make formal-result persistence fail. They remain explicit raw
+evidence with a conservative normalization status instead of receiving invented
+counterexample/witness semantics.
+
 ## Current boundary
 
-The artifact-manifest layer itself remains a classifier/fingerprinter. VCD contents can
-now be normalized through the explicit trace importer, while ZDDV does not yet:
+The artifact-manifest layer itself remains a classifier/fingerprinter. ZDDV does not yet:
 
-- automatically normalize every backend-reported trace during result persistence;
 - parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
 - reconstruct semantic formal state transitions beyond timestamped signal values;
 - cross-probe normalized formal trace signals to RTL;

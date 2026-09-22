@@ -14,6 +14,7 @@ from zddv.formal.base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.storage import record_formal_result_snapshot
 
 
@@ -257,6 +258,94 @@ def formal_design_fingerprint(project: ProjectConfig) -> str:
     return digest.hexdigest()
 
 
+def _resolve_formal_trace_path(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    trace_path: Path,
+) -> Path:
+    run_dir = result.run_dir
+    if not run_dir.is_absolute():
+        run_dir = project.root / run_dir
+    run_dir = run_dir.resolve()
+
+    if trace_path.is_absolute():
+        return trace_path.resolve()
+    return (run_dir / trace_path).resolve()
+
+
+def _auto_normalize_vcd_traces(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    record: dict[str, Any],
+    *,
+    snapshot_id: str,
+    report_path: Path,
+) -> None:
+    """Attach reviewable normalized VCD evidence without making persistence brittle."""
+
+    trace_dir = report_path.parent / "traces"
+    for index, (item, property_record) in enumerate(
+        zip(result.properties, record["properties"], strict=True)
+    ):
+        trace = property_record.get("trace")
+        if trace is None or item.trace_path is None:
+            continue
+
+        source_path = _resolve_formal_trace_path(project, result, item.trace_path)
+        trace["resolved_path"] = str(source_path)
+
+        role = trace.get("role")
+        if role not in {"COUNTEREXAMPLE", "WITNESS"}:
+            trace["normalization"] = {
+                "status": "NOT_APPLICABLE",
+                "reason": "trace role is generic evidence",
+            }
+            continue
+
+        if source_path.suffix.lower() != ".vcd":
+            trace["normalization"] = {
+                "status": "UNSUPPORTED_FORMAT",
+                "format": source_path.suffix.lower() or None,
+            }
+            continue
+
+        if not source_path.is_file():
+            trace["normalization"] = {
+                "status": "MISSING",
+            }
+            continue
+
+        destination = trace_dir / f"{snapshot_id}-{index:04d}.json"
+        source_label = (
+            result.backend
+            if result.engine is None
+            else f"{result.backend}:{result.engine}"
+        )
+        try:
+            normalized = ingest_formal_vcd_trace(
+                project,
+                source_path,
+                property_name=item.name,
+                property_kind=item.kind,
+                source=source_label,
+                output=destination,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            trace["normalization"] = {
+                "status": "ERROR",
+                "message": str(exc),
+            }
+            continue
+
+        trace["normalization"] = {
+            "status": "NORMALIZED",
+            "path": normalized["normalized_path"],
+            "input_sha256": normalized["input_sha256"],
+            "schema": normalized["schema"],
+            "summary": normalized["summary"],
+        }
+
+
 def persist_formal_result(
     project: ProjectConfig,
     result: FormalCheckResult,
@@ -281,14 +370,22 @@ def persist_formal_result(
     report_path = report_path.resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
+    snapshot_id = uuid.uuid4().hex
     record.update(
         {
-            "snapshot_id": uuid.uuid4().hex,
+            "snapshot_id": snapshot_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "project": project.name,
             "input_path": str(source_path),
             "report_path": str(report_path),
         }
+    )
+    _auto_normalize_vcd_traces(
+        project,
+        result,
+        record,
+        snapshot_id=snapshot_id,
+        report_path=report_path,
     )
 
     report_path.write_text(

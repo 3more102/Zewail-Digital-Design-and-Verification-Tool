@@ -187,14 +187,24 @@ snapshot reports it uncovered; `UNKNOWN` and `ERROR` stay unresolved evidence.
 The report retains per-property covered/uncovered/unknown/error run counts plus every
 snapshot ID used in the calculation.
 
+## Persistence-time VCD trace handling
+
+For a failed assertion or covered cover property with a reported trace path,
+`persist_formal_result()` resolves relative paths against the formal run directory.
+If the resolved artifact is an existing VCD file, ZDDV automatically creates a
+snapshot-specific normalized counterexample/witness JSON trace. The property record
+retains raw and resolved paths plus normalization status, normalized-path provenance,
+input SHA-256, schema, and compact summary.
+
+Unsupported formats, missing files, malformed VCDs, and generic trace evidence remain
+reviewable raw evidence and do not abort formal-result persistence.
+
 ## Current boundary
 
-Native VCD counterexample/witness contents are supported through the explicit
-`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
-during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
-finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
-conservative cross-run aggregation are supported. Incomplete property universes,
-snapshots without a design fingerprint, different source revisions, different engines,
-different depths, or different property sets are never silently merged. Additional
-vendor-native waveform formats, automatic trace cross-probing, and broader proof-coverage
-metrics remain separate future work.
+ZDDV does not claim unbounded reachability/proof coverage from finite-depth evidence.
+Direct finite-depth SymbiYosys cover-property reachability and conservative cross-run
+aggregation are supported. Incomplete property universes, snapshots without a design
+fingerprint, different source revisions, different engines, different depths, or
+different property sets are never silently merged. Additional vendor-native waveform
+formats, automatic trace cross-probing, SQLite trace-sample persistence, and broader
+proof-coverage metrics remain separate future work.

@@ -53,6 +53,57 @@ def _payload() -> dict:
     }
 
 
+def _write_vcd(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 1 " bad $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+0"
+#5
+1!
+1"
+""",
+        encoding="utf-8",
+    )
+
+
+def test_formal_analysis_auto_normalizes_semantic_vcd_trace(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "runs" / "run-1"
+    trace_path = run_dir / "artifacts" / "p_failure.vcd"
+    _write_vcd(trace_path)
+
+    source = project.root / "formal.json"
+    source.write_text(json.dumps(_payload()), encoding="utf-8")
+
+    record = analyze_formal_result_file(project, source)
+
+    failed = next(item for item in record["properties"] if item["name"] == "p_failure")
+    trace = failed["trace"]
+    assert trace["resolved_path"] == str(trace_path.resolve())
+    normalization = trace["normalization"]
+    assert normalization["status"] == "NORMALIZED"
+
+    normalized_path = Path(normalization["path"])
+    assert normalized_path.is_file()
+    saved = json.loads(normalized_path.read_text(encoding="utf-8"))
+    assert saved["property"] == "p_failure"
+    assert saved["property_kind"] == "assert"
+    assert saved["trace_kind"] == "counterexample"
+    assert saved["source"] == "example:example-formal 1.0"
+    assert saved["summary"]["signals"] == 2
+    assert saved["summary"]["steps"] == 2
+
+    covered = next(item for item in record["properties"] if item["name"] == "c_reachable")
+    assert covered["trace"]["normalization"]["status"] == "MISSING"
+
+
 def test_formal_analysis_persists_snapshot_and_property_rows(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     source = project.root / "formal.json"
