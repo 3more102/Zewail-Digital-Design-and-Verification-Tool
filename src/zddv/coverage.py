@@ -235,6 +235,10 @@ def build_coverage_hole_report(
                         "transition",
                         "transition_id",
                         "evidence",
+                        "block",
+                        "origin_line",
+                        "source_code",
+                        "type_name",
                     )
                     if key in point and point[key] is not None
                 },
@@ -2367,6 +2371,16 @@ _IMC_TOGGLE_ROW = re.compile(
     r"(?P<signal>\S.*?)\s*$"
 )
 
+_IMC_BLOCK_DETAIL_FIELD = re.compile(
+    r"^\s*(?P<label>Instance name|Module/Entity name|Type name|File name)"
+    r"\s*:\s*(?P<value>.*?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_BLOCK_DETAIL_ROW = re.compile(
+    r"^\s*(?P<count>\d[\d,]*)\s+(?P<block>\d+)\s+(?P<line>\d+)\s+"
+    r"(?P<kind>.+?)\s+(?P<origin>\d+)\s+(?P<source>.*?)\s*$"
+)
+
 def _imc_grade(value: str) -> float | None:
     text = value.strip().lower()
     if text == "n/a":
@@ -2451,6 +2465,110 @@ def parse_xcelium_imc_toggle_coverage_points(text: str) -> list[dict]:
         points.append(point)
 
     return points
+
+
+
+def parse_xcelium_imc_block_coverage_points(text: str) -> list[dict]:
+    """Normalize native IMC block rows using only documented report columns."""
+    points: list[dict] = []
+    instance_name = ""
+    module_name = ""
+    type_name = ""
+    source_file = ""
+    pending_field: str | None = None
+    in_block_table = False
+
+    def assign_field(label: str, value: str) -> None:
+        nonlocal instance_name, module_name, type_name, source_file
+        normalized = label.casefold()
+        if normalized == "instance name":
+            instance_name = value
+        elif normalized == "module/entity name":
+            module_name = value
+        elif normalized == "type name":
+            type_name = value
+        elif normalized == "file name":
+            source_file = value
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+
+        field = _IMC_BLOCK_DETAIL_FIELD.match(raw_line)
+        if field is not None:
+            label = field.group("label")
+            value = field.group("value").strip()
+            in_block_table = False
+            if value:
+                assign_field(label, value)
+                pending_field = None
+            else:
+                pending_field = label
+            continue
+
+        if pending_field is not None:
+            if stripped.casefold().startswith("number of "):
+                pending_field = None
+            else:
+                assign_field(pending_field, stripped)
+                pending_field = None
+                continue
+
+        normalized = re.sub(r"\s+", " ", stripped).casefold()
+        if normalized.startswith("count block line"):
+            in_block_table = True
+            continue
+        if in_block_table and normalized.startswith("kind origin source code"):
+            continue
+        if in_block_table and set(stripped) <= {"-", "=", "+", "|", " "}:
+            continue
+        if not in_block_table:
+            continue
+
+        row = _IMC_BLOCK_DETAIL_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        count = int(row.group("count").replace(",", ""))
+        block = int(row.group("block"))
+        line_number = int(row.group("line"))
+        origin_line = int(row.group("origin"))
+        block_kind = row.group("kind").strip()
+        source_code = row.group("source").strip()
+        scope = instance_name or module_name or type_name
+        location = f"{source_file or '<unknown-source>'}:{line_number}:block{block}"
+        name = f"{scope}|{location}" if scope else location
+        point = {
+            "name": name,
+            "count": count,
+            "hit": count > 0,
+            "type": "block",
+            "line": line_number,
+            "item": block,
+            "block": block,
+            "origin_line": origin_line,
+            "detail": block_kind,
+            "source_code": source_code,
+        }
+        if scope:
+            point["scope"] = scope
+        if type_name:
+            point["type_name"] = type_name
+        if source_file:
+            point["source_file"] = source_file
+        points.append(point)
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            str(point.get("source_file") or ""),
+            int(point.get("line") or -1),
+            int(point.get("block") or -1),
+        )
+    )
+    return points
+
 
 def parse_xcelium_imc_summary(text: str) -> dict:
     """Normalize the cumulative top-level row from an IMC summary report.
@@ -2660,6 +2778,27 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             f"{detail_report.returncode}"
         )
 
+    block_points: list[dict] = []
+    block_detail_error: str | None = None
+    if detail_report.returncode == 0:
+        block_points = parse_xcelium_imc_block_coverage_points(
+            detail_report.stdout or ""
+        )
+        block_detail_status = (
+            "normalized" if block_points else "detail-unparsed"
+        )
+        if not block_points:
+            block_detail_error = (
+                "No documented Count/Block/Line/Kind/Origin/Source Code rows "
+                "were found in the native IMC detail report"
+            )
+    else:
+        block_detail_status = "tool-error"
+        block_detail_error = (detail_report.stdout or "").strip() or (
+            "IMC detailed coverage report exited with status "
+            f"{detail_report.returncode}"
+        )
+
     metrics: dict | None = None
     metrics_error: str | None = None
     metrics_status = "summary-unparsed"
@@ -2699,6 +2838,11 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "toggle_detail_holes": sum(
             not bool(point.get("hit")) for point in toggle_points
         ),
+        "block_detail_status": block_detail_status,
+        "block_detail_points": len(block_points),
+        "block_detail_holes": sum(
+            not bool(point.get("hit")) for point in block_points
+        ),
         "script": str(script_path),
         "merge_model": "union_all",
         "merge_command": merge_command,
@@ -2711,6 +2855,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         payload["metrics_error"] = metrics_error
     if toggle_detail_error is not None:
         payload["toggle_detail_error"] = toggle_detail_error
+    if block_detail_error is not None:
+        payload["block_detail_error"] = block_detail_error
 
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
@@ -2749,6 +2895,12 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             not bool(point.get("hit")) for point in toggle_points
         ),
         "toggle_detail_error": toggle_detail_error,
+        "block_detail_status": block_detail_status,
+        "block_detail_points": len(block_points),
+        "block_detail_holes": sum(
+            not bool(point.get("hit")) for point in block_points
+        ),
+        "block_detail_error": block_detail_error,
         "metrics_path": str(manifest_path),
         "report": report.stdout or "",
         "metrics": metrics,
