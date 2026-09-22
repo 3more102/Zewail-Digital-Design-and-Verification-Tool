@@ -185,10 +185,16 @@ ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGIO
 metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
 observed value must remain constant for requests in the same 4KB address space.
 
+Optional AWUSER, WUSER, BUSER, ARUSER, and RUSER values are transported as opaque
+channel payload. When present, they participate in the same VALID/READY stability
+checks as the rest of their channel and are preserved in reconstructed transaction
+evidence. Their width and meaning remain implementation-defined, so ZDDV does not
+invent semantic legality rules for their bit values.
+
 These checks intentionally stop at properties observable from the normalized
-interface trace. ACE coherency, AXI5 additions, USER sidebands, system-level QoS
-policy, topology-dependent cache reachability, and exhaustive system-ordering
-semantics remain outside this AXI4 contract.
+interface trace. ACE coherency, AXI5 additions, system-level QoS policy,
+topology-dependent cache reachability, and exhaustive system-ordering semantics
+remain outside this AXI4 contract.
 
 ## v0.5 AXI4 Waveform Extraction Contract
 
@@ -197,8 +203,8 @@ ACLK-edge trace consumed by `zddv axi4-analyze`. Scope selection is deterministi
 an explicit scope must contain the required five-channel handshake and burst payload
 signals; automatic selection succeeds only when exactly one complete AXI4 scope exists.
 
-The extractor streams selected VCD identifiers only, preserves optional transaction IDs
-and address sidebands when present, and records physical waveform timestamps alongside
+The extractor streams selected VCD identifiers only, preserves optional transaction IDs,
+address sidebands, and USER sidebands when present, and records physical waveform timestamps alongside
 logical sample cycles. The burst analyzer then propagates those timestamps into
 violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains an
 input adapter; protocol semantics remain simulator-independent in the AXI4 core.
