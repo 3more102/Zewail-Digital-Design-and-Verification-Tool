@@ -89,6 +89,8 @@ zddv --project <project> uvm-item-analyze <trace.json> --max-bypass 3
 
 A request that remains pending while more than the configured number of competing grants are observed produces `ARBITRATION_BYPASS_LIMIT`. This threshold is an explicit user policy; ZDDV does not treat any bypass count as a universal UVM fairness rule.
 
+The same explicit `ARB_REQUEST` / `GRANT` evidence can feed the dedicated arbitration analyzer with `uvm-arbitration-analyze --item-trace` or `--item-log`. That bridge forms contender sets only from explicitly pending requests on the same sequencer and skips a decision if a pending contender lacks required sequence identity.
+
 ## Persistence and current boundary
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, normalized per-event evidence, and every detected violation with its code, source event index, item ID, event type, and message. `uvm-item-violations` queries that failure evidence without reopening the JSON artifact. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
