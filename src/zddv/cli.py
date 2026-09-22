@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_questa_fsm_coverage_report,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -498,6 +499,16 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition/expression detail: {result['code_report']}")
+    fsm_detail_status = result.get("fsm_detail_status")
+    if fsm_detail_status is not None:
+        print(
+            "Normalized Questa FSM state/transition coverage: "
+            f"{fsm_detail_status} "
+            f"{result.get('fsm_detail_points', 0)} point(s), "
+            f"{result.get('fsm_detail_holes', 0)} hole(s)"
+        )
+        if result.get("fsm_report"):
+            print(f"Questa FSM detail: {result['fsm_report']}")
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -610,15 +621,39 @@ def cmd_coverage_holes(args) -> int:
             "branch",
             "condition",
             "expression",
+            "fsm",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, or expression."
+                "--type statement, branch, condition, expression, or fsm."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
                 project,
                 output,
+                limit=args.limit,
+            )
+        elif args.point_type == "fsm":
+            source_path = (
+                project.root / ".zddv" / "coverage" / "fsm-details.txt"
+            ).resolve()
+            if not source_path.exists():
+                raise RuntimeError(
+                    f"Detailed Questa FSM coverage report not found at {source_path}. "
+                    "Run 'zddv coverage' first."
+                )
+            points = parse_questa_fsm_coverage_report(
+                source_path.read_text(encoding="utf-8", errors="replace")
+            )
+            if not points:
+                raise RuntimeError(
+                    f"No normalized Questa FSM state/transition items found in "
+                    f"{source_path}."
+                )
+            report = write_coverage_hole_report(
+                points,
+                output,
+                point_type="fsm",
                 limit=args.limit,
             )
         else:
@@ -633,6 +668,16 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
+            if args.point_type is None:
+                fsm_source = (
+                    project.root / ".zddv" / "coverage" / "fsm-details.txt"
+                ).resolve()
+                if fsm_source.exists():
+                    points.extend(
+                        parse_questa_fsm_coverage_report(
+                            fsm_source.read_text(encoding="utf-8", errors="replace")
+                        )
+                    )
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
