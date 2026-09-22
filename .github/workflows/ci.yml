@@ -186,6 +186,20 @@ jobs:
           assert payload["summary"]["violations"] == 0
           PY
 
+      - name: Analyze AXI4 write strobes
+        run: |
+          zddv --project examples/counter axi4-analyze ../axi4_write_strobe_trace.json --output .zddv/protocols/axi4/write-strobes.json
+          test -s examples/counter/.zddv/protocols/axi4/write-strobes.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("examples/counter/.zddv/protocols/axi4/write-strobes.json").read_text())
+          write = next(tx for tx in payload["transactions"] if tx["direction"] == "WRITE")
+          assert payload["data_width_bits"] == 32
+          assert write["allowed_write_strobes"] == [0xC, 0xF]
+          assert payload["summary"]["violations"] == 0
+          PY
+
       - name: Analyze AXI4 exclusive trace
         run: |
           zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json --output .zddv/protocols/axi4/exclusive.json
