@@ -690,7 +690,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [x] VCS documented module-level line/branch covered/total count ingestion from `modinfo.txt`
 - [ ] VCS remaining condition/toggle/FSM module counts and instance-level code-metric aggregation
-- [ ] Xcelium adapter
+- [x] Xcelium execution adapter foundation
+- [x] Xcelium native per-run coverage database capture
+- [ ] Xcelium IMC merge/report and metric normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
