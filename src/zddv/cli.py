@@ -23,6 +23,7 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.coverage_templates import write_coverage_review_templates
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -1197,6 +1198,42 @@ def cmd_coverage_suggest(args) -> int:
         print(f"    {suggestion['intent']}")
     print(f"Report: {result['path']}")
     return 0
+
+
+def cmd_coverage_generate(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = project.root / output_dir
+
+    result = write_coverage_review_templates(
+        source,
+        output_dir,
+        kind=args.kind,
+        limit=args.limit,
+        force=args.force,
+    )
+    print(
+        "COVERAGE REVIEW TEMPLATES: "
+        f"{result['template_count']} artifact(s) from "
+        f"{result['selected_suggestion_count']} selected suggestion(s)"
+    )
+    for template in result["templates"][: max(0, args.show)]:
+        print(
+            f"{template['kind']:<10} "
+            f"{template['relative_path']}"
+        )
+    if result["template_count"] > args.show:
+        print(f"... {result['template_count'] - max(0, args.show)} more in manifest")
+    print(f"Manifest: {result['manifest_path']}")
+    print("Review required: generated .sv.template files are inert and are never executed automatically.")
+    return 0
+
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
@@ -2847,6 +2884,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewable suggestion JSON report path",
     )
     p_coverage_suggest.set_defaults(func=cmd_coverage_suggest)
+
+    p_coverage_generate = sub.add_parser(
+        "coverage-generate",
+        help="Generate inert review-only assertion/test templates from coverage suggestions",
+    )
+    p_coverage_generate.add_argument(
+        "--input",
+        default=".zddv/coverage/test-suggestions.json",
+        help="Coverage suggestion JSON report; run coverage-suggest first",
+    )
+    p_coverage_generate.add_argument(
+        "--kind",
+        choices=["test", "assertion", "both"],
+        default="both",
+        help="Template kind to generate",
+    )
+    p_coverage_generate.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Maximum number of suggestions to convert into review templates",
+    )
+    p_coverage_generate.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of generated template paths to print",
+    )
+    p_coverage_generate.add_argument(
+        "--output-dir",
+        default=".zddv/coverage/generated",
+        help="Directory for inert .sv.template files and manifest.json",
+    )
+    p_coverage_generate.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing generated review artifacts after explicit review",
+    )
+    p_coverage_generate.set_defaults(func=cmd_coverage_generate)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
