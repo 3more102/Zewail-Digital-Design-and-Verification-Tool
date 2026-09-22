@@ -977,6 +977,16 @@ _URG_DASHBOARD_METRICS = {
     "GROUP": "group",
 }
 _URG_MISSING_SCORE = {"", "-", "--", "N/A", "NA"}
+_URG_CODE_RATIO_METRICS = {
+    "LINE": "line",
+    "COND": "condition",
+    "TOGGLE": "toggle",
+    "FSM": "fsm",
+    "BRANCH": "branch",
+}
+_URG_RATIO_CELL = re.compile(
+    r"(?P<covered>\\d[\\d,]*)\\s*/\\s*(?P<total>\\d[\\d,]*)"
+)
 
 
 def _parse_urg_score_token(token: str) -> float | None:
@@ -1028,6 +1038,113 @@ def _urg_score_cells(
         end = matches[index + 1].start() if index + 1 < len(matches) else len(value_line)
         cells.append(value_line[start:end].strip())
     return cells
+
+
+def _urg_ratio_cells(
+    header_line: str,
+    value_line: str,
+    header_tokens: list[str],
+) -> list[str]:
+    """Split an URG ratio row while preserving empty metric cells."""
+    if "|" in header_line or "|" in value_line:
+        headers = [
+            cell.strip().upper()
+            for cell in header_line.strip().strip("|").split("|")
+        ]
+        values = [
+            cell.strip()
+            for cell in value_line.strip().strip("|").split("|")
+        ]
+        if headers == header_tokens and len(values) == len(header_tokens):
+            return values
+
+    headers = [
+        cell.strip().upper()
+        for cell in re.split(r"\\s{2,}", header_line.strip())
+        if cell.strip()
+    ]
+    values = [
+        cell.strip()
+        for cell in re.split(r"\\s{2,}", value_line.strip())
+    ]
+    if headers == header_tokens and len(values) == len(header_tokens):
+        return values
+
+    tokens = value_line.split()
+    if len(tokens) == len(header_tokens):
+        return tokens
+    return []
+
+
+def parse_vcs_urg_code_ratios(path: str | Path) -> dict:
+    """Parse documented URG -show ratios code-metric object counts."""
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+
+    section_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if "Total Coverage Summary" in line
+        ),
+        None,
+    )
+    if section_index is None:
+        raise ValueError("URG ratio dashboard has no Total Coverage Summary section")
+
+    known_headers = set(_URG_DASHBOARD_METRICS)
+    for header_index in range(section_index + 1, min(len(lines), section_index + 16)):
+        header_line = lines[header_index]
+        header_tokens = [
+            token
+            for token in re.findall(r"[A-Za-z]+", header_line.upper())
+            if token in known_headers
+        ]
+        if not header_tokens or header_tokens[0] != "SCORE":
+            continue
+
+        for value_index in range(header_index + 1, min(len(lines), header_index + 8)):
+            raw_line = lines[value_index]
+            raw = raw_line.strip()
+            if not raw or set(raw) <= {"-", "=", "+", "|", " "}:
+                continue
+
+            cells = _urg_ratio_cells(header_line, raw_line, header_tokens)
+            if len(cells) != len(header_tokens):
+                continue
+
+            counts: dict[str, dict[str, int | float]] = {}
+            invalid = False
+            for header, cell in zip(header_tokens, cells, strict=True):
+                metric = _URG_CODE_RATIO_METRICS.get(header)
+                if metric is None or cell.strip().upper() in _URG_MISSING_SCORE:
+                    continue
+                match = _URG_RATIO_CELL.search(cell)
+                if match is None:
+                    continue
+                covered = int(match.group("covered").replace(",", ""))
+                total = int(match.group("total").replace(",", ""))
+                if covered < 0 or total < 0 or covered > total:
+                    invalid = True
+                    break
+                values: dict[str, int | float] = {
+                    "covered": covered,
+                    "total": total,
+                }
+                if total:
+                    values["hit_rate"] = 100.0 * covered / total
+                counts[metric] = values
+
+            if invalid:
+                raise ValueError("URG ratio dashboard has invalid covered/total counts")
+            if counts:
+                return {
+                    "by_metric_counts": counts,
+                    "source": "urg-dashboard-show-ratios",
+                    "dashboard": str(source.resolve()),
+                }
+
+    raise ValueError("URG ratio dashboard code-metric row could not be parsed")
 
 
 def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, int | float]], str, str | None]:
@@ -1278,6 +1395,47 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             + uuid.uuid4().hex[:8]
         )
 
+    ratio_report_dir = out_dir / "urg-ratios"
+    ratio_dashboard_path = ratio_report_dir / "dashboard.txt"
+    ratio_command: list[str] | None = None
+    if metrics is not None:
+        if ratio_report_dir.exists():
+            if ratio_report_dir.is_dir():
+                shutil.rmtree(ratio_report_dir)
+            else:
+                ratio_report_dir.unlink()
+        ratio_command = [
+            tool,
+            "-dir",
+            merged_path.name,
+            "-report",
+            ratio_report_dir.name,
+            "-format",
+            "text",
+            "-show",
+            "ratios",
+            "-metric",
+            "line+cond+tgl+fsm+branch",
+        ]
+        ratio_result = _run(ratio_command, out_dir)
+        if ratio_result.returncode != 0:
+            metrics["code_count_status"] = "report-failed"
+            metrics["code_count_error"] = (ratio_result.stdout or "").strip()
+        elif not ratio_dashboard_path.exists():
+            metrics["code_count_status"] = "dashboard-missing"
+        else:
+            try:
+                ratio_metrics = parse_vcs_urg_code_ratios(ratio_dashboard_path)
+            except (OSError, ValueError) as exc:
+                metrics["code_count_status"] = "dashboard-unparsed"
+                metrics["code_count_error"] = str(exc)
+            else:
+                metrics.setdefault("by_metric_counts", {}).update(
+                    ratio_metrics["by_metric_counts"]
+                )
+                metrics["code_count_status"] = "normalized"
+                metrics["code_count_source"] = ratio_metrics["source"]
+
     payload = {
         "created_at": created_at,
         "project": project.name,
@@ -1290,6 +1448,13 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
         "command": command,
+        "ratio_report_dir": (
+            str(ratio_report_dir) if ratio_report_dir.exists() else None
+        ),
+        "ratio_dashboard": (
+            str(ratio_dashboard_path) if ratio_dashboard_path.exists() else None
+        ),
+        "ratio_command": ratio_command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
@@ -1326,6 +1491,15 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "snapshot_id": snapshot_id,
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "ratio_report_dir": (
+            str(ratio_report_dir) if ratio_report_dir.exists() else None
+        ),
+        "ratio_dashboard": (
+            str(ratio_dashboard_path) if ratio_dashboard_path.exists() else None
+        ),
+        "code_count_status": (
+            metrics.get("code_count_status") if metrics is not None else "not-run"
+        ),
         "metrics_status": metrics_status,
         "metrics_error": metrics_error,
     }
