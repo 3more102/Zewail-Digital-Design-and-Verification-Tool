@@ -9,6 +9,7 @@ import pytest
 from zddv.ai_provider import (
     ProviderMetadata,
     build_model_request,
+    build_model_request_preview,
     build_model_response_contract,
     create_provider,
     invoke_provider,
@@ -16,8 +17,10 @@ from zddv.ai_provider import (
     model_evidence_references,
     provider_metadata,
     register_provider,
+    write_model_request_preview,
     write_provider_response,
 )
+from zddv.cli import main
 from zddv.config import initialize_project
 
 
@@ -137,21 +140,44 @@ def test_response_contract_uses_exact_context_evidence_vocabulary():
     )
 
 
-def test_external_provider_requires_explicit_opt_in():
+def test_external_provider_requires_opt_in_and_exact_request_sha():
     provider = _FakeExternalProvider()
+    preview = build_model_request_preview(_context())
 
     with pytest.raises(RuntimeError, match="--allow-external"):
-        invoke_provider(provider, _context(), allow_external=False)
+        invoke_provider(
+            provider,
+            _context(),
+            allow_external=False,
+            expected_request_sha256=preview["request_sha256"],
+        )
 
-    result = invoke_provider(provider, _context(), allow_external=True)
+    with pytest.raises(RuntimeError, match="--expected-request-sha256"):
+        invoke_provider(provider, _context(), allow_external=True)
+
+    with pytest.raises(RuntimeError, match="does not match"):
+        invoke_provider(
+            provider,
+            _context(),
+            allow_external=True,
+            expected_request_sha256="b" * 64,
+        )
+
+    result = invoke_provider(
+        provider,
+        _context(),
+        allow_external=True,
+        expected_request_sha256=preview["request_sha256"],
+    )
     assert result["analysis"] == "ai_provider_response_raw"
     assert result["policy"]["explicit_external_opt_in"] is True
+    assert result["policy"]["request_sha_confirmed"] is True
     assert result["policy"]["untrusted_model_output"] is True
     assert result["policy"]["response_schema_validated"] is False
     assert result["policy"]["automatic_generated_artifact_staging"] is False
     assert result["policy"]["automatic_command_execution"] is False
     assert result["policy"]["human_review_required"] is True
-    assert len(result["request_sha256"]) == 64
+    assert result["request_sha256"] == preview["request_sha256"]
 
 
 def test_local_provider_does_not_require_external_opt_in():
@@ -161,7 +187,55 @@ def test_local_provider_does_not_require_external_opt_in():
         allow_external=False,
     )
     assert result["policy"]["explicit_external_opt_in"] is False
+    assert result["policy"]["request_sha_confirmed"] is False
     assert result["response"]["content"] == "local raw response"
+
+
+def test_request_preview_is_local_deterministic_and_writable(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(_context()), encoding="utf-8")
+
+    first = build_model_request_preview(_context())
+    second = build_model_request_preview(_context())
+    assert first["request_sha256"] == second["request_sha256"]
+    assert first["policy"]["external_transmission"] is False
+    assert first["policy"]["automatic_model_invocation"] is False
+    assert first["request"] == build_model_request(_context())
+
+    written = write_model_request_preview(
+        project,
+        context_path=context_path,
+    )
+    assert Path(written["path"]).is_file()
+    assert written["request_sha256"] == first["request_sha256"]
+
+
+def test_ai_provider_request_cli_writes_preview(
+    tmp_path: Path,
+    capsys,
+):
+    project = initialize_project(tmp_path / "demo")
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(_context()), encoding="utf-8")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "ai-provider-request",
+            "--context",
+            ".zddv/debug/ai-rca-context.json",
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "AI PROVIDER REQUEST PREVIEW: LOCAL ONLY" in output
+    assert "Request SHA-256:" in output
+    assert "External transmission: disabled" in output
+    assert (project.root / ".zddv" / "ai" / "provider-request.json").is_file()
 
 
 def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
