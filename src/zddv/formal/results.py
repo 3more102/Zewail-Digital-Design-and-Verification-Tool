@@ -13,6 +13,7 @@ from zddv.formal.base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from zddv.storage import record_formal_snapshot
 
 
 def _require_object(value: Any, *, field: str) -> dict[str, Any]:
@@ -256,4 +257,5 @@ def analyze_formal_result_file(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    record_formal_snapshot(project, record)
     return record
