@@ -38,25 +38,19 @@ def _probeable_evidence(
     return result
 
 
-def suggest_debug_probes(
-    project: ProjectConfig,
+def suggest_debug_probes_from_ranking(
+    ranking: dict[str, Any],
     *,
     run_id: str,
     candidate_limit: int = 10,
-    event_limit: int = 100,
-    signal_limit: int = 20,
 ) -> dict[str, Any]:
-    """Suggest only debug probes justified by explicit ranked failure evidence."""
+    """Derive debug probes from one already-computed root-cause evidence snapshot."""
 
     if candidate_limit < 1:
         raise ValueError("candidate_limit must be >= 1")
-
-    ranking = rank_root_cause_candidates(
-        project,
-        run_id=run_id,
-        event_limit=event_limit,
-        signal_limit=signal_limit,
-    )
+    ranking_run_id = str((ranking.get("run") or {}).get("run_id") or "")
+    if ranking_run_id != run_id:
+        raise ValueError("ranking run_id does not match requested run_id")
 
     suggestions: list[dict[str, Any]] = []
     seen_signals: set[str] = set()
@@ -147,7 +141,7 @@ def suggest_debug_probes(
     return {
         "schema_version": 1,
         "analysis": "debug_probe_suggestions",
-        "project": project.name,
+        "project": ranking["project"],
         "run": ranking["run"],
         "semantics": (
             "Suggestions are generated only from explicit ranked failure evidence. "
@@ -168,6 +162,29 @@ def suggest_debug_probes(
             "blockers": len(blockers),
         },
     }
+
+
+def suggest_debug_probes(
+    project: ProjectConfig,
+    *,
+    run_id: str,
+    candidate_limit: int = 10,
+    event_limit: int = 100,
+    signal_limit: int = 20,
+) -> dict[str, Any]:
+    """Suggest only debug probes justified by explicit ranked failure evidence."""
+
+    ranking = rank_root_cause_candidates(
+        project,
+        run_id=run_id,
+        event_limit=event_limit,
+        signal_limit=signal_limit,
+    )
+    return suggest_debug_probes_from_ranking(
+        ranking,
+        run_id=run_id,
+        candidate_limit=candidate_limit,
+    )
 
 
 def write_debug_probe_suggestions(
