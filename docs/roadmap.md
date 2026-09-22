@@ -84,13 +84,18 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 
 ## v0.6 — UVM and Commercial Simulator Adapters
 
-Current status: the simulator-independent UVM report-log ingestion foundation is implemented.
-ZDDV extracts standard UVM report messages, test names, severity summaries, report IDs,
-components, source locations, and timestamps; persists normalized snapshots/messages in SQLite;
-and exposes `uvm-analyze` plus `uvm-history`. Commercial simulator execution adapters and
-phase/objection/sequence lifecycle reconstruction remain planned.
+Current status: the simulator-independent UVM report-log ingestion foundation is implemented,
+and the first commercial-simulator execution foundation is available for Questa. ZDDV extracts
+standard UVM report messages, test names, severity summaries, report IDs, components, source
+locations, and timestamps; persists normalized snapshots/messages in SQLite; and exposes
+`uvm-analyze` plus `uvm-history`. The Questa adapter adds native `vlib` / `vlog` / `vsim`
+build/run orchestration with deterministic seeds, plusargs, timeouts, optional VCD capture,
+standard run persistence, assertion ingestion, and automatic UVM-log normalization when present.
+Native Questa coverage normalization, VCS/Xcelium execution, and phase/objection/sequence
+lifecycle reconstruction remain planned.
 
-- [ ] Questa execution adapter.
+- [x] Questa compile/run execution adapter foundation.
+- [ ] Questa native coverage normalization and richer simulator-native debug artifacts.
 - [ ] VCS execution adapter.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
