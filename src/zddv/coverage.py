@@ -2182,19 +2182,14 @@ def _imc_html_visible_text(fragment: str, *, preserve_lines: bool = False) -> st
 
 def _imc_detail_metadata(section: str) -> tuple[str, str, str]:
     visible = _imc_html_visible_text(section)
-    labels = (
-        "Instance name",
-        "Module/Entity name",
-        "Type name",
-        "File name",
-        "Number of",
-    )
-
     def field(label: str) -> str:
-        lookahead = "|".join(re.escape(item) for item in labels)
+        next_field = (
+            r"(?:Instance name|Module/Entity name|Type name|File name)\s*:"
+            r"|Number of\b"
+        )
         match = re.search(
             rf"{re.escape(label)}\s*:\s*(?P<value>.*?)"
-            rf"(?=\s+(?:{lookahead})\s*:|$)",
+            rf"(?=\s+(?:{next_field})|$)",
             visible,
             re.IGNORECASE,
         )
