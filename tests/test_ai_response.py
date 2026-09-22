@@ -270,6 +270,7 @@ def test_reviewed_proposal_exports_into_existing_staging_flow(tmp_path: Path):
     proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
     assert proposal["source"] == "ai-reviewed-response"
     assert proposal["evidence"]["review_id"] == review["review_id"]
+    assert proposal["evidence"]["proposal_index"] == 1
 
     staged = stage_generated_artifact(project, proposal_path)
     assert staged["status"] == "DRAFT"
