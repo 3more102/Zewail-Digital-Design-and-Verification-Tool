@@ -1,5 +1,6 @@
 from .base import BuildResult, RunResult, SimulatorBackend
 from .questa import QuestaBackend
+from .vcs import VcsBackend
 from .verilator import VerilatorBackend
 
 
@@ -9,6 +10,8 @@ def get_backend(name: str) -> SimulatorBackend:
         return VerilatorBackend()
     if normalized in {"questa", "questasim"}:
         return QuestaBackend()
+    if normalized == "vcs":
+        return VcsBackend()
     raise RuntimeError(f"Unsupported simulator backend: {name}")
 
 
@@ -17,6 +20,7 @@ __all__ = [
     "RunResult",
     "SimulatorBackend",
     "QuestaBackend",
+    "VcsBackend",
     "VerilatorBackend",
     "get_backend",
 ]
