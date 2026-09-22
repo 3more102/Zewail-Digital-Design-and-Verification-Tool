@@ -9,6 +9,7 @@ import pytest
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
+    parse_questa_code_coverage_report,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -49,6 +50,44 @@ TYPE /top/dut/APB_cg                    66.67%        100       -    Uncovered
     Cross APB_cg::write_x_data         100.00%        100       -    Covered
         bin legal_pair                    2          2         Covered
         illegal bin bad_pair              1          1         Covered
+"""
+
+
+QUESTA_CODE_DETAILS = """Coverage Report by file with details
+
+=================================================================================
+=== File: top.v
+=================================================================================
+Statement Coverage:
+    Enabled Coverage            Active      Hits    Misses % Covered
+    ----------------            ------      ----    ------ ---------
+    Stmts                            3         2         1     66.67
+
+================================Statement Details================================
+
+Statement Coverage for file top.v --
+
+    8               1                          1
+    9               1                    ***0***
+    10              2                     100001
+
+Branch Coverage:
+    Enabled Coverage            Bins      Hits    Misses % Covered
+    ----------------            ----      ----    ------ ---------
+    Branches                         5         3         2     60.00
+
+================================Branch Details================================
+
+Branch Coverage for file top.v --
+
+    12                                         3  Count coming in to IF
+    12              1                    ***0***  if (i == 16)
+    14              1                          1  else if (i == 2)
+    16              1                          1  else if (i == 10)
+    18              1                          1  else if (i == 18)
+    20              1                    ***0***  else
+
+Branch totals: 3 hits of 5 branches = 60.0%
 """
 
 
@@ -101,6 +140,29 @@ def test_parse_questa_summary_accepts_comma_grouped_counts():
     assert metrics["by_type"]["branch"]["total"] == 3044
 
 
+def test_parse_questa_code_coverage_normalizes_statement_and_branch_items():
+    points = parse_questa_code_coverage_report(QUESTA_CODE_DETAILS)
+
+    assert len(points) == 8
+    assert points[0] == {
+        "name": "top.v:8:1",
+        "count": 1,
+        "hit": True,
+        "type": "statement",
+        "source_file": "top.v",
+        "line": 8,
+        "item": 1,
+        "detail": "",
+    }
+    assert points[1]["name"] == "top.v:9:1"
+    assert points[1]["hit"] is False
+
+    branch_points = [point for point in points if point["type"] == "branch"]
+    assert len(branch_points) == 5
+    assert [point["line"] for point in branch_points if not point["hit"]] == [12, 20]
+    assert branch_points[0]["detail"] == "if (i == 16)"
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -150,6 +212,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:5] == ["report", "-details", "-code", "sb"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_CODE_DETAILS)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         raise AssertionError(f"unexpected command: {command}")
@@ -173,6 +237,14 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert commands[2] == [
         "/opt/questa/bin/vcover",
         "report",
+        "-details",
+        "-code",
+        "sb",
+        result["merged"],
+    ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
         "-cvg",
         "-details",
         result["merged"],
@@ -186,6 +258,9 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["input_count"] == 2
     assert payload["tool_total_coverage"] == 79.53
     assert payload["by_type"]["expression"]["hit"] == 1143
+    assert payload["code_detail_points"] == 8
+    assert payload["code_detail_holes"] == 3
+    assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_DETAILS
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     assert Path(result["functional_report"]).read_text(
