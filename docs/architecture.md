@@ -286,10 +286,13 @@ validates the UVM state order, preserves sequence IDs, sequencer paths and paren
 partial traces, correlates snapshots with recorded runs, and persists state events in separate
 SQLite tables. ZDDV also accepts explicit normalized sequence-item handshake evidence (`GRANT`,
 `REQUEST`, `ITEM_DONE`, and optional `RESPONSE`), validates ordering and stable identity, correlates
-item snapshots with recorded runs, and persists both snapshot summaries and per-event evidence in
-SQLite with `uvm-item-history` filtering. Automatic instrumentation/adapters plus arbitration
-priority/fairness reconstruction remain future layers. See `docs/uvm-sequence-trace.md` and
-`docs/uvm-item-trace.md`.
+item snapshots with recorded runs, persists both snapshot summaries and per-event evidence in
+SQLite with `uvm-item-history` filtering, and reconstructs observed GRANT order without inferring
+hidden arbitration policy. An opt-in portable SystemVerilog helper emits `ZDDV_ITEM_TRACE_V1`
+records; existing logs can be normalized directly, while native Questa/VCS runs auto-ingest valid
+records when present. This adapter does not patch UVM internals. Zero-touch sequence hooks plus
+arbitration policy/priority/fairness reconstruction remain future layers. See
+`docs/uvm-sequence-trace.md` and `docs/uvm-item-trace.md`.
 
 ## Next Architectural Steps
 
