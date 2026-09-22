@@ -29,6 +29,38 @@ _RUNNING_TEST_RE = re.compile(
     r"\bRunning\s+test\s+(?P<test>[A-Za-z_][A-Za-z0-9_$:.-]*)",
     re.IGNORECASE,
 )
+_PHASE_MESSAGE_RE = re.compile(
+    r"^Phase '(?P<phase>[^']+)' \(id=(?P<phase_id>\d+)\)\s*(?P<detail>.*)$"
+)
+_OBJECTION_DIRECT_RE = re.compile(
+    r"^Object\s+(?P<object>\S+)\s+"
+    r"(?P<action>raised|dropped|all_dropped)\s+"
+    r"(?P<delta>\d+)\s+objection\(s\)(?P<suffix>.*?)"
+    r":\s*count=(?P<count>\d+)\s+total=(?P<total>\d+)\s*$",
+    re.IGNORECASE,
+)
+_OBJECTION_PROPAGATED_RE = re.compile(
+    r"^Object\s+(?P<object>\S+)\s+"
+    r"(?P<action>added|subtracted)\s+"
+    r"(?P<delta>\d+)\s+objection\(s\)\s+"
+    r"(?P<direction>to|from)\s+its\s+total\s+"
+    r"\((?P<cause>raised|dropped)\s+from\s+source\s+object\s+"
+    r"(?P<source>[^)]+)\)"
+    r":\s*count=(?P<count>\d+)\s+total=(?P<total>\d+)\s*$",
+    re.IGNORECASE,
+)
+_PHASE_ACTIONS = {
+    "PH/TRC/SCHEDULED": "scheduled",
+    "PH/TRC/STRT": "started",
+    "PH/TRC/EXE/JUMP": "exit_jump",
+    "PH/TRC/EXE/ALLDROP": "exit_all_dropped",
+    "PH/TRC/SKIP": "skipped_no_objections",
+    "PH_READY_TO_END": "ready_to_end",
+    "PH_READY_TO_END_CB": "ready_to_end_callback",
+    "PH_END": "ended",
+    "PH/TRC/DONE": "done",
+    "PH/TRC/TO_WAIT": "timeout_watchdog_started",
+}
 
 
 def _empty_counts() -> dict[str, int]:
@@ -85,6 +117,130 @@ def _parse_message(
         "source_location": source_location,
         "log_line": line_number,
         "raw": _strip_simulator_prefix(line),
+    }
+
+
+def _parse_phase_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    report_id = str(event.get("report_id") or "")
+    if report_id not in _PHASE_ACTIONS and not report_id.startswith("PH/"):
+        return None
+
+    message = str(event.get("message") or "")
+    match = _PHASE_MESSAGE_RE.match(message)
+    if match is None:
+        return None
+
+    detail = match.group("detail").strip()
+    action = _PHASE_ACTIONS.get(report_id, "trace")
+    if report_id == "PH_END" and "PREMATURELY" in detail.upper():
+        action = "ended_prematurely"
+
+    return {
+        "phase": match.group("phase"),
+        "phase_id": int(match.group("phase_id")),
+        "action": action,
+        "detail": detail or None,
+        "time": event.get("time"),
+        "report_id": report_id,
+        "message_event_index": int(event["event_index"]),
+        "log_line": int(event["log_line"]),
+        "raw": event["raw"],
+    }
+
+
+def _parse_objection_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    if event.get("report_id") != "OBJTN_TRC":
+        return None
+
+    message = str(event.get("message") or "")
+    direct = _OBJECTION_DIRECT_RE.match(message)
+    if direct is not None:
+        return {
+            "objection": event.get("component"),
+            "object": direct.group("object"),
+            "source_object": direct.group("object"),
+            "action": direct.group("action").lower(),
+            "delta": int(direct.group("delta")),
+            "count": int(direct.group("count")),
+            "total": int(direct.group("total")),
+            "time": event.get("time"),
+            "message_event_index": int(event["event_index"]),
+            "log_line": int(event["log_line"]),
+            "raw": event["raw"],
+        }
+
+    propagated = _OBJECTION_PROPAGATED_RE.match(message)
+    if propagated is None:
+        return None
+
+    action = (
+        "propagated_raise"
+        if propagated.group("action").lower() == "added"
+        else "propagated_drop"
+    )
+    return {
+        "objection": event.get("component"),
+        "object": propagated.group("object"),
+        "source_object": propagated.group("source").strip(),
+        "action": action,
+        "delta": int(propagated.group("delta")),
+        "count": int(propagated.group("count")),
+        "total": int(propagated.group("total")),
+        "time": event.get("time"),
+        "message_event_index": int(event["event_index"]),
+        "log_line": int(event["log_line"]),
+        "raw": event["raw"],
+    }
+
+
+def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    phase_events: list[dict[str, Any]] = []
+    objection_events: list[dict[str, Any]] = []
+
+    for message in messages:
+        phase_event = _parse_phase_event(message)
+        if phase_event is not None:
+            phase_event["event_index"] = len(phase_events)
+            phase_events.append(phase_event)
+
+        objection_event = _parse_objection_event(message)
+        if objection_event is not None:
+            objection_event["event_index"] = len(objection_events)
+            objection_events.append(objection_event)
+
+    phases_seen = list(dict.fromkeys(item["phase"] for item in phase_events))
+    objections_seen = list(
+        dict.fromkeys(
+            str(item["objection"])
+            for item in objection_events
+            if item.get("objection")
+        )
+    )
+    max_total = max((int(item["total"]) for item in objection_events), default=0)
+
+    return {
+        "summary": {
+            "phase_events": len(phase_events),
+            "phases_seen": phases_seen,
+            "objection_events": len(objection_events),
+            "objections_seen": objections_seen,
+            "direct_raises": sum(
+                item["action"] == "raised" for item in objection_events
+            ),
+            "direct_drops": sum(
+                item["action"] == "dropped" for item in objection_events
+            ),
+            "all_dropped": sum(
+                item["action"] == "all_dropped" for item in objection_events
+            ),
+            "propagated_events": sum(
+                item["action"] in {"propagated_raise", "propagated_drop"}
+                for item in objection_events
+            ),
+            "max_observed_total": max_total,
+        },
+        "phase_events": phase_events,
+        "objection_events": objection_events,
     }
 
 
@@ -145,6 +301,7 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
         if selected_counts["UVM_ERROR"] > 0 or selected_counts["UVM_FATAL"] > 0
         else "PASS"
     )
+    lifecycle = _parse_lifecycle(messages)
 
     return {
         "analysis": "uvm_log",
@@ -174,10 +331,12 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
             else None
         ),
         "messages": messages,
+        "lifecycle": lifecycle,
         "limitations": [
             "This parser normalizes standard UVM report messages and the final severity summary without depending on a simulator vendor.",
             "The final complete UVM Report Summary is authoritative for severity counts when present; otherwise visible report messages are counted.",
-            "Phase, objection, sequence, and transaction lifecycle reconstruction are not yet modeled.",
+            "Standard UVM phase and objection trace reports are normalized when +UVM_PHASE_TRACE and +UVM_OBJECTION_TRACE evidence is present.",
+            "Sequence and transaction lifecycle reconstruction are not yet modeled.",
             "When linked to a recorded ZDDV run, simulator status and return code are retained as separate evidence from the UVM severity verdict.",
         ],
     }
