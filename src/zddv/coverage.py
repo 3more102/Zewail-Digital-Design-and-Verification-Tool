@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+from html import unescape
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -68,7 +70,7 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch|Condition)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>Statement|Branch|Condition|Expression)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
@@ -186,7 +188,16 @@ def build_coverage_hole_report(
                 "count": int(point.get("count", 0)),
                 **{
                     key: point[key]
-                    for key in ("scope", "file", "statement", "condition", "fec_target")
+                    for key in (
+                        "scope",
+                        "file",
+                        "statement",
+                        "condition",
+                        "expression",
+                        "fec_context",
+                        "fec_target",
+                        "evidence",
+                    )
                     if key in point and point[key] is not None
                 },
                 **(
@@ -353,27 +364,30 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize statement, branch, and condition items from vcover detail text.
+    """Normalize statement/branch plus scalar condition/expression FEC rows.
 
-    Condition coverage uses Questa's documented focused-expression-coverage
-    rows. Each FEC row is preserved as a source-linked point under its
-    enclosing Line/Item condition record.
+    FEC rows are accepted only after the explicit Rows/FEC Target table
+    header. This avoids treating truth-table or other diagnostic rows as
+    normalized coverage points. Multibit FEC layouts are intentionally left
+    unnormalized until their exact row semantics are verified.
     """
     points: list[dict] = []
     kind = ""
     source_file = ""
-    condition_line: int | None = None
-    condition_item: int | None = None
-    condition_text = ""
+    fec_line: int | None = None
+    fec_item: int | None = None
+    fec_context = ""
+    in_fec_rows = False
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
             kind = header.group("kind").strip().lower()
             source_file = header.group("file").strip()
-            condition_line = None
-            condition_item = None
-            condition_text = ""
+            fec_line = None
+            fec_item = None
+            fec_context = ""
+            in_fec_rows = False
             continue
 
         if not source_file:
@@ -407,45 +421,55 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             )
             continue
 
-        if kind != "condition":
+        if kind not in {"condition", "expression"}:
             continue
 
-        condition = _QUESTA_FEC_ITEM.match(raw_line)
-        if condition is not None:
-            condition_line = int(condition.group("line"))
-            condition_item = int(condition.group("item"))
-            condition_text = (condition.group("detail") or "").strip()
+        item = _QUESTA_FEC_ITEM.match(raw_line)
+        if item is not None:
+            fec_line = int(item.group("line"))
+            fec_item = int(item.group("item"))
+            fec_context = (item.group("detail") or "").strip()
+            in_fec_rows = False
+            continue
+
+        normalized_line = raw_line.strip().lower()
+        if normalized_line.startswith("rows:") and "fec target" in normalized_line:
+            in_fec_rows = True
             continue
 
         row = _QUESTA_FEC_ROW.match(raw_line)
-        if row is None or condition_line is None or condition_item is None:
+        if (
+            not in_fec_rows
+            or row is None
+            or fec_line is None
+            or fec_item is None
+        ):
             continue
 
         hits = int(row.group("hits").replace("*", "").replace(",", ""))
         row_number = int(row.group("row"))
         target = row.group("target").strip()
-        detail = (row.group("detail") or "").strip()
-        name = (
-            f"{source_file}:{condition_line}:{condition_item}:row{row_number} {target}"
-        )
-        if detail:
-            name += f" {detail}"
+        evidence = (row.group("detail") or "").strip()
+        name = f"{source_file}:{fec_line}:{fec_item}:row{row_number} {target}"
+        if evidence:
+            name += f" {evidence}"
 
-        points.append(
-            {
-                "name": name,
-                "count": hits,
-                "hit": hits > 0,
-                "type": "condition",
-                "source_file": source_file,
-                "line": condition_line,
-                "item": condition_item,
-                "row": row_number,
-                "condition": condition_text,
-                "fec_target": target,
-                "detail": detail,
-            }
-        )
+        point = {
+            "name": name,
+            "count": hits,
+            "hit": hits > 0,
+            "type": kind,
+            "source_file": source_file,
+            "line": fec_line,
+            "item": fec_item,
+            "row": row_number,
+            "fec_context": fec_context,
+            "fec_target": target,
+            "evidence": evidence,
+            "detail": evidence,
+        }
+        point[kind] = fec_context
+        points.append(point)
 
     return points
 
@@ -738,7 +762,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "-details",
         "-dumptables",
         "-code",
-        "sbc",
+        "sbce",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
@@ -963,6 +987,203 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
+    }
+
+
+class _UrgHtmlTableRows(HTMLParser):
+    """Collect text cells from one URG HTML table without external dependencies."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell_parts: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag == "tr":
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell_parts is not None:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._row is not None:
+            text = " ".join("".join(self._cell_parts or []).split())
+            self._row.append(text)
+            self._cell_parts = None
+        elif tag == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(self._row)
+            self._row = None
+            self._cell_parts = None
+
+
+_URG_INSTANCE_COVERAGE_SECTION = re.compile(
+    r"(?P<kind>Line|Cond|Toggle|FSM|Branch)\s+Coverage\s+for\s+Instance\b",
+    re.IGNORECASE,
+)
+_URG_ANY_COVERAGE_SECTION = re.compile(
+    r"(?:Line|Cond|Toggle|FSM|Branch)\s+Coverage\s+for\s+(?:Instance|Module)\b",
+    re.IGNORECASE,
+)
+_URG_HTML_TABLE = re.compile(r"<table\b.*?</table\s*>", re.IGNORECASE | re.DOTALL)
+_URG_INSTANCE_COUNT_ROWS = {
+    "line": {"total": "line"},
+    "cond": {"conditions": "condition"},
+    "toggle": {"total bits": "toggle"},
+    "branch": {"branches": "branch"},
+    "fsm": {
+        "states": "fsm_state",
+        "transitions": "fsm_transition",
+        "sequences": "fsm_sequence",
+    },
+}
+
+
+def _urg_visible_text(fragment: str) -> str:
+    without_tags = re.sub(r"<[^>]+>", " ", fragment)
+    return " ".join(unescape(without_tags).split())
+
+
+def _urg_instance_identity(header_fragment: str, *, fallback: str) -> str:
+    header_text = _urg_visible_text(header_fragment)
+    match = re.search(
+        r"Coverage\s+for\s+Instance\s*:\s*(?P<instance>.+?)(?:\s+Summary\s+for\s+FSM\s*::|$)",
+        header_text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return fallback
+    identity = match.group("instance").strip()
+    return identity or fallback
+
+
+def _parse_urg_instance_section_counts(
+    html_text: str,
+) -> tuple[list[tuple[str, str, int, int]], int]:
+    records: list[tuple[str, str, int, int]] = []
+    matched_sections = 0
+
+    for section_match in _URG_INSTANCE_COVERAGE_SECTION.finditer(html_text):
+        kind = section_match.group("kind").lower()
+        targets = _URG_INSTANCE_COUNT_ROWS[kind]
+        next_section = _URG_ANY_COVERAGE_SECTION.search(
+            html_text, section_match.end()
+        )
+        section_end = next_section.start() if next_section is not None else len(html_text)
+        section = html_text[section_match.end() : section_end]
+        table_matches = list(_URG_HTML_TABLE.finditer(section))
+        if not table_matches:
+            continue
+
+        first_table_start = section_match.end() + table_matches[0].start()
+        instance = _urg_instance_identity(
+            html_text[section_match.start() : first_table_start],
+            fallback=f"offset-{section_match.start()}",
+        )
+        section_matched = False
+
+        for table_index, table_match in enumerate(table_matches):
+            parser = _UrgHtmlTableRows()
+            parser.feed(table_match.group(0))
+            parser.close()
+            rows = parser.rows
+            has_count_header = any(
+                "total" in {cell.strip().casefold() for cell in row}
+                and "covered" in {cell.strip().casefold() for cell in row}
+                for row in rows
+            )
+            if not has_count_header:
+                continue
+
+            fsm_name = ""
+            if kind == "fsm":
+                context = _urg_visible_text(section[: table_match.start()])
+                names = re.findall(
+                    r"Summary\s+for\s+FSM\s*::\s*([^\s]+)",
+                    context,
+                    re.IGNORECASE,
+                )
+                fsm_name = names[-1] if names else f"table-{table_index}"
+
+            for row in rows:
+                if not row:
+                    continue
+                metric = targets.get(row[0].strip().casefold())
+                if metric is None:
+                    continue
+                values: list[int] = []
+                for cell in row[1:]:
+                    token = cell.strip().replace(",", "")
+                    if re.fullmatch(r"\d+", token):
+                        values.append(int(token))
+                        if len(values) == 2:
+                            break
+                if len(values) != 2:
+                    continue
+                total, covered = values
+                if covered > total:
+                    raise ValueError(
+                        f"URG instance detail has invalid {metric} count: "
+                        f"{covered}/{total}"
+                    )
+                evidence_key = f"{instance}|{fsm_name}|{metric}"
+                records.append((evidence_key, metric, covered, total))
+                section_matched = True
+
+        if section_matched:
+            matched_sections += 1
+
+    return records, matched_sections
+
+
+def parse_vcs_urg_instance_counts(report_dir: str | Path) -> dict:
+    """Aggregate explicitly reported URG instance-detail code-metric counts."""
+    source = Path(report_dir)
+    html_files = sorted(source.glob("mod*.html"))
+    aggregate: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    seen: dict[str, tuple[str, int, int]] = {}
+    matched_sections = 0
+    duplicate_records = 0
+
+    for html_path in html_files:
+        html_text = html_path.read_text(encoding="utf-8", errors="replace")
+        records, section_count = _parse_urg_instance_section_counts(html_text)
+        matched_sections += section_count
+        for evidence_key, metric, covered, total in records:
+            previous = seen.get(evidence_key)
+            current = (metric, covered, total)
+            if previous is not None:
+                if previous != current:
+                    raise ValueError(
+                        "Conflicting URG instance-detail counts for "
+                        f"{evidence_key}: {previous[1]}/{previous[2]} vs "
+                        f"{covered}/{total}"
+                    )
+                duplicate_records += 1
+                continue
+            seen[evidence_key] = current
+            aggregate[metric][0] += covered
+            aggregate[metric][1] += total
+
+    normalized: dict[str, dict[str, int | float | None]] = {}
+    for metric, (covered, total) in sorted(aggregate.items()):
+        normalized[metric] = {
+            "covered": covered,
+            "total": total,
+            "hit_rate": (100.0 * covered / total) if total else None,
+        }
+
+    return {
+        "by_metric_counts": normalized,
+        "files_scanned": len(html_files),
+        "instance_sections": matched_sections,
+        "unique_records": len(seen),
+        "duplicate_records": duplicate_records,
+        "source": "urg-instance-detail-html",
     }
 
 
@@ -1382,6 +1603,24 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         try:
             metrics = parse_vcs_urg_dashboard(dashboard_path)
             metrics_status = "normalized"
+            try:
+                code_counts = parse_vcs_urg_instance_counts(report_dir)
+                reported_counts = metrics.setdefault("by_metric_counts", {})
+                reported_counts.update(code_counts["by_metric_counts"])
+                metrics["code_count_files"] = code_counts["files_scanned"]
+                metrics["code_count_sections"] = code_counts["instance_sections"]
+                metrics["code_count_unique_records"] = code_counts["unique_records"]
+                metrics["code_count_duplicate_records"] = code_counts["duplicate_records"]
+                metrics["code_count_source"] = code_counts["source"]
+                if code_counts["by_metric_counts"]:
+                    metrics["code_count_status"] = "normalized"
+                elif code_counts["files_scanned"]:
+                    metrics["code_count_status"] = "detail-unparsed"
+                else:
+                    metrics["code_count_status"] = "detail-missing"
+            except (OSError, ValueError) as exc:
+                metrics["code_count_status"] = "detail-unparsed"
+                metrics["code_count_error"] = str(exc)
         except (OSError, ValueError) as exc:
             metrics_status = "dashboard-unparsed"
             metrics_error = str(exc)
