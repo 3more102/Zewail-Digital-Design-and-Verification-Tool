@@ -8,7 +8,11 @@ import pytest
 
 from zddv.cli import cmd_coverage, cmd_coverage_history
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_vcs_coverage, parse_vcs_urg_dashboard
+from zddv.coverage import (
+    merge_vcs_coverage,
+    parse_vcs_urg_dashboard,
+    parse_vcs_urg_instance_counts,
+)
 from zddv.storage import list_coverage_score_snapshots
 
 
@@ -34,6 +38,85 @@ def _project(tmp_path: Path) -> ProjectConfig:
         waveform=False,
         coverage=True,
     )
+
+
+def test_parse_vcs_urg_instance_counts_aggregates_reported_instance_rows(
+    tmp_path: Path,
+):
+    report_dir = tmp_path / "urg-report"
+    report_dir.mkdir()
+    (report_dir / "mod0.html").write_text(
+        """<html><body>
+<h2>Line Coverage for Module : dut</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>TOTAL</td><td></td><td>99</td><td>99</td><td>100.00</td></tr></table>
+<h2>Line Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>TOTAL</td><td></td><td>12</td><td>9</td><td>75.00</td></tr></table>
+<h2>Cond Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>Conditions</td><td>20</td><td>18</td><td>90.00</td></tr></table>
+<h2>Toggle Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>Total Bits</td><td>40</td><td>30</td><td>75.00</td></tr></table>
+<h2>FSM Coverage for Instance : tb.dut</h2>
+Summary for FSM :: state_q
+<table><tr><th></th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>States</td><td>4</td><td>4</td><td>100.00</td></tr>
+<tr><td>Transitions</td><td>5</td><td>4</td><td>80.00</td></tr>
+<tr><td>Sequences</td><td>0</td><td>0</td><td></td></tr></table>
+<h2>Branch Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>Branches</td><td></td><td>10</td><td>8</td><td>80.00</td></tr></table>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+    (report_dir / "mod1.html").write_text(
+        """<html><body>
+<h2>Line Coverage for Instance : tb.dut.u_sub</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>TOTAL</td><td></td><td>3</td><td>2</td><td>66.67</td></tr></table>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+    (report_dir / "mod0_1.html").write_text(
+        """<html><body>
+<h2>Line Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>TOTAL</td><td></td><td>12</td><td>9</td><td>75.00</td></tr></table>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+
+    result = parse_vcs_urg_instance_counts(report_dir)
+
+    assert result["files_scanned"] == 3
+    assert result["instance_sections"] == 7
+    assert result["unique_records"] == 8
+    assert result["duplicate_records"] == 1
+    assert result["by_metric_counts"]["line"] == {
+        "covered": 11,
+        "total": 15,
+        "hit_rate": pytest.approx(73.33333333333333),
+    }
+    assert result["by_metric_counts"]["condition"]["covered"] == 18
+    assert result["by_metric_counts"]["condition"]["total"] == 20
+    assert result["by_metric_counts"]["toggle"]["covered"] == 30
+    assert result["by_metric_counts"]["branch"]["covered"] == 8
+    assert result["by_metric_counts"]["fsm_state"]["covered"] == 4
+    assert result["by_metric_counts"]["fsm_transition"] == {
+        "covered": 4,
+        "total": 5,
+        "hit_rate": pytest.approx(80.0),
+    }
+    assert result["by_metric_counts"]["fsm_sequence"] == {
+        "covered": 0,
+        "total": 0,
+        "hit_rate": None,
+    }
 
 
 def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
@@ -84,6 +167,18 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 """,
             encoding="utf-8",
         )
+        (report_dir / "mod0.html").write_text(
+            """<html><body>
+<h2>Line Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Line No.</th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>TOTAL</td><td></td><td>198</td><td>190</td><td>95.96</td></tr></table>
+<h2>Cond Coverage for Instance : tb.dut</h2>
+<table><tr><th></th><th>Total</th><th>Covered</th><th>Percent</th></tr>
+<tr><td>Conditions</td><td>180</td><td>168</td><td>93.33</td></tr></table>
+</body></html>
+""",
+            encoding="utf-8",
+        )
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -120,6 +215,10 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "hit_rate": pytest.approx(92.98),
     }
     assert result["metrics"]["count_status"] == "normalized"
+    assert result["metrics"]["code_count_status"] == "normalized"
+    assert result["metrics"]["by_metric_counts"]["line"]["covered"] == 190
+    assert result["metrics"]["by_metric_counts"]["line"]["total"] == 198
+    assert result["metrics"]["by_metric_counts"]["condition"]["covered"] == 168
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -131,6 +230,8 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert snapshots[0]["by_metric_counts"]["group"]["covered"] == 491
     assert snapshots[0]["by_metric_counts"]["group"]["total"] == 528
     assert snapshots[0]["by_metric_counts"]["group_instance"]["covered"] == 490
+    assert snapshots[0]["by_metric_counts"]["line"]["covered"] == 190
+    assert snapshots[0]["by_metric_counts"]["condition"]["total"] == 180
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -143,6 +244,7 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
     assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
+    assert manifest["metrics"]["by_metric_counts"]["line"]["covered"] == 190
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
