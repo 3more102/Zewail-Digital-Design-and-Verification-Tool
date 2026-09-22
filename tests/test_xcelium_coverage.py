@@ -6,11 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage_history
+from zddv.cli import cmd_coverage_history, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_coverage,
     merge_xcelium_coverage,
+    parse_xcelium_imc_expression_coverage,
     parse_xcelium_imc_summary,
 )
 from zddv.storage import list_coverage_score_snapshots
@@ -22,6 +23,26 @@ Legend: Metric* means cumulative
 name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
 --------------------------------------------------------------------------------------------------------------------------------
 tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
+"""
+
+
+IMC_EXPRESSION_DETAIL = """IMC(64): test build
+Instance name: tb_top.dut
+Type name: dut
+File name: rtl/dut.sv
+Number of covered expressions: 1 of 1
+Number of uncovered expressions: 0 of 1
+index | grade | line | expression
+---------------------------------
+1.1 | 66.67% (2/3/3) | 42 | select ? data_a : data_b
+index: 1.1 grade: 66.67% (2/3/3) line: 42 source: assign y = select ? data_a : data_b;
+select ? data_a : data_b
+<1----> <2----> <3---->
+index | hit | rval | <1> <2> <3>
+--------------------------------
+1.1.1 | 4 | 1 | 0 - 1
+1.1.2 | 0 | 0 | 0 - 0
+1.1.3 | IGN | 1 | 1 1 -
 """
 
 
@@ -49,6 +70,80 @@ def _coverage_run(project: ProjectConfig, run_id: str) -> Path:
     path.mkdir(parents=True)
     (path / f"{run_id}.ucd").write_text("fixture\n", encoding="utf-8")
     return path
+
+
+def test_parse_xcelium_imc_expression_truth_rows():
+    points = parse_xcelium_imc_expression_coverage(IMC_EXPRESSION_DETAIL)
+
+    assert len(points) == 2
+    assert points[0]["scope"] == "tb_top.dut"
+    assert points[0]["source_file"] == "rtl/dut.sv"
+    assert points[0]["line"] == 42
+    assert points[0]["expression"] == "select ? data_a : data_b"
+    assert points[0]["expression_index"] == "1.1"
+    assert points[0]["truth_row"] == "1.1.1"
+    assert points[0]["count"] == 4
+    assert points[0]["hit"] is True
+    assert points[1]["truth_row"] == "1.1.2"
+    assert points[1]["count"] == 0
+    assert points[1]["hit"] is False
+    assert "rval=0" in points[1]["fec_target"]
+    assert all(point["truth_row"] != "1.1.3" for point in points)
+
+
+def test_xcelium_expression_coverage_holes_cli(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    detail = (
+        project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+    )
+    detail.parent.mkdir(parents=True)
+    detail.write_text(IMC_EXPRESSION_DETAIL, encoding="utf-8")
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    output = ".zddv/coverage/xcelium-expression-holes.json"
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=output,
+            point_type="expression",
+            limit=20,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    report = json.loads((project.root / output).read_text(encoding="utf-8"))
+    assert report["filter_type"] == "expression"
+    assert report["total_holes"] == 1
+    assert report["by_type"] == {"expression": 1}
+    assert report["holes"][0]["truth_row"] == "1.1.2"
+    assert report["holes"][0]["expression_index"] == "1.1"
+    assert report["holes"][0]["imc_type_name"] == "dut"
+    terminal = capsys.readouterr().out
+    assert "Coverage holes (expression): 1 unhit point(s)" in terminal
+
+
+def test_xcelium_coverage_holes_rejects_unverified_metric(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    with pytest.raises(RuntimeError, match="supports --type expression"):
+        cmd_coverage_holes(
+            SimpleNamespace(
+                project=str(project.root),
+                output=".zddv/coverage/holes.json",
+                point_type="fsm",
+                limit=20,
+                show=20,
+            )
+        )
 
 
 def test_merge_xcelium_coverage_uses_native_union_imc_flow(
