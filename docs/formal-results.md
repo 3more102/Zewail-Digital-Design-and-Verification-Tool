@@ -199,6 +199,15 @@ input SHA-256, schema, and compact summary.
 Unsupported formats, missing files, malformed VCDs, and generic trace evidence remain
 reviewable raw evidence and do not abort formal-result persistence.
 
+## Formal trace source correlation
+
+`formal-trace-crossprobe` accepts a normalized counterexample/witness JSON trace and one
+or more explicit signal queries. It reuses ZDDV's waveform cross-probe resolver to map
+those trace signals into the design hierarchy, RTL declaration, and source-structural
+driver/load evidence. Exact hierarchical names are preferred; ambiguous short names are
+rejected rather than guessed. The report records the normalized-trace SHA-256 and does
+not promote connectivity into a causal root-cause claim.
+
 ## Current boundary
 
 ZDDV does not claim unbounded reachability/proof coverage from finite-depth evidence.
@@ -206,5 +215,5 @@ Direct finite-depth SymbiYosys cover-property reachability and conservative cros
 aggregation are supported. Incomplete property universes, snapshots without a design
 fingerprint, different source revisions, different engines, different depths, or
 different property sets are never silently merged. Additional vendor-native waveform
-formats, automatic trace cross-probing, SQLite trace-sample persistence, and broader
+formats, SQLite trace-sample persistence, semantic transition reconstruction, and broader
 proof-coverage metrics remain separate future work.
