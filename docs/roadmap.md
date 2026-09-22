@@ -97,7 +97,7 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail plus scalar condition/expression FEC rows are normalized into the shared coverage-hole model; multibit condition/expression rows and toggle/FSM itemization remain planned.
+functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail plus scalar condition/expression FEC rows and multibit expression term/index coverage are normalized into the shared coverage-hole model; toggle/FSM itemization remains planned.
 Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
@@ -107,7 +107,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
 - [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting.
-- [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization.
+- [x] Questa documented multibit expression FEC term/index normalization and coverage-hole reporting.
+- [ ] Questa toggle/FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
