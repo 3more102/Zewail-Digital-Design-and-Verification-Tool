@@ -234,6 +234,9 @@ def build_coverage_hole_report(
                         "state",
                         "transition",
                         "transition_id",
+                        "toggle_node",
+                        "toggle_direction",
+                        "toggle_counts",
                         "evidence",
                     )
                     if key in point and point[key] is not None
@@ -399,6 +402,79 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
             coverage_kind = ""
 
     return {"source": "questa-vcover", "bins": bins}
+
+
+def parse_questa_toggle_report(text: str) -> list[dict]:
+    """Normalize documented Questa toggle-report rows into transition points.
+
+    Each node contributes one point for 1H->0L and one for 0L->1H. Extended
+    Z-transition counts are retained as evidence but are not promoted to
+    coverage goals here.
+    """
+    points: list[dict] = []
+    columns: list[str] = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        fields = line.split()
+        if (
+            fields
+            and fields[0].lower() == "node"
+            and "1H->0L" in fields
+            and "0L->1H" in fields
+        ):
+            columns = fields[1:]
+            continue
+
+        if not columns:
+            continue
+        if line.startswith("Total Node Count"):
+            break
+        if len(fields) < len(columns) + 1:
+            continue
+
+        node = fields[0]
+        counts: dict[str, int] = {}
+        valid = True
+        for label, raw_count in zip(columns, fields[1 : len(columns) + 1]):
+            try:
+                counts[label] = int(raw_count.replace(",", ""))
+            except ValueError:
+                valid = False
+                break
+        if not valid or "1H->0L" not in counts or "0L->1H" not in counts:
+            continue
+
+        scope = ""
+        signal = node
+        if "/" in node:
+            parent, signal = node.rsplit("/", 1)
+            scope = parent or "/"
+
+        common = {
+            "type": "toggle",
+            "scope": scope,
+            "signal": signal,
+            "toggle_node": node,
+            "toggle_counts": counts,
+            "evidence": line,
+        }
+        for direction in ("1H->0L", "0L->1H"):
+            count = counts[direction]
+            points.append(
+                {
+                    **common,
+                    "name": f"{node}:{direction}",
+                    "toggle_direction": direction,
+                    "count": count,
+                    "hit": count > 0,
+                }
+            )
+
+    return points
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
@@ -943,6 +1019,80 @@ def write_questa_statement_hole_report(
         "source": "questa-vcover-xml-byinstance",
         "merged": str(merged_path),
         "xml": str(xml_path),
+        "command": command,
+    }
+    destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {**payload, "path": str(destination)}
+
+
+def write_questa_toggle_hole_report(
+    project: ProjectConfig,
+    output: str | Path,
+    *,
+    limit: int | None = None,
+) -> dict:
+    """Generate a documented vcover toggle report and write transition holes."""
+    tool = shutil.which("vcover")
+    if tool is None:
+        raise RuntimeError(
+            "Questa vcover was not found in PATH. Install/configure Questa and retry."
+        )
+
+    merged_path = (project.root / ".zddv" / "coverage" / "coverage.ucdb").resolve()
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"Merged Questa coverage not found at {merged_path}. "
+            "Run 'zddv coverage' first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage" / "questa").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    toggle_report_path = out_dir / "toggle-report.txt"
+    if toggle_report_path.exists():
+        toggle_report_path.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-toggles",
+        "-output",
+        str(toggle_report_path),
+        str(merged_path),
+    ]
+    completed = _run(command, project.root)
+    if completed.returncode != 0 or not toggle_report_path.exists():
+        raise RuntimeError(
+            "Questa toggle coverage export failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + (completed.stdout or "").strip()
+        )
+
+    points = parse_questa_toggle_report(
+        toggle_report_path.read_text(encoding="utf-8", errors="replace")
+    )
+    if not points:
+        raise RuntimeError(
+            f"No documented Questa toggle transition rows could be normalized from "
+            f"{toggle_report_path}."
+        )
+
+    report = build_coverage_hole_report(
+        points,
+        point_type="toggle",
+        limit=limit,
+    )
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = (project.root / destination).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        **report,
+        "source": "questa-vcover-toggle-report",
+        "merged": str(merged_path),
+        "toggle_report": str(toggle_report_path),
         "command": command,
     }
     destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
