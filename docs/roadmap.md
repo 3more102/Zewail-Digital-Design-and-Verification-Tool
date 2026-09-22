@@ -97,7 +97,7 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available; detailed code-coverage item/source normalization and holes remain planned.
+functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Statement/branch detail rows support by-file hole reporting, and documented by-instance XML statement records support instance-specific statement holes; condition/expression/toggle/FSM item normalization remains planned.
 Phase/objection lifecycle normalization, explicit sequence report-context evidence, and normalized sequence state lifecycle ingestion are implemented; automatic sequence instrumentation and sequence-item arbitration reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
@@ -106,7 +106,9 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting.
+- [x] Questa statement/branch code-coverage hole reporting.
+- [x] Questa by-instance XML statement-hole normalization.
+- [ ] Questa condition/expression/toggle/FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
