@@ -185,6 +185,11 @@ ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGIO
 metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
 observed value must remain constant for requests in the same 4KB address space.
 
+When `data_width_bits` is available, the same normalized core also bounds AxSIZE
+by the interface width and validates WSTRB against the legal byte lanes for every
+accepted write beat. VCD ingestion derives this metadata from WDATA/RDATA/WSTRB
+signal widths; generic JSON traces can provide it explicitly.
+
 These checks intentionally stop at properties observable from the normalized
 interface trace. ACE coherency, AXI5 additions, USER sidebands, system-level QoS
 policy, topology-dependent cache reachability, and exhaustive system-ordering
