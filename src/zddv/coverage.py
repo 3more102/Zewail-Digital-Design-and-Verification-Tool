@@ -1051,6 +1051,130 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
     )
 
 
+
+_URG_CODE_METRIC_SECTIONS = {
+    "LINE": "line",
+    "COND": "condition",
+    "TOGGLE": "toggle",
+    "FSM": "fsm",
+    "BRANCH": "branch",
+}
+_URG_CODE_METRIC_ROWS = {
+    "line": ("TOTAL",),
+    "condition": ("Conditions",),
+    "toggle": ("Total Bits",),
+    "fsm": ("Transitions", "Sequences"),
+    "branch": ("Branches",),
+}
+_URG_MODULE_COVERAGE_HEADER = re.compile(
+    r"^\s*(?P<kind>[A-Za-z]+)\s+Coverage\s+for\s+Module"
+    r"(?P<self_instances>\s+self-instances)?\s*:",
+    re.IGNORECASE,
+)
+
+
+def _parse_urg_code_count_row(
+    raw: str,
+    labels: tuple[str, ...],
+) -> tuple[int, int] | None:
+    """Parse one documented URG module-definition object-count row."""
+    normalized = raw.replace("|", " ").strip()
+    for label in labels:
+        match = re.match(
+            rf"^{re.escape(label)}\s+"
+            r"(?P<total>\d[\d,]*)\s+"
+            r"(?P<covered>\d[\d,]*)"
+            r"(?:\s+.*)?$",
+            normalized,
+            re.IGNORECASE,
+        )
+        if match is None:
+            continue
+        total = int(match.group("total").replace(",", ""))
+        covered = int(match.group("covered").replace(",", ""))
+        if total < 0 or covered < 0 or covered > total:
+            raise ValueError(
+                f"URG code coverage row has invalid counts: {raw!r}"
+            )
+        return covered, total
+    return None
+
+
+def parse_vcs_urg_modinfo(path: str | Path) -> dict:
+    """Aggregate documented VCS URG code-metric counts from modinfo.txt.
+
+    Only module-definition rows that map directly to the URG score model are
+    counted. Self-instance sections are excluded. For FSM coverage, URG marks
+    state totals as not included in the score, so only transition and sequence
+    totals are aggregated.
+    """
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+    totals: dict[str, dict[str, int]] = {}
+    current_metric: str | None = None
+
+    for raw in lines:
+        header = _URG_MODULE_COVERAGE_HEADER.match(raw)
+        if header is not None:
+            if header.group("self_instances"):
+                current_metric = None
+                continue
+            current_metric = _URG_CODE_METRIC_SECTIONS.get(
+                header.group("kind").upper()
+            )
+            continue
+
+        # Do not carry a supported metric through an unrelated module
+        # coverage section that this parser intentionally does not normalize.
+        if re.match(
+            r"^\s*[A-Za-z]+\s+Coverage\s+for\s+Module\b",
+            raw,
+            re.IGNORECASE,
+        ):
+            current_metric = None
+            continue
+
+        if current_metric is None:
+            continue
+
+        parsed = _parse_urg_code_count_row(
+            raw,
+            _URG_CODE_METRIC_ROWS[current_metric],
+        )
+        if parsed is None:
+            continue
+        covered, total = parsed
+        aggregate = totals.setdefault(
+            current_metric,
+            {"covered": 0, "total": 0},
+        )
+        aggregate["covered"] += covered
+        aggregate["total"] += total
+
+    if not totals:
+        raise ValueError(
+            "URG modinfo.txt has no supported module-definition code-count rows"
+        )
+
+    by_metric_counts: dict[str, dict[str, int | float]] = {}
+    for metric, values in sorted(totals.items()):
+        covered = values["covered"]
+        total = values["total"]
+        normalized: dict[str, int | float] = {
+            "covered": covered,
+            "total": total,
+        }
+        if total:
+            normalized["hit_rate"] = covered * 100.0 / total
+        by_metric_counts[metric] = normalized
+
+    return {
+        "by_metric_counts": by_metric_counts,
+        "source": "urg-modinfo-module-definitions",
+        "modinfo": str(source.resolve()),
+        "count_status": "normalized",
+    }
+
 def parse_vcs_urg_dashboard(path: str | Path) -> dict:
     """Parse documented URG dashboard coverage scores and global group counts."""
     source = Path(path)
