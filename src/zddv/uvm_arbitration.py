@@ -213,7 +213,11 @@ def parse_uvm_arbitration_data(
                 "priority changed between REQUEST and GRANT.",
             )
 
-        candidate_ids = list(pending)
+        candidate_ids = [
+            item
+            for item in pending
+            if requests[item]["sequencer"] == state["sequencer"]
+        ]
         candidate_states = [requests[item] for item in candidate_ids]
         highest_priority = (
             max(item["priority"] for item in candidate_states)
@@ -267,6 +271,7 @@ def parse_uvm_arbitration_data(
             {
                 "event_index": event_index,
                 "request_id": request_id,
+                "sequencer": state["sequencer"],
                 "mode": mode,
                 "pending_request_ids": candidate_ids,
                 "eligible_request_ids": eligible_request_ids,
@@ -279,6 +284,8 @@ def parse_uvm_arbitration_data(
             if other_id == request_id:
                 continue
             other = requests[other_id]
+            if other["sequencer"] != state["sequencer"]:
+                continue
             other["bypass_count"] += 1
             if (
                 effective_limit is not None
