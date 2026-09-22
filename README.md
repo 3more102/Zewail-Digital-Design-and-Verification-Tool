@@ -29,6 +29,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
+- UVM lifecycle evidence for standard phase/objection trace reports plus explicit `sequencer@@sequence` report contexts, persisted and summarized per snapshot
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -90,6 +91,13 @@ For a Questa project, setting `coverage = true` in `[run]` enables native
 coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 The `zddv coverage` merge/report command remains Verilator-specific until UCDB
 normalization and merge support are added.
+
+For UVM lifecycle evidence, enable standard UVM phase and objection tracing in the
+simulation (for example, `+UVM_PHASE_TRACE` and `+UVM_OBJECTION_TRACE`) and then
+analyze the run log with `zddv uvm-analyze --run <run-id>`. Sequence activity is
+recorded conservatively only when the report component itself contains an explicit
+`sequencer@@sequence` context; ZDDV does not invent a non-standard sequence-trace
+switch or claim sequence start/end semantics from ordinary reports.
 
 ## Current CLI
 
@@ -335,7 +343,7 @@ separately from Verilator's annotation threshold.
 - [x] Targeted VCD value-change probing
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
-- [ ] Sequence/phase/objection-aware UVM result model
+- [x] Phase/objection-aware UVM lifecycle evidence plus explicit sequence report-context evidence
 
 ### APB Trace Analysis
 
