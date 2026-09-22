@@ -375,6 +375,16 @@ def cmd_coverage(args) -> int:
             "Simulator-reported total coverage: "
             f"{metrics['tool_total_coverage']:.2f}%"
         )
+    if result.get("functional_report"):
+        print(f"Functional coverage report: {result['functional_report']}")
+        if result.get("functional_snapshot_id"):
+            print(
+                "Functional coverage bins: "
+                f"{result.get('functional_bin_count', 0)} normalized "
+                f"(snapshot {result['functional_snapshot_id']})"
+            )
+        else:
+            print("Functional coverage bins: none reported")
     print(f"Metrics: {result['metrics_path']}")
     print(f"Snapshot: {result['snapshot_id']}")
     report = result["report"].strip()
