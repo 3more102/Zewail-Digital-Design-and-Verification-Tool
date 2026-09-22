@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native VCS coverage plus normalized URG score/count history**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, and dashboard percentage normalization/history; covered/total object-count ingestion remains pending
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, and documented global covergroup type/instance counts
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch source-linked `coverage-holes`; condition/expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -33,6 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
 - Simulator-independent UVM sequence-item handshake JSON model with GRANT/REQUEST/ITEM_DONE/RESPONSE validation, partial-trace handling, run correlation, SQLite event/violation persistence, history, and violation-query CLI
+- Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -107,7 +108,7 @@ statement/branch rows from `vcover report -details -code sb`, allowing
 Condition/expression/toggle/FSM item normalization remains pending. Questa's
 weighted total coverage remains a separate simulator-reported value.
 
-For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. It does not fabricate covered/total object counts from percentages; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
+For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. Code-metric object-count aggregation remains pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
 ## Current CLI
 
@@ -156,6 +157,9 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-item-analyze item_trace.json
+zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
+zddv --project my_project uvm-item-history --limit 20
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
@@ -276,7 +280,7 @@ CLI / future GUI
        │
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
-       ├── VCS        ← planned
+       ├── VCS        ← build/run + native VDB/URG coverage implemented
        └── Xcelium    ← planned
 ```
 
@@ -360,6 +364,7 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
+- [x] Normalized sequence-item handshake analysis with SQLite persistence/history
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
 
 ### APB Trace Analysis
@@ -674,7 +679,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
-- [ ] VCS normalized numeric coverage ingestion and history snapshots
+- [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
+- [x] VCS documented global covergroup type/instance covered/expected count ingestion
+- [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
