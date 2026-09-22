@@ -786,7 +786,8 @@ def cmd_uvm_arbitration_analyze(args) -> int:
         f"UVM ARBITRATION {result['status']}: "
         f"{summary['rounds']} round(s), "
         f"{summary['sequences']} sequence(s), "
-        f"{summary['violations']} violation(s)"
+        f"{summary['violations']} violation(s), "
+        f"{summary['evidence_gaps']} evidence gap(s)"
     )
     print(
         f"Mode: {result['mode']}  "
@@ -805,6 +806,13 @@ def cmd_uvm_arbitration_analyze(args) -> int:
         )
     if len(result["violations"]) > args.show:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
+    for gap in result["evidence_gaps"][: args.show]:
+        print(
+            f"[EVIDENCE:{gap['code']}] round={gap['round_id']} "
+            f"sequencer={gap['sequencer']} {gap['message']}"
+        )
+    if len(result["evidence_gaps"]) > args.show:
+        print(f"... {len(result['evidence_gaps']) - args.show} more evidence gap(s)")
     print("Wait metrics are evidence only; no fairness verdict is inferred.")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
@@ -824,14 +832,15 @@ def cmd_uvm_arbitration_history(args) -> int:
 
     print(
         f"{'STATUS':<6} {'MODE':<26} {'ROUNDS':>6} {'SEQ':>5} "
-        f"{'VIOL':>5} {'MAXWAIT':>7} {'RUN':<24} SNAPSHOT"
+        f"{'VIOL':>5} {'GAPS':>5} {'MAXWAIT':>7} {'RUN':<24} SNAPSHOT"
     )
     for row in rows:
         run_id = row["run_id"] or "-"
         print(
             f"{row['status']:<6} {row['mode']:<26} "
             f"{row['round_count']:>6} {row['sequence_count']:>5} "
-            f"{row['violation_count']:>5} {row['max_wait_rounds']:>7} "
+            f"{row['violation_count']:>5} {row['evidence_gap_count']:>5} "
+            f"{row['max_wait_rounds']:>7} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
         )
     return 0

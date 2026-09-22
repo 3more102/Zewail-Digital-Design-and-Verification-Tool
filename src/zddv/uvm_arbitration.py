@@ -119,6 +119,7 @@ def parse_uvm_arbitration_data(
 
     rounds = [_normalize_round(item, index=index) for index, item in enumerate(raw_rounds)]
     violations: list[dict[str, Any]] = []
+    evidence_gaps: list[dict[str, Any]] = []
     seen_round_ids: set[str] = set()
 
     def add_violation(
@@ -131,6 +132,25 @@ def parse_uvm_arbitration_data(
         violations.append(
             {
                 "violation_index": len(violations),
+                "code": code,
+                "round_index": int(round_data["round_index"]),
+                "round_id": round_data["round_id"],
+                "sequencer": round_data["sequencer"],
+                "sequence_id": sequence_id,
+                "message": message,
+            }
+        )
+
+    def add_evidence_gap(
+        code: str,
+        round_data: dict[str, Any],
+        message: str,
+        *,
+        sequence_id: str | None = None,
+    ) -> None:
+        evidence_gaps.append(
+            {
+                "gap_index": len(evidence_gaps),
                 "code": code,
                 "round_index": int(round_data["round_index"]),
                 "round_id": round_data["round_id"],
@@ -178,28 +198,28 @@ def parse_uvm_arbitration_data(
         if mode in _FIFO_MODES:
             missing = [c["sequence_id"] for c in candidates if c["request_order"] is None]
             if missing:
-                add_violation(
+                add_evidence_gap(
                     "MISSING_REQUEST_ORDER",
                     round_data,
-                    "FIFO arbitration requires request_order evidence for every candidate: "
+                    "FIFO policy cannot be checked without request_order evidence for: "
                     + ", ".join(missing),
                 )
             else:
                 request_orders = [int(c["request_order"]) for c in candidates]
                 if len(set(request_orders)) != len(request_orders):
-                    add_violation(
+                    add_evidence_gap(
                         "AMBIGUOUS_REQUEST_ORDER",
                         round_data,
-                        "FIFO arbitration requires unique request_order values within a round",
+                        "FIFO policy cannot be checked because request_order values are not unique",
                     )
 
         if mode in _STRICT_MODES:
             missing = [c["sequence_id"] for c in candidates if c["priority"] is None]
             if missing:
-                add_violation(
+                add_evidence_gap(
                     "MISSING_PRIORITY",
                     round_data,
-                    "Strict arbitration requires priority evidence for every candidate: "
+                    "Strict arbitration policy cannot be checked without priority evidence for: "
                     + ", ".join(missing),
                 )
 
@@ -297,14 +317,16 @@ def parse_uvm_arbitration_data(
             "rounds": len(rounds),
             "sequences": len(metrics),
             "violations": len(violations),
+            "evidence_gaps": len(evidence_gaps),
             "max_wait_rounds": max_wait_rounds,
         },
         "rounds": rounds,
         "sequence_metrics": metrics,
         "violations": violations,
+        "evidence_gaps": evidence_gaps,
         "limitations": [
             "Input is explicit normalized arbitration evidence; vendor simulator logs are not guessed or reinterpreted.",
-            "FIFO and strict-priority ordering are validated only when the required request_order and priority evidence is present.",
+            "FIFO and strict-priority ordering are validated only when the required request_order and priority evidence is present; missing or ambiguous fields are reported as evidence gaps rather than policy failures.",
             "RANDOM, WEIGHTED, and USER winner choice is retained as evidence but a single observed draw is not classified as fair or unfair.",
             "Wait-round metrics count observed eligible arbitration opportunities and are evidence, not a fairness verdict.",
             "Locks, grabs, is_relevant filtering, and automatic instrumentation must be reflected by the producer in the eligible candidate set.",

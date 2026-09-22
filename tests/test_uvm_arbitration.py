@@ -174,7 +174,10 @@ def test_fifo_requires_unambiguous_request_order_evidence():
             ],
         }
     )
-    codes = [violation["code"] for violation in result["violations"]]
+    assert result["status"] == "PASS"
+    assert result["summary"]["violations"] == 0
+    assert result["summary"]["evidence_gaps"] == 2
+    codes = [gap["code"] for gap in result["evidence_gaps"]]
     assert "MISSING_REQUEST_ORDER" in codes
     assert "AMBIGUOUS_REQUEST_ORDER" in codes
 
@@ -211,6 +214,7 @@ def test_analysis_persists_snapshot_and_candidate_evidence(tmp_path: Path):
     assert len(snapshots) == 1
     assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
     assert snapshots[0]["mode"] == "UVM_SEQ_ARB_STRICT_FIFO"
+    assert snapshots[0]["evidence_gap_count"] == 0
 
     candidates = list_uvm_arbitration_candidates(project, result["snapshot_id"])
     assert len(candidates) == 2

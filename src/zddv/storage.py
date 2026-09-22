@@ -288,6 +288,7 @@ CREATE TABLE IF NOT EXISTS uvm_arbitration_snapshots (
     round_count INTEGER NOT NULL,
     sequence_count INTEGER NOT NULL,
     violation_count INTEGER NOT NULL,
+    evidence_gap_count INTEGER NOT NULL,
     max_wait_rounds INTEGER NOT NULL,
     run_id TEXT,
     input_path TEXT NOT NULL,
@@ -1302,9 +1303,10 @@ def record_uvm_arbitration_snapshot(
             """
             INSERT OR REPLACE INTO uvm_arbitration_snapshots (
                 snapshot_id, created_at, project, source, mode, status,
-                round_count, sequence_count, violation_count, max_wait_rounds,
-                run_id, input_path, normalized_path, report_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                round_count, sequence_count, violation_count,
+                evidence_gap_count, max_wait_rounds, run_id, input_path,
+                normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["snapshot_id"],
@@ -1316,6 +1318,7 @@ def record_uvm_arbitration_snapshot(
                 int(summary["rounds"]),
                 int(summary["sequences"]),
                 int(summary["violations"]),
+                int(summary["evidence_gaps"]),
                 int(summary["max_wait_rounds"]),
                 record.get("run_id"),
                 record["input_path"],
@@ -1376,8 +1379,9 @@ def list_uvm_arbitration_snapshots(
 
     query = """
         SELECT snapshot_id, created_at, project, source, mode, status,
-               round_count, sequence_count, violation_count, max_wait_rounds,
-               run_id, input_path, normalized_path, report_path
+               round_count, sequence_count, violation_count,
+               evidence_gap_count, max_wait_rounds, run_id, input_path,
+               normalized_path, report_path
         FROM uvm_arbitration_snapshots
     """
     clauses: list[str] = []

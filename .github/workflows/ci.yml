@@ -274,6 +274,7 @@ jobs:
           test -s examples/counter/.zddv/uvm/arbitration/latest.json
           grep -q '"analysis": "uvm_sequencer_arbitration"' examples/counter/.zddv/uvm/arbitration/latest.json
           grep -q '"violations": 0' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"evidence_gaps": 0' examples/counter/.zddv/uvm/arbitration/latest.json
           grep -q '"max_wait_rounds": 2' examples/counter/.zddv/uvm/arbitration/latest.json
           zddv --project examples/counter uvm-arbitration-history --limit 5 | grep -q 'UVM_SEQ_ARB_STRICT_FIFO'
 

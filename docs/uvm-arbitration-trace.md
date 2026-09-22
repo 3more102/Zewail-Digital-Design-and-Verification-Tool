@@ -56,16 +56,20 @@ ZDDV from incomplete logs.
 
 ## Deterministic checks
 
-For `UVM_SEQ_ARB_FIFO`, every candidate needs a unique `request_order`, and the
-earliest eligible request must win.
+For `UVM_SEQ_ARB_FIFO`, a complete deterministic check needs a unique
+`request_order` for every candidate, and the earliest eligible request must win.
+If ordering evidence is missing or ambiguous, ZDDV records an evidence gap rather
+than claiming the arbitration policy failed.
 
-For `UVM_SEQ_ARB_STRICT_FIFO`, every candidate needs `priority` plus unique
-`request_order`; the winner must have the highest priority, with FIFO order breaking
-ties at that priority.
+For `UVM_SEQ_ARB_STRICT_FIFO`, a complete deterministic check needs `priority`
+plus unique `request_order` evidence for every candidate; the winner must have the
+highest priority, with FIFO order breaking ties at that priority. Missing priority or
+ordering evidence is reported separately as an evidence gap.
 
-For `UVM_SEQ_ARB_STRICT_RANDOM`, every candidate needs `priority`, and the winner
-must belong to the highest-priority candidate set. ZDDV does not attempt to validate
-which member of that set a random draw should select.
+For `UVM_SEQ_ARB_STRICT_RANDOM`, a complete check needs `priority` for every
+candidate, and the winner must belong to the highest-priority candidate set. Missing
+priority evidence is an evidence gap. ZDDV does not attempt to validate which member
+of that set a random draw should select.
 
 `UVM_SEQ_ARB_RANDOM`, `UVM_SEQ_ARB_WEIGHTED`, and `UVM_SEQ_ARB_USER` retain the
 winner and candidate set as evidence, but one observed result is not classified as
