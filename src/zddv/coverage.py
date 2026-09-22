@@ -66,6 +66,16 @@ _QUESTA_CVG_BIN = re.compile(
     r"(?P<status>\S+)\s*$",
     re.IGNORECASE,
 )
+_QUESTA_CODE_DETAIL_HEADER = re.compile(
+    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"(?P<file>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CODE_DETAIL_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<item>\d+)\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
+    r"(?:\s+(?P<detail>.*?))?\s*$"
+)
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -161,6 +171,26 @@ def build_coverage_hole_report(
                 "type": str(point.get("type") or "unknown"),
                 "name": str(point.get("name") or ""),
                 "count": int(point.get("count", 0)),
+                **(
+                    {"source_file": str(point["source_file"])}
+                    if point.get("source_file") is not None
+                    else {}
+                ),
+                **(
+                    {"line": int(point["line"])}
+                    if point.get("line") is not None
+                    else {}
+                ),
+                **(
+                    {"item": int(point["item"])}
+                    if point.get("item") is not None
+                    else {}
+                ),
+                **(
+                    {"detail": str(point["detail"])}
+                    if point.get("detail") is not None
+                    else {}
+                ),
             }
             for point in shown
         ],
@@ -299,6 +329,53 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_code_coverage_report(text: str) -> list[dict]:
+    """Normalize statement and branch items from documented vcover detail text."""
+    points: list[dict] = []
+    kind = ""
+    source_file = ""
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            kind = header.group("kind").strip().lower()
+            source_file = header.group("file").strip()
+            continue
+
+        if kind not in {"statement", "branch"} or not source_file:
+            continue
+
+        item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
+        if item is None:
+            continue
+
+        hits = int(
+            item.group("hits").replace("*", "").replace(",", "")
+        )
+        line_number = int(item.group("line"))
+        item_number = int(item.group("item"))
+        detail = (item.group("detail") or "").strip()
+
+        name = f"{source_file}:{line_number}:{item_number}"
+        if detail:
+            name += f" {detail}"
+
+        points.append(
+            {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": kind,
+                "source_file": source_file,
+                "line": line_number,
+                "item": item_number,
+                "detail": detail,
+            }
+        )
+
+    return points
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -349,6 +426,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
+    code_report_path = out_dir / "code-details.txt"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
@@ -380,6 +458,32 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         raise RuntimeError(
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
+
+    code_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-code",
+        "sb",
+        str(merged_path),
+    ]
+    code_report = _run(code_cmd, project.root)
+    code_report_path.write_text(
+        code_report.stdout or "",
+        encoding="utf-8",
+    )
+    code_points = (
+        parse_questa_code_coverage_report(code_report.stdout or "")
+        if code_report.returncode == 0
+        else []
+    )
+    code_detail_status = (
+        "ok"
+        if code_report.returncode == 0 and code_points
+        else "empty"
+        if code_report.returncode == 0
+        else "tool-error"
+    )
 
     functional_cmd = [tool, "report", "-cvg", "-details", str(merged_path)]
     functional_report = _run(functional_cmd, project.root)
@@ -453,6 +557,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "code_report": str(code_report_path),
+        "code_detail_status": code_detail_status,
+        "code_detail_returncode": int(code_report.returncode),
+        "code_detail_points": len(code_points),
+        "code_detail_holes": sum(not point["hit"] for point in code_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -476,6 +585,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
+        "code_report": str(code_report_path),
+        "code_detail_status": code_detail_status,
+        "code_detail_returncode": int(code_report.returncode),
+        "code_detail_points": len(code_points),
+        "code_detail_holes": sum(not point["hit"] for point in code_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,

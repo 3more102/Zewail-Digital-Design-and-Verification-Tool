@@ -6,10 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
+    parse_questa_code_coverage_report,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -30,6 +31,43 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Statements                    4920      4920         0         1   100.00%
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
+"""
+
+QUESTA_CODE_DETAILS = """Coverage Report by file with details
+
+=================================================================================
+=== File: top.v
+=================================================================================
+Statement Coverage:
+    Enabled Coverage            Active      Hits    Misses % Covered
+    ----------------            ------      ----    ------ ---------
+    Stmts                            3         2         1     66.67
+
+================================Statement Details================================
+
+Statement Coverage for file top.v --
+
+    8               1                          1
+    9               1                    ***0***
+    10              2                     100001
+
+Branch Coverage:
+    Enabled Coverage            Bins      Hits    Misses % Covered
+    ----------------            ----      ----    ------ ---------
+    Branches                         5         3         2     60.00
+
+================================Branch Details================================
+
+Branch Coverage for file top.v --
+
+    12                                         3  Count coming in to IF
+    12              1                    ***0***  if (i == 16)
+    14              1                          1  else if (i == 2)
+    16              1                          1  else if (i == 10)
+    18              1                          1  else if (i == 18)
+    20              1                    ***0***  else
+
+Branch totals: 3 hits of 5 branches = 60.0%
 """
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
@@ -102,6 +140,30 @@ def test_parse_questa_summary_accepts_comma_grouped_counts():
     assert metrics["by_type"]["branch"]["total"] == 3044
 
 
+def test_parse_questa_code_coverage_normalizes_statement_and_branch_items():
+    points = parse_questa_code_coverage_report(QUESTA_CODE_DETAILS)
+
+    assert len(points) == 8
+    assert points[0] == {
+        "name": "top.v:8:1",
+        "count": 1,
+        "hit": True,
+        "type": "statement",
+        "source_file": "top.v",
+        "line": 8,
+        "item": 1,
+        "detail": "",
+    }
+    assert points[1]["name"] == "top.v:9:1"
+    assert points[1]["hit"] is False
+
+    branch_points = [point for point in points if point["type"] == "branch"]
+    assert len(branch_points) == 5
+    assert [point["line"] for point in branch_points if not point["hit"]] == [12, 20]
+    assert branch_points[0]["detail"] == "if (i == 16)"
+    assert all("Count coming in to IF" not in point["detail"] for point in branch_points)
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -151,6 +213,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:5] == ["report", "-details", "-code", "sb"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_CODE_DETAILS)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
@@ -182,11 +246,19 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert commands[2] == [
         "/opt/questa/bin/vcover",
         "report",
+        "-details",
+        "-code",
+        "sb",
+        result["merged"],
+    ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
         "-cvg",
         "-details",
         result["merged"],
     ]
-    assert commands[3] == [
+    assert commands[4] == [
         "/opt/questa/bin/vcover",
         "report",
         "-xml",
@@ -195,7 +267,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("details.xml")),
         result["merged"],
     ]
-    assert commands[4] == [
+    assert commands[5] == [
         "/opt/questa/bin/vcover",
         "report",
         "-zeros",
@@ -214,6 +286,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["input_count"] == 2
     assert payload["tool_total_coverage"] == 79.53
     assert payload["by_type"]["expression"]["hit"] == 1143
+    assert payload["code_detail_status"] == "ok"
+    assert payload["code_detail_points"] == 8
+    assert payload["code_detail_holes"] == 3
+    assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_DETAILS
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     evidence = payload["detailed_code_coverage_evidence"]
@@ -249,6 +325,47 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert len(holes) == 1
     assert holes[0]["coverpoint"] == "APB_cg::type_cp"
     assert holes[0]["bin_name"] == "write"
+
+
+def test_coverage_holes_cli_supports_questa_statement_and_branch_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    report_path = project.root / ".zddv" / "coverage" / "code-details.txt"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(QUESTA_CODE_DETAILS, encoding="utf-8")
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    args = SimpleNamespace(
+        project=str(project.root),
+        output=".zddv/coverage/holes.json",
+        point_type=None,
+        limit=50,
+        show=10,
+    )
+
+    rc = cmd_coverage_holes(args)
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (all): 3 unhit point(s)" in output
+    assert "[statement] top.v:9:1" in output
+    assert "[branch] top.v:12:1 if (i == 16)" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["by_type"] == {"branch": 2, "statement": 1}
+    statement = next(
+        hole for hole in payload["holes"] if hole["type"] == "statement"
+    )
+    assert statement["source_file"] == "top.v"
+    assert statement["line"] == 9
+    assert statement["item"] == 1
 
 
 def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
@@ -316,6 +433,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:5] == ["report", "-details", "-code", "sb"]:
+            return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
         if "-xml" in command or "-zeros" in command:
