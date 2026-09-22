@@ -133,7 +133,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 
 - [x] Formal adapter API.
 - [ ] Bounded checks.
-- [ ] Property/cover result persistence and tool-specific ingestion.
+- [x] Simulator-independent property/cover result persistence in shared SQLite history.
+- [ ] Tool-specific formal result ingestion.
 - [ ] Counterexample artifact model.
 - [ ] Formal coverage.
 
