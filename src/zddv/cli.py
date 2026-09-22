@@ -11,8 +11,8 @@ from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
-    merge_verilator_coverage,
-    parse_verilator_coverage,
+    load_normalized_coverage_points,
+    merge_coverage,
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
@@ -361,11 +361,7 @@ def cmd_regress(args) -> int:
 
 def cmd_coverage(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator != "verilator":
-        raise RuntimeError(
-            "Coverage reporting is currently implemented for Verilator only."
-        )
-    result = merge_verilator_coverage(project)
+    result = merge_coverage(project)
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
@@ -401,15 +397,9 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
-        raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
-        )
-
-    points = parse_verilator_coverage(merged_path)
+    points = load_normalized_coverage_points(project)
     if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+        raise RuntimeError("No normalized coverage points were found.")
 
     output = Path(args.output)
     if not output.is_absolute():
