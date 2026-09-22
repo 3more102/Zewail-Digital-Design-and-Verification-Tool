@@ -153,6 +153,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        if command[1:3] == ["report", "-xml"]:
+            out_path = Path(command[command.index("-output") + 1])
+            out_path.write_text("<coverage/>\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -178,9 +182,19 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-details",
         result["merged"],
     ]
+    assert commands[3] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-output",
+        result["details"],
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
+    assert result["details_capture"] == "xml"
+    assert Path(result["details"]).read_text(encoding="utf-8") == "<coverage/>\n"
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["simulator"] == "questa"
@@ -189,6 +203,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["by_type"]["expression"]["hit"] == 1143
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
+    assert payload["details_capture"] == "xml"
+    assert payload["details"] == result["details"]
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -250,3 +266,48 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+
+
+def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    run_dir = (project.root / project.run_dir / "run-a").resolve()
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.ucdb").write_text("run fixture\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/questa/bin/vcover" if name == "vcover" else None,
+    )
+
+    def fake_run(command, cwd):
+        if command[1] == "merge":
+            out_path = Path(command[command.index("-out") + 1])
+            out_path.write_text("merged fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge complete\n")
+        if command[1:3] == ["report", "-summary"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:4] == ["report", "-cvg", "-details"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        if command[1:3] == ["report", "-xml"]:
+            return SimpleNamespace(returncode=1, stdout="XML export unavailable\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_questa_coverage(project)
+
+    assert result["details"] is None
+    assert result["details_capture"] == "unavailable"
+    assert result["details_error"] == "XML export unavailable"
+
+    payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
+    assert payload["details"] is None
+    assert payload["details_capture"] == "unavailable"
+    assert payload["details_error"] == "XML export unavailable"
+
+    snapshots = list_coverage_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["total_points"] == 82535
