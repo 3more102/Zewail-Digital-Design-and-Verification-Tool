@@ -11,6 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
+- Siemens Questa batch execution adapter using the classic `vlib`/`vlog`/`vsim` flow, with test/seed/plusarg handling and WLF artifact capture
 - Verilator detection and version reporting
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -66,6 +67,7 @@ git clone https://github.com/3more102/Zewail-Digital-Design-and-Verification-Too
 cd Zewail-Digital-Design-and-Verification-Tool
 python -m pip install -e ".[dev]"
 zddv doctor
+zddv doctor --simulator questa
 ```
 
 Run the included counter example:
@@ -156,7 +158,8 @@ Project + Source Model
     ▼
 Simulator Adapter
     │
-    └── Verilator
+    ├── Verilator
+    └── Questa
            │
            ├── build.log
            ├── build.json
