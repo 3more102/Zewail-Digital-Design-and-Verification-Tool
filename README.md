@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4 with core exclusive-access checks, async-FIFO CDC invariants, and public UCIe FLIT/link-health analysis**
+> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4 with exclusive-access/address-sideband checks plus USER-sideband transport evidence, async-FIFO CDC invariants, and public UCIe FLIT/link-health analysis**
 
 ## What Works Today
 
@@ -31,7 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, and AxCACHE/AxPROT/AxQOS/AxREGION validation
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, AxCACHE/AxPROT/AxQOS/AxREGION validation, and optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
@@ -302,7 +302,8 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 burst VCD waveform extraction
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checks
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency
-- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checks
+- [x] AXI4 optional USER-sideband capture, backpressure-stability checking, and transaction evidence
+- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics
 - [x] Async-FIFO CDC normalized-event invariant analysis
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation
 - [ ] Specification-complete UCIe protocol/PHY conformance checking
