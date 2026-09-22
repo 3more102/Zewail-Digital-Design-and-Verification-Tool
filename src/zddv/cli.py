@@ -15,6 +15,7 @@ from zddv.coverage import (
     parse_questa_code_coverage_report,
     parse_verilator_coverage,
     write_coverage_hole_report,
+    write_questa_statement_hole_report,
 )
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
@@ -432,6 +433,10 @@ def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
     simulator = project.simulator.strip().lower()
 
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
     if simulator == "verilator":
         source_path = (
             project.root / ".zddv" / "coverage" / "coverage.dat"
@@ -442,40 +447,57 @@ def cmd_coverage_holes(args) -> int:
                 "Run 'zddv coverage' first."
             )
         points = parse_verilator_coverage(source_path)
-    elif simulator in {"questa", "questasim"}:
-        source_path = (
-            project.root / ".zddv" / "coverage" / "code-details.txt"
-        ).resolve()
-        if not source_path.exists():
+        if not points:
             raise RuntimeError(
-                f"Detailed Questa code coverage report not found at {source_path}. "
-                "Run 'zddv coverage' first."
+                f"No normalized coverage points found in {source_path}."
             )
-        points = parse_questa_code_coverage_report(
-            source_path.read_text(encoding="utf-8", errors="replace")
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type=args.point_type,
+            limit=args.limit,
         )
+    elif simulator in {"questa", "questasim"}:
+        if args.point_type not in {None, "statement", "branch"}:
+            raise RuntimeError(
+                "Questa item-level coverage currently supports "
+                "--type statement or --type branch."
+            )
+        if args.point_type == "statement":
+            report = write_questa_statement_hole_report(
+                project,
+                output,
+                limit=args.limit,
+            )
+        else:
+            source_path = (
+                project.root / ".zddv" / "coverage" / "code-details.txt"
+            ).resolve()
+            if not source_path.exists():
+                raise RuntimeError(
+                    f"Detailed Questa code coverage report not found at {source_path}. "
+                    "Run 'zddv coverage' first."
+                )
+            points = parse_questa_code_coverage_report(
+                source_path.read_text(encoding="utf-8", errors="replace")
+            )
+            if not points:
+                raise RuntimeError(
+                    f"No normalized coverage points found in {source_path}."
+                )
+            report = write_coverage_hole_report(
+                points,
+                output,
+                point_type=args.point_type,
+                limit=args.limit,
+            )
     else:
         raise RuntimeError(
             "Coverage-hole itemization is not implemented for simulator: "
             f"{project.simulator}"
         )
 
-    if not points:
-        raise RuntimeError(
-            f"No normalized coverage points found in {source_path}."
-        )
-
-    output = Path(args.output)
-    if not output.is_absolute():
-        output = project.root / output
-
-    report = write_coverage_hole_report(
-        points,
-        output,
-        point_type=args.point_type,
-        limit=args.limit,
-    )
-    filter_label = args.point_type or "all"
+    filter_label = report.get("filter_type") or args.point_type or "all"
     print(
         f"Coverage holes ({filter_label}): {report['total_holes']} "
         f"unhit point(s); {report['reported_holes']} written"
@@ -490,6 +512,8 @@ def cmd_coverage_holes(args) -> int:
         print(f"[{hole['type']}] {hole['name']}")
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
+    if report.get("xml"):
+        print(f"Questa XML: {report['xml']}")
     print(f"Report: {report['path']}")
     return 0
 
