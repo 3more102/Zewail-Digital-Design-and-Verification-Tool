@@ -1,0 +1,5 @@
+# UVM_INFO @ 10 ns: uvm_test_top.env.seqr [ZDDV_SEQUENCE] ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.seqr","state":"UVM_BODY","time":"10 ns"}
+# ordinary simulator text is ignored
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.seqr","state":"UVM_ENDED","time":"18 ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.seqr","state":"UVM_POST_START","time":"19 ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.seqr","state":"UVM_FINISHED","time":"20 ns"}

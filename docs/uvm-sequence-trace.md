@@ -87,6 +87,8 @@ result = analyze_uvm_sequence_log(project, None, run_id="run-id")
 
 When a recorded run is supplied without a path, the adapter reads that run's simulation log and preserves run status, return code, and simulator correlation.
 
+An executable marker-log example is available at `examples/uvm_sequence_marker.log`.
+
 ## Lifecycle Rules
 
 For a normally completed sequence with pre/post callbacks enabled, ZDDV accepts:
