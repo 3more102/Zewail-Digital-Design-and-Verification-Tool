@@ -349,6 +349,15 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
+      - name: Exercise reviewable opt-in coverage templates
+        run: |
+          rm -f examples/counter/.zddv/generated/coverage-tests.svt
+          zddv --project examples/counter coverage-template --show 5
+          test ! -e examples/counter/.zddv/generated/coverage-tests.svt
+          zddv --project examples/counter coverage-template --show 5 --materialize
+          test -s examples/counter/.zddv/generated/coverage-tests.svt
+          grep -q "ZDDV GENERATED REVIEW TEMPLATE" examples/counter/.zddv/generated/coverage-tests.svt
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50
