@@ -21,10 +21,16 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
     assert trace["samples"][0]["AWLEN"] == 1
+    assert trace["samples"][0]["AWUSER"] == 0xA
     assert trace["samples"][1]["WDATA"] == 0x1111
+    assert trace["samples"][1]["WUSER"] == 0x1
     assert trace["samples"][2]["WLAST"] == 1
+    assert trace["samples"][3]["BUSER"] == 0x3
     assert trace["samples"][4]["ARID"] == 2
+    assert trace["samples"][4]["ARUSER"] == 0xB
+    assert trace["samples"][5]["RUSER"] == 0x4
     assert trace["samples"][6]["RLAST"] == 1
+    assert trace["samples"][6]["RUSER"] == 0x5
 
 
 def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
@@ -46,6 +52,9 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert write["aw_time"] == 5
     assert write["w_times"] == [15, 25]
     assert write["response_time"] == 35
+    assert write["awuser"] == 0xA
+    assert write["wuser"] == [0x1, 0x2]
+    assert write["buser"] == 0x3
 
     assert read["id"] == 2
     assert read["read_data"] == [0x3333, 0x4444]
@@ -53,6 +62,8 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert read["ar_time"] == 45
     assert read["read_times"] == [55, 65]
     assert read["response_time"] == 65
+    assert read["aruser"] == 0xB
+    assert read["ruser"] == [0x4, 0x5]
 
     assert Path(result["trace_path"]).is_file()
     assert Path(result["report_path"]).is_file()
