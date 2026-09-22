@@ -329,6 +329,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
 
     assert evidence["xml"]["status"] == "failed"
     assert evidence["xml"]["returncode"] == 2
+    assert evidence["xml"]["diagnostic"] == "unsupported fixture"
     assert evidence["zero_detail"]["status"] == "failed"
+    assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
