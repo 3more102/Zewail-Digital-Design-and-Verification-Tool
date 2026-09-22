@@ -435,6 +435,52 @@ def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
     assert list_coverage_score_snapshots(project, limit=5) == []
 
 
+def test_merge_vcs_coverage_keeps_dashboard_when_brief_report_fails(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage = (project.root / project.run_dir / "run-a" / "coverage.vdb").resolve()
+    coverage.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
+    )
+
+    def fake_run(command, cwd):
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        if "-show" in command:
+            return SimpleNamespace(
+                returncode=1,
+                stdout="brief report unavailable\n",
+            )
+
+        (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
+        report_dir.mkdir()
+        (report_dir / "dashboard.txt").write_text(
+            """Unified Coverage Report
+
+Total Coverage Summary
+SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
+97.74 99.03 97.75 98.53 100.00 99.01 98.63 91.19
+""",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_vcs_coverage(project)
+
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
+    assert result["snapshot_id"] is not None
+    assert result["brief_status"] == "failed"
+    assert result["brief_report_dir"] is None
+    assert "brief report unavailable" in result["brief_error"]
+
+
 def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
     tmp_path: Path,
     monkeypatch,
