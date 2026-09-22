@@ -161,6 +161,8 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-marker-analyze simulation.log
+zddv --project my_project uvm-marker-analyze --run <run-id>
 zddv --project my_project uvm-item-analyze item_trace.json
 zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
 zddv --project my_project uvm-item-history --limit 20
@@ -372,7 +374,9 @@ separately from Verilator's annotation threshold.
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
-- [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction
+- [x] Explicit sequence/item log-marker adapters with automatic Questa/VCS/Xcelium post-run ingestion
+- [x] Evidence-first UVM arbitration policy/fairness analysis from explicit contender traces
+- [ ] Reusable UVM-side instrumentation helpers for automatic marker/arbitration evidence emission
 
 ### APB Trace Analysis
 
@@ -713,6 +717,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [UVM run-level marker adapter](docs/uvm-marker-adapter.md)
 
 ## License
 
