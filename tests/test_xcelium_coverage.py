@@ -9,6 +9,7 @@ import pytest
 from zddv.cli import cmd_coverage_history, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    index_xcelium_imc_detail_sections,
     merge_coverage,
     merge_xcelium_coverage,
     parse_xcelium_imc_block_coverage,
@@ -79,6 +80,32 @@ Hit(Full)  Hit(Rise)  Hit(Fall)   Signal
 0          1          0           data[3]
 1          1          1           ready
 """
+
+
+def test_index_xcelium_imc_detail_sections_is_structural_only():
+    detail = IMC_BLOCK_DETAIL + "\n" + IMC_EXPRESSION_DETAIL + "\n" + IMC_TOGGLE_DETAIL
+
+    inventory = index_xcelium_imc_detail_sections(detail)
+
+    assert inventory["analysis"] == "xcelium_imc_detail_section_inventory"
+    assert inventory["section_count"] == 3
+    assert inventory["section_titles"] == [
+        "Block Coverage",
+        "Expression Coverage",
+        "Toggle Coverage",
+    ]
+    block = inventory["sections"][0]
+    assert block["start_line"] == 2
+    assert block["end_line"] >= block["start_line"]
+    assert {
+        (item["label"], item["value"])
+        for item in block["context"]
+    } >= {
+        ("Instance name", "tb_top.dut"),
+        ("Type name", "dut"),
+        ("File name", "/proj/rtl/dut.sv"),
+    }
+    assert "without inferring unknown IMC item-row schemas" in inventory["semantics"]
 
 
 def _project(tmp_path: Path, *, simulator: str = "xcelium") -> ProjectConfig:
@@ -178,6 +205,11 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert Path(result["detail"]).read_text(encoding="utf-8") == IMC_TOGGLE_DETAIL
     assert result["detail_status"] == "captured"
     assert result["detail_returncode"] == 0
+    assert result["detail_section_count"] == 1
+    assert result["detail_section_titles"] == ["Toggle Coverage"]
+    detail_index = json.loads(Path(result["detail_index"]).read_text(encoding="utf-8"))
+    assert detail_index["source_status"] == "captured"
+    assert detail_index["section_titles"] == ["Toggle Coverage"]
     assert result["toggle_detail_status"] == "normalized"
     assert result["toggle_detail_points"] == 3
     assert result["toggle_detail_holes"] == 2
@@ -210,6 +242,9 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert manifest["detail"] == result["detail"]
     assert manifest["detail_status"] == "captured"
     assert manifest["detail_returncode"] == 0
+    assert manifest["detail_index"] == result["detail_index"]
+    assert manifest["detail_section_count"] == 1
+    assert manifest["detail_section_titles"] == ["Toggle Coverage"]
     assert manifest["toggle_detail_status"] == "normalized"
     assert manifest["toggle_detail_points"] == 3
     assert manifest["toggle_detail_holes"] == 2
@@ -262,6 +297,11 @@ def test_merge_xcelium_coverage_retains_detail_tool_error_as_evidence(
     assert result["metrics_status"] == "normalized"
     assert result["detail_status"] == "tool-error"
     assert result["detail_returncode"] == 2
+    assert result["detail_section_count"] == 0
+    assert result["detail_section_titles"] == []
+    detail_index = json.loads(Path(result["detail_index"]).read_text(encoding="utf-8"))
+    assert detail_index["source_status"] == "tool-error"
+    assert detail_index["section_count"] == 0
     assert result["toggle_detail_status"] == "tool-error"
     assert result["toggle_detail_points"] == 0
     assert result["toggle_detail_holes"] == 0
