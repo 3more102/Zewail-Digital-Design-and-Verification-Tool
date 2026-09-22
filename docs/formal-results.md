@@ -64,15 +64,28 @@ The result-level status is retained from the backend. Property outcomes are also
 summarized independently so later storage/CLI layers can query both without
 reinterpreting vendor output.
 
-## File import
+## File import and history
 
 `analyze_formal_result_file(project, path)` writes a normalized record to
-`.zddv/formal/latest.json` by default. The record includes a snapshot ID, UTC
-creation time, project name, input path, execution evidence, property summaries,
-trace roles, and retained artifact paths.
+`.zddv/formal/latest.json` by default and persists the same evidence into
+`.zddv/results.db`. Snapshot rows retain request/execution metadata and summary
+counts; property rows retain status, interpretation, effective depth, message,
+and trace role/path without strengthening the source evidence.
+
+The CLI exposes the same path:
+
+```text
+zddv --project <project> formal-import formal-result.json
+zddv --project <project> formal-history
+zddv --project <project> formal-history --status FAIL --mode bmc
+```
+
+A failed formal result is still imported and persisted; `formal-import` returns
+a non-zero process status so CI can distinguish verification failure from a
+successful proof/check result.
 
 ## Current boundary
 
-This slice does not execute a formal engine, persist formal history in SQLite,
-parse counterexample waveforms, or claim formal coverage. Those remain separate
-v0.7 milestones.
+This slice does not execute a formal engine, parse counterexample waveforms, or
+claim formal coverage. Tool-specific execution/result adapters and deeper
+counterexample normalization remain separate v0.7 milestones.
