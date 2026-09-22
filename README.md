@@ -168,6 +168,8 @@ zddv --project my_project uvm-item-log-analyze --run <run-id>
 zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
+zddv --project my_project uvm-sequence-log-analyze simulation.log
+zddv --project my_project uvm-sequence-log-analyze --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
@@ -371,7 +373,8 @@ separately from Verilator's annotation threshold.
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
-- [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction
+- [x] Explicit sequence/item log-marker adapters with automatic Questa/VCS/Xcelium run ingestion
+- [ ] Reusable UVM-side instrumentation helpers and arbitration priority/fairness reconstruction
 
 ### APB Trace Analysis
 
