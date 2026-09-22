@@ -78,8 +78,10 @@ class QuestaBackend(SimulatorBackend):
             "-sv",
             "-work",
             "work",
-            *[str(path) for path in sources],
         ]
+        if project.coverage:
+            compile_command.append("+cover=bcesft")
+        compile_command.extend(str(path) for path in sources)
 
         library_result = subprocess.run(
             library_command,
@@ -129,7 +131,7 @@ class QuestaBackend(SimulatorBackend):
             "sources": [str(path) for path in sources],
             "waveform": project.waveform,
             "coverage_requested": project.coverage,
-            "coverage_capture": "not_implemented",
+            "coverage_capture": "questa_ucdb" if project.coverage else "disabled",
             "library_command": library_command,
             "compile_command": compile_command,
             "returncode": returncode,
@@ -148,7 +150,13 @@ class QuestaBackend(SimulatorBackend):
             artifact=artifact,
         )
 
-    def _write_do_file(self, run_dir: Path, *, waveform: bool) -> Path:
+    def _write_do_file(
+        self,
+        run_dir: Path,
+        *,
+        waveform: bool,
+        coverage: bool,
+    ) -> Path:
         path = run_dir / "zddv_questa.do"
         lines = [
             "onerror {quit -code 2 -f}",
@@ -159,6 +167,8 @@ class QuestaBackend(SimulatorBackend):
                 "vcd file waveform.vcd",
                 "vcd add -r /*",
             ])
+        if coverage:
+            lines.append("coverage save -onexit coverage.ucdb")
         lines.append("run -all")
         if waveform:
             lines.append("vcd flush")
@@ -193,7 +203,11 @@ class QuestaBackend(SimulatorBackend):
 
         run_dir = (project.root / project.run_dir / run_id).resolve()
         run_dir.mkdir(parents=True, exist_ok=False)
-        do_file = self._write_do_file(run_dir, waveform=project.waveform)
+        do_file = self._write_do_file(
+            run_dir,
+            waveform=project.waveform,
+            coverage=project.coverage,
+        )
 
         command = [
             self._tool("vsim"),
@@ -203,6 +217,8 @@ class QuestaBackend(SimulatorBackend):
         ]
         if seed is not None:
             command.extend(["-sv_seed", str(seed)])
+        if project.coverage:
+            command.append("-coverage")
         if project.waveform:
             command.append("-voptargs=+acc")
         command.append(project.top)
@@ -249,6 +265,10 @@ class QuestaBackend(SimulatorBackend):
         if not waveform_path.exists():
             waveform_path = None
 
+        coverage_path = run_dir / "coverage.ucdb"
+        if not coverage_path.exists():
+            coverage_path = None
+
         status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
         simulator_version = self.version()
         record = {
@@ -269,8 +289,8 @@ class QuestaBackend(SimulatorBackend):
             "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform_path) if waveform_path else None,
-            "coverage": None,
-            "coverage_capture": "not_implemented",
+            "coverage": str(coverage_path) if coverage_path else None,
+            "coverage_capture": "questa_ucdb" if project.coverage else "disabled",
             "build_artifact": str(work_library),
         }
         (run_dir / "run.json").write_text(
@@ -300,7 +320,7 @@ class QuestaBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform_path,
-            coverage_path=None,
+            coverage_path=coverage_path,
             test_name=test_name,
             seed=seed,
         )
