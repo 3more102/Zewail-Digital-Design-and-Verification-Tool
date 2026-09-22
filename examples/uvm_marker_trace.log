@@ -1,0 +1,10 @@
+# Explicit vendor-neutral ZDDV UVM marker example
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_CREATED","time":"0ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_PRE_START","time":"10ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_BODY","time":"20ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_ENDED","time":"30ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_POST_START","time":"40ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_FINISHED","time":"50ns"}
+# ZDDV_UVM_ITEM {"item_id":"item-3","event":"GRANT","sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","item":"req","transaction_id":3,"time":"60ns"}
+ZDDV_UVM_ITEM {"item_id":"item-3","event":"REQUEST","sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","item":"req","transaction_id":3,"time":"70ns"}
+ZDDV_UVM_ITEM {"item_id":"item-3","event":"ITEM_DONE","sequence_id":"seq-7","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","item":"req","transaction_id":3,"time":"80ns"}
