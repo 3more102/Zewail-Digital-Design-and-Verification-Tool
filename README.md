@@ -13,6 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, bundled UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, retained machine-readable detailed XML evidence, and statement/branch item normalization for shared `coverage-holes` reporting
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -71,6 +72,7 @@ cd Zewail-Digital-Design-and-Verification-Tool
 python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
+zddv doctor --simulator vcs
 ```
 
 Run the included counter example:
@@ -108,6 +110,7 @@ zddv --project my_project add tb "tb/*.sv"
 
 zddv --project my_project config simulator verilator
 # or: zddv --project my_project config simulator questa
+# or: zddv --project my_project config simulator vcs
 zddv --project my_project config top tb_top
 
 zddv doctor
@@ -261,7 +264,7 @@ CLI / future GUI
        │
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary/XML + functional bins + statement/branch holes
-       ├── VCS        ← planned
+       ├── VCS        ← build/run foundation implemented; native coverage pending
        └── Xcelium    ← planned
 ```
 
