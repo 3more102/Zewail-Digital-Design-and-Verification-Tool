@@ -74,6 +74,7 @@ semantics, structural CDC signoff, and specification-complete UCIe checking rema
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checking.
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency.
+- [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checking.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
