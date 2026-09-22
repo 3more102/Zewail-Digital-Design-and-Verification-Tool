@@ -13,6 +13,7 @@ from zddv.coverage import (
     merge_xcelium_coverage,
     parse_xcelium_imc_block_coverage,
     parse_xcelium_imc_expression_coverage,
+    parse_xcelium_imc_fsm_coverage,
     parse_xcelium_imc_summary,
     parse_xcelium_imc_toggle_coverage_points,
 )
@@ -62,6 +63,36 @@ index | hit | rval | <1> <2> <3>
 1.1.2 | 0 | 0 | 0 - 0
 1.1.3 | IGN | 1 | 1 1 -
 """
+
+IMC_FSM_DETAIL = """IMC(64): test build
+== tb_top.dut
+Fsm Detail Report
+State register: state_q
+
+State Coverage
+State Encoding Count
+IDLE 00 5
+RUN 01 0
+ERROR 10 3
+
+Transition Coverage
+P-State N-State Count
+IDLE RUN 4
+      ERROR 0
+RUN IDLE 2
+
+Reset States
+IDLE 00 1
+
+Arc Coverage
+IDLE ERROR 0
+
+== tb_top.other
+Fsm Detail Report
+State Coverage
+IDLE 0 0
+"""
+
 
 IMC_TOGGLE_DETAIL = """IMC(64): test build
 Coverage Report: Toggle Coverage
@@ -306,6 +337,37 @@ def test_parse_xcelium_imc_expression_truth_rows():
     assert all(point["truth_row"] != "1.1.3" for point in points)
 
 
+def test_parse_xcelium_imc_fsm_detail_normalizes_explicit_rows():
+    points = parse_xcelium_imc_fsm_coverage(IMC_FSM_DETAIL)
+
+    assert len(points) == 6
+    assert sum(not point["hit"] for point in points) == 2
+
+    by_name = {point["name"]: point for point in points}
+    state = by_name["tb_top.dut|state_q:state:RUN"]
+    assert state["fsm_id"] == "state_q"
+    assert state["fsm_kind"] == "state"
+    assert state["state"] == "RUN"
+    assert state["count"] == 0
+    assert state["hit"] is False
+    assert state["detail"] == "encoding=01"
+
+    transition = by_name[
+        "tb_top.dut|state_q:transition:IDLE -> ERROR"
+    ]
+    assert transition["fsm_kind"] == "transition"
+    assert transition["transition"] == "IDLE -> ERROR"
+    assert transition["count"] == 0
+    assert transition["hit"] is False
+
+    assert not any(point["scope"] == "tb_top.other" for point in points)
+    assert not any(
+        point.get("transition") == "IDLE -> ERROR"
+        and point["count"] != 0
+        for point in points
+    )
+
+
 def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
     points = parse_xcelium_imc_toggle_coverage_points(IMC_TOGGLE_DETAIL)
 
@@ -327,6 +389,7 @@ def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
     [
         ("block", IMC_BLOCK_DETAIL),
         ("expression", IMC_EXPRESSION_DETAIL),
+        ("fsm", IMC_FSM_DETAIL),
     ],
 )
 def test_xcelium_coverage_holes_cli_supports_verified_item_tables(
@@ -375,7 +438,7 @@ def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
     )
     detail_path.parent.mkdir(parents=True)
     detail_path.write_text(
-        "\n".join((IMC_BLOCK_DETAIL, IMC_EXPRESSION_DETAIL, IMC_TOGGLE_DETAIL)),
+        "\n".join((IMC_BLOCK_DETAIL, IMC_EXPRESSION_DETAIL, IMC_FSM_DETAIL, IMC_TOGGLE_DETAIL)),
         encoding="utf-8",
     )
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
@@ -395,10 +458,11 @@ def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
             encoding="utf-8"
         )
     )
-    assert payload["total_holes"] == 4
+    assert payload["total_holes"] == 6
     assert payload["by_type"] == {
         "block": 1,
         "expression": 1,
+        "fsm": 2,
         "toggle": 2,
     }
 
@@ -411,13 +475,13 @@ def test_xcelium_coverage_holes_cli_rejects_unverified_metric(
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
     with pytest.raises(
         RuntimeError,
-        match="supports --type block, expression, or toggle",
+        match="supports --type block, expression, fsm, or toggle",
     ):
         cmd_coverage_holes(
             SimpleNamespace(
                 project=str(project.root),
                 output=".zddv/coverage/holes.json",
-                point_type="fsm",
+                point_type="functional",
                 limit=20,
                 show=20,
             )
