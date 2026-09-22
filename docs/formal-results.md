@@ -104,8 +104,18 @@ coordinates, source label, and the SHA-256 of the input file. Signal values stay
 as textual logic tokens; ZDDV does not invent radix, signedness, or vendor trace
 semantics.
 
+## Native SymbiYosys property evidence
+
+Direct `formal-bmc` execution queries the completed SymbiYosys run directory
+through SBY's machine-readable `--statusfmt jsonl --latest` interface. ZDDV
+normalizes explicit assertion name, status, depth, trace path, engine, and source
+location evidence from those rows. Raw status output is retained beside the run.
+
+The current backend still executes BMC safety checks only. Non-assert property
+kinds are not reinterpreted, malformed status output is retained without creating
+property claims, and the result remains bounded to the requested finite depth.
+
 ## Current boundary
 
-This slice does not parse vendor-native counterexample waveforms, provide
-tool-specific result ingestion beyond the explicit bounded SymbiYosys execution
-adapter, or claim formal coverage. Those remain separate v0.7 milestones.
+This slice does not parse vendor-native counterexample waveform contents or
+claim formal coverage. Additional formal modes/tools remain separate v0.7 work.
