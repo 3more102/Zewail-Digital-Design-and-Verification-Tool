@@ -383,6 +383,12 @@ and the requirement that each AXI burst remain inside one 4KB address region.
 
 The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable, Modifiable, Read-Allocate, and Write-Allocate attributes into each reconstructed transaction.
 
+Optional AWUSER, ARUSER, WUSER, RUSER, and BUSER values are preserved when
+present and participate in the same VALID/READY payload-stability checks as the
+rest of their channel payload. Their meaning and width are implementation-defined,
+so ZDDV does not invent USER semantic or width legality without explicit interface
+metadata.
+
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
 observed matching exclusive read before its write starts, matching observable
