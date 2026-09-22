@@ -1,0 +1,26 @@
+$date
+  ZDDV formal VCD example
+$end
+$version
+  ZDDV
+$end
+$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 1 " req $end
+$var wire 2 # state [1:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+$dumpvars
+0!
+1"
+b00 #
+$end
+#5
+1!
+b01 #
+#10
+0!
+0"
+b1x #
