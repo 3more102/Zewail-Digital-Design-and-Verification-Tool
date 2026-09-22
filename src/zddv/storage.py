@@ -278,6 +278,58 @@ CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_item
 CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_event
     ON uvm_item_handshake_events(event);
 
+CREATE TABLE IF NOT EXISTS uvm_arbitration_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    decision_count INTEGER NOT NULL,
+    request_count INTEGER NOT NULL,
+    grant_count INTEGER NOT NULL,
+    pending_count INTEGER NOT NULL,
+    violation_count INTEGER NOT NULL,
+    fairness_violation_count INTEGER NOT NULL,
+    max_wait_decisions INTEGER NOT NULL,
+    fairness_bound INTEGER,
+    run_id TEXT,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_created
+    ON uvm_arbitration_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_status
+    ON uvm_arbitration_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_run
+    ON uvm_arbitration_snapshots(run_id);
+
+CREATE TABLE IF NOT EXISTS uvm_arbitration_requests (
+    snapshot_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    sequence_id TEXT NOT NULL,
+    sequence_name TEXT NOT NULL,
+    item_id TEXT,
+    priority INTEGER,
+    sequencer TEXT NOT NULL,
+    exposure_count INTEGER NOT NULL,
+    lost_decisions INTEGER NOT NULL,
+    granted INTEGER NOT NULL,
+    grant_decision_index INTEGER,
+    grant_decision_id TEXT,
+    pending INTEGER NOT NULL,
+    PRIMARY KEY (snapshot_id, request_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_requests_sequence
+    ON uvm_arbitration_requests(snapshot_id, sequence_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_requests_pending
+    ON uvm_arbitration_requests(pending);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -345,18 +397,6 @@ CREATE TABLE IF NOT EXISTS coverage_score_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_score_created_at
     ON coverage_score_snapshots(created_at DESC);
-
-CREATE TABLE IF NOT EXISTS coverage_score_metric_counts (
-    snapshot_id TEXT NOT NULL,
-    metric TEXT NOT NULL,
-    covered INTEGER NOT NULL,
-    total INTEGER NOT NULL,
-    hit_rate REAL,
-    PRIMARY KEY (snapshot_id, metric)
-);
-
-CREATE INDEX IF NOT EXISTS idx_coverage_score_metric_counts_snapshot
-    ON coverage_score_metric_counts(snapshot_id);
 """
 
 
@@ -1242,6 +1282,144 @@ def list_uvm_item_handshake_events(
     return result
 
 
+def record_uvm_arbitration_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_arbitration_snapshots (
+                snapshot_id, created_at, project, source, status,
+                decision_count, request_count, grant_count, pending_count,
+                violation_count, fairness_violation_count, max_wait_decisions,
+                fairness_bound, run_id, input_path, normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record["status"],
+                int(summary["decisions"]),
+                int(summary["requests"]),
+                int(summary["grants"]),
+                int(summary["pending"]),
+                int(summary["violations"]),
+                int(summary["fairness_violations"]),
+                int(summary["max_wait_decisions"]),
+                record.get("fairness_bound"),
+                record.get("run_id"),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_arbitration_requests WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_arbitration_requests (
+                snapshot_id, request_id, sequence_id, sequence_name,
+                item_id, priority, sequencer, exposure_count, lost_decisions,
+                granted, grant_decision_index, grant_decision_id, pending
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    item["request_id"],
+                    item["sequence_id"],
+                    item["sequence"],
+                    item.get("item_id"),
+                    item.get("priority"),
+                    item["sequencer"],
+                    int(item["exposure_count"]),
+                    int(item["lost_decisions"]),
+                    int(bool(item["granted"])),
+                    item.get("grant_decision_index"),
+                    item.get("grant_decision_id"),
+                    int(bool(item["pending"])),
+                )
+                for item in record["requests"]
+            ],
+        )
+    return path
+
+
+def list_uvm_arbitration_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM arbitration status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, status,
+               decision_count, request_count, grant_count, pending_count,
+               violation_count, fairness_violation_count, max_wait_decisions,
+               fairness_bound, run_id, input_path, normalized_path, report_path
+        FROM uvm_arbitration_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_arbitration_requests(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    pending: bool | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT snapshot_id, request_id, sequence_id, sequence_name,
+               item_id, priority, sequencer, exposure_count, lost_decisions,
+               granted, grant_decision_index, grant_decision_id, pending
+        FROM uvm_arbitration_requests
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if pending is not None:
+        query += " AND pending = ?"
+        params.append(int(pending))
+    query += " ORDER BY request_id"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["granted"] = bool(item["granted"])
+        item["pending"] = bool(item["pending"])
+        result.append(item)
+    return result
+
+
 def record_functional_coverage_snapshot(
     project: ProjectConfig,
     record: dict[str, Any],
@@ -1386,7 +1564,7 @@ def record_coverage_score_snapshot(
     project: ProjectConfig,
     record: dict[str, Any],
 ) -> Path:
-    """Persist percentage-native coverage scores plus explicitly reported counts."""
+    """Persist percentage-native coverage scores without inventing point counts."""
     path = database_path(project)
     with _connect(project) as db:
         db.execute(
@@ -1409,34 +1587,6 @@ def record_coverage_score_snapshot(
                 record["metrics_path"],
             ),
         )
-        db.execute(
-            "DELETE FROM coverage_score_metric_counts WHERE snapshot_id = ?",
-            (record["snapshot_id"],),
-        )
-        for metric, values in sorted(
-            (record.get("by_metric_counts") or {}).items()
-        ):
-            covered = int(values["covered"])
-            total = int(values["total"])
-            if covered < 0 or total < 0 or covered > total:
-                raise ValueError(
-                    f"invalid coverage count for {metric}: {covered}/{total}"
-                )
-            hit_rate = values.get("hit_rate")
-            db.execute(
-                """
-                INSERT INTO coverage_score_metric_counts (
-                    snapshot_id, metric, covered, total, hit_rate
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    record["snapshot_id"],
-                    str(metric),
-                    covered,
-                    total,
-                    None if hit_rate is None else float(hit_rate),
-                ),
-            )
     return path
 
 
@@ -1460,36 +1610,10 @@ def list_coverage_score_snapshots(
             (limit,),
         ).fetchall()
 
-        counts_by_snapshot: dict[str, dict[str, dict[str, int | float]]] = {}
-        for row in rows:
-            snapshot_id = str(row["snapshot_id"])
-            count_rows = db.execute(
-                """
-                SELECT metric, covered, total, hit_rate
-                FROM coverage_score_metric_counts
-                WHERE snapshot_id = ?
-                ORDER BY metric
-                """,
-                (snapshot_id,),
-            ).fetchall()
-            counts: dict[str, dict[str, int | float]] = {}
-            for count_row in count_rows:
-                values: dict[str, int | float] = {
-                    "covered": int(count_row["covered"]),
-                    "total": int(count_row["total"]),
-                }
-                if count_row["hit_rate"] is not None:
-                    values["hit_rate"] = float(count_row["hit_rate"])
-                counts[str(count_row["metric"])] = values
-            counts_by_snapshot[snapshot_id] = counts
-
     result: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
         item["by_metric"] = json.loads(item.pop("by_metric_json"))
-        item["by_metric_counts"] = counts_by_snapshot.get(
-            str(item["snapshot_id"]), {}
-        )
         result.append(item)
     return result
 
