@@ -1472,6 +1472,207 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
     }
 
 
+_XCELIUM_IMC_SUMMARY_HEADER = re.compile(
+    r"^\s*name\s+Overall\*?\s+Average\s+Overall\*?\s+Covered(?:\s|$)",
+    re.IGNORECASE,
+)
+_XCELIUM_IMC_SUMMARY_ROW = re.compile(
+    r"^\s*(?P<scope>\S+)\s+"
+    r"(?P<average>\d+(?:\.\d+)?)%\s+"
+    r"(?P<covered>\d+(?:\.\d+)?)%(?:\s|$)",
+)
+
+
+def parse_xcelium_imc_summary(text: str) -> dict:
+    """Normalize the explicitly labelled top-level IMC summary scores.
+
+    The IMC text report labels its first two score columns as Overall Average
+    and Overall Covered. ZDDV retains both and uses Overall Covered as the
+    percentage-native history score. More detailed metric columns remain raw
+    report evidence until their layouts are normalized independently.
+    """
+    lines = text.splitlines()
+    header_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _XCELIUM_IMC_SUMMARY_HEADER.match(line)
+        ),
+        None,
+    )
+    if header_index is None:
+        raise ValueError("IMC summary header with Overall Average/Covered was not found")
+
+    for raw_line in lines[header_index + 1 :]:
+        match = _XCELIUM_IMC_SUMMARY_ROW.match(raw_line)
+        if match is None:
+            continue
+        average = float(match.group("average"))
+        covered = float(match.group("covered"))
+        if not 0.0 <= average <= 100.0 or not 0.0 <= covered <= 100.0:
+            raise ValueError("IMC overall coverage score is outside 0..100")
+        return {
+            "tool_total_coverage": covered,
+            "by_metric": {
+                "overall_average": average,
+                "overall_covered": covered,
+            },
+            "scope": match.group("scope"),
+            "metric_semantics": "imc-summary-overall",
+        }
+
+    raise ValueError("IMC summary data row could not be parsed")
+
+
+def merge_xcelium_coverage(project: ProjectConfig) -> dict:
+    """Merge native Xcelium coverage runs and normalize IMC overall scores."""
+    tool = shutil.which("imc")
+    if tool is None:
+        raise RuntimeError(
+            "Cadence IMC was not found in PATH. Install/configure a compatible "
+            "IMC version and retry."
+        )
+
+    run_root = (project.root / project.run_dir).resolve()
+    coverage_dirs = sorted(
+        path
+        for path in run_root.glob("*/cov_work/scope/*")
+        if path.is_dir()
+        and any(path.glob("*.ucd"))
+        and any(path.glob("*.ucm"))
+    )
+    if not coverage_dirs:
+        raise RuntimeError(
+            f"No Xcelium coverage run databases found under {run_root}. "
+            "Run coverage-enabled Xcelium simulations first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage" / "xcelium").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    generated_cov_work = out_dir / "cov_work"
+    if generated_cov_work.exists():
+        shutil.rmtree(generated_cov_work)
+
+    runfile_path = out_dir / "runs.txt"
+    summary_path = out_dir / "summary.txt"
+    metrics_path = out_dir / "metrics.json"
+    inputs = [str(path) for path in coverage_dirs]
+    ucd_inputs = [
+        str(ucd.resolve())
+        for coverage_dir in coverage_dirs
+        for ucd in sorted(coverage_dir.glob("*.ucd"))
+    ]
+    runfile_path.write_text("\n".join(ucd_inputs) + "\n", encoding="utf-8")
+
+    merge_script = (
+        f"merge -overwrite -runfile {{{runfile_path}}} "
+        "-out merged -metrics all; exit"
+    )
+    merge_command = [tool, "-execcmd", merge_script]
+    merge = _run(merge_command, out_dir)
+    merged_path = out_dir / "cov_work" / "scope" / "merged"
+    merged_has_ucd = (
+        merged_path.is_dir() and any(merged_path.glob("*.ucd"))
+    )
+    merged_has_ucm = (
+        merged_path.is_dir() and any(merged_path.glob("*.ucm"))
+    )
+    if merge.returncode != 0 or not (merged_has_ucd and merged_has_ucm):
+        raise RuntimeError(
+            "Xcelium IMC coverage merge failed. Ensure IMC is compatible with "
+            "the Xcelium coverage database version:\n"
+            + "$ "
+            + " ".join(merge_command)
+            + "\n"
+            + (merge.stdout or "").strip()
+        )
+
+    report_command = [
+        tool,
+        "-load",
+        str(merged_path),
+        "-execcmd",
+        "report -summary -cumulative on -inst -local off; exit",
+    ]
+    report = _run(report_command, out_dir)
+    summary_path.write_text(report.stdout or "", encoding="utf-8")
+    if report.returncode != 0:
+        raise RuntimeError(
+            "Xcelium IMC coverage report failed. Ensure IMC is compatible with "
+            f"the generated coverage database. See {summary_path}"
+        )
+
+    metrics: dict | None = None
+    metrics_status = "summary-unparsed"
+    metrics_error: str | None = None
+    snapshot_id: str | None = None
+    try:
+        metrics = parse_xcelium_imc_summary(report.stdout or "")
+        metrics_status = "normalized"
+    except ValueError as exc:
+        metrics_error = str(exc)
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    if metrics is not None:
+        snapshot_id = (
+            datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
+            + "-"
+            + uuid.uuid4().hex[:8]
+        )
+
+    payload = {
+        "created_at": created_at,
+        "project": project.name,
+        "simulator": project.simulator,
+        "status": "merged-report-captured",
+        "metrics_status": metrics_status,
+        "input_count": len(inputs),
+        "inputs": inputs,
+        "ucd_inputs": ucd_inputs,
+        "merged": str(merged_path),
+        "runfile": str(runfile_path),
+        "summary": str(summary_path),
+        "merge_command": merge_command,
+        "report_command": report_command,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
+    }
+    if metrics_error is not None:
+        payload["metrics_error"] = metrics_error
+    metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    if metrics is not None and snapshot_id is not None:
+        record_coverage_score_snapshot(
+            project,
+            {
+                "snapshot_id": snapshot_id,
+                "created_at": created_at,
+                "project": project.name,
+                "simulator": project.simulator,
+                "input_count": len(inputs),
+                "score": metrics["tool_total_coverage"],
+                "by_metric": metrics["by_metric"],
+                "by_metric_counts": {},
+                "merged": str(merged_path),
+                "summary": str(summary_path),
+                "metrics_path": str(metrics_path),
+            },
+        )
+
+    return {
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+        "metrics_path": str(metrics_path),
+        "report": report.stdout or "",
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
+        "metrics_status": metrics_status,
+        "metrics_error": metrics_error,
+        "runfile": str(runfile_path),
+    }
+
+
 
 def merge_coverage(project: ProjectConfig) -> dict:
     simulator = project.simulator.strip().lower()
@@ -1481,6 +1682,8 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_questa_coverage(project)
     if simulator == "vcs":
         return merge_vcs_coverage(project)
+    if simulator == "xcelium":
+        return merge_xcelium_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
     )
