@@ -728,13 +728,13 @@ def analyze_uvm_arbitration_item_file(
     if not input_path.is_file():
         raise FileNotFoundError(input_path)
 
-    item_source = source or (
-        "uvm-item-log-marker" if log_input else "uvm-item-json"
-    )
     item_report = (
-        parse_uvm_item_log(input_path, source=item_source)
+        parse_uvm_item_log(
+            input_path,
+            source=source or "uvm-item-log-marker",
+        )
         if log_input
-        else parse_uvm_item_file(input_path, source=item_source)
+        else parse_uvm_item_file(input_path, source=source)
     )
     derived = derive_uvm_item_arbitration_data(
         item_report,
