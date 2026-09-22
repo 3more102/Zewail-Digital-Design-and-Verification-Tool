@@ -10,6 +10,7 @@ from zddv.formal.results import (
     analyze_formal_result_file,
     formal_result_from_data,
     formal_result_to_record,
+    persist_formal_result,
 )
 
 
@@ -203,3 +204,108 @@ def test_analyze_formal_result_file_writes_evidence_record(tmp_path: Path):
     assert persisted["project"] == project.name
     assert persisted["input_path"] == str(input_path.resolve())
     assert persisted["summary"]["counterexamples"] == 1
+
+
+def _write_trace_vcd(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! bad $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+#5
+1!
+""",
+        encoding="utf-8",
+    )
+
+
+def test_persist_formal_result_auto_normalizes_vcd_property_trace(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "runs" / "run-1"
+    trace_path = run_dir / "artifacts" / "p_failure.vcd"
+    _write_trace_vcd(trace_path)
+    log_path = run_dir / "formal.log"
+    log_path.write_text("formal evidence\n", encoding="utf-8")
+
+    payload = _payload()
+    payload["run_dir"] = str(run_dir)
+    payload["log_path"] = str(log_path)
+    payload["properties"] = [
+        {
+            "name": "top.p_failure",
+            "kind": "assert",
+            "status": "FAIL",
+            "depth": 7,
+            "trace_path": "artifacts/p_failure.vcd",
+        }
+    ]
+    result = formal_result_from_data(payload)
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=log_path,
+        output=run_dir / "zddv-formal-result.json",
+    )
+
+    assert record["trace_normalization"] == {
+        "policy": "auto-vcd-v1",
+        "max_steps": 100000,
+        "eligible_vcd_traces": 1,
+        "normalized": 1,
+        "errors": 0,
+        "unsupported": 0,
+    }
+    normalization = record["properties"][0]["trace"]["normalization"]
+    assert normalization["status"] == "NORMALIZED"
+    normalized_path = Path(normalization["path"])
+    assert normalized_path.is_file()
+    normalized = json.loads(normalized_path.read_text(encoding="utf-8"))
+    assert normalized["property"] == "top.p_failure"
+    assert normalized["trace_kind"] == "counterexample"
+    assert normalized["summary"]["steps"] == 2
+    assert normalization["input_sha256"] == normalized["input_sha256"]
+
+
+def test_persist_formal_result_keeps_vcd_normalization_error_non_fatal(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "runs" / "run-bad"
+    trace_path = run_dir / "artifacts" / "bad.vcd"
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text("$timescale 1 ns $end\n", encoding="utf-8")
+    log_path = run_dir / "formal.log"
+    log_path.write_text("formal evidence\n", encoding="utf-8")
+
+    payload = _payload(mode="cover", depth=12)
+    payload["run_dir"] = str(run_dir)
+    payload["log_path"] = str(log_path)
+    payload["properties"] = [
+        {
+            "name": "top.c_seen",
+            "kind": "cover",
+            "status": "COVERED",
+            "depth": 5,
+            "trace_path": "artifacts/bad.vcd",
+        }
+    ]
+    result = formal_result_from_data(payload)
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=log_path,
+        output=run_dir / "zddv-formal-result.json",
+    )
+
+    assert record["status"] == "FAIL"
+    assert record["trace_normalization"]["eligible_vcd_traces"] == 1
+    assert record["trace_normalization"]["normalized"] == 0
+    assert record["trace_normalization"]["errors"] == 1
+    normalization = record["properties"][0]["trace"]["normalization"]
+    assert normalization["status"] == "ERROR"
+    assert "VCD" in normalization["error"]
+    assert Path(record["report_path"]).is_file()
