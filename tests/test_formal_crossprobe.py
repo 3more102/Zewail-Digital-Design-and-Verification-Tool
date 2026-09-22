@@ -112,7 +112,7 @@ def test_formal_trace_crossprobe_requires_explicit_bound_for_large_trace(tmp_pat
     project = _project(tmp_path)
     normalized = _normalized_trace(project)
 
-    with pytest.raises(RuntimeError, match="max_signals=1"):
+    with pytest.raises(RuntimeError, match="max-signals above 1"):
         write_formal_trace_crossprobe(
             project,
             normalized["normalized_path"],
