@@ -109,6 +109,42 @@ def test_explicit_emit_dir_writes_disabled_review_scaffolds(tmp_path: Path):
     assert all("REVIEW REQUIRED" in path.read_text(encoding="utf-8") for path in paths)
 
 
+def test_emit_refuses_overwrite_without_explicit_force(tmp_path: Path):
+    source = tmp_path / "test-suggestions.json"
+    output = tmp_path / "review-bundle.json"
+    emit_dir = tmp_path / "generated"
+    source.write_text(json.dumps(_suggestions()), encoding="utf-8")
+
+    first = write_reviewable_verification_proposals(
+        source,
+        output,
+        emit_dir=emit_dir,
+        limit=1,
+    )
+    edited = Path(first["emitted_artifacts"][0]["path"])
+    edited.write_text("// engineer review edit\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="--force"):
+        write_reviewable_verification_proposals(
+            source,
+            output,
+            emit_dir=emit_dir,
+            limit=1,
+        )
+
+    assert edited.read_text(encoding="utf-8") == "// engineer review edit\n"
+
+    forced = write_reviewable_verification_proposals(
+        source,
+        output,
+        emit_dir=emit_dir,
+        limit=1,
+        force=True,
+    )
+    assert forced["emission_opt_in"] is True
+    assert "REVIEW REQUIRED" in edited.read_text(encoding="utf-8")
+
+
 def test_invalid_limit_is_rejected():
     with pytest.raises(ValueError, match="limit must be >= 1"):
         build_reviewable_verification_proposals(_suggestions(), limit=0)
