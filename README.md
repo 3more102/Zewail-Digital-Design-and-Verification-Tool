@@ -705,14 +705,15 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [x] VCS documented module-level line/branch covered/total count ingestion from `modinfo.txt`
-- [ ] VCS remaining condition/toggle/FSM module counts and instance-level code-metric aggregation
+- [x] VCS documented instance-level line/condition/toggle/branch aggregation plus separate FSM state/transition/sequence counts
+- [ ] VCS remaining condition/toggle/FSM module-level counts
 - [x] Xcelium execution adapter foundation
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
 - [x] Xcelium Overall Average/Covered metric normalization into percentage-native coverage history
 - [x] Xcelium verified block/expression/toggle item-level coverage-hole normalization
 - [ ] Xcelium FSM/functional item-level normalization
-- [ ] Formal adapter API
+- [x] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
