@@ -98,9 +98,12 @@ when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
 evidence: XML output for machine-readable follow-up plus a `-zeros -details`
-report for zero-hit source/file-line evidence. These artifacts are evidence only
-and are not yet normalized into code `coverage-holes`. Questa's weighted total
-coverage remains a separate simulator-reported value.
+report for zero-hit source/file-line evidence. ZDDV conservatively normalizes
+statement and branch zero-hit rows from that text report into
+`.zddv/coverage/code-items.json`, enabling shared code `coverage-holes`
+reporting for those two types only. Condition, expression, toggle, and FSM
+item-level normalization remain pending. Questa's weighted total coverage
+remains a separate simulator-reported value.
 
 ## Current CLI
 
@@ -657,7 +660,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
+- [x] Questa statement/branch zero-hit normalization and coverage-hole reporting
+- [ ] Questa condition/expression/toggle/FSM item-level normalization
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
