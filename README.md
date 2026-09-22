@@ -302,6 +302,7 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 burst VCD waveform extraction
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checks
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency
+- [x] AXI4 reserved AxCACHE encoding checks and B/M/RA/WA attribute decoding
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checks
 - [x] Async-FIFO CDC normalized-event invariant analysis
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation
@@ -367,6 +368,8 @@ AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
 different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
 and the requirement that each AXI burst remain inside one 4KB address region.
+
+The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable, Modifiable, Read-Allocate, and Write-Allocate attributes into each reconstructed transaction.
 
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
