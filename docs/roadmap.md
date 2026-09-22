@@ -114,7 +114,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion.
 - [x] VCS documented module-level line/branch/condition/toggle covered/total count ingestion from `modinfo.txt`.
-- [ ] VCS remaining FSM module counts; instance-level code-metric aggregation is available from URG HTML detail reports.
+- [x] VCS instance-level line/condition/toggle/branch covered/total ingestion plus separate FSM state/transition/sequence counts from URG HTML detail reports.
+- [ ] VCS remaining FSM module-level count ingestion from `modinfo.txt`.
 - [x] Xcelium execution adapter foundation (xrun elaborate/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] Xcelium native per-run coverage database capture.
 - [ ] Xcelium multi-run IMC merge/report evidence and metric normalization.
