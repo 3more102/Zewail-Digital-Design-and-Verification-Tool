@@ -23,6 +23,7 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.generated_proposals import write_reviewable_verification_proposals
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -1197,6 +1198,46 @@ def cmd_coverage_suggest(args) -> int:
         print(f"    {suggestion['intent']}")
     print(f"Report: {result['path']}")
     return 0
+
+def cmd_coverage_scaffold(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    emit_dir = None
+    if args.emit_dir is not None:
+        emit_dir = Path(args.emit_dir)
+        if not emit_dir.is_absolute():
+            emit_dir = project.root / emit_dir
+
+    result = write_reviewable_verification_proposals(
+        source,
+        output,
+        limit=args.limit,
+        emit_dir=emit_dir,
+    )
+    print(
+        "REVIEWABLE VERIFICATION PROPOSALS: "
+        f"{result['proposal_count']} proposal(s)"
+    )
+    if result["emission_opt_in"]:
+        print(
+            f"Opt-in emission: {len(result['emitted_artifacts'])} disabled "
+            "scaffold artifact(s)"
+        )
+    else:
+        print("Code emission: disabled (use --emit-dir to opt in)")
+    print("Automatic source modification: disabled")
+    print("Automatic execution: disabled")
+    print(f"Report: {result['path']}")
+    return 0
+
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
@@ -2847,6 +2888,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewable suggestion JSON report path",
     )
     p_coverage_suggest.set_defaults(func=cmd_coverage_suggest)
+
+    p_coverage_scaffold = sub.add_parser(
+        "coverage-scaffold",
+        help="Build review-only test/assertion scaffolds from coverage suggestions",
+    )
+    p_coverage_scaffold.add_argument(
+        "--input",
+        default=".zddv/coverage/test-suggestions.json",
+        help="Coverage suggestion JSON report; run coverage-suggest first",
+    )
+    p_coverage_scaffold.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Maximum number of review proposals to include",
+    )
+    p_coverage_scaffold.add_argument(
+        "--emit-dir",
+        default=None,
+        help=(
+            "Explicit opt-in directory for .sv.disabled review scaffolds; "
+            "omitting this writes JSON only"
+        ),
+    )
+    p_coverage_scaffold.add_argument(
+        "--output",
+        default=".zddv/coverage/review-bundle.json",
+        help="Review-bundle JSON output path",
+    )
+    p_coverage_scaffold.set_defaults(func=cmd_coverage_scaffold)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
