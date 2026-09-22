@@ -73,13 +73,15 @@ class QuestaBackend(SimulatorBackend):
 
         log_path = build_dir / "build.log"
         library_command = [vlib, "work"]
-        compile_command = [
-            vlog,
+        compile_command = [vlog]
+        if project.coverage:
+            compile_command.append("+cover")
+        compile_command.extend([
             "-sv",
             "-work",
             "work",
             *[str(path) for path in sources],
-        ]
+        ])
 
         library_result = subprocess.run(
             library_command,
@@ -129,7 +131,7 @@ class QuestaBackend(SimulatorBackend):
             "sources": [str(path) for path in sources],
             "waveform": project.waveform,
             "coverage_requested": project.coverage,
-            "coverage_capture": "not_implemented",
+            "coverage_capture": "ucdb" if project.coverage else "disabled",
             "library_command": library_command,
             "compile_command": compile_command,
             "returncode": returncode,
@@ -148,7 +150,13 @@ class QuestaBackend(SimulatorBackend):
             artifact=artifact,
         )
 
-    def _write_do_file(self, run_dir: Path, *, waveform: bool) -> Path:
+    def _write_do_file(
+        self,
+        run_dir: Path,
+        *,
+        waveform: bool,
+        coverage: bool,
+    ) -> Path:
         path = run_dir / "zddv_questa.do"
         lines = [
             "onerror {quit -code 2 -f}",
@@ -162,6 +170,8 @@ class QuestaBackend(SimulatorBackend):
         lines.append("run -all")
         if waveform:
             lines.append("vcd flush")
+        if coverage:
+            lines.append("coverage save coverage.ucdb")
         lines.append("quit -code 0 -f")
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return path
@@ -193,7 +203,11 @@ class QuestaBackend(SimulatorBackend):
 
         run_dir = (project.root / project.run_dir / run_id).resolve()
         run_dir.mkdir(parents=True, exist_ok=False)
-        do_file = self._write_do_file(run_dir, waveform=project.waveform)
+        do_file = self._write_do_file(
+            run_dir,
+            waveform=project.waveform,
+            coverage=project.coverage,
+        )
 
         command = [
             self._tool("vsim"),
@@ -205,6 +219,8 @@ class QuestaBackend(SimulatorBackend):
             command.extend(["-sv_seed", str(seed)])
         if project.waveform:
             command.append("-voptargs=+acc")
+        if project.coverage:
+            command.extend(["-onfinish", "stop", "-coverage"])
         command.append(project.top)
         runtime_plusargs = list(plusargs or [])
         if test_name:
@@ -249,6 +265,16 @@ class QuestaBackend(SimulatorBackend):
         if not waveform_path.exists():
             waveform_path = None
 
+        coverage_path = run_dir / "coverage.ucdb"
+        if not coverage_path.exists():
+            coverage_path = None
+
+        coverage_capture = (
+            "ucdb"
+            if coverage_path is not None
+            else ("missing" if project.coverage else "disabled")
+        )
+
         status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
         simulator_version = self.version()
         record = {
@@ -269,8 +295,9 @@ class QuestaBackend(SimulatorBackend):
             "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform_path) if waveform_path else None,
-            "coverage": None,
-            "coverage_capture": "not_implemented",
+            "coverage_requested": project.coverage,
+            "coverage": str(coverage_path) if coverage_path else None,
+            "coverage_capture": coverage_capture,
             "build_artifact": str(work_library),
         }
         (run_dir / "run.json").write_text(
@@ -300,7 +327,7 @@ class QuestaBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform_path,
-            coverage_path=None,
+            coverage_path=coverage_path,
             test_name=test_name,
             seed=seed,
         )

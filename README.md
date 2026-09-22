@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM result ingestion plus native Questa build/run orchestration on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion, native Questa build/run orchestration, and per-run UCDB capture on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -13,6 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
+- Questa per-run UCDB coverage capture when project coverage is enabled; UCDB merge/normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -84,6 +85,11 @@ zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 zddv --project examples/async_fifo coverage
 ```
+
+For a Questa project, setting `coverage = true` in `[run]` enables native
+coverage instrumentation and writes `coverage.ucdb` inside each run directory.
+The `zddv coverage` merge/report command remains Verilator-specific until UCDB
+normalization and merge support are added.
 
 ## Current CLI
 
@@ -633,7 +639,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 ### Phase 4 — Advanced Verification
 
-- [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM; coverage capture pending)
+- [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
+- [x] Questa native per-run UCDB coverage capture
+- [ ] Questa UCDB normalization/merge into ZDDV coverage metrics
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
