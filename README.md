@@ -66,6 +66,7 @@ Requirements:
 - Verilator available in `PATH` for the default backend
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 - Optional Synopsys VCS: `vcs` available in `PATH`
+- Optional Cadence Xcelium: `xrun` available in `PATH`
 
 Install ZDDV for development:
 
@@ -76,6 +77,7 @@ python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
 zddv doctor --simulator vcs
+zddv doctor --simulator xcelium
 ```
 
 Run the included counter example:
@@ -108,6 +110,8 @@ Condition/expression/toggle/FSM item normalization remains pending. Questa's
 weighted total coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. Code-metric object-count aggregation remains pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
+
+For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. Native Xcelium coverage collection/merge is intentionally not claimed yet; projects using this backend must keep `coverage = false` until that layer is implemented.
 
 ## Current CLI
 
@@ -280,7 +284,7 @@ CLI / future GUI
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
        ├── VCS        ← build/run + native VDB/URG coverage implemented
-       └── Xcelium    ← planned
+       └── Xcelium    ← xrun build/run foundation implemented
 ```
 
 The CLI and future GUI must use the same core APIs. Simulator-specific command construction stays inside simulator adapters.
