@@ -82,13 +82,16 @@ def test_vcs_build_uses_native_two_step_compile_contract(tmp_path, monkeypatch):
     assert manifest["coverage_capture"] == "disabled"
 
 
-def test_vcs_build_marks_native_coverage_as_unsupported(tmp_path, monkeypatch):
+
+def test_vcs_build_instruments_native_coverage(tmp_path, monkeypatch):
     project = _project(tmp_path, coverage=True)
     backend = VcsBackend()
     monkeypatch.setattr(backend, "version", lambda: "VCS test")
     monkeypatch.setattr(backend, "_tool", lambda: "vcs")
+    captured: dict[str, object] = {}
 
     def fake_run(command, **kwargs):
+        captured["command"] = list(command)
         executable = Path(command[command.index("-o") + 1])
         executable.write_text("simv fixture\n", encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="compile complete\n")
@@ -98,14 +101,16 @@ def test_vcs_build_marks_native_coverage_as_unsupported(tmp_path, monkeypatch):
     result = backend.build(project)
 
     assert result.passed is True
+    command = captured["command"]
+    assert command[command.index("-cm") + 1] == "line+cond+fsm+tgl+branch"
     manifest = loads(
         (project.root / ".zddv" / "build" / "build.json").read_text(
             encoding="utf-8"
         )
     )
     assert manifest["coverage_requested"] is True
-    assert manifest["coverage_capture"] == "unsupported"
-
+    assert manifest["coverage_capture"] == "instrumented"
+    assert manifest["coverage_metrics"] == "line+cond+fsm+tgl+branch"
 
 def test_vcs_run_preserves_seed_plusargs_waveform_and_uvm(tmp_path, monkeypatch):
     project = _project(tmp_path)
@@ -234,7 +239,45 @@ def test_vcs_timeout_is_recorded(tmp_path, monkeypatch):
     assert run_record["returncode"] == 124
 
 
-def test_vcs_run_marks_requested_coverage_unsupported(tmp_path, monkeypatch):
+
+def test_vcs_run_captures_requested_coverage_database(tmp_path, monkeypatch):
+    project = _project(tmp_path, waveform=False, coverage=True)
+    backend = VcsBackend()
+    executable = (project.root / ".zddv" / "build" / "simv").resolve()
+    executable.parent.mkdir(parents=True)
+    executable.write_text("simv fixture\n", encoding="utf-8")
+
+    monkeypatch.setattr(backend, "version", lambda: "VCS test")
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = list(command)
+        coverage_dir = Path(command[command.index("-cm_dir") + 1])
+        coverage_dir.mkdir(parents=True)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="simulation complete\n",
+        )
+
+    monkeypatch.setattr("zddv.simulator.vcs.subprocess.run", fake_run)
+
+    result = backend.run(project)
+
+    command = captured["command"]
+    assert command[command.index("-cm") + 1] == "line+cond+fsm+tgl+branch"
+    coverage_dir = Path(command[command.index("-cm_dir") + 1])
+    assert result.coverage_path == coverage_dir
+    assert coverage_dir.name == "coverage.vdb"
+
+    run_record = loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
+    assert run_record["coverage_requested"] is True
+    assert run_record["coverage"] == str(coverage_dir)
+    assert run_record["coverage_capture"] == "vdb"
+    assert run_record["coverage_metrics"] == "line+cond+fsm+tgl+branch"
+
+
+def test_vcs_run_does_not_claim_missing_coverage_database(tmp_path, monkeypatch):
     project = _project(tmp_path, waveform=False, coverage=True)
     backend = VcsBackend()
     executable = (project.root / ".zddv" / "build" / "simv").resolve()
@@ -254,10 +297,8 @@ def test_vcs_run_marks_requested_coverage_unsupported(tmp_path, monkeypatch):
 
     assert result.coverage_path is None
     run_record = loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
-    assert run_record["coverage_requested"] is True
     assert run_record["coverage"] is None
-    assert run_record["coverage_capture"] == "unsupported"
-
+    assert run_record["coverage_capture"] == "missing"
 
 def test_doctor_can_check_vcs_backend(monkeypatch, capsys):
     class FakeBackend:
