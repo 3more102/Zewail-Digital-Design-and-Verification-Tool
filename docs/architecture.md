@@ -284,8 +284,12 @@ contract. ZDDV therefore keeps sequence **state** lifecycle evidence in a separa
 normalized JSON model instead of inferring start/end semantics from report text. That layer
 validates the UVM state order, preserves sequence IDs, sequencer paths and parent IDs, permits
 partial traces, correlates snapshots with recorded runs, and persists state events in separate
-SQLite tables. Automatic instrumentation/adapters plus sequence-item arbitration remain future
-layers. See `docs/uvm-sequence-trace.md`.
+SQLite tables. ZDDV also accepts explicit normalized sequence-item handshake evidence (`GRANT`,
+`REQUEST`, `ITEM_DONE`, and optional `RESPONSE`), validates ordering and stable identity, correlates
+item snapshots with recorded runs, and persists both snapshot summaries and per-event evidence in
+SQLite with `uvm-item-history` filtering. Automatic instrumentation/adapters plus arbitration
+priority/fairness reconstruction remain future layers. See `docs/uvm-sequence-trace.md` and
+`docs/uvm-item-trace.md`.
 
 ## Next Architectural Steps
 
