@@ -2,6 +2,7 @@ from .base import BuildResult, RunResult, SimulatorBackend
 from .questa import QuestaBackend
 from .vcs import VcsBackend
 from .verilator import VerilatorBackend
+from .xcelium import XceliumBackend
 
 
 def get_backend(name: str) -> SimulatorBackend:
@@ -12,6 +13,8 @@ def get_backend(name: str) -> SimulatorBackend:
         return QuestaBackend()
     if normalized == "vcs":
         return VcsBackend()
+    if normalized in {"xcelium", "xrun"}:
+        return XceliumBackend()
     raise RuntimeError(f"Unsupported simulator backend: {name}")
 
 
@@ -22,5 +25,6 @@ __all__ = [
     "QuestaBackend",
     "VcsBackend",
     "VerilatorBackend",
+    "XceliumBackend",
     "get_backend",
 ]
