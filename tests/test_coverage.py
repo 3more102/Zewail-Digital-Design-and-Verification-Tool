@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+from zddv.config import ProjectConfig
 from zddv.coverage import (
     build_coverage_hole_report,
+    merge_questa_coverage,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
     parse_verilator_coverage,
@@ -129,3 +132,58 @@ APB_seq_item_pkg::APB_cg               95.00%      100.00%   Uncovered
     }
     assert payload["bins"][2]["coverpoint"] == "APB_cg::write_x_data"
     assert payload["bins"][2]["metadata"]["coverage_kind"] == "cross"
+
+
+
+def test_merge_questa_coverage_persists_code_and_functional_snapshots(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = ProjectConfig(
+        root=tmp_path,
+        name="demo",
+        top="tb_top",
+        simulator="questa",
+        run_dir=".zddv/runs",
+        coverage=True,
+    )
+    run_dir = tmp_path / ".zddv" / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.ucdb").write_text("run ucdb", encoding="utf-8")
+
+    summary_text = """Coverage Report Totals BY INSTANCES: Number of Instances 1
+    Enabled Coverage              Bins      Hits    Misses    Weight  Coverage
+    Statements                      10         8         2         1    80.00%
+    Branches                         4         3         1         1    75.00%
+"""
+    functional_text = """COVERGROUP COVERAGE:
+Covergroup                              Metric       Goal    Status
+tb::cg                                 50.00%      100.00%   Uncovered
+    Coverpoint cg::opcode              50.00%      100.00%   Uncovered
+        bin read                         3          1         Covered
+        bin write                        0          1         ZERO
+"""
+
+    monkeypatch.setattr("zddv.coverage.shutil.which", lambda name: "vcover")
+
+    def fake_run(command, cwd):
+        if command[1] == "merge":
+            Path(command[3]).write_text("merged ucdb", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge ok\n")
+        if "-summary" in command:
+            return SimpleNamespace(returncode=0, stdout=summary_text)
+        if "-cvg" in command:
+            return SimpleNamespace(returncode=0, stdout=functional_text)
+        raise AssertionError(command)
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_questa_coverage(project)
+
+    assert result["metrics"]["total_points"] == 14
+    assert result["metrics"]["hit_points"] == 11
+    assert result["functional_bins"] == 2
+    assert result["functional_snapshot_id"] is not None
+    assert Path(result["merged"]).exists()
+    assert Path(result["metrics_path"]).exists()
+    assert (tmp_path / ".zddv" / "functional_coverage" / "latest.json").exists()
