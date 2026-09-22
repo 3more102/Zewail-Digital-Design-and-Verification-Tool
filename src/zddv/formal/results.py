@@ -14,6 +14,7 @@ from zddv.formal.base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.storage import record_formal_result_snapshot
 
 
@@ -257,6 +258,114 @@ def formal_design_fingerprint(project: ProjectConfig) -> str:
     return digest.hexdigest()
 
 
+def _resolve_trace_source(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    source_path: Path,
+    trace_path: Path,
+) -> tuple[Path | None, list[Path]]:
+    """Resolve an attached trace only when its on-disk location is unambiguous."""
+
+    if trace_path.is_absolute():
+        resolved = trace_path.resolve()
+        return (resolved if resolved.is_file() else None, [resolved])
+
+    bases: list[Path] = []
+    for raw_base in (result.run_dir, source_path.parent, project.root):
+        base = Path(raw_base)
+        if not base.is_absolute():
+            base = project.root / base
+        resolved_base = base.resolve()
+        if resolved_base not in bases:
+            bases.append(resolved_base)
+
+    candidates: list[Path] = []
+    for base in bases:
+        candidate = (base / trace_path).resolve()
+        if candidate.is_file() and candidate not in candidates:
+            candidates.append(candidate)
+
+    if len(candidates) == 1:
+        return candidates[0], candidates
+    return None, candidates
+
+
+def _normalize_attached_vcd_traces(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    record: dict[str, Any],
+    *,
+    source_path: Path,
+    report_path: Path,
+    snapshot_id: str,
+) -> None:
+    """Attach bounded VCD normalization evidence without strengthening formal claims."""
+
+    for index, (item, property_record) in enumerate(
+        zip(result.properties, record["properties"], strict=True)
+    ):
+        trace = property_record.get("trace")
+        if trace is None or item.trace_path is None:
+            continue
+        if trace.get("role") not in {"COUNTEREXAMPLE", "WITNESS"}:
+            continue
+
+        resolved, candidates = _resolve_trace_source(
+            project,
+            result,
+            source_path,
+            Path(item.trace_path),
+        )
+        if resolved is None:
+            if len(candidates) > 1:
+                trace["normalization"] = {
+                    "status": "AMBIGUOUS_PATH",
+                    "candidates": [str(path) for path in candidates],
+                }
+            else:
+                trace["normalization"] = {
+                    "status": "MISSING",
+                    "path": str(item.trace_path),
+                }
+            continue
+
+        if resolved.suffix.lower() != ".vcd":
+            trace["normalization"] = {
+                "status": "UNSUPPORTED_FORMAT",
+                "path": str(resolved),
+                "format": resolved.suffix.lower() or None,
+            }
+            continue
+
+        destination = report_path.parent / "traces" / snapshot_id / f"{index:04d}.json"
+        try:
+            normalized = ingest_formal_vcd_trace(
+                project,
+                resolved,
+                property_name=item.name,
+                property_kind=item.kind,
+                source=f"{result.backend}-auto-vcd",
+                output=destination,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            trace["normalization"] = {
+                "status": "ERROR",
+                "path": str(resolved),
+                "error": str(exc),
+            }
+            continue
+
+        trace["normalization"] = {
+            "status": "NORMALIZED",
+            "path": normalized["normalized_path"],
+            "schema": normalized["schema"],
+            "input_sha256": normalized["input_sha256"],
+            "signals": normalized["summary"]["signals"],
+            "steps": normalized["summary"]["steps"],
+            "time_unit": normalized.get("time_unit"),
+        }
+
+
 def persist_formal_result(
     project: ProjectConfig,
     result: FormalCheckResult,
@@ -281,14 +390,23 @@ def persist_formal_result(
     report_path = report_path.resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
+    snapshot_id = uuid.uuid4().hex
     record.update(
         {
-            "snapshot_id": uuid.uuid4().hex,
+            "snapshot_id": snapshot_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "project": project.name,
             "input_path": str(source_path),
             "report_path": str(report_path),
         }
+    )
+    _normalize_attached_vcd_traces(
+        project,
+        result,
+        record,
+        source_path=source_path,
+        report_path=report_path,
+        snapshot_id=snapshot_id,
     )
 
     report_path.write_text(
