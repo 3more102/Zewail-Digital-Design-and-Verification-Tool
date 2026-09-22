@@ -482,6 +482,15 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
 
+    statement_evidence = _capture_questa_statement_coverage(
+        tool,
+        merged_path,
+        out_dir,
+        project.root,
+    )
+    statement_points = statement_evidence["points"]
+    statement_holes = sum(not bool(item["hit"]) for item in statement_points)
+
     functional_cmd = [tool, "report", "-cvg", "-details", str(merged_path)]
     functional_report = _run(functional_cmd, project.root)
     functional_report_path.write_text(
@@ -525,6 +534,13 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "statement_report": statement_evidence["report"],
+        "statement_points_path": statement_evidence["points_path"],
+        "statement_capture": statement_evidence["status"],
+        "statement_points": len(statement_points),
+        "statement_holes": statement_holes,
+        "statement_command": statement_evidence["command"],
+        "statement_error": statement_evidence["error"],
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -547,6 +563,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "statement_report": statement_evidence["report"],
+        "statement_points_path": statement_evidence["points_path"],
+        "statement_capture": statement_evidence["status"],
+        "statement_points": len(statement_points),
+        "statement_holes": statement_holes,
+        "statement_error": statement_evidence["error"],
     }
 
 
@@ -653,4 +675,34 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_questa_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
+    )
+
+
+def load_coverage_hole_points(project: ProjectConfig) -> list[dict]:
+    simulator = project.simulator.strip().lower()
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+
+    if simulator == "verilator":
+        merged_path = out_dir / "coverage.dat"
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            )
+        return parse_verilator_coverage(merged_path)
+
+    if simulator in {"questa", "questasim"}:
+        points_path = out_dir / "statement-points.json"
+        if not points_path.exists():
+            raise RuntimeError(
+                "Questa statement-level coverage points were not found. "
+                "Run 'zddv coverage' with a vcover version that can emit the "
+                "documented XML statement report."
+            )
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Invalid normalized coverage points: {points_path}")
+        return payload
+
+    raise RuntimeError(
+        f"Coverage-hole itemization is not implemented for simulator: {project.simulator}"
     )
