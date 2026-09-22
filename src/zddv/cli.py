@@ -21,6 +21,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -38,6 +39,8 @@ from zddv.storage import (
     list_coverage_snapshots,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
+    list_formal_property_results,
+    list_formal_result_snapshots,
     list_run_records,
     list_runs,
     list_uvm_arbitration_snapshots,
@@ -706,6 +709,91 @@ def cmd_assertions(args) -> int:
         print(
             f"{row['status']:<7} {row['assertion_name'][:28]:<28} "
             f"{row['run_id'][:32]:<32} {message}"
+        )
+    return 0
+
+
+def cmd_formal_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_formal_result_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    request = result["request"]
+    print(
+        f"FORMAL {result['status']}: backend={result['backend']} "
+        f"mode={request['mode']} scope={request['scope']} "
+        f"properties={summary['properties']}"
+    )
+    print(
+        "Evidence: "
+        f"counterexamples={summary['counterexamples']} "
+        f"bounded-safe={summary['bounded_safe_assertions']} "
+        f"proved={summary['proved_assertions']} "
+        f"covered-goals={summary['covered_goals']} "
+        f"unreached-goals={summary['unreached_goals']}"
+    )
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Report: {result['report_path']}")
+    print(f"Database: {database_path(project)}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_formal_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_formal_result_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        backend=args.backend,
+        mode=args.mode,
+    )
+    if not rows:
+        print("No formal result snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<10} {'BACKEND':<14} {'MODE':<8} {'SCOPE':<10} "
+        f"{'PROPS':>5} {'CEX':>4} {'PROVED':>6} {'BOUNDED':>7} SNAPSHOT"
+    )
+    for row in rows:
+        print(
+            f"{row['status']:<10} {row['backend'][:14]:<14} "
+            f"{row['mode']:<8} {row['scope']:<10} "
+            f"{row['property_count']:>5} {row['counterexample_count']:>4} "
+            f"{row['proved_count']:>6} {row['bounded_safe_count']:>7} "
+            f"{row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_formal_properties(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_formal_property_results(
+        project,
+        snapshot_id=args.snapshot,
+        name=args.name,
+        status=args.status,
+        interpretation=args.interpretation,
+        limit=args.limit,
+    )
+    if not rows:
+        print("No formal property results found.")
+        return 0
+
+    print(
+        f"{'STATUS':<10} {'KIND':<7} {'INTERPRETATION':<24} "
+        f"{'DEPTH':>7} {'PROPERTY':<28} SNAPSHOT"
+    )
+    for row in rows:
+        depth = row["effective_depth"]
+        depth_text = "-" if depth is None else str(depth)
+        print(
+            f"{row['status']:<10} {row['kind']:<7} "
+            f"{row['interpretation'][:24]:<24} {depth_text:>7} "
+            f"{row['name'][:28]:<28} {row['snapshot_id']}"
         )
     return 0
 
@@ -1900,6 +1988,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fcov_holes.add_argument("--limit", type=int, default=50)
     p_fcov_holes.set_defaults(func=cmd_fcov_holes)
+
+    p_formal = sub.add_parser(
+        "formal-analyze",
+        help="Import normalized formal result JSON and persist evidence/history",
+    )
+    p_formal.add_argument(
+        "path",
+        help="Normalized formal result JSON file",
+    )
+    p_formal.add_argument(
+        "--output",
+        default=".zddv/formal/latest.json",
+        help="Normalized formal evidence JSON report path",
+    )
+    p_formal.set_defaults(func=cmd_formal_analyze)
+
+    p_formal_history = sub.add_parser(
+        "formal-history",
+        help="Show persisted normalized formal result snapshots",
+    )
+    p_formal_history.add_argument("--limit", type=int, default=20)
+    p_formal_history.add_argument("--status", default=None)
+    p_formal_history.add_argument("--backend", default=None)
+    p_formal_history.add_argument(
+        "--mode",
+        choices=("bmc", "prove", "cover"),
+        default=None,
+    )
+    p_formal_history.set_defaults(func=cmd_formal_history)
+
+    p_formal_properties = sub.add_parser(
+        "formal-properties",
+        help="Query persisted normalized formal property outcomes",
+    )
+    p_formal_properties.add_argument("--snapshot", default=None)
+    p_formal_properties.add_argument("--name", default=None)
+    p_formal_properties.add_argument("--status", default=None)
+    p_formal_properties.add_argument("--interpretation", default=None)
+    p_formal_properties.add_argument("--limit", type=int, default=100)
+    p_formal_properties.set_defaults(func=cmd_formal_properties)
 
     p_uvm = sub.add_parser(
         "uvm-analyze",
