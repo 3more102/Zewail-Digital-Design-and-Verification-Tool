@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,14 @@ from zddv.config import initialize_project
 
 
 def _context() -> dict:
+    evidence = {"run": {"run_id": "run-fail"}}
+    encoded = json.dumps(
+        evidence,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    evidence_sha256 = hashlib.sha256(encoded).hexdigest()
     return {
         "schema_version": 1,
         "analysis": "ai_rca_context",
@@ -34,10 +44,10 @@ def _context() -> dict:
             "review_required_before_external_use": True,
         },
         "provenance": {
-            "evidence_sha256": "a" * 64,
+            "evidence_sha256": evidence_sha256,
             "deterministic": True,
         },
-        "evidence": {"run": {"run_id": "run-fail"}},
+        "evidence": evidence,
     }
 
 
@@ -105,8 +115,6 @@ def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
     context_path.parent.mkdir(parents=True)
-    import json
-
     context_path.write_text(json.dumps(_context()), encoding="utf-8")
 
     loaded = load_ai_context(project, context_path)
