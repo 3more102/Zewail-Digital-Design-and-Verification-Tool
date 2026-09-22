@@ -22,6 +22,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
@@ -374,6 +375,25 @@ def cmd_regress(args) -> int:
     print(f"Summary: {summary['summary_path']}")
     return 0 if summary["status"] == "PASS" else 1
 
+
+
+def cmd_formal_counterexample_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_formal_counterexample(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL COUNTEREXAMPLE: property={result['property']} "
+        f"kind={result['property_kind']} trace={result['trace_kind']} "
+        f"steps={summary['steps']} signals={summary['signals']}"
+    )
+    print(f"Source: {result['source']}")
+    print(f"Normalized: {result['normalized_path']}")
+    return 0
 
 
 def cmd_formal_analyze(args) -> int:
@@ -2007,6 +2027,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_formal_counterexample = sub.add_parser(
+        "formal-counterexample-import",
+        help="Import normalized formal counterexample/witness trace evidence",
+    )
+    p_formal_counterexample.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON file",
+    )
+    p_formal_counterexample.add_argument(
+        "--source",
+        default=None,
+        help="Optional formal engine/adapter label overriding the JSON source",
+    )
+    p_formal_counterexample.add_argument(
+        "--output",
+        default=".zddv/formal/counterexamples/latest.json",
+        help="Normalized formal counterexample JSON output path",
+    )
+    p_formal_counterexample.set_defaults(func=cmd_formal_counterexample_import)
 
     p_formal = sub.add_parser(
         "formal-analyze",
