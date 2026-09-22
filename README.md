@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, UCDB capture/merge, functional-bin ingestion, detailed XML evidence, and statement-level coverage-hole reporting on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, retained detailed XML evidence, and statement-level source coverage-hole normalization
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -95,8 +95,10 @@ SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+a separate simulator-reported value. The retained `details.xml` is also used by
+`zddv coverage-holes --type statement` to report zero-hit statements with instance
+scope, source file, line, statement index, and hit count. Branch, condition,
+expression, toggle, and FSM item-level hole normalization remain planned.
 
 ## Current CLI
 
@@ -139,6 +141,8 @@ zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
+# Questa: statement holes from retained detailed coverage XML
+zddv --project my_project coverage-holes --type statement --output .zddv/coverage/statement-holes.json
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
@@ -652,7 +656,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa native per-run UCDB coverage capture
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
+- [x] Questa statement-level XML normalization and source coverage-hole reporting
+- [ ] Remaining Questa branch/condition/expression/toggle/FSM item-level normalization
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
