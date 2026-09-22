@@ -491,6 +491,19 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("toggle-details.txt")),
         result["merged"],
     ]
+    assert commands[8] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-xml",
+        "-details",
+        "-byinstance",
+        "-code",
+        "t",
+        "-all",
+        "-output",
+        str(Path(result["merged"]).with_name("toggle-details.xml")),
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -511,6 +524,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert evidence["zero_detail"]["status"] == "captured"
     assert evidence["multibit_expression"]["status"] == "captured"
     assert evidence["toggle_detail"]["status"] == "captured"
+    assert evidence["toggle_xml"]["status"] == "captured"
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
     assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
     assert Path(evidence["multibit_expression"]["path"]).read_text(
@@ -525,6 +539,9 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert Path(evidence["toggle_detail"]["path"]).read_text(
         encoding="utf-8"
     ) == "toggle detail fixture\n"
+    assert Path(evidence["toggle_xml"]["path"]).read_text(
+        encoding="utf-8"
+    ) == "<coverage/>\n"
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -739,6 +756,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
                     "status": "captured",
                     "path": "/tmp/toggle-details.txt",
                 },
+                "toggle_xml": {
+                    "status": "captured",
+                    "path": "/tmp/toggle-details.xml",
+                },
             },
         },
     )
@@ -770,6 +791,7 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
         in output
     )
     assert "Questa toggle detail: captured /tmp/toggle-details.txt" in output
+    assert "Questa toggle XML: captured /tmp/toggle-details.xml" in output
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
@@ -789,6 +811,7 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
         "stale\n", encoding="utf-8"
     )
     (out_dir / "toggle-details.txt").write_text("stale\n", encoding="utf-8")
+    (out_dir / "toggle-details.xml").write_text("stale\n", encoding="utf-8")
 
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
@@ -829,10 +852,13 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["multibit_expression"]["diagnostic"] == "unsupported fixture"
     assert evidence["toggle_detail"]["status"] == "failed"
     assert evidence["toggle_detail"]["diagnostic"] == "unsupported fixture"
+    assert evidence["toggle_xml"]["status"] == "failed"
+    assert evidence["toggle_xml"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
     assert not Path(evidence["multibit_expression"]["path"]).exists()
     assert not Path(evidence["toggle_detail"]["path"]).exists()
+    assert not Path(evidence["toggle_xml"]["path"]).exists()
 
 
 def test_parse_questa_statement_xml_keeps_file_maps_scoped_per_instance(
