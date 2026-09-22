@@ -11,7 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
-- Formal adapter API with normalized check/property/result contracts (execution backends pending)
+- Formal adapter API with normalized check/property/result contracts plus finite-depth SymbiYosys BMC execution and persisted bounded-result history
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -68,7 +68,7 @@ Requirements:
 - Verilator available in `PATH` for the default backend
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 - Optional Synopsys VCS: `vcs` available in `PATH`
-- Optional Cadence Xcelium: `xrun` available in `PATH`
+- Optional Cadence Xcelium: `xrun` available in `PATH`\n- Optional bounded formal: SymbiYosys `sby` available in `PATH`
 
 Install ZDDV for development:
 
