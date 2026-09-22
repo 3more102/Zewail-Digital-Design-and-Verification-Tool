@@ -320,6 +320,38 @@ def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
         load_ai_context(project, tmp_path / "outside.json")
 
 
+def test_manual_response_import_rejects_destructive_output_paths(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(_context()), encoding="utf-8")
+
+    content_path = project.root / ".zddv" / "ai" / "manual-response.json"
+    content_path.parent.mkdir(parents=True)
+    original_content = '{"analysis":"zddv_ai_rca_response"}\n'
+    content_path.write_text(original_content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        import_provider_response(
+            project,
+            context_path=context_path,
+            content_path=content_path,
+            output=content_path,
+        )
+    assert content_path.read_text(encoding="utf-8") == original_content
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        import_provider_response(
+            project,
+            context_path=context_path,
+            content_path=content_path,
+            output=context_path,
+        )
+    assert json.loads(context_path.read_text(encoding="utf-8")) == _context()
+
+
 def test_context_loader_rejects_evidence_changed_after_digest(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     context = _context()
