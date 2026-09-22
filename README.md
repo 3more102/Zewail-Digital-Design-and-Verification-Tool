@@ -31,6 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Deterministic coverage-hole test-intent suggestions that retain source evidence, require review, and never execute stimulus automatically
+- Review-gated generated SystemVerilog assertion/test artifacts with isolated staging, SHA-256 provenance, explicit apply approval, overwrite refusal, and no automatic execution
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -168,6 +169,9 @@ zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
+zddv --project my_project coverage-suggest --show 20
+zddv --project my_project generated-stage proposal.json
+zddv --project my_project generated-apply .zddv/generated/drafts/<draft-id>/manifest.json --expected-sha256 <reviewed-sha256> --approve-reviewed
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
@@ -765,6 +769,8 @@ to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
 - [x] Deterministic evidence-ranked root-cause candidate triage
+- [x] Evidence-backed coverage-hole test objectives with review-required output
+- [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
@@ -782,6 +788,7 @@ to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [Generated Verification Review Workflow](docs/generated-verification.md)
 
 ## License
 
