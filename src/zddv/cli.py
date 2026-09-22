@@ -23,10 +23,10 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
-from zddv.formal import FormalCheckRequest, SymbiYosysBackend
+from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
 from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
-from zddv.formal.sby_results import analyze_sby_log
+from zddv.formal.sby_results import analyze_sby_log, parse_sby_log
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -402,6 +402,71 @@ def cmd_formal_bmc(args) -> int:
         f"engine={result.engine or '-'}"
     )
     print("Scope: BOUNDED (finite-depth evidence; not an unbounded proof)")
+    print(f"Run directory: {result.run_dir}")
+    print(f"Log: {result.log_path}")
+    print(f"Snapshot: {record['snapshot_id']}")
+    print(f"Report: {record['report_path']}")
+    return 0 if result.status == "PASS" else 1
+
+
+def cmd_formal_cover(args) -> int:
+    project = load_project(_project_arg(args))
+    request = FormalCheckRequest(
+        mode="cover",
+        depth=args.depth,
+        timeout_s=args.timeout,
+    )
+    backend = SymbiYosysBackend()
+    print(f"Formal backend: {backend.version()}")
+    result = backend.check(project, request)
+
+    # Enrich the executed result only with explicit native SBY log evidence.
+    # Unenumerated/unreached cover goals are never synthesized as property rows.
+    try:
+        parsed = parse_sby_log(
+            result.log_path,
+            mode="cover",
+            depth=request.depth,
+        )
+    except (OSError, ValueError):
+        parsed = None
+
+    if parsed is not None:
+        properties = {
+            (item.kind, item.name): item
+            for item in parsed.properties
+        }
+        for item in result.properties:
+            properties[(item.kind, item.name)] = item
+        result = FormalCheckResult(
+            backend=result.backend,
+            engine=result.engine,
+            request=result.request,
+            command=result.command,
+            returncode=result.returncode,
+            status=result.status,
+            run_dir=result.run_dir,
+            log_path=result.log_path,
+            properties=tuple(properties.values()),
+            artifacts=tuple(dict.fromkeys((*result.artifacts, *parsed.artifacts))),
+            runtime_ms=result.runtime_ms,
+        )
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+        output=result.run_dir / "zddv-formal-result.json",
+    )
+    print(
+        f"FORMAL COVER {result.status}: depth={request.depth} "
+        f"engine={result.engine or '-'}"
+    )
+    print(
+        "Scope: COVER (bounded reachability; PASS means SymbiYosys reached "
+        "all cover() goals within the configured depth)"
+    )
+    print(f"Explicit reached goals: {record['summary']['covered_goals']}")
     print(f"Run directory: {result.run_dir}")
     print(f"Log: {result.log_path}")
     print(f"Snapshot: {record['snapshot_id']}")
@@ -2216,6 +2281,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional timeout in seconds",
     )
     p_formal_bmc.set_defaults(func=cmd_formal_bmc)
+
+    p_formal_cover = sub.add_parser(
+        "formal-cover",
+        help="Run finite-depth SymbiYosys cover/reachability analysis",
+    )
+    p_formal_cover.add_argument(
+        "--depth",
+        type=int,
+        required=True,
+        help="Maximum cover reachability depth in cycles (must be >= 1)",
+    )
+    p_formal_cover.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Optional timeout in seconds",
+    )
+    p_formal_cover.set_defaults(func=cmd_formal_cover)
 
     p_formal_counterexample = sub.add_parser(
         "formal-counterexample",
