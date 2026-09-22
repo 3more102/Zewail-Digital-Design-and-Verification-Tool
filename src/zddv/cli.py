@@ -21,6 +21,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -38,6 +39,7 @@ from zddv.storage import (
     list_coverage_snapshots,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
+    list_formal_result_snapshots,
     list_run_records,
     list_runs,
     list_uvm_arbitration_snapshots,
@@ -369,6 +371,61 @@ def cmd_regress(args) -> int:
     print(f"Summary: {summary['summary_path']}")
     return 0 if summary["status"] == "PASS" else 1
 
+
+
+def cmd_formal_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_formal_result_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    request = result["request"]
+    print(
+        f"FORMAL {result['status']}: backend={result['backend']} "
+        f"mode={request['mode']} scope={request['scope']} "
+        f"properties={summary['properties']}"
+    )
+    print(
+        f"Assertions/Covers: {summary['assertions']}/{summary['covers']}  "
+        f"counterexamples={summary['counterexamples']}  "
+        f"bounded-safe={summary['bounded_safe_assertions']}  "
+        f"proved={summary['proved_assertions']}"
+    )
+    print(
+        f"Covered/Unreached goals: "
+        f"{summary['covered_goals']}/{summary['unreached_goals']}"
+    )
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_formal_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_formal_result_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        mode=args.mode,
+    )
+    if not rows:
+        print("No formal result snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<7} {'MODE':<6} {'SCOPE':<9} {'PROP':>4} "
+        f"{'CEX':>3} {'BSAFE':>5} {'PROVED':>6} {'BACKEND':<16} SNAPSHOT"
+    )
+    for row in rows:
+        print(
+            f"{row['status']:<7} {row['mode']:<6} {row['proof_scope']:<9} "
+            f"{row['property_count']:>4} {row['counterexample_count']:>3} "
+            f"{row['bounded_safe_count']:>5} {row['proved_count']:>6} "
+            f"{row['backend'][:16]:<16} {row['snapshot_id']}"
+        )
+    return 0
 
 def cmd_coverage(args) -> int:
     project = load_project(_project_arg(args))
@@ -1830,6 +1887,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_formal = sub.add_parser(
+        "formal-analyze",
+        help="Import normalized formal result evidence and persist property outcomes",
+    )
+    p_formal.add_argument("path", help="Normalized formal result JSON file")
+    p_formal.add_argument(
+        "--output",
+        default=".zddv/formal/latest.json",
+        help="Normalized formal evidence JSON report path",
+    )
+    p_formal.set_defaults(func=cmd_formal_analyze)
+
+    p_formal_history = sub.add_parser(
+        "formal-history",
+        help="Show persisted normalized formal result snapshots",
+    )
+    p_formal_history.add_argument("--limit", type=int, default=20)
+    p_formal_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL", "UNKNOWN", "ERROR"),
+        default=None,
+    )
+    p_formal_history.add_argument(
+        "--mode",
+        choices=("bmc", "prove", "cover"),
+        default=None,
+    )
+    p_formal_history.set_defaults(func=cmd_formal_history)
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
