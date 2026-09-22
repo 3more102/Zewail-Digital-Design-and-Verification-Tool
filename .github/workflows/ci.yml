@@ -258,6 +258,16 @@ jobs:
           grep -q '"finished": 2' examples/counter/.zddv/uvm/sequences/latest.json
           zddv --project examples/counter uvm-sequence-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze explicit UVM sequence log markers
+        run: |
+          zddv --project examples/counter uvm-sequence-log-analyze ../uvm_sequence_marker.log --source example-sequence-log
+          test -s examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"input_mode": "explicit-log-marker"' examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"marker": "ZDDV_UVM_SEQUENCE"' examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"finished": 2' examples/counter/.zddv/uvm/sequences/latest.json
+          zddv --project examples/counter uvm-sequence-history --limit 5 | grep -q 'PASS'
+
       - name: Analyze UVM sequence-item handshake trace
         run: |
           zddv --project examples/counter uvm-item-analyze ../uvm_item_trace.json --source example-item
