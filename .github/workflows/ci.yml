@@ -270,6 +270,15 @@ jobs:
           grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze UVM sequence-item contention trace
+        run: |
+          zddv --project examples/counter uvm-arbitration-analyze ../uvm_arbitration_trace.json --source example-arbitration
+          test -s examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"analysis": "uvm_sequence_item_arbitration"' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"contended_grants": 1' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"max_observed_contenders": 2' examples/counter/.zddv/uvm/arbitration/latest.json
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
