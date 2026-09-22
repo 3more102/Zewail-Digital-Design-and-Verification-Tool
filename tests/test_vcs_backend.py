@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 from types import SimpleNamespace
 
+from zddv import __version__
+
 from zddv.cli import main
 from zddv.config import ProjectConfig
 from zddv.simulator import VcsBackend, get_backend
@@ -311,7 +313,7 @@ def test_doctor_can_check_vcs_backend(monkeypatch, capsys):
 
     assert rc == 0
     output = capsys.readouterr().out
-    assert "ZDDV 0.6.0" in output
+    assert f"ZDDV {__version__}" in output
     assert "[PASS] VCS test" in output
 
 
