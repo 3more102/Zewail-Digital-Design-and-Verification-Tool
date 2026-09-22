@@ -14,6 +14,7 @@ from zddv.coverage import (
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
     parse_questa_statement_coverage_xml,
+    parse_questa_toggle_coverage_xml,
     write_questa_statement_hole_report,
 )
 from zddv.storage import (
@@ -189,6 +190,28 @@ Row 8: d[i]_1                     1 ***0*** ***0*** (~(a[i] & b[i]) && c[i])
 """
 
 
+QUESTA_TOGGLE_XML = """<?xml version="1.0"?>
+<coverage_report>
+  <code_coverage_report lines="1" byInstance="1">
+    <instanceData path="/tb/dut" du="dut">
+      <toggleSummary active="2" hits="1" percent="50.0" />
+      <tog name="ready" c0="4" c1="0" />
+      <toge name="req" c1H_0L="2" c0L_1H="1" c0L_Z="0"
+            cZ_0L="3" c1H_Z="0" cZ_1H="0" />
+      <togenum name="state">
+        <togenumval name="IDLE" c="3" />
+        <togenumval name="RUN" c="0" />
+      </togenum>
+    </instanceData>
+    <instanceData path="/tb/other" du="other">
+      <tog name="ready" c0="1" c1="1" />
+      <tog name="bad" c0="-1" c1="not-a-count" />
+    </instanceData>
+  </code_coverage_report>
+</coverage_report>
+"""
+
+
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
 Covergroup                              Metric       Goal    Bins    Status
@@ -223,6 +246,41 @@ def _project(tmp_path: Path) -> ProjectConfig:
         waveform=False,
         coverage=True,
     )
+
+
+def test_parse_questa_toggle_xml_preserves_scope_and_transition_semantics(
+    tmp_path: Path,
+):
+    xml_path = tmp_path / "toggle.xml"
+    xml_path.write_text(QUESTA_TOGGLE_XML, encoding="utf-8")
+
+    points = parse_questa_toggle_coverage_xml(xml_path)
+
+    assert len(points) == 10
+    assert sum(not point["hit"] for point in points) == 4
+    assert {
+        (point["scope"], point["signal"], point["toggle_transition"])
+        for point in points
+        if point["signal"] == "ready"
+    } == {
+        ("/tb/dut", "ready", "to_0"),
+        ("/tb/dut", "ready", "to_1"),
+        ("/tb/other", "ready", "to_0"),
+        ("/tb/other", "ready", "to_1"),
+    }
+    req = {
+        point["toggle_transition"]: point
+        for point in points
+        if point["scope"] == "/tb/dut" and point["signal"] == "req"
+    }
+    assert req["1H->0L"]["count"] == 2
+    assert req["0L->1H"]["count"] == 1
+    assert req["0L->Z"]["hit"] is False
+    assert req["Z->0L"]["count"] == 3
+    assert req["1H->Z"]["hit"] is False
+    assert req["Z->1H"]["hit"] is False
+    assert all(point["scope_kind"] == "instance" for point in points)
+    assert not any(point["signal"] in {"state", "bad"} for point in points)
 
 
 def test_parse_questa_summary_preserves_tool_score_separately():
@@ -401,7 +459,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
             output = Path(command[command.index("-output") + 1])
-            output.write_text("<coverage/>\n", encoding="utf-8")
+            if "-code" in command and command[command.index("-code") + 1] == "t":
+                output.write_text(QUESTA_TOGGLE_XML, encoding="utf-8")
+            else:
+                output.write_text("<coverage/>\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="xml report written\n")
         if command[1:4] == ["report", "-zeros", "-details"]:
             output = Path(command[command.index("-output") + 1])
@@ -536,12 +597,18 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert result["multibit_expression_status"] == "ok"
     assert result["multibit_expression_points"] == 12
     assert result["multibit_expression_holes"] == 10
+    assert payload["questa_toggle_status"] == "ok"
+    assert payload["questa_toggle_points"] == 10
+    assert payload["questa_toggle_holes"] == 4
+    assert result["questa_toggle_status"] == "ok"
+    assert result["questa_toggle_points"] == 10
+    assert result["questa_toggle_holes"] == 4
     assert Path(evidence["toggle_detail"]["path"]).read_text(
         encoding="utf-8"
     ) == "toggle detail fixture\n"
     assert Path(evidence["toggle_xml"]["path"]).read_text(
         encoding="utf-8"
-    ) == "<coverage/>\n"
+    ) == QUESTA_TOGGLE_XML
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -745,6 +812,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "multibit_expression_status": "ok",
             "multibit_expression_points": 12,
             "multibit_expression_holes": 10,
+            "questa_toggle_report": "/tmp/toggle-details.xml",
+            "questa_toggle_status": "ok",
+            "questa_toggle_points": 10,
+            "questa_toggle_holes": 4,
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
@@ -784,6 +855,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
         "Normalized Questa multibit expression coverage: ok 12 point(s), 10 hole(s)"
         in output
     )
+    assert "Normalized Questa toggle coverage: ok 10 point(s), 4 hole(s)" in output
+    assert "Questa toggle normalized detail: /tmp/toggle-details.xml" in output
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
     assert (
@@ -854,6 +927,9 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["toggle_detail"]["diagnostic"] == "unsupported fixture"
     assert evidence["toggle_xml"]["status"] == "failed"
     assert evidence["toggle_xml"]["diagnostic"] == "unsupported fixture"
+    assert result["questa_toggle_status"] == "failed"
+    assert result["questa_toggle_points"] == 0
+    assert result["questa_toggle_holes"] == 0
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
     assert not Path(evidence["multibit_expression"]["path"]).exists()
@@ -1041,6 +1117,48 @@ Bit 1: 2 ***0***
         )
 
 
+def test_coverage_holes_cli_supports_questa_toggle_xml(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    toggle_path = project.root / ".zddv" / "coverage" / "toggle-details.xml"
+    toggle_path.parent.mkdir(parents=True)
+    toggle_path.write_text(QUESTA_TOGGLE_XML, encoding="utf-8")
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/toggle-holes.json",
+            point_type="toggle",
+            limit=20,
+            show=10,
+        )
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (toggle): 4 unhit point(s)" in output
+    report = json.loads(
+        (project.root / ".zddv" / "coverage" / "toggle-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["by_type"] == {"toggle": 4}
+    assert {
+        (hole["signal"], hole["toggle_transition"])
+        for hole in report["holes"]
+    } == {
+        ("ready", "to_1"),
+        ("req", "0L->Z"),
+        ("req", "1H->Z"),
+        ("req", "Z->1H"),
+    }
+    assert all(hole["scope"] == "/tb/dut" for hole in report["holes"])
+
+
 def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
     tmp_path: Path,
     monkeypatch,
@@ -1050,13 +1168,16 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
 
     with pytest.raises(
         RuntimeError,
-        match=r"supports --type statement, branch, condition, expression, or fsm",
+        match=(
+            r"supports --type statement, branch, condition, expression, "
+            r"fsm, or toggle"
+        ),
     ):
         cmd_coverage_holes(
             SimpleNamespace(
                 project=str(project.root),
                 output=".zddv/coverage/holes.json",
-                point_type="toggle",
+                point_type="assertion",
                 limit=10,
                 show=2,
             )
