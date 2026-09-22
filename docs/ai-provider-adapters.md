@@ -52,3 +52,16 @@ zddv --project my_project ai-provider-run \
 
 Even for loopback endpoints, the explicit flag is retained because invocation is
 a deliberate user action and ZDDV does not silently contact model services.
+
+## Provider-neutral response contract
+
+Every model request now carries a deterministic `response_contract` beside the
+evidence context. The contract lists the exact required JSON fields and the exact
+evidence references available in that context. The request explicitly forbids
+Markdown fences or surrounding prose.
+
+The same evidence-reference builder is consumed by `ai-response-ingest`, so
+prompting and validation cannot silently drift apart. The OpenAI-compatible
+adapter still treats the returned bytes as raw/untrusted output; this contract
+improves interoperability without weakening the separate validation and human
+review gates.
