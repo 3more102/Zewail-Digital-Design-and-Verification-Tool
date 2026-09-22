@@ -268,6 +268,15 @@ jobs:
           grep -q '"partial": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Import UVM sequence-item report evidence
+        run: |
+          zddv --project examples/counter uvm-item-log ../uvm_item_report.log --source example-item-log
+          test -s examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"report_id": "ZDDV_ITEM"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"matched_messages": 4' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"completed": 1' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"responded": 1' examples/counter/.zddv/uvm/items/latest.json
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
