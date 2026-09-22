@@ -12,7 +12,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - RTL/testbench source discovery
 - Simulator-adapter architecture
 - Verilator detection and version reporting
-- Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
+- Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, per-run UCDB coverage capture, `vcover` merge/report normalization, assertion ingestion, functional-covergroup ingestion, and run-linked UVM normalization
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -247,7 +247,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← build/run foundation implemented
+       ├── Questa     ← build/run + UCDB coverage implemented
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
@@ -631,9 +631,22 @@ waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
 remain visible as uncorrelated events rather than being silently dropped.
 
+### Questa UCDB Coverage
+
+When `[run].coverage = true`, the Questa adapter compiles with
+`+cover=bcesft`, runs with `vsim -coverage`, and saves
+`coverage.ucdb` in each isolated run directory. `zddv coverage` merges those
+databases with `vcover merge`, normalizes stable code-coverage summary rows,
+and ingests ordinary covergroup bins from the detailed `vcover -cvg` report
+into ZDDV's simulator-independent functional coverage database.
+
+The raw merged UCDB and text reports remain available under
+`.zddv/coverage/` so native Questa tooling can still inspect the original
+coverage evidence.
+
 ### Phase 4 — Advanced Verification
 
-- [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM; coverage capture pending)
+- [x] Questa adapter foundation (build/run, VCD, UCDB code/functional coverage, assertions, run-linked UVM)
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
