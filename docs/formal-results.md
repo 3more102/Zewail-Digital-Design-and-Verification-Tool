@@ -122,6 +122,12 @@ trace paths. It does not synthesize PASS rows for properties that the logfile
 never enumerates, and it does not convert a bounded PASS into an unbounded
 proof.
 
+The direct `formal-bmc` execution path uses the same native evidence parser
+after a completed SymbiYosys run. Explicit failed assertions and trace artifacts
+therefore flow into the persisted result snapshot automatically. Timeout or
+incomplete output without a terminal marker is not reinterpreted as property
+evidence.
+
 ## Current boundary
 
 This slice does not parse vendor-native counterexample waveform contents or
