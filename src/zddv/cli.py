@@ -29,6 +29,7 @@ from zddv.formal import (
     FormalCheckRequest,
     SymbiYosysBackend,
     write_formal_cover_coverage_report,
+    write_formal_trace_crossprobe_report,
 )
 from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.vcd_trace import ingest_formal_vcd_trace
@@ -506,6 +507,40 @@ def cmd_formal_vcd_trace(args) -> int:
         print(f"Time: {summary['first_time']}..{summary['last_time']} {unit}")
     print(f"Input SHA-256: {result['input_sha256']}")
     print(f"Normalized trace: {result['normalized_path']}")
+    return 0
+
+
+def cmd_formal_trace_crossprobe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_formal_trace_crossprobe_report(
+        project,
+        args.path,
+        args.signal,
+        output=args.output,
+    )
+    summary = result["summary"]
+    trace = result["trace"]
+    print(
+        f"FORMAL TRACE CROSSPROBE: property={trace['property']} "
+        f"signals={summary['queries']} matched={summary['matched']} "
+        f"partial={summary['partial']}"
+    )
+    for item in result["signals"]:
+        signal_path = item["trace_signal"]["path"]
+        source = item.get("source")
+        if source and source.get("declaration"):
+            declaration = source["declaration"]
+            target = f"{declaration['file']}:{declaration['line']}"
+        elif source:
+            target = f"{source['file']}:{source['unit_line']}"
+        elif item.get("hierarchy"):
+            target = item["hierarchy"]["design_path"]
+        else:
+            target = "unresolved"
+        print(f"[{item['status']}] {signal_path} -> {target}")
+        if item.get("note"):
+            print(f"  Note: {item['note']}")
+    print(f"Report: {result['report_path']}")
     return 0
 
 
@@ -2426,6 +2461,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalized formal trace JSON output path",
     )
     p_formal_vcd_trace.set_defaults(func=cmd_formal_vcd_trace)
+
+    p_formal_trace_crossprobe = sub.add_parser(
+        "formal-trace-crossprobe",
+        help="Map normalized formal trace signals to RTL/source evidence",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON file",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--signal",
+        action="append",
+        required=True,
+        help="Signal path or unique signal name from the normalized trace; repeat as needed",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--output",
+        default=".zddv/debug/formal-trace-crossprobe.json",
+        help="Formal trace cross-probe JSON report path",
+    )
+    p_formal_trace_crossprobe.set_defaults(func=cmd_formal_trace_crossprobe)
 
     p_formal_sby = sub.add_parser(
         "formal-sby-analyze",
