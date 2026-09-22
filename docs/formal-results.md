@@ -199,6 +199,20 @@ input SHA-256, schema, and compact summary.
 Unsupported formats, missing files, malformed VCDs, and generic trace evidence remain
 reviewable raw evidence and do not abort formal-result persistence.
 
+## Formal trace source cross-probing
+
+A normalized counterexample or witness can be mapped back to source hierarchy,
+SystemVerilog declarations, and source-structural driver/load evidence with:
+
+```text
+zddv --project <project> formal-trace-crossprobe <normalized-trace.json>
+zddv --project <project> formal-trace-crossprobe <normalized-trace.json> --signal state
+```
+
+This consumes the normalized trace signal catalog only; it does not infer a semantic root
+cause from value changes. Signal matching delegates to the existing Debug Studio
+cross-probe engine so waveform and formal navigation use the same conservative source model.
+
 ## Current boundary
 
 ZDDV does not claim unbounded reachability/proof coverage from finite-depth evidence.
@@ -206,5 +220,5 @@ Direct finite-depth SymbiYosys cover-property reachability and conservative cros
 aggregation are supported. Incomplete property universes, snapshots without a design
 fingerprint, different source revisions, different engines, different depths, or
 different property sets are never silently merged. Additional vendor-native waveform
-formats, automatic trace cross-probing, SQLite trace-sample persistence, and broader
+formats, SQLite trace-sample persistence, semantic failure-cause analysis, and broader
 proof-coverage metrics remain separate future work.
