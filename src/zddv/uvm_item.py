@@ -2,16 +2,29 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 import uuid
 
 from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
+from zddv.uvm import parse_uvm_log_text
 
 
 _ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
+_ITEM_REPORT_ID = "ZDDV_ITEM"
+_ITEM_REPORT_FIELDS = {
+    "event",
+    "item_id",
+    "sequence_id",
+    "sequence",
+    "sequencer",
+    "item",
+    "transaction_id",
+    "time",
+}
 
 
 def _require_text(value: Any, *, field: str, index: int) -> str:
@@ -370,29 +383,121 @@ def parse_uvm_item_file(
     return parse_uvm_item_data(payload, source=source)
 
 
-def analyze_uvm_item_file(
-    project: ProjectConfig,
+def _parse_uvm_item_report_event(message: dict[str, Any]) -> dict[str, Any] | None:
+    if message.get("report_id") != _ITEM_REPORT_ID:
+        return None
+
+    payload = str(message.get("message") or "").strip()
+    log_line = int(message.get("log_line") or 0)
+    if not payload:
+        raise ValueError(f"{_ITEM_REPORT_ID} message at log line {log_line} is empty")
+
+    try:
+        tokens = shlex.split(payload)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid {_ITEM_REPORT_ID} payload at log line {log_line}: {exc}"
+        ) from exc
+
+    fields: dict[str, str] = {}
+    metadata: dict[str, Any] = {
+        "log_line": log_line,
+        "severity": message.get("severity"),
+    }
+    if message.get("component") is not None:
+        metadata["uvm_component"] = message["component"]
+    if message.get("source_location") is not None:
+        metadata["source_location"] = message["source_location"]
+
+    for token in tokens:
+        if "=" not in token:
+            raise ValueError(
+                f"Invalid {_ITEM_REPORT_ID} token at log line {log_line}: {token!r}"
+            )
+        key, value = token.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise ValueError(
+                f"Invalid {_ITEM_REPORT_ID} token at log line {log_line}: {token!r}"
+            )
+        if key in fields or key in metadata:
+            raise ValueError(
+                f"Duplicate {_ITEM_REPORT_ID} key {key!r} at log line {log_line}"
+            )
+        if key in _ITEM_REPORT_FIELDS:
+            fields[key] = value
+        else:
+            metadata[key] = value
+
+    if "event" not in fields or "item_id" not in fields:
+        raise ValueError(
+            f"{_ITEM_REPORT_ID} message at log line {log_line} must include "
+            "event=<...> and item_id=<...>"
+        )
+    if "time" not in fields and message.get("time") is not None:
+        fields["time"] = str(message["time"])
+
+    return {
+        **fields,
+        "metadata": metadata,
+    }
+
+
+def parse_uvm_item_log_text(
+    text: str,
+    *,
+    source: str = "uvm-item-report",
+) -> dict[str, Any]:
+    uvm_report = parse_uvm_log_text(text, source=source)
+    events: list[dict[str, Any]] = []
+    for message in uvm_report["messages"]:
+        event = _parse_uvm_item_report_event(message)
+        if event is not None:
+            events.append(event)
+
+    if not events:
+        raise ValueError(
+            f"No [{_ITEM_REPORT_ID}] UVM report messages found in the input log"
+        )
+
+    report = parse_uvm_item_data(
+        {
+            "source": source,
+            "events": events,
+        },
+        source=source,
+    )
+    report["adapter"] = {
+        "kind": "uvm_report_id",
+        "report_id": _ITEM_REPORT_ID,
+        "matched_messages": len(events),
+        "uvm_log_status": uvm_report["status"],
+        "uvm_test_name": uvm_report.get("test_name"),
+    }
+    return report
+
+
+def parse_uvm_item_log(
     path: str | Path,
     *,
-    source: str | None = None,
-    output: str | Path = ".zddv/uvm/items/latest.json",
-    run_id: str | None = None,
+    source: str = "uvm-item-report",
 ) -> dict[str, Any]:
     input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
+    return parse_uvm_item_log_text(
+        input_path.read_text(encoding="utf-8", errors="replace"),
+        source=source,
+    )
 
-    run_record: dict[str, Any] | None = None
-    if run_id is not None:
-        run_record = get_run_record(project, run_id)
-        if run_record is None:
-            raise ValueError(f"Unknown run ID: {run_id}")
 
-    report = parse_uvm_item_file(input_path, source=source)
-
+def _persist_uvm_item_report(
+    project: ProjectConfig,
+    input_path: Path,
+    report: dict[str, Any],
+    *,
+    output: str | Path,
+    run_record: dict[str, Any] | None,
+) -> dict[str, Any]:
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-item-%Y%m%dT%H%M%S")
@@ -435,3 +540,74 @@ def analyze_uvm_item_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_item_handshake_snapshot(project, record)
     return record
+
+
+def analyze_uvm_item_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    output: str | Path = ".zddv/uvm/items/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    run_record: dict[str, Any] | None = None
+    if run_id is not None:
+        run_record = get_run_record(project, run_id)
+        if run_record is None:
+            raise ValueError(f"Unknown run ID: {run_id}")
+
+    report = parse_uvm_item_file(input_path, source=source)
+    return _persist_uvm_item_report(
+        project,
+        input_path,
+        report,
+        output=output,
+        run_record=run_record,
+    )
+
+
+def analyze_uvm_item_log(
+    project: ProjectConfig,
+    path: str | Path | None,
+    *,
+    source: str | None = None,
+    output: str | Path = ".zddv/uvm/items/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    run_record: dict[str, Any] | None = None
+    if run_id is not None:
+        run_record = get_run_record(project, run_id)
+        if run_record is None:
+            raise ValueError(f"Unknown run ID: {run_id}")
+
+    if path is None:
+        if run_record is None:
+            raise ValueError("A UVM log path or --run must be provided")
+        input_path = Path(run_record["log_path"])
+    else:
+        input_path = Path(path)
+        if not input_path.is_absolute():
+            input_path = project.root / input_path
+
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    selected_source = source or (
+        str(run_record["simulator"]) if run_record is not None else "uvm-item-report"
+    )
+    report = parse_uvm_item_log(input_path, source=selected_source)
+    return _persist_uvm_item_report(
+        project,
+        input_path,
+        report,
+        output=output,
+        run_record=run_record,
+    )
