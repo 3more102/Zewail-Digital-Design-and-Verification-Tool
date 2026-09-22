@@ -11,6 +11,10 @@ from zddv.formal.results import (
     formal_result_from_data,
     formal_result_to_record,
 )
+from zddv.storage import (
+    list_formal_property_results,
+    list_formal_result_snapshots,
+)
 
 
 def _payload(*, mode: str = "bmc", depth: int | None = 20) -> dict[str, object]:
@@ -203,3 +207,68 @@ def test_analyze_formal_result_file_writes_evidence_record(tmp_path: Path):
     assert persisted["project"] == project.name
     assert persisted["input_path"] == str(input_path.resolve())
     assert persisted["summary"]["counterexamples"] == 1
+
+    history = list_formal_result_snapshots(project)
+    assert len(history) == 1
+    assert history[0]["snapshot_id"] == record["snapshot_id"]
+    assert history[0]["backend"] == "example"
+    assert history[0]["mode"] == "bmc"
+    assert history[0]["scope"] == "BOUNDED"
+    assert history[0]["counterexample_count"] == 1
+    assert history[0]["bounded_safe_count"] == 1
+
+    properties = list_formal_property_results(
+        project,
+        snapshot_id=record["snapshot_id"],
+    )
+    assert len(properties) == 4
+    failed = next(item for item in properties if item["name"] == "p_failure")
+    assert failed["interpretation"] == "COUNTEREXAMPLE"
+    assert failed["effective_depth"] == 7
+    assert failed["trace_role"] == "COUNTEREXAMPLE"
+    assert failed["trace_path"] == "artifacts/p_failure.vcd"
+
+
+def test_formal_history_filters_snapshots_and_properties(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    bounded_path = project.root / "bounded.json"
+    bounded_path.write_text(json.dumps(_payload()), encoding="utf-8")
+    bounded = analyze_formal_result_file(project, bounded_path)
+
+    prove_payload = _payload(mode="prove", depth=None)
+    prove_payload["status"] = "PASS"
+    prove_payload["backend"] = "prove-backend"
+    prove_payload["properties"] = [
+        {
+            "name": "p_complete",
+            "kind": "assert",
+            "status": "PASS",
+        }
+    ]
+    prove_path = project.root / "prove.json"
+    prove_path.write_text(json.dumps(prove_payload), encoding="utf-8")
+    proved = analyze_formal_result_file(project, prove_path)
+
+    prove_rows = list_formal_result_snapshots(
+        project,
+        backend="prove-backend",
+        mode="prove",
+        status="PASS",
+    )
+    assert [row["snapshot_id"] for row in prove_rows] == [proved["snapshot_id"]]
+
+    cex_rows = list_formal_property_results(
+        project,
+        interpretation="COUNTEREXAMPLE",
+    )
+    assert len(cex_rows) == 1
+    assert cex_rows[0]["snapshot_id"] == bounded["snapshot_id"]
+    assert cex_rows[0]["name"] == "p_failure"
+
+    proved_rows = list_formal_property_results(
+        project,
+        snapshot_id=proved["snapshot_id"],
+        interpretation="PROVED",
+    )
+    assert len(proved_rows) == 1
+    assert proved_rows[0]["name"] == "p_complete"
