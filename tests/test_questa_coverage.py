@@ -14,6 +14,7 @@ from zddv.coverage import (
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
     parse_questa_statement_coverage_xml,
+    parse_questa_toggle_coverage_report,
     write_questa_statement_hole_report,
 )
 from zddv.storage import (
@@ -189,6 +190,35 @@ Row 8: d[i]_1                     1 ***0*** ***0*** (~(a[i] & b[i]) && c[i])
 """
 
 
+QUESTA_TOGGLE_DETAILS = """QuestaSim vcover 2025.2 Coverage Utility
+Coverage Report by instance with details
+
+=================================================================================
+=== Instance: /top/dut
+=== Design Unit: work.dut
+=================================================================================
+Toggle Coverage:
+    Enabled Coverage              Bins      Hits    Misses  Coverage
+    ----------------              ----      ----    ------  --------
+    Toggles                          6         3         3    50.00%
+
+================================Toggle Details================================
+
+Toggle Coverage for instance /top/dut --
+
+                                              Node      1H->0L      0L->1H                          "Coverage"
+                                              ---------------------------------------------------------------
+                                             ready           0           1                               50.00
+                                        state[0-3]           0           0                                0.00
+
+Total Node Count     =          3
+Toggled Node Count   =          1
+Untoggled Node Count =          2
+
+Toggle Coverage      =      50.00% (3 of 6 bins)
+"""
+
+
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
 Covergroup                              Metric       Goal    Bins    Status
@@ -344,6 +374,31 @@ def test_parse_questa_multibit_expression_normalizes_input_term_bits():
     assert by_target["b[1]"]["bit"] == 1
     assert by_target["b[1]"]["expression"] == "((a & b) | (c & d))"
     assert by_target["b[1]"]["name"] == "ttest.sv:28:1:b[1]"
+
+
+def test_parse_questa_toggle_normalizes_explicit_transition_counts():
+    points = parse_questa_toggle_coverage_report(QUESTA_TOGGLE_DETAILS)
+
+    assert len(points) == 4
+    assert sum(point["hit"] for point in points) == 1
+
+    by_name = {point["name"]: point for point in points}
+    falling = by_name["/top/dut:ready:1H->0L"]
+    assert falling["count"] == 0
+    assert falling["hit"] is False
+    assert falling["instance"] == "/top/dut"
+    assert falling["design_unit"] == "work.dut"
+    assert falling["node"] == "ready"
+    assert falling["transition"] == "1H->0L"
+    assert falling["reported_coverage"] == 50.0
+
+    rising = by_name["/top/dut:ready:0L->1H"]
+    assert rising["count"] == 1
+    assert rising["hit"] is True
+
+    ranged = by_name["/top/dut:state[0-3]:1H->0L"]
+    assert ranged["node"] == "state[0-3]"
+    assert ranged["count"] == 0
 
 
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
@@ -1061,3 +1116,51 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
                 show=2,
             )
         )
+
+
+def test_coverage_holes_cli_supports_questa_toggle_transition_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    report_path = project.root / ".zddv" / "coverage" / "toggle-details.txt"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(QUESTA_TOGGLE_DETAILS, encoding="utf-8")
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    args = SimpleNamespace(
+        project=str(project.root),
+        output=".zddv/coverage/toggle-holes.json",
+        point_type="toggle",
+        limit=50,
+        show=10,
+    )
+
+    assert cmd_coverage_holes(args) == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (toggle): 3 unhit point(s)" in output
+    assert "[toggle] /top/dut:ready:1H->0L" in output
+    assert "[toggle] /top/dut:state[0-3]:1H->0L" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "toggle-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["by_type"] == {"toggle": 3}
+    ready = next(
+        hole for hole in payload["holes"]
+        if hole["name"] == "/top/dut:ready:1H->0L"
+    )
+    assert ready["instance"] == "/top/dut"
+    assert ready["design_unit"] == "work.dut"
+    assert ready["node"] == "ready"
+    assert ready["transition"] == "1H->0L"
+    assert ready["reported_coverage"] == 50.0
+
+    ranged = next(
+        hole for hole in payload["holes"]
+        if hole["name"] == "/top/dut:state[0-3]:1H->0L"
+    )
+    assert ranged["node"] == "state[0-3]"
