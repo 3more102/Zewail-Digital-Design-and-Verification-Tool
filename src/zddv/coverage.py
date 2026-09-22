@@ -1310,7 +1310,7 @@ def parse_vcs_urg_dashboard(path: str | Path) -> dict:
 
 
 def merge_vcs_coverage(project: ProjectConfig) -> dict:
-    """Merge per-run VCS databases and normalize documented URG dashboard scores."""
+    """Merge VCS coverage and retain documented URG summary/brief evidence."""
     tool = shutil.which("urg")
     if tool is None:
         raise RuntimeError(
@@ -1329,6 +1329,7 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     merged_path = out_dir / "coverage.vdb"
     report_dir = out_dir / "urg-report"
+    brief_report_dir = out_dir / "urg-brief"
     manifest_path = out_dir / "vcs-coverage.json"
 
     if merged_path.exists():
@@ -1341,6 +1342,11 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             shutil.rmtree(report_dir)
         else:
             report_dir.unlink()
+    if brief_report_dir.exists():
+        if brief_report_dir.is_dir():
+            shutil.rmtree(brief_report_dir)
+        else:
+            brief_report_dir.unlink()
 
     inputs = [str(path) for path in coverage_dirs]
     command = [
@@ -1366,6 +1372,31 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             + " ".join(command)
             + "\n"
             + (result.stdout or "").strip()
+        )
+
+    brief_command = [
+        tool,
+        "-dir",
+        merged_path.name,
+        "-report",
+        brief_report_dir.name,
+        "-format",
+        "text",
+        "-show",
+        "brief",
+        "-metric",
+        "line+cond+fsm+tgl+branch",
+    ]
+    brief_result = _run(brief_command, out_dir)
+    brief_status = (
+        "captured"
+        if brief_result.returncode == 0 and brief_report_dir.exists()
+        else "failed"
+    )
+    brief_error: str | None = None
+    if brief_status != "captured":
+        brief_error = (brief_result.stdout or "").strip() or (
+            f"URG brief report exited with status {brief_result.returncode}"
         )
 
     created_at = datetime.now(timezone.utc).isoformat()
@@ -1426,6 +1457,11 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "module_counts_status": module_counts_status,
         "command": command,
+        "brief_status": brief_status,
+        "brief_report_dir": (
+            str(brief_report_dir) if brief_report_dir.exists() else None
+        ),
+        "brief_command": brief_command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
@@ -1433,6 +1469,8 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         payload["metrics_error"] = metrics_error
     if module_counts_error is not None:
         payload["module_counts_error"] = module_counts_error
+    if brief_error is not None:
+        payload["brief_error"] = brief_error
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     summary_path = dashboard_path if dashboard_path.exists() else report_dir
@@ -1469,6 +1507,12 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "metrics_error": metrics_error,
         "module_counts_status": module_counts_status,
         "module_counts_error": module_counts_error,
+        "brief_status": brief_status,
+        "brief_report_dir": (
+            str(brief_report_dir) if brief_report_dir.exists() else None
+        ),
+        "brief_command": brief_command,
+        "brief_error": brief_error,
     }
 
 
