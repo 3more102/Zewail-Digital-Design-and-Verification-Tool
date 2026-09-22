@@ -411,7 +411,7 @@ def parse_uvm_item_log_text(
 
         event = dict(payload)
         event_metadata = dict(metadata)
-        event_metadata.setdefault("log_line", line_number)
+        event_metadata["log_line"] = line_number
         event["metadata"] = event_metadata
         events.append(event)
         marker_lines.append(line_number)
