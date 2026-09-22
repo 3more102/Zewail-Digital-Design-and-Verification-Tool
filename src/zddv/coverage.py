@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -161,6 +162,11 @@ def build_coverage_hole_report(
                 "type": str(point.get("type") or "unknown"),
                 "name": str(point.get("name") or ""),
                 "count": int(point.get("count", 0)),
+                **{
+                    key: point[key]
+                    for key in ("scope", "file", "line", "statement")
+                    if key in point and point[key] is not None
+                },
             }
             for point in shown
         ],
@@ -297,6 +303,213 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
             coverage_kind = ""
 
     return {"source": "questa-vcover", "bins": bins}
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _xml_ancestor(
+    element: ET.Element,
+    parents: dict[ET.Element, ET.Element],
+    names: set[str],
+) -> ET.Element | None:
+    parent = parents.get(element)
+    while parent is not None:
+        if _xml_local_name(parent.tag) in names:
+            return parent
+        parent = parents.get(parent)
+    return None
+
+
+def parse_questa_statement_coverage_xml(path: str | Path) -> list[dict]:
+    """Normalize statement items from Questa vcover XML coverage output."""
+    source = Path(path)
+    root = ET.parse(source).getroot()
+    parents = {
+        child: parent
+        for parent in root.iter()
+        for child in parent
+    }
+
+    global_file_map: dict[str, str] = {}
+    instance_file_maps: dict[ET.Element, dict[str, str]] = {}
+    for element in root.iter():
+        if _xml_local_name(element.tag) not in {"file", "fileMap"}:
+            continue
+        file_number = element.attrib.get("fn")
+        file_path = element.attrib.get("path")
+        if file_number is None or not file_path:
+            continue
+
+        instance = _xml_ancestor(
+            element,
+            parents,
+            {"instance", "instanceData"},
+        )
+        if instance is None:
+            global_file_map[str(file_number)] = str(file_path)
+        else:
+            instance_file_maps.setdefault(instance, {})[str(file_number)] = str(file_path)
+
+    points: list[dict] = []
+    for element in root.iter():
+        if _xml_local_name(element.tag) != "stmt":
+            continue
+
+        try:
+            hits = int(element.attrib["hits"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if hits < 0:
+            continue
+
+        line: int | None = None
+        statement: int | None = None
+        try:
+            if "ln" in element.attrib:
+                line = int(element.attrib["ln"])
+        except ValueError:
+            line = None
+        try:
+            if "st" in element.attrib:
+                statement = int(element.attrib["st"])
+        except ValueError:
+            statement = None
+
+        instance = _xml_ancestor(
+            element,
+            parents,
+            {"instance", "instanceData"},
+        )
+        scope = (
+            str(instance.attrib.get("path") or "").strip()
+            if instance is not None
+            else ""
+        )
+
+        file_number = element.attrib.get("fn")
+        source_path = None
+        if file_number is not None:
+            key = str(file_number)
+            if instance is not None:
+                source_path = instance_file_maps.get(instance, {}).get(key)
+            if source_path is None:
+                source_path = global_file_map.get(key)
+
+        location = source_path or (
+            f"file#{file_number}" if file_number is not None else "<unknown-source>"
+        )
+        if line is not None:
+            location += f":{line}"
+        if statement is not None:
+            location += f":stmt{statement}"
+        name = f"{scope}|{location}" if scope else location
+
+        points.append(
+            {
+                "type": "statement",
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "scope": scope,
+                "file": source_path,
+                "line": line,
+                "statement": statement,
+            }
+        )
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            str(point.get("file") or ""),
+            -1 if point.get("line") is None else int(point["line"]),
+            -1 if point.get("statement") is None else int(point["statement"]),
+        )
+    )
+    return points
+
+
+def write_questa_statement_hole_report(
+    project: ProjectConfig,
+    output: str | Path,
+    *,
+    limit: int | None = None,
+) -> dict:
+    """Export statement details from merged UCDB and write normalized zero-hit holes."""
+    tool = shutil.which("vcover")
+    if tool is None:
+        raise RuntimeError(
+            "Questa vcover was not found in PATH. Install/configure Questa and retry."
+        )
+
+    merged_path = (project.root / ".zddv" / "coverage" / "coverage.ucdb").resolve()
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"Merged Questa coverage not found at {merged_path}. "
+            "Run 'zddv coverage' first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage" / "questa").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    xml_path = out_dir / "statement-details.xml"
+    if xml_path.exists():
+        xml_path.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-xml",
+        "-notimestamps",
+        "-code",
+        "s",
+        "-zeros",
+        "-output",
+        str(xml_path),
+        str(merged_path),
+    ]
+    completed = _run(command, project.root)
+    if completed.returncode != 0 or not xml_path.exists():
+        raise RuntimeError(
+            "Questa statement coverage XML export failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + (completed.stdout or "").strip()
+        )
+
+    try:
+        points = parse_questa_statement_coverage_xml(xml_path)
+    except ET.ParseError as exc:
+        raise RuntimeError(
+            f"Questa statement coverage XML is malformed: {xml_path}"
+        ) from exc
+
+    if not points:
+        raise RuntimeError(
+            f"No statement coverage items could be normalized from {xml_path}."
+        )
+
+    report = build_coverage_hole_report(
+        points,
+        point_type="statement",
+        limit=limit,
+    )
+
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = (project.root / destination).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        **report,
+        "source": "questa-vcover-xml",
+        "merged": str(merged_path),
+        "xml": str(xml_path),
+        "command": command,
+    }
+    destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {**payload, "path": str(destination)}
 
 
 def _capture_questa_report_file(
