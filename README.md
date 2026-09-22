@@ -61,7 +61,7 @@ Requirements:
 
 - Python 3.11+
 - Verilator available in `PATH` for the default backend
-- Optional Questa/QuestaSim: `vlib`, `vlog`, and `vsim` available in `PATH`
+- Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 
 Install ZDDV for development:
 
