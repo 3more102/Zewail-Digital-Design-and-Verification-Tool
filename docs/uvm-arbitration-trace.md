@@ -9,6 +9,8 @@ zddv --project <project> uvm-arbitration-history --limit 20
 
 The input contains an ordered `decisions` array. Each decision names the sequencer, the granted request, and the contender set visible for that arbitration decision. Request identity is carried by `request_id`, `sequence_id`, `sequence`, and optional `item_id` / integer `priority`.
 
+An optional top-level `mode` (or per-decision `mode` override) may name one of the six UVM arbitration modes: `UVM_SEQ_ARB_FIFO`, `UVM_SEQ_ARB_WEIGHTED`, `UVM_SEQ_ARB_RANDOM`, `UVM_SEQ_ARB_STRICT_FIFO`, `UVM_SEQ_ARB_STRICT_RANDOM`, or `UVM_SEQ_ARB_USER`. If mode is omitted, ZDDV records it as `UNSPECIFIED` and performs no policy-specific winner check.
+
 ## Checks
 
 ZDDV reports violations when:
@@ -18,7 +20,19 @@ ZDDV reports violations when:
 - the granted request is not one of the contenders;
 - a stable request changes sequence/item/priority/sequencer identity;
 - an already granted request reappears or is granted again;
-- an explicit project-defined fairness bound is exceeded.
+- an explicit project-defined fairness bound is exceeded;
+- an explicitly configured FIFO/strict arbitration rule is contradicted by sufficient contender evidence.
+
+## Evidence-gated UVM policy checks
+
+Policy validation is opt-in through explicit `mode` evidence. ZDDV does not infer the configured sequencer mode from winner order.
+
+- `UVM_SEQ_ARB_FIFO`: checked only when every contender in that decision carries a unique non-negative `request_order`; the earliest request must win.
+- `UVM_SEQ_ARB_STRICT_FIFO`: checked only when every contender carries `priority`; the winner must be in the highest-priority set. FIFO tie-breaking is additionally checked when every highest-priority contender carries a unique `request_order`.
+- `UVM_SEQ_ARB_STRICT_RANDOM`: checked only when every contender carries `priority`; the winner must be in the highest-priority set, but the random tie winner is not predicted.
+- `UVM_SEQ_ARB_RANDOM`, `UVM_SEQ_ARB_WEIGHTED`, and `UVM_SEQ_ARB_USER`: winner choice remains observational. A finite trace does not prove random/weighted probability behavior or a user-defined arbitration function.
+
+Missing priority or request-order evidence skips the corresponding deterministic check rather than producing a failure. Duplicate request-order values are reported as ambiguous when that order is needed for a FIFO check.
 
 ## Fairness bound
 
@@ -34,4 +48,4 @@ Each analysis writes the complete normalized JSON evidence under `.zddv/uvm/arbi
 
 ## Current boundary
 
-This layer does not infer vendor simulator log formats, infer the configured UVM arbitration mode, validate weighted/random probabilities, prove policy-specific priority ordering, validate delta-cycle timing, or compare transaction payloads. Those require stronger evidence than the normalized decision trace alone supplies.
+This layer does not infer vendor simulator log formats, hidden sequencer queues, lock/grab state, weighted/random probability distributions, user-defined arbitration behavior, delta-cycle timing, or transaction payloads. Policy-specific checks run only when the trace explicitly supplies the mode and the evidence required by that rule.
