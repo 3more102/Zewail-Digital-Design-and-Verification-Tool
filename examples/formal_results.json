@@ -1,0 +1,32 @@
+{
+  "engine": "example-formal",
+  "engine_version": "1.0",
+  "source": "example-payload",
+  "metadata": {
+    "description": "Tool-neutral formal result example"
+  },
+  "properties": [
+    {
+      "name": "p_counter_never_overflows",
+      "kind": "ASSERT",
+      "status": "PASS",
+      "scope": "BOUNDED",
+      "depth": 32,
+      "location": {
+        "path": "rtl/counter.sv",
+        "line": 21
+      }
+    },
+    {
+      "name": "c_counter_wraps",
+      "kind": "COVER",
+      "status": "PASS",
+      "scope": "BOUNDED",
+      "depth": 18,
+      "witness": {
+        "path": "artifacts/counter_wrap.vcd",
+        "format": "VCD"
+      }
+    }
+  ]
+}
