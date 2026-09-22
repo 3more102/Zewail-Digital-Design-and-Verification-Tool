@@ -355,7 +355,7 @@ def _record_run(
     project,
     run_id: str,
     *,
-    log_text: str = "simulation complete\\n",
+    log_text: str = "simulation complete\n",
 ) -> None:
     run_dir = project.root / ".zddv" / "runs" / run_id
     run_dir.mkdir(parents=True)
@@ -458,7 +458,7 @@ def test_analyze_arbitration_log_resolves_run_and_persists(tmp_path: Path):
     _record_run(
         project,
         "run-arb-log",
-        log_text="noise\\n" + _marker_line(decision) + "\\n",
+        log_text="noise\n" + _marker_line(decision) + "\n",
     )
 
     result = analyze_uvm_arbitration_log(
@@ -491,7 +491,7 @@ def test_cli_arbitration_log_analysis_from_path(tmp_path: Path, capsys):
     )
     log = project.root / "simulation.log"
     log.write_text(
-        "noise\\n" + _marker_line(decision) + "\\n",
+        "noise\n" + _marker_line(decision) + "\n",
         encoding="utf-8",
     )
 
