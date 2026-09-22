@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping
+import uuid
 
 from zddv.config import ProjectConfig
+from zddv.storage import record_formal_trace_snapshot
 
 
 COUNTEREXAMPLE_SCHEMA = "zddv.formal.counterexample.v1"
@@ -236,6 +239,40 @@ def normalize_formal_counterexample(
     }
 
 
+def persist_normalized_formal_trace(
+    project: ProjectConfig,
+    normalized: Mapping[str, Any],
+    *,
+    input_path: str | Path,
+    input_sha256: str,
+    output: str | Path,
+) -> dict[str, Any]:
+    """Write one normalized trace artifact and persist its queryable SQLite evidence."""
+
+    source_path = Path(input_path).resolve()
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = project.root / destination
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    record = {
+        **dict(normalized),
+        "trace_id": uuid.uuid4().hex,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "project": project.name,
+        "input_path": str(source_path),
+        "input_sha256": input_sha256,
+        "normalized_path": str(destination),
+    }
+    destination.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    record_formal_trace_snapshot(project, record)
+    return record
+
+
 def ingest_formal_counterexample(
     project: ProjectConfig,
     path: str | Path,
@@ -254,21 +291,10 @@ def ingest_formal_counterexample(
     payload = json.loads(raw_bytes.decode("utf-8"))
     normalized = normalize_formal_counterexample(payload, source=source)
 
-    destination = Path(output)
-    if not destination.is_absolute():
-        destination = project.root / destination
-    destination = destination.resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-
-    record = {
-        **normalized,
-        "project": project.name,
-        "input_path": str(input_path),
-        "input_sha256": hashlib.sha256(raw_bytes).hexdigest(),
-        "normalized_path": str(destination),
-    }
-    destination.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    return persist_normalized_formal_trace(
+        project,
+        normalized,
+        input_path=input_path,
+        input_sha256=hashlib.sha256(raw_bytes).hexdigest(),
+        output=output,
     )
-    return record
