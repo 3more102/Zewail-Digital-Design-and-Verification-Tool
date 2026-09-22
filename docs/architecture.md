@@ -259,6 +259,20 @@ Public references:
 - https://www.uciexpress.org/specifications
 - https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
 
+## v0.7 Formal Adapter Contract
+
+Formal execution is separated from simulation by `src/zddv/formal/`. The base API defines
+a simulator-independent request (`FormalCheckRequest`), per-property normalized evidence
+(`FormalPropertyResult`), an overall tool result (`FormalCheckResult`), and the
+`FormalBackend` execution boundary.
+
+The first contract deliberately does not infer vendor-specific proof semantics. It normalizes
+only stable concepts: BMC/prove/cover request modes; optional bounds, property filters and
+timeouts; assertion PASS/FAIL/UNKNOWN/ERROR states; cover
+COVERED/UNCOVERED/UNKNOWN/ERROR states; tool command/evidence paths; and overall
+PASS/FAIL/UNKNOWN/ERROR status. Concrete engines, persistence, bounded execution, and
+counterexample artifact normalization are follow-on milestones.
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
