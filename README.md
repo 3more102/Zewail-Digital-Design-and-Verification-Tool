@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native VCS coverage plus normalized URG score/count history**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, Verilator/Questa/VCS execution, and Xcelium xrun execution with native IMC coverage capture/merge plus percentage-native overall score history**
 
 ## What Works Today
 
@@ -14,6 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, and documented module-level line/branch covered/total counts from `modinfo.txt`
+- Cadence Xcelium native `xrun` elaborate/run foundation with deterministic seeds, tests/plusargs, timeouts, VCD capture, assertion/UVM ingestion, per-run `.ucm`/`.ucd` coverage capture, IMC batch merge, retained summary evidence, and normalized Overall Average/Covered score history
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch/condition source-linked `coverage-holes`; expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -689,7 +690,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [x] VCS documented module-level line/branch covered/total count ingestion from `modinfo.txt`
 - [ ] VCS remaining condition/toggle/FSM module counts and instance-level code-metric aggregation
-- [ ] Xcelium adapter
+- [x] Xcelium execution adapter foundation
+- [x] Xcelium native per-run `.ucm`/`.ucd` coverage capture
+- [x] Xcelium IMC multi-run merge and Overall Average/Covered score normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
