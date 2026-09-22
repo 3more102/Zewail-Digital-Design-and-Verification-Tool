@@ -389,6 +389,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "functional_bins": 3,
             "functional_snapshot_id": "fcov-test",
             "functional_report": "/tmp/functional.txt",
+            "code_report": "/tmp/code-details.txt",
+            "code_detail_status": "ok",
+            "code_detail_points": 8,
+            "code_detail_holes": 3,
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
@@ -403,6 +407,11 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+    assert (
+        "Normalized Questa statement/branch coverage: ok 8 point(s), 3 hole(s)"
+        in output
+    )
+    assert "Questa statement/branch detail: /tmp/code-details.txt" in output
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
 
