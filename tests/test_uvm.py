@@ -7,6 +7,7 @@ from zddv.storage import (
     list_uvm_objection_events,
     list_uvm_phase_events,
     list_uvm_report_messages,
+    list_uvm_sequence_events,
     record_run,
 )
 from zddv.uvm import analyze_uvm_log, parse_uvm_log_text
@@ -47,6 +48,29 @@ UVM_INFO @ 100: reporter [PH/TRC/DONE] Phase 'common.run' (id=42) Completed phas
     assert lifecycle["summary"]["all_dropped"] == 1
     assert lifecycle["summary"]["propagated_events"] == 1
     assert lifecycle["summary"]["max_observed_total"] == 1
+    assert lifecycle["summary"]["sequence_events"] == 0
+
+
+def test_captures_explicit_sequence_report_context_without_inferred_lifecycle():
+    result = parse_uvm_log_text(
+        """
+UVM_INFO @ 12: uvm_test_top.env.agent.seqr@@smoke_seq [SEQ_NOTE] generated transaction
+UVM_INFO @ 20: uvm_test_top.env.agent.seqr [SEQ_NOTE] ordinary sequencer report
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["summary"]["sequence_events"] == 1
+    assert lifecycle["summary"]["sequences_seen"] == [
+        "uvm_test_top.env.agent.seqr@@smoke_seq"
+    ]
+    event = lifecycle["sequence_events"][0]
+    assert event["sequence"] == "smoke_seq"
+    assert event["sequencer"] == "uvm_test_top.env.agent.seqr"
+    assert event["action"] == "report"
+    assert event["evidence"] == "uvm_report_context"
+    assert event["report_id"] == "SEQ_NOTE"
+    assert event["message"] == "generated transaction"
 
 
 def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
@@ -59,6 +83,8 @@ def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
         "Object uvm_test_top raised 1 objection(s): count=1 total=1\n"
         "UVM_INFO @ 25: run [OBJTN_TRC] "
         "Object uvm_test_top dropped 1 objection(s): count=0 total=0\n"
+        "UVM_INFO @ 20: uvm_test_top.env.seqr@@persist_seq [SEQ_NOTE] "
+        "sequence evidence\n"
         "UVM_INFO @ 25: reporter [PH/TRC/DONE] "
         "Phase 'common.run' (id=7) Completed phase\n",
         encoding="utf-8",
@@ -67,6 +93,7 @@ def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
     result = analyze_uvm_log(project, log, source="questa")
     phases = list_uvm_phase_events(project, result["snapshot_id"])
     objections = list_uvm_objection_events(project, result["snapshot_id"])
+    sequences = list_uvm_sequence_events(project, result["snapshot_id"])
 
     assert [row["action"] for row in phases] == ["started", "done"]
     assert phases[0]["phase_name"] == "common.run"
@@ -75,6 +102,15 @@ def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
     assert objections[0]["objection_name"] == "run"
     assert objections[0]["object_name"] == "uvm_test_top"
     assert objections[0]["total_count"] == 1
+    assert len(sequences) == 1
+    assert sequences[0]["sequence_name"] == "persist_seq"
+    assert sequences[0]["sequencer_name"] == "uvm_test_top.env.seqr"
+    assert sequences[0]["evidence"] == "uvm_report_context"
+
+    snapshots = list_uvm_log_snapshots(project, limit=10)
+    assert snapshots[0]["phase_events"] == 2
+    assert snapshots[0]["objection_events"] == 2
+    assert snapshots[0]["sequence_events"] == 1
 
 
 def test_parses_uvm_summary_and_test_metadata():
