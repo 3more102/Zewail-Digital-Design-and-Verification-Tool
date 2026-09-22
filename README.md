@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Deterministic coverage-hole test-intent suggestions that retain source evidence, require review, and never execute stimulus automatically
 - Review-gated generated SystemVerilog assertion/test artifacts with isolated staging, SHA-256 provenance, explicit apply approval, overwrite refusal, and no automatic execution
+- Provider-neutral AI-assisted RCA context bundles with deterministic evidence hashing, explicit uncertainty rules, and no automatic external transmission or model invocation
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -172,6 +173,7 @@ zddv --project my_project coverage-holes --type line --output .zddv/coverage/lin
 zddv --project my_project coverage-suggest --show 20
 zddv --project my_project generated-stage proposal.json
 zddv --project my_project generated-apply .zddv/generated/drafts/<draft-id>/manifest.json --expected-sha256 <reviewed-sha256> --approve-reviewed
+zddv --project my_project ai-rca-context --run <run-id>
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
@@ -741,6 +743,19 @@ When no waveform artifact or exact signal hint exists, the report emits explicit
 blockers instead of inventing a signal or time window. Probe suggestions are written
 to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 
+### Provider-Neutral AI RCA Context
+
+`zddv ai-rca-context --run <run-id>` packages the existing deterministic
+root-cause ranking and evidence-backed debug-probe suggestions into
+`.zddv/debug/ai-rca-context.json`. The bundle carries an SHA-256 digest of the
+canonical evidence payload plus a downstream prompt contract that requires any
+assistant to distinguish observations, hypotheses, unknowns, and proposed next
+checks.
+
+This command does **not** contact an AI provider, transmit project data, execute
+commands, or reinterpret `evidence_score` as a causal probability. The generated
+bundle is review-required before any external use.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
@@ -771,6 +786,7 @@ to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 - [x] Deterministic evidence-ranked root-cause candidate triage
 - [x] Evidence-backed coverage-hole test objectives with review-required output
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
+- [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
