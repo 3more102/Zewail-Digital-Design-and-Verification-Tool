@@ -223,6 +223,10 @@ def build_coverage_hole_report(
                         "statement",
                         "condition",
                         "expression",
+                        "signal",
+                        "toggle_mode",
+                        "toggle_transition",
+                        "scope_kind",
                         "fec_context",
                         "fec_target",
                         "bit",
@@ -773,6 +777,109 @@ def _xml_ancestor(
     return None
 
 
+def parse_questa_toggle_coverage_xml(path: str | Path) -> list[dict]:
+    """Normalize binary/extended by-instance toggle transition items from vcover XML.
+
+    Only native tog and toge transition counters are interpreted. Enumerated or
+    otherwise unknown toggle layouts remain evidence-only rather than being
+    converted into synthetic coverage goals.
+    """
+    root = ET.parse(Path(path)).getroot()
+    parents = {child: parent for parent in root.iter() for child in parent}
+
+    standard_transitions = {
+        "c0": "to_0",
+        "c1": "to_1",
+    }
+    extended_transitions = {
+        "c1H_0L": "1H->0L",
+        "c0L_1H": "0L->1H",
+        "c0L_Z": "0L->Z",
+        "cZ_0L": "Z->0L",
+        "c1H_Z": "1H->Z",
+        "cZ_1H": "Z->1H",
+    }
+
+    def scope_for(element: ET.Element) -> tuple[str, str]:
+        instance = _xml_ancestor(
+            element,
+            parents,
+            {"instance", "instanceData"},
+        )
+        if instance is not None:
+            return str(instance.attrib.get("path") or "").strip(), "instance"
+
+        design_unit = _xml_ancestor(
+            element,
+            parents,
+            {"DuData", "duData"},
+        )
+        if design_unit is not None:
+            return str(design_unit.attrib.get("du") or "").strip(), "design_unit"
+
+        file_data = _xml_ancestor(element, parents, {"fileData"})
+        if file_data is not None:
+            return str(file_data.attrib.get("path") or "").strip(), "file"
+
+        return "", ""
+
+    points: list[dict] = []
+    for element in root.iter():
+        tag = _xml_local_name(element.tag)
+        if tag == "tog":
+            transitions = standard_transitions
+            mode = "standard"
+        elif tag == "toge":
+            transitions = extended_transitions
+            mode = "extended"
+        else:
+            continue
+
+        signal = str(element.attrib.get("name") or "").strip()
+        if not signal:
+            continue
+        scope, scope_kind = scope_for(element)
+
+        for attribute, transition in transitions.items():
+            raw_count = element.attrib.get(attribute)
+            if raw_count is None:
+                continue
+            try:
+                count = int(raw_count)
+            except (TypeError, ValueError):
+                continue
+            if count < 0:
+                continue
+
+            label = f"{signal}:{transition}"
+            name = f"{scope}|{label}" if scope else label
+            evidence = f"{attribute}={count}"
+            points.append(
+                {
+                    "type": "toggle",
+                    "name": name,
+                    "count": count,
+                    "hit": count > 0,
+                    "scope": scope,
+                    "scope_kind": scope_kind,
+                    "signal": signal,
+                    "toggle_mode": mode,
+                    "toggle_transition": transition,
+                    "evidence": evidence,
+                    "detail": evidence,
+                }
+            )
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            str(point.get("signal") or ""),
+            str(point.get("toggle_transition") or ""),
+        )
+    )
+    return points
+
+
 def parse_questa_statement_coverage_xml(path: str | Path) -> list[dict]:
     """Normalize documented by-instance statement items from vcover XML."""
     root = ET.parse(Path(path)).getroot()
@@ -1200,6 +1307,24 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         else str(multibit_expression_evidence.get("status") or "missing")
     )
 
+    toggle_xml_evidence = detailed_code_coverage_evidence["toggle_xml"]
+    questa_toggle_points: list[dict] = []
+    if (
+        toggle_xml_evidence.get("status") == "captured"
+        and toggle_xml_path.exists()
+    ):
+        try:
+            questa_toggle_points = parse_questa_toggle_coverage_xml(toggle_xml_path)
+        except ET.ParseError:
+            questa_toggle_points = []
+    questa_toggle_status = (
+        "ok"
+        if questa_toggle_points
+        else "empty"
+        if toggle_xml_evidence.get("status") == "captured"
+        else str(toggle_xml_evidence.get("status") or "missing")
+    )
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -1225,6 +1350,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "multibit_expression_points": len(multibit_expression_points),
         "multibit_expression_holes": sum(
             not point["hit"] for point in multibit_expression_points
+        ),
+        "questa_toggle_report": str(toggle_xml_path),
+        "questa_toggle_status": questa_toggle_status,
+        "questa_toggle_points": len(questa_toggle_points),
+        "questa_toggle_holes": sum(
+            not point["hit"] for point in questa_toggle_points
         ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
@@ -1259,6 +1390,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "multibit_expression_points": len(multibit_expression_points),
         "multibit_expression_holes": sum(
             not point["hit"] for point in multibit_expression_points
+        ),
+        "questa_toggle_report": str(toggle_xml_path),
+        "questa_toggle_status": questa_toggle_status,
+        "questa_toggle_points": len(questa_toggle_points),
+        "questa_toggle_holes": sum(
+            not point["hit"] for point in questa_toggle_points
         ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
