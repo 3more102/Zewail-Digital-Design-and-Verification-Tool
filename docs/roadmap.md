@@ -155,7 +155,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Deterministic root-cause candidate ranking from explicit run/assertion/waveform/RTL evidence.
 - [x] Suggested next debug probes derived only from explicit ranked failure evidence.
 - [x] Coverage-hole test suggestions derived only from normalized explicit hole evidence.
-- [ ] Generated assertions/tests kept reviewable and opt-in.
+- [x] Generated assertion/test templates kept reviewable and opt-in (comment-only `.sv.template` artifacts with evidence manifest; no automatic build or execution).
 
 ## Long-Term Direction
 
