@@ -395,6 +395,13 @@ def cmd_coverage(args) -> int:
                     for name, value in sorted(by_metric.items())
                 )
                 print(f"Coverage metric scores: {detail}")
+        object_counts = metrics.get("object_counts") or {}
+        if object_counts:
+            detail = ", ".join(
+                f"{name}={counts['covered']}/{counts['expected']}"
+                for name, counts in sorted(object_counts.items())
+            )
+            print(f"Coverage object counts: {detail}")
         print(f"Metrics: {result['metrics_path']}")
         if result.get("snapshot_id"):
             print(f"Snapshot: {result['snapshot_id']}")
