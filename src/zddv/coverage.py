@@ -92,6 +92,13 @@ _QUESTA_FEC_ROW = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_TOGGLE_ROW = re.compile(
+    r"^\\s*(?P<node>/\\S+)\\s+"
+    r"(?P<one_to_zero>\\d[\\d,]*)\\s+"
+    r"(?P<zero_to_one>\\d[\\d,]*)"
+    r"(?:\\s+\\d[\\d,]*){0,4}\\s*$"
+)
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -197,6 +204,8 @@ def build_coverage_hole_report(
                         "fec_context",
                         "fec_target",
                         "evidence",
+                        "node",
+                        "transition",
                     )
                     if key in point and point[key] is not None
                 },
@@ -474,6 +483,45 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     return points
 
 
+def parse_questa_toggle_coverage_report(text: str) -> list[dict]:
+    """Normalize standard 1H->0L and 0L->1H toggle transition counts.
+
+    Questa's toggle-report style can also include Z-transition columns for
+    extended toggle coverage. Those extra columns are deliberately left as
+    evidence-only until Z-transition item semantics are normalized separately.
+    """
+    points: list[dict] = []
+    for raw_line in text.splitlines():
+        row = _QUESTA_TOGGLE_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        node = row.group("node")
+        counts = (
+            ("1H->0L", int(row.group("one_to_zero").replace(",", ""))),
+            ("0L->1H", int(row.group("zero_to_one").replace(",", ""))),
+        )
+        for transition, count in counts:
+            points.append(
+                {
+                    "type": "toggle",
+                    "name": f"{node} {transition}",
+                    "count": count,
+                    "hit": count > 0,
+                    "node": node,
+                    "transition": transition,
+                }
+            )
+
+    points.sort(
+        key=lambda point: (
+            str(point["node"]),
+            0 if point["transition"] == "1H->0L" else 1,
+        )
+    )
+    return points
+
+
 def _xml_local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -700,6 +748,82 @@ def _capture_questa_report_file(
             else None
         ),
     }
+
+
+def write_questa_toggle_hole_report(
+    project: ProjectConfig,
+    output: str | Path,
+    *,
+    limit: int | None = None,
+) -> dict:
+    """Generate native toggle details and normalize standard two-state holes."""
+    tool = shutil.which("vcover")
+    if tool is None:
+        raise RuntimeError(
+            "Questa vcover was not found in PATH. Install/configure Questa and retry."
+        )
+
+    merged_path = (project.root / ".zddv" / "coverage" / "coverage.ucdb").resolve()
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"Merged Questa coverage not found at {merged_path}. "
+            "Run 'zddv coverage' first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage" / "questa").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    toggle_path = out_dir / "toggle-report.txt"
+    if toggle_path.exists():
+        toggle_path.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-details",
+        "-toggles",
+        "-all",
+        str(merged_path),
+    ]
+    completed = _run(command, project.root)
+    report_text = completed.stdout or ""
+    toggle_path.write_text(report_text, encoding="utf-8")
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Questa toggle coverage export failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + report_text.strip()
+        )
+
+    points = parse_questa_toggle_coverage_report(report_text)
+    if not points:
+        raise RuntimeError(
+            "No standard two-state toggle rows could be normalized from "
+            f"{toggle_path}. Extended-Z rows remain evidence-only."
+        )
+
+    report = build_coverage_hole_report(
+        points,
+        point_type="toggle",
+        limit=limit,
+    )
+    destination = Path(output)
+    if not destination.is_absolute():
+        destination = (project.root / destination).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        **report,
+        "source": "questa-vcover-toggle-report",
+        "merged": str(merged_path),
+        "toggle_report": str(toggle_path),
+        "standard_transitions": ["1H->0L", "0L->1H"],
+        "extended_z_transitions": "evidence-only",
+        "command": command,
+    }
+    destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {**payload, "path": str(destination)}
 
 
 def merge_questa_coverage(project: ProjectConfig) -> dict:
