@@ -41,6 +41,6 @@ The optional `max_bypass` policy counts how many other grants occur while a requ
 
 ## Current boundary
 
-This foundation consumes explicit normalized arbitration evidence and writes JSON snapshots under `.zddv/uvm/arbitration/`. SQLite persistence, vendor-log inference, automatic UVM instrumentation, and statistical fairness analysis for randomized/weighted modes remain planned.
+This foundation consumes explicit normalized arbitration evidence, writes JSON snapshots under `.zddv/uvm/arbitration/`, and persists snapshots, events, decisions, and violations in `.zddv/results.db`. Use `uvm-arbitration-history` to query persisted snapshots by status, run, or arbitration mode. Vendor-log inference, automatic UVM instrumentation, and statistical fairness analysis for randomized/weighted modes remain planned.
 
 Reference basis: Accellera UVM 1.2 Class Reference arbitration-mode definitions and UVM 1.2 User Guide sequence scheduling/priorities.
