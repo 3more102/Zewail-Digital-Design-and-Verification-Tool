@@ -1057,10 +1057,47 @@ def test_reports_write_strobe_width_and_transfer_size_errors():
     assert "transfer_size_exceeds_data_bus_width" in {item["code"] for item in size["violations"]}
 
 
-def test_rejects_invalid_data_width_metadata():
+def test_rejects_nonstandard_axi4_data_width_metadata():
     try:
-        analyze_axi4_trace({"data_width_bits": 30, "samples": []})
+        analyze_axi4_trace({"data_width_bits": 24, "samples": []})
     except ValueError as exc:
-        assert "positive multiple of 8" in str(exc)
+        assert "8, 16, 32, 64, 128, 256, 512, or 1024" in str(exc)
     else:
-        raise AssertionError("Expected invalid data_width_bits to fail")
+        raise AssertionError("Expected nonstandard data_width_bits to fail")
+
+
+def test_accepts_all_zero_write_strobe_as_partial_write():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0,
+                    "WSTRB": 0,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["write_strobes"] == [0]
+    assert result["transactions"][0]["allowed_write_strobes"] == [0xF]
