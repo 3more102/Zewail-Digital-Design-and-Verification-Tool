@@ -224,6 +224,17 @@ def build_coverage_hole_report(
                         "transition",
                         "transition_id",
                         "evidence",
+                        "block",
+                        "origin_line",
+                        "source_code",
+                        "signal",
+                        "toggle_rise",
+                        "toggle_fall",
+                        "coverage_grade",
+                        "covered_targets",
+                        "total_targets",
+                        "xcelium_index",
+                        "type_name",
                     )
                     if key in point and point[key] is not None
                 },
@@ -2104,6 +2115,12 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "metrics_status": metrics_status,
         "metrics_error": metrics_error,
+        "detail_status": detail_status,
+        "detail_report_dir": str(detail_dir) if detail_dir.is_dir() else None,
+        "detail_command": detail_command,
+        "detail_points": len(detail_points),
+        "detail_holes": detail_holes,
+        "detail_error": detail_error,
         "module_counts_status": module_counts_status,
         "module_counts_error": module_counts_error,
         "brief_status": brief_status,
@@ -2115,6 +2132,253 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
     }
 
 
+
+
+
+_IMC_DETAIL_TITLE = re.compile(
+    r'<P\b[^>]*class=["\']detail_title["\'][^>]*>(?P<title>.*?)</P>',
+    re.IGNORECASE | re.DOTALL,
+)
+_IMC_DETAIL_PRE = re.compile(
+    r'<PRE\b[^>]*class=["\']detail_report_text["\'][^>]*>(?P<body>.*?)</PRE>',
+    re.IGNORECASE | re.DOTALL,
+)
+_IMC_BLOCK_ROW = re.compile(
+    r"^\s*(?P<count>\d[\d,]*)\s+(?P<block>\d+)\s+(?P<line>\d+)\s+"
+    r"(?P<kind>.+?)\s+(?P<origin>\d+)\s+(?P<source>.*?)\s*$"
+)
+_IMC_TOGGLE_ROW = re.compile(
+    r"^\s*(?P<full>\d[\d,]*)\s+(?P<rise>\d[\d,]*)\s+"
+    r"(?P<fall>\d[\d,]*)\s+(?P<signal>\S+)(?:\s+.*)?$"
+)
+_IMC_EXPRESSION_PIPE_ROW = re.compile(
+    r"^\s*(?P<index>\d+(?:\.\d+)+)\s*\|\s*"
+    r"(?P<grade>\d+(?:\.\d+)?)%\s*\("
+    r"(?P<covered>\d[\d,]*)/(?P<total>\d[\d,]*)\)\s*\|\s*"
+    r"(?P<line>\d+)\s*\|\s*(?P<expression>.+?)\s*$"
+)
+_IMC_EXPRESSION_LINE_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<grade>\d+(?:\.\d+)?)%\s*\("
+    r"(?P<covered>\d[\d,]*)/(?P<total>\d[\d,]*)\)\s+"
+    r"(?P<expression>.+?)\s*$"
+)
+
+
+def _imc_html_visible_text(fragment: str, *, preserve_lines: bool = False) -> str:
+    text = re.sub(r"<BR\s*/?>", "\n", fragment, flags=re.IGNORECASE)
+    if preserve_lines:
+        text = re.sub(
+            r"</(?:P|TR|TD|TABLE|DIV|H\d)>",
+            "\n",
+            text,
+            flags=re.IGNORECASE,
+        )
+    text = re.sub(r"<[^>]+>", "", text)
+    text = unescape(text)
+    if preserve_lines:
+        return "\n".join(line.rstrip() for line in text.splitlines())
+    return " ".join(text.split())
+
+
+def _imc_detail_metadata(section: str) -> tuple[str, str, str]:
+    visible = _imc_html_visible_text(section)
+    labels = (
+        "Instance name",
+        "Module/Entity name",
+        "Type name",
+        "File name",
+        "Number of",
+    )
+
+    def field(label: str) -> str:
+        lookahead = "|".join(re.escape(item) for item in labels)
+        match = re.search(
+            rf"{re.escape(label)}\s*:\s*(?P<value>.*?)"
+            rf"(?=\s+(?:{lookahead})\s*:|$)",
+            visible,
+            re.IGNORECASE,
+        )
+        return match.group("value").strip() if match is not None else ""
+
+    instance = field("Instance name")
+    module = field("Module/Entity name")
+    type_name = field("Type name")
+    source_file = field("File name")
+    return instance or module or type_name, type_name, source_file
+
+
+def _parse_xcelium_imc_html_file(path: Path) -> list[dict]:
+    html_text = path.read_text(encoding="utf-8", errors="replace")
+    titles = list(_IMC_DETAIL_TITLE.finditer(html_text))
+    points: list[dict] = []
+
+    for index, title_match in enumerate(titles):
+        title = _imc_html_visible_text(title_match.group("title")).lower()
+        if "block detail report" in title:
+            kind = "block"
+        elif "expression detail report" in title:
+            kind = "expression"
+        elif "toggle detail report" in title:
+            kind = "toggle"
+        else:
+            continue
+
+        end = titles[index + 1].start() if index + 1 < len(titles) else len(html_text)
+        section = html_text[title_match.start() : end]
+        pre = _IMC_DETAIL_PRE.search(section)
+        if pre is None:
+            continue
+
+        scope, type_name, source_file = _imc_detail_metadata(section)
+        body = _imc_html_visible_text(pre.group("body"), preserve_lines=True)
+        evidence_file = str(path)
+
+        for raw_line in body.splitlines():
+            line = raw_line.strip()
+            if not line or set(line) <= {"-", "|", " "} or "items found" in line.lower():
+                continue
+
+            if kind == "block":
+                row = _IMC_BLOCK_ROW.match(raw_line)
+                if row is None:
+                    continue
+                count = int(row.group("count").replace(",", ""))
+                block = int(row.group("block"))
+                line_number = int(row.group("line"))
+                origin = int(row.group("origin"))
+                block_kind = row.group("kind").strip()
+                source_code = row.group("source").strip()
+                name = (
+                    f"{scope}|" if scope else ""
+                ) + f"{source_file or '<unknown-source>'}:{line_number}:block{block}"
+                points.append(
+                    {
+                        "type": "block",
+                        "name": name,
+                        "count": count,
+                        "hit": count > 0,
+                        "scope": scope,
+                        "type_name": type_name,
+                        "source_file": source_file,
+                        "line": line_number,
+                        "item": block,
+                        "block": block,
+                        "origin_line": origin,
+                        "detail": block_kind,
+                        "source_code": source_code,
+                        "evidence": evidence_file,
+                    }
+                )
+                continue
+
+            if kind == "toggle":
+                row = _IMC_TOGGLE_ROW.match(raw_line)
+                if row is None:
+                    continue
+                full = int(row.group("full").replace(",", ""))
+                rise = int(row.group("rise").replace(",", ""))
+                fall = int(row.group("fall").replace(",", ""))
+                signal = row.group("signal").strip()
+                name = f"{scope}.{signal}" if scope else signal
+                points.append(
+                    {
+                        "type": "toggle",
+                        "name": name,
+                        "count": full,
+                        "hit": full > 0,
+                        "scope": scope,
+                        "type_name": type_name,
+                        "source_file": source_file,
+                        "signal": signal,
+                        "toggle_rise": rise,
+                        "toggle_fall": fall,
+                        "detail": f"rise={rise} fall={fall}",
+                        "evidence": evidence_file,
+                    }
+                )
+                continue
+
+            row = _IMC_EXPRESSION_PIPE_ROW.match(raw_line)
+            xcelium_index: str | None = None
+            if row is not None:
+                xcelium_index = row.group("index")
+            else:
+                row = _IMC_EXPRESSION_LINE_ROW.match(raw_line)
+            if row is None:
+                continue
+
+            covered = int(row.group("covered").replace(",", ""))
+            total = int(row.group("total").replace(",", ""))
+            if total < 1 or covered < 0 or covered > total:
+                continue
+            grade = float(row.group("grade"))
+            line_number = int(row.group("line"))
+            expression = row.group("expression").strip()
+            item_label = xcelium_index or f"line{line_number}"
+            name = (
+                f"{scope}|" if scope else ""
+            ) + f"{source_file or '<unknown-source>'}:{line_number}:expr:{item_label}"
+            point = {
+                "type": "expression",
+                "name": name,
+                "count": covered,
+                "hit": covered == total,
+                "scope": scope,
+                "type_name": type_name,
+                "source_file": source_file,
+                "line": line_number,
+                "expression": expression,
+                "coverage_grade": grade,
+                "covered_targets": covered,
+                "total_targets": total,
+                "detail": expression,
+                "evidence": evidence_file,
+            }
+            if xcelium_index is not None:
+                point["xcelium_index"] = xcelium_index
+            points.append(point)
+
+    return points
+
+
+def parse_xcelium_imc_detail_report_dir(report_dir: str | Path) -> list[dict]:
+    """Normalize explicit IMC HTML block/expression/toggle item evidence.
+
+    Only fields directly emitted by IMC detail reports are normalized. FSM
+    detail rows remain out of scope until their row layout is verified.
+    """
+    source = Path(report_dir)
+    if not source.is_dir():
+        raise FileNotFoundError(f"IMC detail report directory not found: {source}")
+
+    points: list[dict] = []
+    for html_path in sorted(source.rglob("*.html")):
+        points.extend(_parse_xcelium_imc_html_file(html_path))
+
+    unique: dict[tuple, dict] = {}
+    for point in points:
+        key = (
+            point.get("type"),
+            point.get("scope"),
+            point.get("source_file"),
+            point.get("line"),
+            point.get("block"),
+            point.get("xcelium_index"),
+            point.get("signal"),
+            point.get("name"),
+        )
+        unique[key] = point
+
+    return sorted(
+        unique.values(),
+        key=lambda point: (
+            str(point.get("type") or ""),
+            str(point.get("scope") or ""),
+            str(point.get("source_file") or ""),
+            int(point.get("line") or -1),
+            str(point.get("name") or ""),
+        ),
+    )
 
 
 def _imc_quote_path(path: Path) -> str:
@@ -2291,6 +2555,9 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     summary_path = out_dir / "summary.txt"
     script_path = out_dir / "imc-commands.tcl"
     manifest_path = out_dir / "metrics.json"
+    detail_dir = out_dir / "detail-html"
+    if detail_dir.exists():
+        shutil.rmtree(detail_dir)
     inputs = [str(path) for path in coverage_dirs]
     ucd_inputs = [
         str(ucd.resolve())
@@ -2348,6 +2615,40 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             f"the generated coverage database. See {summary_path}"
         )
 
+    detail_script = (
+        'report -html -inst "*..." -metrics all '
+        f"-out {_imc_quote_path(detail_dir)} -overwrite -showempty on; exit"
+    )
+    detail_command = [
+        tool,
+        "-load",
+        str(merged_path),
+        "-execcmd",
+        detail_script,
+    ]
+    detail = _run(detail_command, out_dir)
+    detail_status = "unavailable"
+    detail_error: str | None = None
+    detail_points: list[dict] = []
+    if detail.returncode == 0 and detail_dir.is_dir():
+        try:
+            detail_points = parse_xcelium_imc_detail_report_dir(detail_dir)
+            detail_status = (
+                "normalized"
+                if detail_points
+                else "captured-no-supported-points"
+            )
+        except (OSError, ValueError) as exc:
+            detail_status = "captured-unparsed"
+            detail_error = str(exc)
+    else:
+        detail_error = (
+            (detail.stdout or "").strip()
+            or "IMC HTML detail report was not generated"
+        )
+
+    detail_holes = sum(not bool(point.get("hit")) for point in detail_points)
+
     metrics: dict | None = None
     metrics_error: str | None = None
     metrics_status = "summary-unparsed"
@@ -2383,11 +2684,18 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "merge_model": "union_all",
         "merge_command": merge_command,
         "report_command": report_command,
+        "detail_status": detail_status,
+        "detail_report_dir": str(detail_dir) if detail_dir.is_dir() else None,
+        "detail_command": detail_command,
+        "detail_points": len(detail_points),
+        "detail_holes": detail_holes,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+    if detail_error is not None:
+        payload["detail_error"] = detail_error
 
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
