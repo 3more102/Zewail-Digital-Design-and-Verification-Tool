@@ -411,6 +411,14 @@ def cmd_formal_bmc(args) -> int:
     print("Scope: BOUNDED (finite-depth evidence; not an unbounded proof)")
     print(f"Run directory: {result.run_dir}")
     print(f"Log: {result.log_path}")
+    trace_normalization = record["trace_normalization"]
+    if trace_normalization["eligible_vcd_traces"] or trace_normalization["unsupported"]:
+        print(
+            "Trace normalization: "
+            f"normalized={trace_normalization['normalized']} "
+            f"errors={trace_normalization['errors']} "
+            f"unsupported={trace_normalization['unsupported']}"
+        )
     print(f"Snapshot: {record['snapshot_id']}")
     print(f"Report: {record['report_path']}")
     return 0 if result.status == "PASS" else 1
@@ -444,6 +452,14 @@ def cmd_formal_cover(args) -> int:
     print("Scope: COVER (finite-depth reachability evidence)")
     print(f"Run directory: {result.run_dir}")
     print(f"Log: {result.log_path}")
+    trace_normalization = record["trace_normalization"]
+    if trace_normalization["eligible_vcd_traces"] or trace_normalization["unsupported"]:
+        print(
+            "Trace normalization: "
+            f"normalized={trace_normalization['normalized']} "
+            f"errors={trace_normalization['errors']} "
+            f"unsupported={trace_normalization['unsupported']}"
+        )
     print(f"Snapshot: {record['snapshot_id']}")
     print(f"Report: {record['report_path']}")
     return 0 if result.status == "PASS" else 1
