@@ -112,6 +112,10 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert second.as_posix() in script
     assert "load -run" in script
     assert 'report -summary -inst "*..."' in script
+    assert "-metrics all" in script
+    assert "-cumulative on" in script
+    assert "-showempty on" in script
+    assert "-local off" in script
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
