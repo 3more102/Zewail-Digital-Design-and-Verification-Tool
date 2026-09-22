@@ -12,8 +12,33 @@ from zddv.coverage import (
     merge_vcs_coverage,
     parse_vcs_urg_dashboard,
     parse_vcs_urg_instance_counts,
+    parse_vcs_urg_module_counts,
 )
 from zddv.storage import list_coverage_score_snapshots
+
+
+VCS_MODINFO = """Line Coverage for Module : dut
+TOTAL 120 110 91.67
+Cond Coverage for Module : dut
+Conditions 20 18 90.00
+Toggle Coverage for Module : dut
+Total Bits 40 30 75.00
+FSM Coverage for Module : dut
+Transitions 5 4 80.00
+Transitions 3 2 66.67
+Branch Coverage for Module : dut
+Branches 10 8 80.00
+Line Coverage for Module : sub
+TOTAL 30 25 83.33
+Condition Coverage for Module : sub
+Conditions 6 5 83.33
+Toggle Coverage for Module : sub
+Total Bits 12 9 75.00
+FSM Coverage for Module : sub
+Transitions 2 1 50.00
+Branch Coverage for Module : sub
+Branches 4 3 75.00
+"""
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -38,6 +63,67 @@ def _project(tmp_path: Path) -> ProjectConfig:
         waveform=False,
         coverage=True,
     )
+
+
+def test_parse_vcs_urg_module_counts_normalizes_all_scored_code_metrics(
+    tmp_path: Path,
+):
+    modinfo = tmp_path / "modinfo.txt"
+    modinfo.write_text(VCS_MODINFO, encoding="utf-8")
+
+    result = parse_vcs_urg_module_counts(modinfo)
+
+    assert result["source"] == "urg-modinfo"
+    assert len(result["modules"]) == 10
+    counts = result["by_metric_counts"]
+    assert counts["module_line"] == {
+        "covered": 135,
+        "total": 150,
+        "hit_rate": pytest.approx(90.0),
+    }
+    assert counts["module_condition"] == {
+        "covered": 23,
+        "total": 26,
+        "hit_rate": pytest.approx(100.0 * 23 / 26),
+    }
+    assert counts["module_toggle"] == {
+        "covered": 39,
+        "total": 52,
+        "hit_rate": pytest.approx(75.0),
+    }
+    assert counts["module_fsm"] == {
+        "covered": 7,
+        "total": 10,
+        "hit_rate": pytest.approx(70.0),
+    }
+    assert counts["module_branch"] == {
+        "covered": 11,
+        "total": 14,
+        "hit_rate": pytest.approx(100.0 * 11 / 14),
+    }
+    dut_fsm = next(
+        record
+        for record in result["modules"]
+        if record["metric"] == "fsm" and record["module"] == "dut"
+    )
+    assert dut_fsm["covered"] == 6
+    assert dut_fsm["total"] == 8
+    assert dut_fsm["hit_rate"] == pytest.approx(75.0)
+
+
+def test_parse_vcs_urg_module_counts_rejects_invalid_covered_total(
+    tmp_path: Path,
+):
+    modinfo = tmp_path / "modinfo.txt"
+    modinfo.write_text(
+        """Toggle Coverage for Module : dut
+Total Bits 4 5 125.00
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Invalid URG toggle module total"):
+        parse_vcs_urg_module_counts(modinfo)
 
 
 def test_parse_vcs_urg_instance_counts_aggregates_reported_instance_rows(
@@ -192,6 +278,7 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 """,
             encoding="utf-8",
         )
+        (report_dir / "modinfo.txt").write_text(VCS_MODINFO, encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -249,6 +336,17 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert result["metrics"]["by_metric_counts"]["line"]["covered"] == 190
     assert result["metrics"]["by_metric_counts"]["line"]["total"] == 198
     assert result["metrics"]["by_metric_counts"]["condition"]["covered"] == 168
+    assert result["module_counts_status"] == "normalized"
+    assert result["module_counts_error"] is None
+    assert result["metrics"]["by_metric_counts"]["module_line"]["covered"] == 135
+    assert result["metrics"]["by_metric_counts"]["module_condition"]["total"] == 26
+    assert result["metrics"]["by_metric_counts"]["module_toggle"]["covered"] == 39
+    assert result["metrics"]["by_metric_counts"]["module_fsm"] == {
+        "covered": 7,
+        "total": 10,
+        "hit_rate": pytest.approx(70.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["module_branch"]["total"] == 14
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -262,6 +360,9 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert snapshots[0]["by_metric_counts"]["group_instance"]["covered"] == 490
     assert snapshots[0]["by_metric_counts"]["line"]["covered"] == 190
     assert snapshots[0]["by_metric_counts"]["condition"]["total"] == 180
+    assert snapshots[0]["by_metric_counts"]["module_condition"]["covered"] == 23
+    assert snapshots[0]["by_metric_counts"]["module_toggle"]["total"] == 52
+    assert snapshots[0]["by_metric_counts"]["module_fsm"]["covered"] == 7
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -272,6 +373,8 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["inputs"] == inputs
     assert manifest["command"] == command
     assert manifest["brief_status"] == "captured"
+    assert manifest["module_counts_status"] == "normalized"
+    assert Path(manifest["modinfo"]).name == "modinfo.txt"
     assert Path(manifest["brief_report_dir"]).name == "urg-brief"
     assert manifest["brief_command"] == commands[1]
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
