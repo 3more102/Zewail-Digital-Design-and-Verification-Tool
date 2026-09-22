@@ -1,5 +1,6 @@
 {
   "source": "zddv-axi4-example",
+  "write_data_bus_bytes": 4,
   "samples": [
     {
       "cycle": 0,
