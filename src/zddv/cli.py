@@ -18,6 +18,7 @@ from zddv.coverage import (
     parse_verilator_coverage,
     write_coverage_hole_report,
     write_questa_statement_hole_report,
+    write_questa_toggle_hole_report,
 )
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
@@ -742,13 +743,20 @@ def cmd_coverage_holes(args) -> int:
             "condition",
             "expression",
             "fsm",
+            "toggle",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, expression, or fsm."
+                "--type statement, branch, condition, expression, fsm, or toggle."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
+                project,
+                output,
+                limit=args.limit,
+            )
+        elif args.point_type == "toggle":
+            report = write_questa_toggle_hole_report(
                 project,
                 output,
                 limit=args.limit,
@@ -893,6 +901,8 @@ def cmd_coverage_holes(args) -> int:
         print(f"... {report['reported_holes'] - args.show} more in report")
     if report.get("xml"):
         print(f"Questa XML: {report['xml']}")
+    if report.get("toggle_report"):
+        print(f"Questa toggle report: {report['toggle_report']}")
     print(f"Report: {report['path']}")
     return 0
 
