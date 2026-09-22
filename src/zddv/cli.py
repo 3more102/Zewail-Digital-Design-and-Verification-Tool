@@ -46,7 +46,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
-from zddv.uvm_item import analyze_uvm_item_file
+from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
@@ -808,6 +808,47 @@ def cmd_uvm_item_analyze(args) -> int:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
+
+def cmd_uvm_item_log_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_item_log(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM ITEM {result['status']}: "
+        f"{summary['items']} item(s), "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Handshake: granted={summary['granted']} "
+        f"requested={summary['requested']} "
+        f"completed={summary['completed']} "
+        f"responded={summary['responded']} "
+        f"active={summary['active']} partial={summary['partial']}"
+    )
+    print(f"Markers: {len(result.get('marker_lines', []))} explicit marker(s)")
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] event={violation['event_index']} "
+            f"item={violation['item_id']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
 
 def cmd_uvm_item_history(args) -> int:
     project = load_project(_project_arg(args))
@@ -1728,6 +1769,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of item-handshake violations to print",
     )
     p_uvm_item.set_defaults(func=cmd_uvm_item_analyze)
+
+    p_uvm_item_log = sub.add_parser(
+        "uvm-item-log-analyze",
+        help="Analyze explicit ZDDV_UVM_ITEM JSON markers from a simulator/UVM log",
+    )
+    p_uvm_item_log.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Simulation/UVM log file; optional when --run is supplied",
+    )
+    p_uvm_item_log.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
+    p_uvm_item_log.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label overriding the log-marker source",
+    )
+    p_uvm_item_log.add_argument(
+        "--output",
+        default=".zddv/uvm/items/latest.json",
+        help="Normalized UVM item JSON report path",
+    )
+    p_uvm_item_log.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of item-handshake violations to print",
+    )
+    p_uvm_item_log.set_defaults(func=cmd_uvm_item_log_analyze)
 
     p_uvm_item_history = sub.add_parser(
         "uvm-item-history",
