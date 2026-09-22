@@ -12,6 +12,7 @@ from zddv.coverage import (
     merge_questa_coverage,
     parse_questa_code_coverage_report,
     parse_questa_coverage_summary,
+    parse_questa_fsm_coverage_report,
     parse_questa_functional_coverage_report,
     parse_questa_statement_coverage_xml,
     write_questa_statement_hole_report,
@@ -110,6 +111,41 @@ Row 1: 4 ready_0 (valid || retry)
 Row 2: 2 ready_1 (valid || retry)
 Row 3: ***0*** valid_0 (ready && ~retry)
 Row 4: 1 valid_1 (ready && ~retry)
+"""
+
+QUESTA_FSM_DETAILS = """Coverage Report by instance with details
+
+FSM Coverage for instance /tb/dut --
+FSM_ID: state
+Current State Object : state
+State Value MapInfo :
+Line        State Name            Value
+10          IDLE                  0
+11          BUSY                  1
+12          ERROR                 2
+
+Covered States :
+            State         Hit_count
+            IDLE             7
+            BUSY             3
+
+Uncovered States :
+            State
+            ERROR
+
+Covered Transitions :
+Line          Trans_ID          Hit_count          Transition
+20                0               3               IDLE -> BUSY
+21                1               3               BUSY -> IDLE
+
+Uncovered Transitions :
+Line          Trans_ID          Transition
+22                2               IDLE -> ERROR
+23                3               ERROR -> IDLE
+
+Summary :
+State Coverage: 66.67%
+Transition Coverage: 50.00%
 """
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
@@ -229,6 +265,38 @@ def test_parse_questa_code_coverage_normalizes_statement_branch_condition_expres
     assert all(point["fec_target"] != "-11" for point in expression_points)
 
 
+def test_parse_questa_fsm_coverage_normalizes_documented_state_transition_tables():
+    points = parse_questa_fsm_coverage_report(QUESTA_FSM_DETAILS)
+
+    assert len(points) == 7
+    states = [point for point in points if point["fsm_kind"] == "state"]
+    transitions = [point for point in points if point["fsm_kind"] == "transition"]
+    assert states[0]["name"] == "/tb/dut|state|state:IDLE"
+    assert states[0]["count"] == 7
+    assert states[0]["line"] == 10
+    error_state = next(point for point in states if point["state"] == "ERROR")
+    assert error_state["hit"] is False
+    assert error_state["count"] == 0
+    assert error_state["line"] == 12
+    assert transitions[0]["name"] == "/tb/dut|state|transition:0 IDLE -> BUSY"
+    assert transitions[0]["count"] == 3
+    assert transitions[0]["line"] == 20
+    missed = [point for point in transitions if not point["hit"]]
+    assert [point["trans_id"] for point in missed] == [2, 3]
+    assert missed[0]["transition"] == "IDLE -> ERROR"
+
+
+def test_parse_questa_fsm_coverage_ignores_unlabelled_rows():
+    points = parse_questa_fsm_coverage_report(
+        """FSM Coverage for instance /tb/dut --
+FSM_ID: state
+99 4 IDLE -> ERROR
+ERROR 0
+"""
+    )
+    assert points == []
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -280,6 +348,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:6] == ["report", "-details", "-dumptables", "-code", "sbce"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_CODE_DETAILS)
+        if command[1:5] == ["report", "-details", "-code", "f"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_FSM_DETAILS)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
@@ -320,11 +390,19 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert commands[3] == [
         "/opt/questa/bin/vcover",
         "report",
+        "-details",
+        "-code",
+        "f",
+        result["merged"],
+    ]
+    assert commands[4] == [
+        "/opt/questa/bin/vcover",
+        "report",
         "-cvg",
         "-details",
         result["merged"],
     ]
-    assert commands[4] == [
+    assert commands[5] == [
         "/opt/questa/bin/vcover",
         "report",
         "-xml",
@@ -333,7 +411,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("details.xml")),
         result["merged"],
     ]
-    assert commands[5] == [
+    assert commands[6] == [
         "/opt/questa/bin/vcover",
         "report",
         "-zeros",
@@ -356,6 +434,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["code_detail_points"] == 16
     assert payload["code_detail_holes"] == 5
     assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_DETAILS
+    assert payload["fsm_detail_status"] == "ok"
+    assert payload["fsm_detail_points"] == 7
+    assert payload["fsm_detail_holes"] == 3
+    assert Path(result["fsm_report"]).read_text(encoding="utf-8") == QUESTA_FSM_DETAILS
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     evidence = payload["detailed_code_coverage_evidence"]
@@ -490,6 +572,46 @@ def test_coverage_holes_cli_supports_questa_statement_branch_condition_expressio
     assert expression_report["holes"][0]["expression"] == "assign y = (a | b);"
 
 
+def test_coverage_holes_cli_supports_questa_fsm_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    report_path = project.root / ".zddv" / "coverage" / "fsm-details.txt"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(QUESTA_FSM_DETAILS, encoding="utf-8")
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    args = SimpleNamespace(
+        project=str(project.root),
+        output=".zddv/coverage/fsm-holes.json",
+        point_type="fsm",
+        limit=50,
+        show=10,
+    )
+    assert cmd_coverage_holes(args) == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (fsm): 3 unhit point(s)" in output
+    assert "[fsm] /tb/dut|state|state:ERROR" in output
+    assert "[fsm] /tb/dut|state|transition:2 IDLE -> ERROR" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "fsm-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["by_type"] == {"fsm": 3}
+    state_hole = next(h for h in payload["holes"] if h["fsm_kind"] == "state")
+    assert state_hole["state"] == "ERROR"
+    assert state_hole["line"] == 12
+    transition_holes = [
+        h for h in payload["holes"] if h["fsm_kind"] == "transition"
+    ]
+    assert [h["trans_id"] for h in transition_holes] == [2, 3]
+    assert transition_holes[0]["transition"] == "IDLE -> ERROR"
+
+
 def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
     project = _project(tmp_path)
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
@@ -515,6 +637,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "code_detail_status": "ok",
             "code_detail_points": 16,
             "code_detail_holes": 5,
+            "fsm_report": "/tmp/fsm-details.txt",
+            "fsm_detail_status": "ok",
+            "fsm_detail_points": 7,
+            "fsm_detail_holes": 3,
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
@@ -538,6 +664,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
         "Questa statement/branch/condition/expression detail: /tmp/code-details.txt"
         in output
     )
+    assert "Normalized Questa FSM state/transition coverage: ok 7 point(s), 3 hole(s)" in output
+    assert "Questa FSM detail: /tmp/fsm-details.txt" in output
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
 
@@ -569,6 +697,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:6] == ["report", "-details", "-dumptables", "-code", "sbce"]:
+            return SimpleNamespace(returncode=0, stdout="")
+        if command[1:5] == ["report", "-details", "-code", "f"]:
             return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
