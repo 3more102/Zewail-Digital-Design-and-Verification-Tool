@@ -22,7 +22,11 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
-from zddv.formal.results import analyze_formal_result_file
+from zddv.formal import FormalCheckRequest, SymbiYosysBackend
+from zddv.formal.results import (
+    analyze_formal_result_file,
+    persist_formal_check_result,
+)
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -319,6 +323,41 @@ def cmd_lint(args) -> int:
     print(f"Log: {result['log']}")
     print(f"Summary: {result['summary']}")
     return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_formal_bmc(args) -> int:
+    project = load_project(_project_arg(args))
+    request = FormalCheckRequest(
+        mode="bmc",
+        depth=args.depth,
+        timeout_s=args.timeout,
+    )
+    backend = SymbiYosysBackend()
+    print(f"Formal backend: {backend.version()}")
+    result = backend.check(project, request)
+
+    config_path = next(
+        (path for path in result.artifacts if path.suffix.lower() == ".sby"),
+        None,
+    )
+    if config_path is None:
+        raise RuntimeError("SymbiYosys result did not retain its .sby input evidence")
+
+    record = persist_formal_check_result(
+        project,
+        result,
+        input_path=config_path,
+        output=args.output,
+    )
+    print(
+        f"FORMAL BMC {result.status}: depth={request.depth} "
+        f"engine={result.engine or '-'} scope={record['request']['scope']}"
+    )
+    print(f"Run directory: {result.run_dir}")
+    print(f"Log: {result.log_path}")
+    print(f"Snapshot: {record['snapshot_id']}")
+    print(f"Report: {record['report_path']}")
+    return 0 if result.status == "PASS" else 1
 
 
 def cmd_build(args) -> int:
@@ -1988,6 +2027,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_formal_bmc = sub.add_parser(
+        "formal-bmc",
+        help="Run a finite-depth SymbiYosys bounded model check",
+    )
+    p_formal_bmc.add_argument(
+        "--depth",
+        type=int,
+        required=True,
+        help="Maximum bounded-model-check depth (must be >= 1)",
+    )
+    p_formal_bmc.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Optional external timeout in seconds",
+    )
+    p_formal_bmc.add_argument(
+        "--output",
+        default=".zddv/formal/latest.json",
+        help="Normalized formal evidence JSON report path",
+    )
+    p_formal_bmc.set_defaults(func=cmd_formal_bmc)
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
