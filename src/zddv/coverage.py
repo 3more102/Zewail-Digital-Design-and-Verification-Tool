@@ -1022,11 +1022,11 @@ class _UrgHtmlTableRows(HTMLParser):
 
 
 _URG_INSTANCE_COVERAGE_SECTION = re.compile(
-    r"(?P<kind>Line|Cond|Toggle|FSM|Branch)\s+Coverage\s+for\s+Instance\b",
+    r"(?P<kind>Line|Cond(?:ition)?|Toggle|FSM|Branch)\s+Coverage\s+for\s+Instance\b",
     re.IGNORECASE,
 )
 _URG_ANY_COVERAGE_SECTION = re.compile(
-    r"(?:Line|Cond|Toggle|FSM|Branch)\s+Coverage\s+for\s+(?:Instance|Module)\b",
+    r"(?:Line|Cond(?:ition)?|Toggle|FSM|Branch)\s+Coverage\s+for\s+(?:Instance|Module)\b",
     re.IGNORECASE,
 )
 _URG_HTML_TABLE = re.compile(r"<table\b.*?</table\s*>", re.IGNORECASE | re.DOTALL)
@@ -1069,6 +1069,8 @@ def _parse_urg_instance_section_counts(
 
     for section_match in _URG_INSTANCE_COVERAGE_SECTION.finditer(html_text):
         kind = section_match.group("kind").lower()
+        if kind == "condition":
+            kind = "cond"
         targets = _URG_INSTANCE_COUNT_ROWS[kind]
         next_section = _URG_ANY_COVERAGE_SECTION.search(
             html_text, section_match.end()
@@ -1185,6 +1187,164 @@ def parse_vcs_urg_instance_counts(report_dir: str | Path) -> dict:
         "duplicate_records": duplicate_records,
         "source": "urg-instance-detail-html",
     }
+
+
+_URG_CONDITION_CONTEXT = re.compile(
+    r"\bLINE\s+(?P<line>\d+)\s+"
+    r"(?P<label>SUB-EXPRESSION|EXPRESSION)\s+",
+    re.IGNORECASE,
+)
+_URG_CONDITION_GUIDES = re.compile(
+    r"(?:\s+-+\d+-+)+\s*$",
+)
+
+
+def _urg_condition_context(fragment: str) -> tuple[int, str, str] | None:
+    """Return the latest explicit LINE/expression context before a truth table."""
+    visible = _urg_visible_text(fragment)
+    matches = list(_URG_CONDITION_CONTEXT.finditer(visible))
+    if not matches:
+        return None
+
+    match = matches[-1]
+    expression = _URG_CONDITION_GUIDES.sub(
+        "",
+        visible[match.end() :],
+    ).strip()
+    if not expression:
+        return None
+    label = match.group("label").lower().replace("-", "_")
+    return int(match.group("line")), label, expression
+
+
+def _parse_vcs_urg_condition_points(
+    html_text: str,
+) -> list[dict]:
+    points: list[dict] = []
+
+    for section_match in _URG_INSTANCE_COVERAGE_SECTION.finditer(html_text):
+        raw_kind = section_match.group("kind").lower()
+        if raw_kind not in {"cond", "condition"}:
+            continue
+
+        next_section = _URG_ANY_COVERAGE_SECTION.search(
+            html_text,
+            section_match.end(),
+        )
+        section_end = next_section.start() if next_section is not None else len(html_text)
+        section = html_text[section_match.end() : section_end]
+        table_matches = list(_URG_HTML_TABLE.finditer(section))
+        if not table_matches:
+            continue
+
+        first_table_start = section_match.end() + table_matches[0].start()
+        instance = _urg_instance_identity(
+            html_text[section_match.start() : first_table_start],
+            fallback=f"offset-{section_match.start()}",
+        )
+
+        for table_match in table_matches:
+            parser = _UrgHtmlTableRows()
+            parser.feed(table_match.group(0))
+            parser.close()
+
+            header_index: int | None = None
+            status_index: int | None = None
+            for index, row in enumerate(parser.rows):
+                normalized = [cell.strip().casefold() for cell in row]
+                if "status" in normalized:
+                    header_index = index
+                    status_index = normalized.index("status")
+                    break
+            if header_index is None or status_index is None:
+                continue
+
+            context = _urg_condition_context(
+                section[: table_match.start()]
+            )
+            if context is None:
+                continue
+            line, label, expression = context
+
+            for row in parser.rows[header_index + 1 :]:
+                if len(row) <= status_index:
+                    continue
+                status = row[status_index].strip().casefold()
+                if status not in {"covered", "not covered"}:
+                    continue
+
+                target_cells = [
+                    cell.strip()
+                    for cell in row[:status_index]
+                    if cell.strip()
+                ]
+                if not target_cells:
+                    continue
+                target = " | ".join(target_cells)
+                hit = status == "covered"
+                points.append(
+                    {
+                        "name": (
+                            f"{instance}|line:{line}|{label}:{expression}"
+                            f"|target:{target}"
+                        ),
+                        "count": 1 if hit else 0,
+                        "hit": hit,
+                        "type": "condition",
+                        "scope": instance,
+                        "line": line,
+                        "condition": expression,
+                        "fec_context": expression,
+                        "fec_target": target,
+                        "evidence": f"URG status: {row[status_index].strip()}",
+                        "detail": label,
+                    }
+                )
+
+    return points
+
+
+def parse_vcs_urg_condition_coverage_points(
+    report_dir: str | Path,
+) -> list[dict]:
+    """Normalize explicit VCS URG condition truth-table rows.
+
+    Only rows with documented Covered/Not Covered status are emitted. Excluded,
+    unreachable, summary percentages, and other non-goal rows are ignored.
+    Repeated/paginated report evidence is deduplicated by instance, source line,
+    expression context, and truth-table target.
+    """
+    source = Path(report_dir)
+    seen: dict[tuple[str, int, str, str], dict] = {}
+
+    for html_path in sorted(source.glob("mod*.html")):
+        html_text = html_path.read_text(encoding="utf-8", errors="replace")
+        for point in _parse_vcs_urg_condition_points(html_text):
+            key = (
+                str(point["scope"]),
+                int(point["line"]),
+                str(point["condition"]),
+                str(point["fec_target"]),
+            )
+            previous = seen.get(key)
+            if previous is not None:
+                if bool(previous["hit"]) != bool(point["hit"]):
+                    raise ValueError(
+                        "Conflicting URG condition status for "
+                        f"{point['name']}"
+                    )
+                continue
+            seen[key] = point
+
+    return sorted(
+        seen.values(),
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            int(point.get("line") or 0),
+            str(point.get("condition") or ""),
+            str(point.get("fec_target") or ""),
+        ),
+    )
 
 
 _URG_DASHBOARD_METRICS = {
