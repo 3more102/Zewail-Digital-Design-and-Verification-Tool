@@ -657,7 +657,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
+- [x] Questa detailed code-coverage item/source normalization and coverage-hole reporting
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
