@@ -69,12 +69,18 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
     def fake_run(command, cwd):
         captured["commands"].append(list(command))
         captured["cwd"] = Path(cwd)
-        assert not stale_merged.exists()
-        assert not stale_report.exists()
-        assert not stale_brief.exists()
+        is_brief = "-show" in command
+        if is_brief:
+            assert stale_merged.exists()
+            assert stale_report.exists()
+            assert not stale_brief.exists()
+        else:
+            assert not stale_merged.exists()
+            assert not stale_report.exists()
+            assert not stale_brief.exists()
 
         report_dir = Path(cwd) / command[command.index("-report") + 1]
-        if "-show" in command:
+        if is_brief:
             assert command[command.index("-dir") + 1] == "coverage.vdb"
             report_dir.mkdir()
             (report_dir / "mod0.txt").write_text(
