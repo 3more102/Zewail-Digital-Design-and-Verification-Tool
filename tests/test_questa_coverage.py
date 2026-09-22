@@ -6,12 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
+    parse_questa_zero_coverage_report,
 )
 from zddv.storage import (
     list_coverage_snapshots,
@@ -30,6 +31,54 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Statements                    4920      4920         0         1   100.00%
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
+"""
+
+QUESTA_SOURCE_HOLE_SUMMARY = """QuestaSim-64 vcover 2024.2 Coverage Utility 2024.05 May 20 2024
+Coverage Report Totals BY INSTANCES: Number of Instances 1
+
+    Enabled Coverage              Bins      Hits    Misses    Weight  Coverage
+    ----------------              ----      ----    ------    ------  --------
+    Branches                         2         1         1         1    50.00%
+    Expressions                      1         1         0         1   100.00%
+    Statements                       2         1         1         1    50.00%
+    Toggles                          4         2         2         1    50.00%
+Total coverage (filtered view): 62.50%
+"""
+
+QUESTA_CODE_ZEROS = """Coverage Report by file with details
+
+=================================================================================
+=== File: rtl/top.sv
+=================================================================================
+Statement Coverage:
+    Enabled Coverage            Active      Hits    Misses % Covered
+    ----------------            ------      ----    ------ ---------
+    Stmts                            2         1         1     50.00
+
+================================Statement Details================================
+
+Statement Coverage for file rtl/top.sv --
+
+    40              1                     ***0*** missing_statement
+
+=================================================================================
+=== File: rtl/control.sv
+=================================================================================
+Branch Coverage:
+    Enabled Coverage            Active      Hits    Misses % Covered
+    ----------------            ------      ----    ------ ---------
+    Branches                         2         1         1     50.00
+
+=================================Branch Details==================================
+
+Branch Coverage for file rtl/control.sv --
+
+    21                                          3 Count coming in to IF
+    21              1                     ***0*** if (ready)
+
+Toggle Coverage for file rtl/control.sv --
+
+    7               1                     ***0*** state[0]
 """
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
@@ -102,6 +151,30 @@ def test_parse_questa_summary_accepts_comma_grouped_counts():
     assert metrics["by_type"]["branch"]["total"] == 3044
 
 
+def test_parse_questa_zero_report_normalizes_only_source_linked_bces_items():
+    points = parse_questa_zero_coverage_report(QUESTA_CODE_ZEROS)
+
+    assert len(points) == 2
+    assert points[0] == {
+        "name": "rtl/top.sv:40:statement:1",
+        "count": 0,
+        "hit": False,
+        "type": "statement",
+        "source_file": "rtl/top.sv",
+        "line": 40,
+        "detail": "1                     ***0*** missing_statement",
+    }
+    assert points[1]["name"] == "rtl/control.sv:21:branch:1"
+    assert points[1]["type"] == "branch"
+    assert points[1]["source_file"] == "rtl/control.sv"
+    assert points[1]["line"] == 21
+    assert all(point["type"] != "toggle" for point in points)
+    assert all(
+        "Count coming in to IF" not in point["detail"]
+        for point in points
+    )
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -150,7 +223,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             out_path.write_text("merged fixture\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
-            return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=QUESTA_SOURCE_HOLE_SUMMARY,
+            )
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
@@ -159,7 +235,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="xml report written\n")
         if command[1:4] == ["report", "-zeros", "-details"]:
             output = Path(command[command.index("-output") + 1])
-            output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
+            output.write_text(QUESTA_CODE_ZEROS, encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -207,20 +283,44 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
-    assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
+    assert (
+        Path(result["summary"]).read_text(encoding="utf-8")
+        == QUESTA_SOURCE_HOLE_SUMMARY
+    )
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["simulator"] == "questa"
     assert payload["input_count"] == 2
-    assert payload["tool_total_coverage"] == 79.53
-    assert payload["by_type"]["expression"]["hit"] == 1143
+    assert payload["tool_total_coverage"] == 62.5
+    assert payload["by_type"]["expression"]["hit"] == 1
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     evidence = payload["detailed_code_coverage_evidence"]
     assert evidence["xml"]["status"] == "captured"
     assert evidence["zero_detail"]["status"] == "captured"
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
-    assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
+    assert (
+        Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8")
+        == QUESTA_CODE_ZEROS
+    )
+    assert payload["code_items_status"] == "ok"
+    assert payload["source_code_hole_items"] == 2
+    assert payload["source_code_hole_expected"] == 2
+    assert payload["source_code_hole_unsupported"] == {"toggle": 2}
+    code_items = json.loads(
+        Path(result["code_items"]).read_text(encoding="utf-8")
+    )
+    assert code_items["status"] == "ok"
+    assert code_items["expected_by_type"] == {
+        "branch": 1,
+        "statement": 1,
+    }
+    assert code_items["parsed_by_type"] == {
+        "branch": 1,
+        "statement": 1,
+    }
+    assert code_items["unsupported_type_misses"] == {"toggle": 2}
+    assert len(code_items["points"]) == 2
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -228,8 +328,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     snapshots = list_coverage_snapshots(project, limit=5)
     assert len(snapshots) == 1
     assert snapshots[0]["simulator"] == "questa"
-    assert snapshots[0]["total_points"] == 82535
-    assert snapshots[0]["hit_points"] == 46619
+    assert snapshots[0]["total_points"] == 9
+    assert snapshots[0]["hit_points"] == 5
 
 
     functional_snapshots = list_functional_coverage_snapshots(project, limit=5)
@@ -276,6 +376,11 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
             },
+            "code_items": "/tmp/code-items.json",
+            "code_items_status": "ok",
+            "source_code_hole_items": 2,
+            "source_code_hole_expected": 2,
+            "source_code_hole_unsupported": {"toggle": 2},
         },
     )
 
@@ -288,6 +393,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional report: /tmp/functional.txt" in output
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
+    assert "Source-linked code holes: 2/2 normalized (ok)" in output
+    assert "Non-source-linked misses not itemized: toggle=2" in output
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
@@ -334,3 +441,151 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
+    assert result["code_items_status"] == "evidence-unavailable"
+    code_items = json.loads(
+        Path(result["code_items"]).read_text(encoding="utf-8")
+    )
+    assert code_items["status"] == "evidence-unavailable"
+    assert code_items["points"] == []
+
+
+def test_coverage_holes_cli_reads_questa_source_linked_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    coverage_dir = project.root / ".zddv" / "coverage"
+    coverage_dir.mkdir(parents=True)
+    code_items_path = coverage_dir / "code-items.json"
+    code_items_path.write_text(
+        json.dumps(
+            {
+                "source": "questa-vcover-zeros-details",
+                "status": "ok",
+                "report": str(coverage_dir / "zeros.txt"),
+                "supported_types": [
+                    "branch",
+                    "condition",
+                    "expression",
+                    "statement",
+                ],
+                "expected_by_type": {"branch": 1, "statement": 1},
+                "parsed_by_type": {"branch": 1, "statement": 1},
+                "expected_zero_items": 2,
+                "parsed_zero_items": 2,
+                "unsupported_type_misses": {"toggle": 2},
+                "points": parse_questa_zero_coverage_report(
+                    QUESTA_CODE_ZEROS
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    output_path = coverage_dir / "holes.json"
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=str(output_path),
+            point_type="branch",
+            limit=20,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (branch): 1 unhit point(s)" in output
+    assert "rtl/control.sv:21" in output
+    assert "Not itemized by source-linked Questa holes: toggle=2" in output
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert report["by_type"] == {"branch": 1}
+    assert report["holes"][0]["source_file"] == "rtl/control.sv"
+    assert report["holes"][0]["line"] == 21
+    assert "***0*** if (ready)" in report["holes"][0]["detail"]
+
+
+def test_coverage_holes_cli_refuses_questa_count_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage_dir = project.root / ".zddv" / "coverage"
+    coverage_dir.mkdir(parents=True)
+    code_items_path = coverage_dir / "code-items.json"
+    code_items_path.write_text(
+        json.dumps(
+            {
+                "source": "questa-vcover-zeros-details",
+                "status": "count-mismatch",
+                "report": str(coverage_dir / "zeros.txt"),
+                "supported_types": [
+                    "branch",
+                    "condition",
+                    "expression",
+                    "statement",
+                ],
+                "expected_zero_items": 2,
+                "parsed_zero_items": 1,
+                "unsupported_type_misses": {},
+                "points": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    with pytest.raises(RuntimeError, match="count-mismatch"):
+        cmd_coverage_holes(
+            SimpleNamespace(
+                project=str(project.root),
+                output=str(coverage_dir / "holes.json"),
+                point_type=None,
+                limit=20,
+                show=20,
+            )
+        )
+
+
+def test_coverage_holes_cli_rejects_non_source_questa_type(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage_dir = project.root / ".zddv" / "coverage"
+    coverage_dir.mkdir(parents=True)
+    (coverage_dir / "code-items.json").write_text(
+        json.dumps(
+            {
+                "source": "questa-vcover-zeros-details",
+                "status": "ok",
+                "report": str(coverage_dir / "zeros.txt"),
+                "supported_types": [
+                    "branch",
+                    "condition",
+                    "expression",
+                    "statement",
+                ],
+                "expected_zero_items": 0,
+                "parsed_zero_items": 0,
+                "unsupported_type_misses": {"toggle": 2},
+                "points": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    with pytest.raises(RuntimeError, match="statement, branch, condition, expression|branch, condition, expression, statement"):
+        cmd_coverage_holes(
+            SimpleNamespace(
+                project=str(project.root),
+                output=str(coverage_dir / "holes.json"),
+                point_type="toggle",
+                limit=20,
+                show=20,
+            )
+        )
