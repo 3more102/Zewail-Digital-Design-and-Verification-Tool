@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,14 @@ def _optional_text(value: Any, *, field: str) -> str | None:
     if value is None:
         return None
     return _require_text(value, field=field)
+
+
+def _optional_bool(value: Any, *, field: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean")
+    return value
 
 
 def _string_list(value: Any, *, field: str) -> tuple[str, ...]:
@@ -102,6 +111,10 @@ def formal_result_from_data(payload: Any) -> FormalCheckResult:
         artifacts=tuple(Path(item) for item in artifacts),
         engine=_optional_text(data.get("engine"), field="engine"),
         runtime_ms=data.get("runtime_ms"),
+        property_set_complete=_optional_bool(
+            data.get("property_set_complete"),
+            field="property_set_complete",
+        ),
     )
 
 
@@ -215,7 +228,33 @@ def formal_result_to_record(result: FormalCheckResult) -> dict[str, Any]:
         },
         "properties": property_records,
         "artifacts": [str(path) for path in result.artifacts],
+        "property_set_complete": result.property_set_complete,
     }
+
+
+def formal_design_fingerprint(project: ProjectConfig) -> str:
+    """Hash the formal design inputs so aggregate metrics never cross design revisions."""
+
+    digest = hashlib.sha256()
+    digest.update(b"zddv-formal-design-v1\0")
+    digest.update(project.top.encode("utf-8"))
+    digest.update(b"\0")
+
+    root = project.root.resolve()
+    sources = sorted(
+        (path.resolve() for path in project.source_files()),
+        key=lambda path: path.as_posix(),
+    )
+    for source in sources:
+        try:
+            label = source.relative_to(root).as_posix()
+        except ValueError:
+            label = source.as_posix()
+        digest.update(label.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(source.read_bytes()).digest())
+
+    return digest.hexdigest()
 
 
 def persist_formal_result(
@@ -233,6 +272,8 @@ def persist_formal_result(
     source_path = source_path.resolve()
 
     record = formal_result_to_record(result)
+    record["top"] = project.top
+    record["design_fingerprint"] = formal_design_fingerprint(project)
 
     report_path = Path(output)
     if not report_path.is_absolute():
