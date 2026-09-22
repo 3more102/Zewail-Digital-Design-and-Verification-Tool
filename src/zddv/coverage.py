@@ -49,13 +49,15 @@ _QUESTA_KIND_ALIASES = {
 _QUESTA_CVG_SCOPE = re.compile(
     r"^\s*(?!Coverpoint\b|Cross\b|bin\b|ignore_bins?\b|illegal_bins?\b)"
     r"(?P<name>\S.*?)\s+(?P<metric>\d+(?:\.\d+)?)%\s+"
-    r"(?P<goal>\d+(?:\.\d+)?)%\s+(?P<status>\S+)\s*$",
+    r"(?P<goal>\d+(?:\.\d+)?)%?\s+"
+    r"(?:\S+\s+)?(?P<status>\S+)\s*$",
     re.IGNORECASE,
 )
 _QUESTA_CVG_POINT = re.compile(
     r"^\s*(?P<kind>Coverpoint|Cross)\s+(?P<name>.+?)\s+"
     r"(?P<metric>\d+(?:\.\d+)?)%\s+"
-    r"(?P<goal>\d+(?:\.\d+)?)%\s+(?P<status>\S+)\s*$",
+    r"(?P<goal>\d+(?:\.\d+)?)%?\s+"
+    r"(?:\S+\s+)?(?P<status>\S+)\s*$",
     re.IGNORECASE,
 )
 _QUESTA_CVG_BIN = re.compile(
@@ -250,6 +252,11 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
+        stripped = line.strip().lower()
+        if stripped.startswith(
+            ("covered/total bins:", "missing/total bins:", "% hit:")
+        ):
+            continue
 
         point = _QUESTA_CVG_POINT.match(line)
         if point is not None:
