@@ -498,6 +498,19 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition/expression detail: {result['code_report']}")
+    multibit_status = result.get("multibit_expression_detail_status")
+    if multibit_status is not None:
+        print(
+            "Questa multibit expression FEC normalization: "
+            f"{multibit_status} "
+            f"{result.get('multibit_expression_points', 0)} point(s), "
+            f"{result.get('multibit_expression_holes', 0)} hole(s)"
+        )
+        if result.get("multibit_expression_report"):
+            print(
+                "Questa multibit expression detail: "
+                f"{result['multibit_expression_report']}"
+            )
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -630,9 +643,22 @@ def cmd_coverage_holes(args) -> int:
                     f"Detailed Questa code coverage report not found at {source_path}. "
                     "Run 'zddv coverage' first."
                 )
-            points = parse_questa_code_coverage_report(
-                source_path.read_text(encoding="utf-8", errors="replace")
+            detail_text = source_path.read_text(
+                encoding="utf-8",
+                errors="replace",
             )
+            multibit_path = (
+                project.root
+                / ".zddv"
+                / "coverage"
+                / "multibit-expression-details.txt"
+            ).resolve()
+            if multibit_path.exists():
+                detail_text += "\n\n" + multibit_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            points = parse_questa_code_coverage_report(detail_text)
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -642,8 +668,8 @@ def cmd_coverage_holes(args) -> int:
             ):
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Scalar FEC rows are supported; multibit "
-                    "FEC tables are not normalized yet."
+                    f"{source_path}. Supported scalar FEC rows and documented "
+                    "multibit expression terms were not found."
                 )
             if not points:
                 raise RuntimeError(
