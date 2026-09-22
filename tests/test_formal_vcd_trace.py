@@ -8,6 +8,8 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
+from zddv.formal.base import FormalCheckRequest, FormalCheckResult, FormalPropertyResult
+from zddv.formal.results import persist_formal_result
 from zddv.formal.vcd_trace import (
     ingest_formal_vcd_trace,
     parse_formal_vcd_trace,
@@ -201,3 +203,115 @@ def test_formal_vcd_trace_requires_explicit_step_limit(tmp_path: Path):
             property_kind="assert",
             max_steps=2,
         )
+
+
+
+def _result_with_trace(
+    project,
+    trace_path: Path,
+    *,
+    kind: str = "assert",
+    status: str = "FAIL",
+    name: str = "top.p_req_ack",
+) -> FormalCheckResult:
+    run_dir = project.root / ".zddv" / "formal" / "sby" / "unit-run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / "formal.log"
+    log_path.write_text("unit formal evidence\n", encoding="utf-8")
+    return FormalCheckResult(
+        backend="sby",
+        engine="smtbmc",
+        request=FormalCheckRequest(
+            mode="cover" if kind == "cover" else "bmc",
+            depth=8,
+        ),
+        command=("sby",),
+        returncode=2 if status in {"FAIL", "UNCOVERED"} else 0,
+        status="FAIL" if status in {"FAIL", "UNCOVERED"} else "PASS",
+        run_dir=run_dir,
+        log_path=log_path,
+        properties=(
+            FormalPropertyResult(
+                name=name,
+                kind=kind,
+                status=status,
+                trace_path=trace_path,
+            ),
+        ),
+    )
+
+
+def test_persist_formal_result_auto_normalizes_vcd_counterexample(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace_path = project.root / "trace.vcd"
+    _write_vcd(trace_path)
+    result = _result_with_trace(project, trace_path)
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+    )
+
+    trace = record["properties"][0]["trace"]
+    assert trace["role"] == "COUNTEREXAMPLE"
+    normalization = trace["normalization"]
+    assert normalization["status"] == "NORMALIZED"
+    assert normalization["format"] == "vcd"
+    assert normalization["trace_kind"] == "counterexample"
+    assert normalization["summary"]["steps"] == 3
+    assert record["snapshot_id"] in normalization["path"]
+
+    normalized_path = Path(normalization["path"])
+    assert normalized_path.is_file()
+    saved = json.loads(normalized_path.read_text(encoding="utf-8"))
+    assert saved["property"] == "top.p_req_ack"
+    assert saved["property_kind"] == "assert"
+    assert saved["source"] == "sby:smtbmc"
+    assert saved["input_sha256"] == hashlib.sha256(trace_path.read_bytes()).hexdigest()
+
+
+def test_persist_formal_result_auto_normalizes_cover_witness(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace_path = project.root / "witness.vcd"
+    _write_vcd(trace_path)
+    result = _result_with_trace(
+        project,
+        trace_path,
+        kind="cover",
+        status="COVERED",
+        name="top.c_reached",
+    )
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+    )
+
+    trace = record["properties"][0]["trace"]
+    assert trace["role"] == "WITNESS"
+    assert trace["normalization"]["status"] == "NORMALIZED"
+    assert trace["normalization"]["trace_kind"] == "witness"
+
+
+def test_persist_formal_result_keeps_result_when_vcd_normalization_fails(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace_path = project.root / "broken.vcd"
+    trace_path.write_text(
+        "$enddefinitions $end\n#0\n1!\n",
+        encoding="utf-8",
+    )
+    result = _result_with_trace(project, trace_path)
+
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+    )
+
+    assert record["status"] == "FAIL"
+    trace = record["properties"][0]["trace"]
+    assert trace["role"] == "COUNTEREXAMPLE"
+    assert trace["normalization"]["status"] == "ERROR"
+    assert trace["normalization"]["error"]
