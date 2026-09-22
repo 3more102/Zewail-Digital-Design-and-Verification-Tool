@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.formal.counterexample import (
     COUNTEREXAMPLE_SCHEMA,
@@ -142,3 +143,41 @@ def test_ingest_writes_normalized_artifact_with_input_provenance(tmp_path: Path)
     assert saved["property"] == "p_req_ack"
     assert saved["input_path"] == str(source_path.resolve())
     assert len(saved["input_sha256"]) == 64
+
+
+def test_cli_ingests_formal_counterexample_and_reports_summary(
+    tmp_path: Path,
+    capsys,
+):
+    project = initialize_project(tmp_path / "demo")
+    source_path = project.root / "cex.json"
+    source_path.write_text(json.dumps(_payload()), encoding="utf-8")
+    output_path = ".zddv/formal/counterexamples/cli.json"
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-counterexample",
+            str(source_path),
+            "--source",
+            "cli-test",
+            "--output",
+            output_path,
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "FORMAL TRACE: counterexample" in output
+    assert "property=p_req_ack" in output
+    assert "source=cli-test" in output
+    assert "Signals/Steps: 3/3" in output
+    assert "Input SHA-256:" in output
+
+    normalized = project.root / output_path
+    assert normalized.is_file()
+    saved = json.loads(normalized.read_text(encoding="utf-8"))
+    assert saved["source"] == "cli-test"
+    assert saved["trace_kind"] == "counterexample"
+    assert saved["property"] == "p_req_ack"
