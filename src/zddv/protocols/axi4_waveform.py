@@ -93,6 +93,22 @@ def extract_axi4_trace_from_vcd(
     )
 
     actual_clock = available[clock.upper()]
+    header = parse_vcd_header(source)
+    actual_wstrb = available["WSTRB"]
+    write_data_bus_bytes = next(
+        (
+            int(item["width"])
+            for item in header.get("signals", [])
+            if item.get("scope") == resolved_scope
+            and item.get("name") == actual_wstrb
+        ),
+        None,
+    )
+    if write_data_bus_bytes is None:
+        raise RuntimeError(
+            f"Could not determine WSTRB width in AXI4 scope '{resolved_scope}'"
+        )
+
     actual_to_canonical = {
         available[name]: name
         for name in _CANONICAL_SIGNALS
@@ -122,8 +138,10 @@ def extract_axi4_trace_from_vcd(
 
     waveform = dict(sampled["waveform"])
     waveform["clock"] = actual_clock
+    waveform["write_data_bus_bytes"] = write_data_bus_bytes
     return {
         "source": "vcd-waveform",
+        "write_data_bus_bytes": write_data_bus_bytes,
         "waveform": waveform,
         "samples": normalized_samples,
     }
