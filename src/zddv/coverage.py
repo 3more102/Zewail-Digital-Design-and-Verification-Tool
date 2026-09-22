@@ -2868,6 +2868,61 @@ def parse_xcelium_imc_toggle_coverage_points(text: str) -> list[dict]:
 
     return points
 
+
+def build_xcelium_imc_item_report(text: str) -> dict:
+    """Normalize only verified native IMC item-detail layouts.
+
+    This deliberately excludes FSM and functional-covergroup item rows until
+    their native IMC detail schemas are verified. Unknown layouts are retained
+    in detail.txt by the merge flow rather than guessed here.
+    """
+    parsers = (
+        ("block", parse_xcelium_imc_block_coverage),
+        ("expression", parse_xcelium_imc_expression_coverage),
+        ("toggle", parse_xcelium_imc_toggle_coverage_points),
+    )
+    points: list[dict] = []
+    parser_status: dict[str, str] = {}
+    by_type: dict[str, dict[str, int]] = {}
+
+    for point_type, parser in parsers:
+        parsed = parser(text)
+        parser_status[point_type] = (
+            "normalized" if parsed else "no-matching-rows"
+        )
+        points.extend(parsed)
+        by_type[point_type] = {
+            "points": len(parsed),
+            "holes": sum(not bool(point.get("hit")) for point in parsed),
+        }
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("type") or ""),
+            str(point.get("name") or ""),
+            str(point.get("source_file") or ""),
+            int(point.get("line") or -1),
+            str(point.get("truth_row") or ""),
+        )
+    )
+    return {
+        "schema_version": 1,
+        "source_format": "xcelium-imc-detail",
+        "supported_types": ["block", "expression", "toggle"],
+        "unsupported_item_types": ["fsm", "functional"],
+        "parser_status": parser_status,
+        "total_points": len(points),
+        "total_holes": sum(not bool(point.get("hit")) for point in points),
+        "by_type": by_type,
+        "points": points,
+        "semantics": (
+            "Only verified native IMC block, expression truth-row, and bit-level "
+            "toggle layouts are normalized. FSM and functional item-detail layouts "
+            "remain evidence-only until their exact native schemas are verified."
+        ),
+    }
+
+
 def parse_xcelium_imc_summary(text: str) -> dict:
     """Normalize the cumulative top-level row from an IMC summary report.
 
@@ -2979,6 +3034,9 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     merge_log_path = out_dir / "merge.log"
     summary_path = out_dir / "summary.txt"
     detail_path = out_dir / "detail.txt"
+    items_path = out_dir / "items.json"
+    if items_path.exists():
+        items_path.unlink()
     script_path = out_dir / "imc-commands.tcl"
     manifest_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_dirs]
@@ -3055,26 +3113,49 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
     detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
 
+    item_report: dict | None = None
+    item_detail_status = "tool-error"
+    item_detail_error: str | None = None
     toggle_points: list[dict] = []
     toggle_detail_error: str | None = None
     if detail_report.returncode == 0:
-        toggle_points = parse_xcelium_imc_toggle_coverage_points(
-            detail_report.stdout or ""
+        item_report = build_xcelium_imc_item_report(detail_report.stdout or "")
+        item_detail_status = (
+            "normalized" if item_report["total_points"] else "detail-unparsed"
         )
+        item_payload = {
+            **item_report,
+            "source_detail": str(detail_path),
+        }
+        items_path.write_text(
+            json.dumps(item_payload, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        toggle_points = [
+            point
+            for point in item_report["points"]
+            if point.get("type") == "toggle"
+        ]
         toggle_detail_status = (
             "normalized" if toggle_points else "detail-unparsed"
         )
+        if not item_report["total_points"]:
+            item_detail_error = (
+                "No verified block, expression truth-row, or bit-level toggle rows "
+                "were found in the native IMC detail report"
+            )
         if not toggle_points:
             toggle_detail_error = (
                 "No documented Hit(Full)/Hit(Rise)/Hit(Fall)/Signal rows "
                 "were found in the native IMC detail report"
             )
     else:
-        toggle_detail_status = "tool-error"
-        toggle_detail_error = (detail_report.stdout or "").strip() or (
+        item_detail_error = (detail_report.stdout or "").strip() or (
             "IMC detailed coverage report exited with status "
             f"{detail_report.returncode}"
         )
+        toggle_detail_status = "tool-error"
+        toggle_detail_error = item_detail_error
 
     metrics: dict | None = None
     metrics_error: str | None = None
@@ -3110,6 +3191,12 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail": str(detail_path),
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
+        "items": str(items_path) if item_report is not None else None,
+        "item_detail_status": item_detail_status,
+        "item_detail_points": item_report["total_points"] if item_report else 0,
+        "item_detail_holes": item_report["total_holes"] if item_report else 0,
+        "item_detail_by_type": item_report["by_type"] if item_report else {},
+        "item_detail_parser_status": item_report["parser_status"] if item_report else {},
         "toggle_detail_status": toggle_detail_status,
         "toggle_detail_points": len(toggle_points),
         "toggle_detail_holes": sum(
@@ -3125,6 +3212,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+    if item_detail_error is not None:
+        payload["item_detail_error"] = item_detail_error
     if toggle_detail_error is not None:
         payload["toggle_detail_error"] = toggle_detail_error
 
@@ -3159,6 +3248,13 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
         "detail_command": detail_command,
+        "items": str(items_path) if item_report is not None else None,
+        "item_detail_status": item_detail_status,
+        "item_detail_points": item_report["total_points"] if item_report else 0,
+        "item_detail_holes": item_report["total_holes"] if item_report else 0,
+        "item_detail_by_type": item_report["by_type"] if item_report else {},
+        "item_detail_parser_status": item_report["parser_status"] if item_report else {},
+        "item_detail_error": item_detail_error,
         "toggle_detail_status": toggle_detail_status,
         "toggle_detail_points": len(toggle_points),
         "toggle_detail_holes": sum(
