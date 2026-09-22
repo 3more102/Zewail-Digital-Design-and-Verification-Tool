@@ -1121,25 +1121,25 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
 
 
 _VCS_URG_MODULE_HEADER = re.compile(
-    r"^\\s*(?P<kind>Line|Branch)\\s+Coverage\\s+for\\s+Module\\s*:\\s*"
-    r"(?P<module>.+?)\\s*$",
+    r"^\s*(?P<kind>Line|Branch)\s+Coverage\s+for\s+Module\s*:\s*"
+    r"(?P<module>.+?)\s*$",
     re.IGNORECASE,
 )
 _VCS_URG_ANY_COVERAGE_SECTION = re.compile(
-    r"^\\s*.+?\\s+Coverage\\s+for\\s+(?:Module|Instance)\\s*:\\s*.+?\\s*$",
+    r"^\s*.+?\s+Coverage\s+for\s+(?:Module|Instance)\s*:\s*.+?\s*$",
     re.IGNORECASE,
 )
 _VCS_URG_MODULE_TOTAL_ROWS = {
     "line": re.compile(
-        r"^\\s*TOTAL\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*TOTAL\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
     "branch": re.compile(
-        r"^\\s*Branches\\s+(?P<total>\\d[\\d,]*)\\s+"
-        r"(?P<covered>\\d[\\d,]*)\\s+"
-        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        r"^\s*Branches\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
 }
