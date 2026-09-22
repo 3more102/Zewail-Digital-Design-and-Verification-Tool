@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, retained machine-readable detailed XML evidence, and statement-level source hole normalization; other code-item types remain pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -95,8 +95,10 @@ SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+a separate simulator-reported value. `zddv coverage-holes --type statement`
+can export statement-only XML evidence from the merged UCDB and report zero-hit
+statements with instance scope, source file, line, statement index, and hit count.
+Branch/condition/expression/toggle/FSM item-level hole normalization remains planned.
 
 ## Current CLI
 
@@ -652,7 +654,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa native per-run UCDB coverage capture
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
+- [x] Questa statement-level XML code-coverage normalization and coverage-hole reporting
+- [ ] Questa branch/condition/expression/toggle/FSM item-level normalization
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
