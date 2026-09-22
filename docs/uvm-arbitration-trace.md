@@ -34,6 +34,19 @@ Policy validation is opt-in through explicit `mode` evidence. ZDDV does not infe
 
 Missing priority or request-order evidence skips the corresponding deterministic check rather than producing a failure. Duplicate request-order values are reported as ambiguous when that order is needed for a FIFO check.
 
+## Item evidence bridge
+
+Explicit item request/grant evidence can be bridged into the same arbitration analyzer:
+
+```text
+zddv --project <project> uvm-arbitration-analyze items.json --item-trace --fairness-bound 2
+zddv --project <project> uvm-arbitration-analyze simulation.log --item-log --fairness-bound 2
+```
+
+For each explicit `GRANT`, pending `ARB_REQUEST` events on the same sequencer form the contender set. The granted item becomes `granted_request_id`, and the resulting decisions are passed through the normal arbitration/fairness and policy checker; no second fairness implementation is used.
+
+A decision is not emitted if any pending contender on that sequencer lacks `sequence_id` or `sequence`. This prevents incomplete evidence from being silently dropped from the contender set. The bridge preserves item/log provenance and the original input path. Optional `priority`, `request_order`, and `arbitration_mode` are propagated only when they are explicitly instrumented in event metadata; none are inferred.
+
 ## Fairness bound
 
 `fairness_bound` is optional and may be supplied in the JSON or overridden by `--fairness-bound`. It is the maximum number of **observed arbitration decisions that a request may lose** while it is present as a contender. A request granted after two earlier losses therefore has `lost_decisions=2`.
