@@ -68,10 +68,7 @@ package zddv_uvm_item_trace_pkg;
         transaction_json = $sformatf("%0d", transaction_id);
 
       $display(
-        "ZDDV_UVM_ITEM {\"item_id\":\"%s\",\"event\":\"%s\","
-        "\"sequence_id\":%s,\"sequence\":%s,\"sequencer\":%s,"
-        "\"item\":%s,\"transaction_id\":%s,\"time\":\"%0t\","
-        "\"metadata\":{\"instrumentation\":\"zddv_uvm_item_trace_pkg\"}}",
+        "ZDDV_UVM_ITEM {\\\"item_id\\\":\\\"%s\\\",\\\"event\\\":\\\"%s\\\",\\\"sequence_id\\\":%s,\\\"sequence\\\":%s,\\\"sequencer\\\":%s,\\\"item\\\":%s,\\\"transaction_id\\\":%s,\\\"time\\\":\\\"%0t\\\",\\\"metadata\\\":{\\\"instrumentation\\\":\\\"zddv_uvm_item_trace_pkg\\\"}}",
         zddv_json_escape(item_id),
         zddv_json_escape(event_name),
         zddv_json_string_or_null(sequence_id),
