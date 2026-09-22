@@ -29,7 +29,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
-- UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
+- UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -340,7 +340,8 @@ separately from Verilator's annotation threshold.
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
-- [ ] Sequence-aware UVM result model
+- [x] Explicit `sequencer@@sequence` report-context evidence
+- [ ] Sequence start/end lifecycle reconstruction
 
 ### APB Trace Analysis
 
