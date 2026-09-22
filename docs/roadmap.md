@@ -126,6 +126,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Xcelium cumulative Overall/Code/FSM/Functional Average/Covered metric normalization into percentage-native ZDDV coverage history.
 - [x] Xcelium explicitly reported two-field covered/total count persistence without percentage-derived counts.
 - [x] Xcelium IMC detailed all-metrics/source report evidence capture, with tool failures retained without fabricating item data.
+- [x] Xcelium machine-readable IMC detail-section inventory with exact line spans and verified context labels, without interpreting unknown row schemas.
 - [ ] Xcelium item-level code/FSM/functional coverage-hole normalization.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
