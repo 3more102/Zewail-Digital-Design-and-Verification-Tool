@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB coverage capture plus multi-run `vcover merge` and normalized `vcover report -summary` metrics; item-level UCDB hole normalization is still pending
+- Questa per-run UCDB coverage capture plus multi-run `vcover merge`, normalized `vcover report -summary` metrics, detailed statement/branch code-coverage holes, and covergroup-bin ingestion
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -90,10 +90,12 @@ zddv --project examples/async_fifo coverage
 For a Questa project, setting `coverage = true` in `[run]` enables native
 coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 `zddv coverage` then merges run UCDBs with `vcover merge`, runs
-`vcover report -summary`, and stores normalized aggregate metrics in the same
-SQLite coverage-history model. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; item-level `coverage-holes` remains
-Verilator-only until detailed UCDB normalization is implemented.
+`vcover report -summary`, emits detailed statement/branch code coverage, and
+normalizes ordinary covergroup bins into functional-coverage snapshots. The
+weighted total coverage remains a separate simulator-reported value.
+`zddv coverage-holes` works for both Verilator and Questa; Questa currently
+itemizes statement and branch holes, while other code-coverage classes remain
+future adapter work.
 
 ## Current CLI
 
@@ -257,7 +259,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← build/run + UCDB summary coverage implemented
+       ├── Questa     ← build/run + UCDB summary + statement/branch holes implemented
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
