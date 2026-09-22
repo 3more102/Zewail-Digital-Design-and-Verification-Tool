@@ -733,3 +733,181 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["awprot"] == 0x2
     assert tx["awqos"] == 0xC
     assert tx["awregion"] == 0x7
+
+
+def test_rejects_wstrb_outside_unaligned_transfer_lanes():
+    result = analyze_axi4_trace(
+        {
+            "write_data_bus_bytes": 4,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": 1,
+                    "AWADDR": 0x1,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11223344,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BID": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    violations = [
+        item for item in result["violations"]
+        if item["code"] == "wstrb_outside_transfer_lanes"
+    ]
+    assert result["status"] == "FAIL"
+    assert len(violations) == 1
+    assert violations[0]["expected"] == "subset of 0xE"
+    assert violations[0]["actual"] == 0xF
+
+
+def test_accepts_partial_wstrb_inside_unaligned_transfer_lanes():
+    result = analyze_axi4_trace(
+        {
+            "write_data_bus_bytes": 4,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x1,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11223344,
+                    "WSTRB": 0xA,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["write_data_bus_bytes"] == 4
+
+
+def test_accepts_rotating_narrow_write_strobes_for_incr_burst():
+    result = analyze_axi4_trace(
+        {
+            "write_data_bus_bytes": 4,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x0,
+                    "AWLEN": 3,
+                    "AWSIZE": 0,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11,
+                    "WSTRB": 0x1,
+                    "WLAST": 0,
+                },
+                {
+                    "cycle": 2,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x22,
+                    "WSTRB": 0x2,
+                    "WLAST": 0,
+                },
+                {
+                    "cycle": 3,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x33,
+                    "WSTRB": 0x4,
+                    "WLAST": 0,
+                },
+                {
+                    "cycle": 4,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x44,
+                    "WSTRB": 0x8,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 5,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["write_strobes"] == [1, 2, 4, 8]
+
+
+def test_reports_write_transfer_wider_than_data_bus():
+    result = analyze_axi4_trace(
+        {
+            "write_data_bus_bytes": 4,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x0,
+                    "AWLEN": 0,
+                    "AWSIZE": 3,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert "write_transfer_exceeds_bus_width" in {
+        item["code"] for item in result["violations"]
+    }
+
