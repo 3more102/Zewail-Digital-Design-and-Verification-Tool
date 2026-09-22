@@ -27,7 +27,7 @@ from zddv.protocols.axi4_waveform import analyze_axi4_waveform
 from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
-from zddv.simulator import VerilatorBackend
+from zddv.simulator import get_backend
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -46,9 +46,7 @@ from zddv.waveform_probe import write_waveform_probe
 
 
 def _backend(name: str):
-    if name == "verilator":
-        return VerilatorBackend()
-    raise RuntimeError(f"Unsupported simulator backend: {name}")
+    return get_backend(name)
 
 
 def _project_arg(args) -> str:
@@ -89,8 +87,10 @@ def cmd_config(args) -> int:
 def cmd_doctor(args) -> int:
     print(f"ZDDV {__version__}")
     print(f"Python {platform.python_version()} ({sys.executable})")
+    backend_name = getattr(args, "simulator", None) or "verilator"
     try:
-        version = VerilatorBackend().version()
+        backend = _backend(backend_name)
+        version = backend.version()
         print(f"[PASS] {version}")
         return 0
     except RuntimeError as exc:
@@ -1059,6 +1059,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_config.set_defaults(func=cmd_config)
 
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
+    p_doctor.add_argument(
+        "--simulator",
+        choices=("verilator", "questa", "questasim"),
+        default=None,
+        help="Simulator backend to check; defaults to verilator",
+    )
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_index = sub.add_parser(
