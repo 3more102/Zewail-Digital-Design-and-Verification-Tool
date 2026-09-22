@@ -8,7 +8,7 @@ import pytest
 from zddv.cli import main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
-from zddv.formal.sby import render_sby_bmc_config
+from zddv.formal.sby import parse_sby_status_jsonl, render_sby_bmc_config
 from zddv.storage import list_formal_result_snapshots
 
 
@@ -102,6 +102,42 @@ def test_sby_backend_version_uses_documented_version_flag(tmp_path: Path, monkey
     assert captured["command"] == ["/opt/sby/bin/sby", "--version"]
 
 
+def test_parse_sby_status_jsonl_normalizes_assertions_and_retains_trace():
+    rows = parse_sby_status_jsonl(
+        "\n".join(
+            [
+                '{"task_name":"demo","mode":"bmc","engine":"smtbmc","name":"formal_top.a_req_ack","location":"rtl/dut.sv:3","kind":"ASSERT","status":"PASS","depth":20}',
+                '{"task_name":"demo","mode":"bmc","engine":"smtbmc","name":"formal_top.a_never_bad","location":"rtl/dut.sv:4","kind":"ASSERT","status":"FAIL","trace":"/tmp/demo/engine_0/trace.vcd","depth":7}',
+                '{"task_name":"demo","mode":"bmc","name":"formal_top.c_seen","kind":"COVER","status":"PASS","depth":3}',
+            ]
+        )
+        + "\n"
+    )
+
+    assert [row.name for row in rows] == [
+        "formal_top.a_req_ack",
+        "formal_top.a_never_bad",
+    ]
+    assert rows[0].kind == "assert"
+    assert rows[0].status == "PASS"
+    assert rows[0].depth == 20
+    assert rows[1].status == "FAIL"
+    assert rows[1].depth == 7
+    assert rows[1].trace_path == Path("/tmp/demo/engine_0/trace.vcd")
+
+
+def test_parse_sby_status_jsonl_rejects_conflicting_assertion_rows():
+    with pytest.raises(ValueError, match="conflicting SBY property-status rows"):
+        parse_sby_status_jsonl(
+            "\n".join(
+                [
+                    '{"name":"formal_top.a_req_ack","kind":"ASSERT","status":"PASS","depth":20}',
+                    '{"name":"formal_top.a_req_ack","kind":"ASSERT","status":"FAIL","depth":7}',
+                ]
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("returncode", "terminal", "expected"),
     [
@@ -126,6 +162,9 @@ def test_sby_backend_normalizes_terminal_status_and_retains_evidence(
     captured: dict[str, object] = {}
 
     def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            return SimpleNamespace(returncode=0, output="", timed_out=False)
+
         captured["command"] = list(command)
         captured["cwd"] = cwd
         captured["timeout_s"] = timeout_s
@@ -152,12 +191,104 @@ def test_sby_backend_normalizes_terminal_status_and_retains_evidence(
     assert result.returncode == returncode
     assert result.request.depth == 20
     assert result.log_path.read_text(encoding="utf-8") == terminal
-    assert len(result.artifacts) == 1
+    if expected in {"PASS", "FAIL"}:
+        assert len(result.artifacts) == 2
+        assert result.artifacts[1].name == "property-status.jsonl"
+    else:
+        assert len(result.artifacts) == 1
     assert result.artifacts[0].suffix == ".sby"
     assert captured["cwd"] == project.root
     assert captured["timeout_s"] == pytest.approx(3.0)
     command = captured["command"]
     assert command[:4] == ["/opt/sby/bin/sby", "-f", "-d", str(result.run_dir)]
+
+
+def test_sby_backend_ingests_machine_readable_assertion_statuses(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr(
+        "zddv.formal.sby.shutil.which",
+        lambda name: "/opt/sby/bin/sby" if name == "sby" else None,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            captured["status_command"] = list(command)
+            return SimpleNamespace(
+                returncode=0,
+                output=(
+                    '{"task_name":"demo","mode":"bmc","engine":"smtbmc",'
+                    '"name":"formal_top.a_req_ack","location":"rtl/dut.sv:3",'
+                    '"kind":"ASSERT","status":"PASS","depth":20}\n'
+                    '{"task_name":"demo","mode":"bmc","engine":"smtbmc",'
+                    '"name":"formal_top.a_bad","location":"rtl/dut.sv:4",'
+                    '"kind":"ASSERT","status":"FAIL","depth":7,'
+                    '"trace":"/tmp/demo/engine_0/trace.vcd"}\n'
+                ),
+                timed_out=False,
+            )
+        return SimpleNamespace(
+            returncode=2,
+            output="SBY [job] DONE (FAIL, rc=2)\n",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr("zddv.formal.sby._run_process", fake_process)
+
+    result = SymbiYosysBackend().check(
+        project,
+        FormalCheckRequest(mode="bmc", depth=20, timeout_s=3.0),
+    )
+
+    assert result.status == "FAIL"
+    assert [item.status for item in result.properties] == ["PASS", "FAIL"]
+    assert [item.depth for item in result.properties] == [20, 7]
+    assert result.properties[1].trace_path == Path("/tmp/demo/engine_0/trace.vcd")
+    assert result.artifacts[1].name == "property-status.jsonl"
+    assert result.artifacts[1].read_text(encoding="utf-8").count("\n") == 2
+    assert captured["status_command"] == [
+        "/opt/sby/bin/sby",
+        "--statusfmt",
+        "jsonl",
+        "--latest",
+        str(result.run_dir),
+    ]
+
+
+def test_sby_backend_keeps_malformed_property_status_evidence_without_claims(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.formal.sby.shutil.which", lambda name: "/usr/bin/sby")
+
+    def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            return SimpleNamespace(
+                returncode=0,
+                output="{not-json}\n",
+                timed_out=False,
+            )
+        return SimpleNamespace(
+            returncode=0,
+            output="SBY [job] DONE (PASS, rc=0)\n",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr("zddv.formal.sby._run_process", fake_process)
+
+    result = SymbiYosysBackend().check(
+        project,
+        FormalCheckRequest(mode="bmc", depth=8),
+    )
+
+    assert result.status == "PASS"
+    assert result.properties == ()
+    assert result.artifacts[1].name == "property-status.jsonl"
+    assert result.artifacts[1].read_text(encoding="utf-8") == "{not-json}\n"
 
 
 def test_sby_backend_timeout_is_unknown_not_pass_or_fail(tmp_path: Path, monkeypatch):
