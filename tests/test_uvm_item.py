@@ -216,6 +216,111 @@ def test_arbitration_keeps_missing_context_explicit():
     assert arbitration["grants"][0]["sequence_id"] is None
 
 
+
+def test_reconstructs_explicit_request_contention_and_bypasses():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                _event("item-b", "ARB_REQUEST", sequence_id="seq-b", transaction_id=20),
+                _event("item-a", "ARB_REQUEST", sequence_id="seq-a", transaction_id=10),
+                _event("item-a", "GRANT", sequence_id="seq-a", transaction_id=10),
+                _event("item-a", "REQUEST", sequence_id="seq-a", transaction_id=10),
+                _event("item-a", "ITEM_DONE", sequence_id="seq-a", transaction_id=10),
+                _event("item-c", "ARB_REQUEST", sequence_id="seq-c", transaction_id=30),
+                _event("item-c", "GRANT", sequence_id="seq-c", transaction_id=30),
+                _event("item-c", "REQUEST", sequence_id="seq-c", transaction_id=30),
+                _event("item-c", "ITEM_DONE", sequence_id="seq-c", transaction_id=30),
+                _event("item-b", "GRANT", sequence_id="seq-b", transaction_id=20),
+                _event("item-b", "REQUEST", sequence_id="seq-b", transaction_id=20),
+                _event("item-b", "ITEM_DONE", sequence_id="seq-b", transaction_id=20),
+            ]
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["partial"] == 0
+    request_evidence = result["arbitration"]["request_evidence"]
+    assert request_evidence["available"] is True
+    assert request_evidence["summary"] == {
+        "requests": 3,
+        "matched_grants": 3,
+        "grants_without_request_evidence": 0,
+        "contended_grants": 2,
+        "pending_requests": 0,
+        "max_pending": 2,
+        "max_bypass": 2,
+    }
+    item_b = next(
+        item for item in request_evidence["requests"] if item["item_id"] == "item-b"
+    )
+    assert item_b["bypasses"] == 2
+    assert item_b["granted"] is True
+    assert result["arbitration"]["model"] == "observed_grant_order"
+    assert result["arbitration"]["summary"]["grant_events"] == 3
+
+
+def test_max_bypass_policy_is_opt_in_and_enforced():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                _event("item-b", "ARB_REQUEST", sequence_id="seq-b", transaction_id=20),
+                _event("item-a", "ARB_REQUEST", sequence_id="seq-a", transaction_id=10),
+                _event("item-a", "GRANT", sequence_id="seq-a", transaction_id=10),
+                _event("item-c", "ARB_REQUEST", sequence_id="seq-c", transaction_id=30),
+                _event("item-c", "GRANT", sequence_id="seq-c", transaction_id=30),
+                _event("item-b", "GRANT", sequence_id="seq-b", transaction_id=20),
+            ]
+        },
+        max_bypass=1,
+    )
+
+    assert result["status"] == "FAIL"
+    assert result["arbitration"]["request_evidence"]["summary"]["max_bypass"] == 2
+    assert "ARBITRATION_BYPASS_LIMIT" in {
+        violation["code"] for violation in result["violations"]
+    }
+
+
+def test_request_without_grant_remains_pending_without_fairness_failure():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                _event("item-a", "ARB_REQUEST", sequence_id="seq-a", transaction_id=10),
+            ]
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["partial"] == 0
+    request_evidence = result["arbitration"]["request_evidence"]
+    assert request_evidence["summary"]["pending_requests"] == 1
+    assert request_evidence["requests"][0]["pending"] is True
+
+
+def test_request_before_observed_grant_is_an_ordering_violation():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                _event("item-a", "ARB_REQUEST", sequence_id="seq-a", transaction_id=10),
+                _event("item-a", "REQUEST", sequence_id="seq-a", transaction_id=10),
+            ]
+        }
+    )
+
+    assert result["status"] == "FAIL"
+    assert [violation["code"] for violation in result["violations"]] == [
+        "REQUEST_BEFORE_GRANT"
+    ]
+
+
+def test_rejects_negative_max_bypass_policy():
+    try:
+        parse_uvm_item_data({"events": []}, max_bypass=-1)
+    except ValueError as exc:
+        assert "max_bypass" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for negative max_bypass")
+
 def test_rejects_unknown_item_event():
     try:
         parse_uvm_item_data({"events": [_event("item-1", "NOT_AN_EVENT")]})
@@ -478,6 +583,30 @@ def test_parse_uvm_item_log_markers_preserves_line_provenance():
     assert result["arbitration"]["summary"]["grant_events"] == 1
     assert result["events"][0]["metadata"]["log_line"] == 2
 
+
+
+def test_log_markers_support_request_side_arbitration_policy():
+    text = "\n".join(
+        [
+            _marker(_event("item-b", "ARB_REQUEST", sequence_id="seq-b", transaction_id=20)),
+            _marker(_event("item-a", "ARB_REQUEST", sequence_id="seq-a", transaction_id=10)),
+            _marker(_event("item-a", "GRANT", sequence_id="seq-a", transaction_id=10)),
+            _marker(_event("item-b", "GRANT", sequence_id="seq-b", transaction_id=20)),
+        ]
+    )
+
+    result = parse_uvm_item_log_text(
+        text,
+        source="marker-arbitration",
+        max_bypass=0,
+    )
+
+    assert result["status"] == "FAIL"
+    assert result["arbitration"]["request_evidence"]["summary"]["contended_grants"] == 1
+    assert result["arbitration"]["request_evidence"]["summary"]["max_bypass"] == 1
+    assert "ARBITRATION_BYPASS_LIMIT" in {
+        violation["code"] for violation in result["violations"]
+    }
 
 def test_parse_uvm_item_log_rejects_malformed_marker():
     try:
