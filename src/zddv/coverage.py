@@ -2335,8 +2335,8 @@ _IMC_DETAIL_EXPRESSION_HEADER = re.compile(
 )
 _IMC_DETAIL_EXPRESSION_SUMMARY = re.compile(
     r"^\s*(?P<index>\d+(?:\.\d+)*)\s*\|\s*"
-    r"(?P<grade>[^|]+?)\s*\|\s*(?P<line>\d+)\s*\|\s*"
-    r"(?P<expression>.+?)\s*$",
+    r"(?P<grade>\d+(?:\.\d+)?%\s*(?:\([^)]*\))?)\s*\|\s*"
+    r"(?P<line>\d+)\s*\|\s*(?P<expression>.+?)\s*$",
 )
 _IMC_DETAIL_EXPRESSION_CONTEXT = re.compile(
     r"^\s*index:\s*(?P<index>\d+(?:\.\d+)*)\s+"
