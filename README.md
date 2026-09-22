@@ -108,11 +108,12 @@ evidence: XML output for machine-readable follow-up, a `-zeros -details` report
 for zero-hit source/file-line evidence, documented multibit-expression detail,
 and dedicated by-instance toggle text/XML detail. ZDDV normalizes documented
 statement and branch rows, scalar condition/expression FEC rows, documented
-multibit-expression FEC input-term bits, and FSM state/transition rows into
-`zddv coverage-holes`. Toggle item normalization remains pending until the exact
-offline `vcover report` item schema is verified; ZDDV keeps the retained native
-toggle evidence raw rather than assuming the interactive `toggle report` text
-layout. Questa's weighted total coverage remains a separate simulator-reported value.
+multibit-expression FEC input-term bits, FSM state/transition rows, and native
+by-instance binary/extended toggle transition counters into `zddv coverage-holes`.
+The toggle XML path preserves instance scope and individual transition counts;
+enumerated or unknown toggle layouts and multibit-condition layouts remain raw
+evidence until their exact native schemas are verified. Questa's weighted total
+coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. ZDDV also parses documented module-level Line and Branch total/covered rows from `modinfo.txt` and persists them as explicitly scoped `module_line` and `module_branch` counts; these counts do not replace the design-wide dashboard percentages. ZDDV also aggregates explicitly reported instance-level Line, Cond, Total Bits toggle, and Branch covered/total rows from URG HTML detail pages, while retaining FSM state, transition, and sequence rows as separate metrics and deduplicating repeated/paginated instance evidence. Condition/toggle/FSM module-level counts remain pending. If the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
