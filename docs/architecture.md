@@ -266,12 +266,19 @@ a simulator-independent request (`FormalCheckRequest`), per-property normalized 
 (`FormalPropertyResult`), an overall tool result (`FormalCheckResult`), and the
 `FormalBackend` execution boundary.
 
-The first contract deliberately does not infer vendor-specific proof semantics. It normalizes
+The contract deliberately does not infer vendor-specific proof semantics. It normalizes
 only stable concepts: BMC/prove/cover request modes; optional bounds, property filters and
 timeouts; assertion PASS/FAIL/UNKNOWN/ERROR states; cover
 COVERED/UNCOVERED/UNKNOWN/ERROR states; tool command/evidence paths; and overall
-PASS/FAIL/UNKNOWN/ERROR status. Concrete engines, persistence, bounded execution, and
-counterexample artifact normalization are follow-on milestones.
+PASS/FAIL/UNKNOWN/ERROR status. Normalized property/cover evidence is persisted separately
+from execution.
+
+The first concrete execution backend is SymbiYosys finite-depth BMC. ZDDV generates an
+explicit `.sby` job with `mode bmc`, a required `depth`, optional SBY timeout,
+the `smtbmc` engine, project source staging, and `prep -top` for the configured top.
+A completed result is accepted only from an explicit SBY `DONE (..., rc=...)` terminal
+marker; an external timeout is normalized as UNKNOWN and missing terminal evidence as
+ERROR. A BMC PASS is bounded evidence only and is never promoted to an unbounded proof.
 
 ## Simulator Adapter Rule
 
