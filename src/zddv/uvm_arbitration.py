@@ -20,6 +20,7 @@ _UVM_ARBITRATION_MODES = (
     "UVM_SEQ_ARB_USER",
 )
 _UNSPECIFIED_MODE = "UNSPECIFIED"
+_ARBITRATION_LOG_MARKER = "ZDDV_UVM_ARBITRATION"
 
 
 def _require_text(value: Any, *, field: str, context: str) -> str:
@@ -467,33 +468,114 @@ def parse_uvm_arbitration_file(
     )
 
 
-def analyze_uvm_arbitration_file(
-    project: ProjectConfig,
-    path: str | Path,
+def parse_uvm_arbitration_log_text(
+    text: str,
     *,
-    source: str | None = None,
+    source: str = "uvm-arbitration-log-marker",
     fairness_bound: int | None = None,
-    output: str | Path = ".zddv/uvm/arbitration/latest.json",
-    run_id: str | None = None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
+    """Parse explicit ZDDV_UVM_ARBITRATION JSON decision markers from log text."""
+    decisions: list[dict[str, Any]] = []
+    marker_lines: list[int] = []
 
-    run_record: dict[str, Any] | None = None
-    if run_id is not None:
-        run_record = get_run_record(project, run_id)
-        if run_record is None:
-            raise ValueError(f"Unknown run ID: {run_id}")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        marker_index = line.find(_ARBITRATION_LOG_MARKER)
+        if marker_index < 0:
+            continue
 
-    report = parse_uvm_arbitration_file(
-        input_path,
+        payload_text = line[marker_index + len(_ARBITRATION_LOG_MARKER) :].strip()
+        if not payload_text:
+            raise ValueError(
+                f"{_ARBITRATION_LOG_MARKER} marker at line {line_number} has no JSON payload"
+            )
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{_ARBITRATION_LOG_MARKER} marker at line {line_number} has invalid JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"{_ARBITRATION_LOG_MARKER} marker at line {line_number} "
+                "must contain a JSON object"
+            )
+
+        metadata = payload.get("metadata", {})
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise ValueError(
+                f"{_ARBITRATION_LOG_MARKER} marker at line {line_number} "
+                "metadata must be an object"
+            )
+
+        decision = dict(payload)
+        decision_metadata = dict(metadata)
+        decision_metadata["log_line"] = line_number
+        decision["metadata"] = decision_metadata
+        decisions.append(decision)
+        marker_lines.append(line_number)
+
+    if not decisions:
+        raise ValueError(f"No {_ARBITRATION_LOG_MARKER} markers found in log")
+
+    report = parse_uvm_arbitration_data(
+        {
+            "source": source,
+            "fairness_bound": fairness_bound,
+            "decisions": decisions,
+        },
         source=source,
         fairness_bound=fairness_bound,
     )
+    report["input_mode"] = "explicit-log-marker"
+    report["marker"] = _ARBITRATION_LOG_MARKER
+    report["marker_lines"] = marker_lines
+    report["limitations"] = [
+        *report["limitations"],
+        (
+            "Log ingestion recognizes only explicit ZDDV_UVM_ARBITRATION JSON "
+            "markers; ordinary simulator or UVM text is not reinterpreted as "
+            "arbitration-decision evidence."
+        ),
+    ]
+    return report
+
+
+def parse_uvm_arbitration_log(
+    path: str | Path,
+    *,
+    source: str = "uvm-arbitration-log-marker",
+    fairness_bound: int | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    return parse_uvm_arbitration_log_text(
+        input_path.read_text(encoding="utf-8", errors="replace"),
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+
+
+def _resolve_arbitration_run(
+    project: ProjectConfig,
+    run_id: str | None,
+) -> dict[str, Any] | None:
+    if run_id is None:
+        return None
+    run_record = get_run_record(project, run_id)
+    if run_record is None:
+        raise ValueError(f"Unknown run ID: {run_id}")
+    return run_record
+
+
+def _persist_uvm_arbitration_analysis(
+    project: ProjectConfig,
+    report: dict[str, Any],
+    input_path: Path,
+    *,
+    output: str | Path,
+    run_record: dict[str, Any] | None,
+) -> dict[str, Any]:
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-arb-%Y%m%dT%H%M%S")
@@ -535,3 +617,77 @@ def analyze_uvm_arbitration_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_arbitration_snapshot(project, record)
     return record
+
+
+def analyze_uvm_arbitration_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    run_record = _resolve_arbitration_run(project, run_id)
+    report = parse_uvm_arbitration_file(
+        input_path,
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )
+
+
+def analyze_uvm_arbitration_log(
+    project: ProjectConfig,
+    path: str | Path | None,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Analyze explicit arbitration decision markers from a simulator/UVM log."""
+    run_record = _resolve_arbitration_run(project, run_id)
+    if path is None:
+        if run_record is None:
+            raise ValueError("A UVM arbitration log path or --run must be provided")
+        input_path = Path(run_record["log_path"])
+    else:
+        input_path = Path(path)
+        if not input_path.is_absolute():
+            input_path = project.root / input_path
+
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    selected_source = source or (
+        f"{run_record['simulator']}-uvm-arbitration-log"
+        if run_record is not None
+        else "uvm-arbitration-log-marker"
+    )
+    report = parse_uvm_arbitration_log(
+        input_path,
+        source=selected_source,
+        fairness_bound=fairness_bound,
+    )
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )

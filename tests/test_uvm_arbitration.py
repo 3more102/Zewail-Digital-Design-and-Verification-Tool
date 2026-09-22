@@ -12,7 +12,9 @@ from zddv.storage import (
 )
 from zddv.uvm_arbitration import (
     analyze_uvm_arbitration_file,
+    analyze_uvm_arbitration_log,
     parse_uvm_arbitration_data,
+    parse_uvm_arbitration_log_text,
 )
 
 
@@ -295,11 +297,70 @@ def test_rejects_unknown_explicit_arbitration_mode():
         raise AssertionError("Expected ValueError for invalid arbitration mode")
 
 
-def _record_run(project, run_id: str) -> None:
+
+def _marker_line(decision: dict[str, object]) -> str:
+    return "ZDDV_UVM_ARBITRATION " + json.dumps(decision)
+
+
+def test_parse_arbitration_log_markers_preserves_actual_line_provenance():
+    decision = _decision(
+        "d0",
+        "req-a",
+        [
+            _contender(
+                "req-a",
+                "seq-a",
+                "producer_a",
+                priority=100,
+                request_order=0,
+            )
+        ],
+        mode="UVM_SEQ_ARB_FIFO",
+    )
+    decision["metadata"] = {"log_line": 999, "tag": "from-helper"}
+    text = "\n".join(
+        [
+            "ordinary simulator text",
+            "UVM_INFO prefix " + _marker_line(decision),
+            "ordinary trailer",
+        ]
+    )
+
+    result = parse_uvm_arbitration_log_text(text)
+
+    assert result["status"] == "PASS"
+    assert result["input_mode"] == "explicit-log-marker"
+    assert result["marker"] == "ZDDV_UVM_ARBITRATION"
+    assert result["marker_lines"] == [2]
+    assert result["decisions"][0]["metadata"]["log_line"] == 2
+    assert result["decisions"][0]["metadata"]["tag"] == "from-helper"
+
+
+def test_parse_arbitration_log_rejects_missing_and_invalid_markers():
+    try:
+        parse_uvm_arbitration_log_text("ordinary simulator text")
+    except ValueError as exc:
+        assert "No ZDDV_UVM_ARBITRATION markers found" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError when no arbitration marker exists")
+
+    try:
+        parse_uvm_arbitration_log_text("ZDDV_UVM_ARBITRATION {not-json}")
+    except ValueError as exc:
+        assert "has invalid JSON" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for malformed arbitration marker JSON")
+
+def _record_run(
+    project,
+    run_id: str,
+    *,
+    log_text: str = "simulation complete\n",
+) -> None:
     run_dir = project.root / ".zddv" / "runs" / run_id
     run_dir.mkdir(parents=True)
     log = run_dir / "simulation.log"
-    log.write_text("simulation complete\n", encoding="utf-8")
+    log.write_text(log_text, encoding="utf-8")
     record_run(
         project,
         {
@@ -385,6 +446,68 @@ def test_cli_arbitration_analysis_history_and_run_correlation(tmp_path: Path, ca
     assert "PASS" in history
     assert "2" in history
 
+
+
+def test_analyze_arbitration_log_resolves_run_and_persists(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    decision = _decision(
+        "log-d0",
+        "req-a",
+        [_contender("req-a", "seq-a", "producer_a")],
+    )
+    _record_run(
+        project,
+        "run-arb-log",
+        log_text="noise\n" + _marker_line(decision) + "\n",
+    )
+
+    result = analyze_uvm_arbitration_log(
+        project,
+        None,
+        run_id="run-arb-log",
+    )
+
+    assert result["status"] == "PASS"
+    assert result["run_id"] == "run-arb-log"
+    assert result["simulator"] == "questa"
+    assert result["source"] == "questa-uvm-arbitration-log"
+    assert result["marker_lines"] == [2]
+    assert Path(result["normalized_path"]).is_file()
+    snapshots = list_uvm_arbitration_snapshots(
+        project,
+        limit=10,
+        run_id="run-arb-log",
+    )
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+
+
+def test_cli_arbitration_log_analysis_from_path(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    decision = _decision(
+        "log-d0",
+        "req-a",
+        [_contender("req-a", "seq-a", "producer_a")],
+    )
+    log = project.root / "simulation.log"
+    log.write_text(
+        "noise\n" + _marker_line(decision) + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-arbitration-log-analyze",
+            str(log),
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM ARBITRATION PASS" in output
+    assert "explicit-log-marker" in output
+    assert "markers=1" in output
 
 def test_cli_fairness_bound_override_can_fail(tmp_path: Path, capsys):
     project = initialize_project(tmp_path / "demo")
