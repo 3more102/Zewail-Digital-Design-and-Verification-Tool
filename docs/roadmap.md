@@ -184,7 +184,7 @@ uncollected verification objectives passed.
 - [x] Optional coverage-presence and minimum-percentage gate.
 - [x] Optional formal/UVM evidence requirements while still blocking explicit failures.
 - [x] CI-friendly signoff command exit status and JSON artifact.
-- [ ] Explicit snapshot/run ID pinning for release-candidate manifests.
+- [x] Explicit snapshot/run ID pinning for release-candidate manifests.
 - [ ] Signed release manifest and reproducible archive export.
 
 ## Long-Term Direction
