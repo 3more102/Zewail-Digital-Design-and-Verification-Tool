@@ -284,8 +284,14 @@ contract. ZDDV therefore keeps sequence **state** lifecycle evidence in a separa
 normalized JSON model instead of inferring start/end semantics from report text. That layer
 validates the UVM state order, preserves sequence IDs, sequencer paths and parent IDs, permits
 partial traces, correlates snapshots with recorded runs, and persists state events in separate
-SQLite tables. Automatic instrumentation/adapters plus sequence-item arbitration remain future
-layers. See `docs/uvm-sequence-trace.md`.
+SQLite tables. Sequence-item handshakes are also normalized separately. On top of that evidence,
+ZDDV accepts an explicit sequencer-arbitration contract covering the six UVM arbitration modes.
+FIFO and strict-priority rules are checked only where their required request-order/priority evidence
+is present; random, weighted, and user arbitration outcomes remain evidence rather than guessed
+fairness conclusions. Arbitration snapshots, candidate rows, run correlation, and observed
+wait-round metrics are persisted in SQLite. Automatic simulator instrumentation/adapters remain
+future layers. See `docs/uvm-sequence-trace.md`, `docs/uvm-item-trace.md`, and
+`docs/uvm-arbitration-trace.md`.
 
 ## Next Architectural Steps
 
