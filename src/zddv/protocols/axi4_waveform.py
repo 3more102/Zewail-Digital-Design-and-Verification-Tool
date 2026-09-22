@@ -113,8 +113,12 @@ def extract_axi4_trace_from_vcd(
         raise RuntimeError(
             "AXI4 WDATA and RDATA widths must match for normalized bus-width analysis"
         )
-    if wdata_width <= 0 or wdata_width % 8:
-        raise RuntimeError("AXI4 data width must be a positive multiple of 8 bits")
+    legal_data_widths = {8, 16, 32, 64, 128, 256, 512, 1024}
+    if wdata_width not in legal_data_widths:
+        raise RuntimeError(
+            "AXI4 data width must be one of "
+            "8, 16, 32, 64, 128, 256, 512, or 1024 bits"
+        )
 
     expected_wstrb_width = wdata_width // 8
     if wstrb_width != expected_wstrb_width:
