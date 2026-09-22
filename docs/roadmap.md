@@ -97,7 +97,7 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail plus scalar condition/expression FEC rows are normalized into the shared coverage-hole model; multibit condition/expression rows and toggle/FSM itemization remain planned.
+functional-coverage database. Machine-readable XML detail output, complementary zero-hit source/file-line evidence, and dedicated by-instance toggle/FSM detail reports are retained when available. Documented statement and branch detail plus scalar condition/expression FEC rows are normalized into the shared coverage-hole model; multibit condition/expression rows and toggle/FSM itemization remain planned.
 Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
@@ -106,6 +106,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
+- [x] Questa dedicated by-instance toggle/FSM detailed evidence capture.
 - [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting.
 - [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
