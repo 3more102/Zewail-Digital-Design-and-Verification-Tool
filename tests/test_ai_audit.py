@@ -3,12 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import zipfile
 
 import pytest
 
 from zddv.ai_audit import audit_ai_chain
+from zddv.ai_audit_bundle import export_ai_audit_bundle, verify_ai_audit_bundle
 from zddv.ai_provider import ProviderMetadata, invoke_provider
 from zddv.ai_response import (
+    export_reviewed_generation_proposal,
     ingest_ai_provider_response,
     review_validated_ai_response,
 )
@@ -240,3 +243,123 @@ def test_cli_ai_chain_audit(tmp_path: Path, capsys):
     assert "Model invocation: disabled" in output
     assert "External transmission: disabled" in output
     assert "Command execution: disabled" in output
+
+
+
+def test_ai_audit_bundle_is_reproducible_and_portable(tmp_path: Path):
+    project, context_path, response_path, validated, review = _write_chain(tmp_path)
+    exported = export_reviewed_generation_proposal(
+        project,
+        review["path"],
+        proposal_index=1,
+    )
+
+    first = export_ai_audit_bundle(
+        project,
+        context_path=context_path,
+        response_path=response_path,
+        validated_path=validated["path"],
+        review_path=review["path"],
+        proposal_paths=[exported["path"]],
+        output=".zddv/ai/audits/bundle-a.zip",
+    )
+    second = export_ai_audit_bundle(
+        project,
+        context_path=context_path,
+        response_path=response_path,
+        validated_path=validated["path"],
+        review_path=review["path"],
+        proposal_paths=[exported["path"]],
+        output=".zddv/ai/audits/bundle-b.zip",
+    )
+
+    assert first["archive_sha256"] == second["archive_sha256"]
+    assert Path(first["path"]).read_bytes() == Path(second["path"]).read_bytes()
+    assert first["proposal_indices"] == [1]
+
+    moved = tmp_path / "moved-ai-audit-bundle.zip"
+    moved.write_bytes(Path(first["path"]).read_bytes())
+    verified = verify_ai_audit_bundle(moved)
+    assert verified["status"] == "VERIFIED"
+    assert verified["review_id"] == review["review_id"]
+    assert verified["proposal_indices"] == [1]
+
+
+def test_ai_audit_bundle_detects_tampered_proposal(tmp_path: Path):
+    project, context_path, response_path, validated, review = _write_chain(tmp_path)
+    exported = export_reviewed_generation_proposal(
+        project,
+        review["path"],
+        proposal_index=1,
+    )
+    bundle = export_ai_audit_bundle(
+        project,
+        context_path=context_path,
+        response_path=response_path,
+        validated_path=validated["path"],
+        review_path=review["path"],
+        proposal_paths=[exported["path"]],
+    )
+
+    source = Path(bundle["path"])
+    tampered = tmp_path / "tampered-ai-audit.zip"
+    with zipfile.ZipFile(source, "r") as original, zipfile.ZipFile(
+        tampered,
+        "w",
+    ) as rewritten:
+        for name in original.namelist():
+            data = original.read(name)
+            if name.startswith("audit/proposals/"):
+                proposal = json.loads(data)
+                proposal["name"] = "tampered_proposal"
+                data = (
+                    json.dumps(proposal, indent=2, sort_keys=True) + "\n"
+                ).encode("utf-8")
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            rewritten.writestr(info, data)
+
+    with pytest.raises(RuntimeError, match="SHA-256 verification failed"):
+        verify_ai_audit_bundle(tampered)
+
+
+def test_cli_ai_audit_bundle_export_and_verify(tmp_path: Path, capsys):
+    project, context_path, response_path, validated, review = _write_chain(tmp_path)
+    exported = export_reviewed_generation_proposal(
+        project,
+        review["path"],
+        proposal_index=1,
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "ai-audit-bundle-export",
+            "--context",
+            str(context_path),
+            "--response",
+            str(response_path),
+            "--validated",
+            str(validated["path"]),
+            "--review",
+            str(review["path"]),
+            "--proposal",
+            str(exported["path"]),
+        ]
+    )
+    output = capsys.readouterr().out
+    assert rc == 0
+    assert "AI AUDIT BUNDLE EXPORTED" in output
+
+    bundle = project.root / ".zddv" / "ai" / "audits" / "ai-audit-bundle.zip"
+    assert bundle.is_file()
+    rc = main(
+        [
+            "ai-audit-bundle-verify",
+            str(bundle),
+        ]
+    )
+    output = capsys.readouterr().out
+    assert rc == 0
+    assert "AI AUDIT BUNDLE VERIFIED" in output

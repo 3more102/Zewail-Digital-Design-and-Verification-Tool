@@ -525,6 +525,7 @@ def export_reviewed_generation_proposal(
             "evidence": {
                 "evidence_refs": selected.get("evidence_refs", []),
                 "review_id": review_id,
+                "proposal_index": proposal_index,
                 "validated_payload_sha256": actual_sha,
                 "validated_response_path": str(validated_file),
             },

@@ -488,6 +488,15 @@ jobs:
           zddv --project examples/counter ai-proposal-export "$REVIEW" --proposal 1
 
           PROPOSAL=$(realpath "$(find examples/counter/.zddv/ai/proposals -name '*.json' -print -quit)")
+          zddv --project examples/counter ai-audit-bundle-export \
+            --context .zddv/debug/ai-e2e-context.json \
+            --response .zddv/ai/e2e-provider-response.json \
+            --validated .zddv/ai/e2e-validated-response.json \
+            --review "$REVIEW" \
+            --proposal "$PROPOSAL" \
+            --output .zddv/ai/audits/e2e-bundle.zip
+          test -s examples/counter/.zddv/ai/audits/e2e-bundle.zip
+          zddv ai-audit-bundle-verify examples/counter/.zddv/ai/audits/e2e-bundle.zip
           zddv --project examples/counter generated-stage "$PROPOSAL"
           test ! -e examples/counter/reviewed_generated/ai_offline_review_guard.sv
           MANIFEST=$(realpath "$(find examples/counter/.zddv/generated/drafts -name manifest.json -print -quit)")

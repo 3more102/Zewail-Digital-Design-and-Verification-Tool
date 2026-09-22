@@ -174,7 +174,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Offline/manual AI response import without model invocation or external transmission.
 - [x] Imported response bytes bound to the exact model-request and context-evidence SHA-256 provenance.
 - [x] End-to-end CI trust-chain coverage from offline import through validation, SHA-bound review, proposal export, and review-isolated staging.
-- [ ] Portable audit-bundle export for the complete context/raw/validated/review/proposal provenance chain.
+- [x] Portable audit-bundle export for the complete context/raw/validated/review/proposal provenance chain.
 
 ## v1.0 — Verification Signoff
 
