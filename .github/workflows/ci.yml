@@ -171,6 +171,28 @@ jobs:
           grep -q '"awregion": 4' examples/counter/.zddv/protocols/axi4/sidebands.json
           grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/sidebands.json
 
+      - name: Analyze AXI4 USER sidebands
+        run: |
+          zddv --project examples/counter axi4-analyze ../axi4_user_trace.json --output .zddv/protocols/axi4/user.json
+          test -s examples/counter/.zddv/protocols/axi4/user.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("examples/counter/.zddv/protocols/axi4/user.json").read_text()
+          )
+          write = next(
+              tx for tx in payload["transactions"] if tx["direction"] == "WRITE"
+          )
+          read = next(
+              tx for tx in payload["transactions"] if tx["direction"] == "READ"
+          )
+          assert (write["awuser"], write["wuser"], write["buser"]) == (10, [3], 5)
+          assert (read["aruser"], read["ruser"]) == (11, [18])
+          assert payload["summary"]["violations"] == 0
+          PY
+
       - name: Analyze AXI4 exclusive trace
         run: |
           zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json --output .zddv/protocols/axi4/exclusive.json
