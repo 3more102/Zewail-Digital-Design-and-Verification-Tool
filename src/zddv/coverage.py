@@ -235,6 +235,12 @@ def build_coverage_hole_report(
                         "transition",
                         "transition_id",
                         "evidence",
+                        "block",
+                        "origin_line",
+                        "source_code",
+                        "type_name",
+                        "expression_index",
+                        "truth_row",
                     )
                     if key in point and point[key] is not None
                 },
@@ -2330,6 +2336,53 @@ def _imc_quote_path(path: Path) -> str:
     return f'"{value}"'
 
 
+_IMC_BLOCK_DETAIL_ROW = re.compile(
+    r"^\s*(?P<count>\d[\d,]*)\s+(?P<block>\d+)\s+(?P<line>\d+)\s+"
+    r"(?P<kind>.+?)\s+(?P<origin>\d+)\s+(?P<source>.*?)\s*$"
+)
+_IMC_BLOCK_DETAIL_FIELD = re.compile(
+    r"^\s*(?P<label>Instance name|Module/Entity name|Type name|File name)"
+    r"\s*:\s*(?P<value>.*?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_INSTANCE = re.compile(
+    r"^\s*Instance\s+name:\s*(?P<instance>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_TYPE = re.compile(
+    r"^\s*Type\s+name:\s*(?P<type_name>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_FILE = re.compile(
+    r"^\s*File\s+name:\s*(?P<file>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_HEADER = re.compile(
+    r"^\s*index\s*\|\s*grade\s*\|\s*line\s*\|\s*expression\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_SUMMARY = re.compile(
+    r"^\s*(?P<index>\d+(?:\.\d+)*)\s*\|\s*"
+    r"(?P<grade>\d+(?:\.\d+)?%\s*(?:\([^)]*\))?)\s*\|\s*"
+    r"(?P<line>\d+)\s*\|\s*(?P<expression>.+?)\s*$",
+)
+_IMC_EXPRESSION_CONTEXT = re.compile(
+    r"^\s*index:\s*(?P<index>\d+(?:\.\d+)*)\s+"
+    r"grade:\s*(?P<grade>.+?)\s+line:\s*(?P<line>\d+)\s+"
+    r"source:\s*(?P<source>.*?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_ROW_HEADER = re.compile(
+    r"^\s*index\s*\|\s*hit\s*\|\s*rval(?:\s*\|.*)?$",
+    re.IGNORECASE,
+)
+_IMC_EXPRESSION_ROW = re.compile(
+    r"^\s*(?P<row>\d+(?:\.\d+)+)\s*\|\s*"
+    r"(?P<hit>IGN|\d[\d,]*)\s*\|\s*(?P<rval>\S+)"
+    r"(?:\s*\|\s*(?P<terms>.*?))?\s*$",
+    re.IGNORECASE,
+)
+
 _IMC_GRADE_TOKEN = r"(?:\d+(?:\.\d+)?%|n/a)"
 _IMC_COUNT_TOKEN = r"\d[\d,]*/\d[\d,]*"
 _IMC_SUMMARY_ROW = re.compile(
@@ -2394,6 +2447,232 @@ def _imc_counts(value: str | None, *, grade: float | None) -> dict | None:
     if grade is not None:
         result["hit_rate"] = grade
     return result
+
+
+def parse_xcelium_imc_block_coverage(text: str) -> list[dict]:
+    """Normalize the verified source-linked IMC block-detail table."""
+    points: list[dict] = []
+    instance_name = ""
+    module_name = ""
+    type_name = ""
+    source_file = ""
+    pending_field: str | None = None
+    in_block_rows = False
+
+    def assign_field(label: str, value: str) -> None:
+        nonlocal instance_name, module_name, type_name, source_file
+        normalized = label.casefold()
+        if normalized == "instance name":
+            instance_name = value
+        elif normalized == "module/entity name":
+            module_name = value
+        elif normalized == "type name":
+            type_name = value
+        elif normalized == "file name":
+            source_file = value
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+
+        field = _IMC_BLOCK_DETAIL_FIELD.match(raw_line)
+        if field is not None:
+            label = field.group("label")
+            value = field.group("value").strip()
+            in_block_rows = False
+            if value:
+                assign_field(label, value)
+                pending_field = None
+            else:
+                pending_field = label
+            continue
+
+        if pending_field is not None:
+            if stripped.lower().startswith("number of "):
+                pending_field = None
+            else:
+                assign_field(pending_field, stripped)
+                pending_field = None
+                continue
+
+        normalized = re.sub(r"\s+", " ", stripped).casefold()
+        if normalized.startswith("count block line"):
+            in_block_rows = True
+            continue
+        if in_block_rows and normalized.startswith("kind origin source code"):
+            continue
+        if in_block_rows and set(stripped) <= {"-", "=", "+", "|", " "}:
+            continue
+        if not in_block_rows:
+            continue
+
+        row = _IMC_BLOCK_DETAIL_ROW.match(raw_line)
+        if row is None:
+            continue
+
+        count = int(row.group("count").replace(",", ""))
+        block = int(row.group("block"))
+        line_number = int(row.group("line"))
+        origin_line = int(row.group("origin"))
+        block_kind = row.group("kind").strip()
+        source_code = row.group("source").strip()
+        scope = instance_name or module_name or type_name
+        location = f"{source_file or '<unknown-source>'}:{line_number}:block{block}"
+        name = f"{scope}|{location}" if scope else location
+        points.append(
+            {
+                "type": "block",
+                "name": name,
+                "count": count,
+                "hit": count > 0,
+                "scope": scope,
+                "type_name": type_name,
+                "source_file": source_file,
+                "line": line_number,
+                "item": block,
+                "block": block,
+                "origin_line": origin_line,
+                "source_code": source_code,
+                "detail": block_kind,
+            }
+        )
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            str(point.get("source_file") or ""),
+            int(point.get("line") or -1),
+            int(point.get("block") or -1),
+        )
+    )
+    return points
+
+
+def parse_xcelium_imc_expression_coverage(text: str) -> list[dict]:
+    """Normalize verified IMC expression truth-table rows.
+
+    Numeric hit rows are explicit coverage goals. Rows marked IGN are excluded
+    rather than reinterpreted as covered or uncovered.
+    """
+    points: list[dict] = []
+    instance = ""
+    type_name = ""
+    source_file = ""
+    expression_section = False
+    expressions: dict[str, tuple[int, str]] = {}
+    context: dict[str, str | int] | None = None
+    in_truth_table = False
+
+    for raw_line in text.splitlines():
+        match = _IMC_EXPRESSION_INSTANCE.match(raw_line)
+        if match is not None:
+            instance = match.group("instance").strip()
+            type_name = ""
+            source_file = ""
+            expression_section = False
+            expressions = {}
+            context = None
+            in_truth_table = False
+            continue
+
+        match = _IMC_EXPRESSION_TYPE.match(raw_line)
+        if match is not None:
+            type_name = match.group("type_name").strip()
+            continue
+
+        match = _IMC_EXPRESSION_FILE.match(raw_line)
+        if match is not None:
+            source_file = match.group("file").strip()
+            continue
+
+        if _IMC_EXPRESSION_HEADER.match(raw_line) is not None:
+            expression_section = True
+            context = None
+            in_truth_table = False
+            continue
+
+        if not expression_section or not source_file:
+            continue
+
+        match = _IMC_EXPRESSION_SUMMARY.match(raw_line)
+        if match is not None:
+            expressions[match.group("index")] = (
+                int(match.group("line")),
+                match.group("expression").strip(),
+            )
+            continue
+
+        match = _IMC_EXPRESSION_CONTEXT.match(raw_line)
+        if match is not None:
+            expression_index = match.group("index")
+            summary = expressions.get(expression_index)
+            line_number = int(match.group("line"))
+            expression = summary[1] if summary is not None else ""
+            if summary is not None and summary[0] != line_number:
+                context = None
+                in_truth_table = False
+                continue
+            context = {
+                "index": expression_index,
+                "line": line_number,
+                "expression": expression,
+                "source": match.group("source").strip(),
+            }
+            in_truth_table = False
+            continue
+
+        if context is None:
+            continue
+
+        if _IMC_EXPRESSION_ROW_HEADER.match(raw_line) is not None:
+            in_truth_table = True
+            continue
+        if not in_truth_table:
+            continue
+
+        match = _IMC_EXPRESSION_ROW.match(raw_line)
+        if match is None:
+            continue
+        hit_token = match.group("hit").strip()
+        if hit_token.upper() == "IGN":
+            continue
+
+        hits = int(hit_token.replace(",", ""))
+        truth_row = match.group("row")
+        result_value = match.group("rval").strip()
+        terms = (match.group("terms") or "").strip()
+        expression_index = str(context["index"])
+        line_number = int(context["line"])
+        expression = str(context["expression"])
+        target = f"rval={result_value}"
+        if terms:
+            target += f"; terms={terms}"
+        identity = (
+            f"{instance}|{source_file}:{line_number}|"
+            f"expression:{expression_index}|row:{truth_row}"
+        )
+        points.append(
+            {
+                "name": identity,
+                "count": hits,
+                "hit": hits > 0,
+                "type": "expression",
+                "scope": instance,
+                "type_name": type_name,
+                "source_file": source_file,
+                "line": line_number,
+                "expression": expression,
+                "expression_index": expression_index,
+                "truth_row": truth_row,
+                "fec_context": expression,
+                "fec_target": target,
+                "evidence": f"IMC hit={hits}; {target}",
+                "detail": str(context["source"]),
+            }
+        )
+
+    return points
 
 
 def parse_xcelium_imc_toggle_coverage_points(text: str) -> list[dict]:
