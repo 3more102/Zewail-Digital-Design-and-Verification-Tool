@@ -1,0 +1,94 @@
+{
+  "source": "zddv-uvm-helper",
+  "arbitration_mode": "UVM_SEQ_ARB_FIFO",
+  "events": [
+    {
+      "request_id": "req-a",
+      "event": "WAIT_FOR_GRANT",
+      "sequence_id": "seq-a",
+      "sequence": "read_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "priority": 100,
+      "lock_request": false,
+      "time": "10 ns"
+    },
+    {
+      "request_id": "req-b",
+      "event": "WAIT_FOR_GRANT",
+      "sequence_id": "seq-b",
+      "sequence": "write_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "priority": 100,
+      "lock_request": false,
+      "time": "10 ns"
+    },
+    {
+      "request_id": "req-b",
+      "event": "GRANT",
+      "sequence_id": "seq-b",
+      "sequence": "write_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "priority": 100,
+      "lock_request": false,
+      "time": "11 ns"
+    },
+    {
+      "request_id": "req-b",
+      "event": "SEND_REQUEST",
+      "sequence_id": "seq-b",
+      "sequence": "write_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "item_id": "item-b",
+      "transaction_id": 7,
+      "priority": 100,
+      "lock_request": false,
+      "time": "11 ns"
+    },
+    {
+      "request_id": "req-b",
+      "event": "ITEM_DONE",
+      "sequence_id": "seq-b",
+      "sequence": "write_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "item_id": "item-b",
+      "transaction_id": 7,
+      "priority": 100,
+      "lock_request": false,
+      "time": "20 ns"
+    },
+    {
+      "request_id": "req-a",
+      "event": "GRANT",
+      "sequence_id": "seq-a",
+      "sequence": "read_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "priority": 100,
+      "lock_request": false,
+      "time": "21 ns"
+    },
+    {
+      "request_id": "req-a",
+      "event": "SEND_REQUEST",
+      "sequence_id": "seq-a",
+      "sequence": "read_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "item_id": "item-a",
+      "transaction_id": 3,
+      "priority": 100,
+      "lock_request": false,
+      "time": "21 ns"
+    },
+    {
+      "request_id": "req-a",
+      "event": "ITEM_DONE",
+      "sequence_id": "seq-a",
+      "sequence": "read_seq",
+      "sequencer": "uvm_test_top.env.agent.seqr",
+      "item_id": "item-a",
+      "transaction_id": 3,
+      "priority": 100,
+      "lock_request": false,
+      "time": "30 ns"
+    }
+  ]
+}
