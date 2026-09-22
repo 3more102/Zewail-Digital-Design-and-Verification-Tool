@@ -50,13 +50,19 @@ paths or unambiguous short names.
 The importer snapshots the known selected-signal state after all value changes at each
 VCD timestamp. It does not invent clock cycles, radix, signedness, or property semantics.
 
+When a persisted formal result directly reports a VCD counterexample or cover witness,
+ZDDV now performs the same normalization automatically into the run directory under
+`normalized-traces/`. This persistence path is non-fatal: unsupported/malformed/oversized
+traces retain their original evidence link and record a normalization status instead of
+changing the formal result.
+
 ## Current boundary
 
 The artifact-manifest layer itself remains a classifier/fingerprinter. VCD contents can
 now be normalized through the explicit trace importer, while ZDDV does not yet:
 
-- automatically normalize every backend-reported trace during result persistence;
 - parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
+- automatically normalize VCD traces that exceed the fixed 100,000-step persistence guard;
 - reconstruct semantic formal state transitions beyond timestamped signal values;
 - cross-probe normalized formal trace signals to RTL;
 - persist formal trace samples in SQLite;
