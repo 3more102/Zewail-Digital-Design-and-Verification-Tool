@@ -94,12 +94,23 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
             "cov_work/scope/merged"
         )
         report_script = command[command.index("-execcmd") + 1]
-        assert 'report -summary -inst "*..."' in report_script
+        if "report -summary" in report_script:
+            assert 'report -summary -inst "*..."' in report_script
+            assert "-metrics all" in report_script
+            assert "-cumulative on" in report_script
+            assert "-showempty on" in report_script
+            assert "-local off" in report_script
+            return SimpleNamespace(returncode=0, stdout=IMC_SUMMARY)
+
+        assert 'report -detail -inst "*..."' in report_script
         assert "-metrics all" in report_script
-        assert "-cumulative on" in report_script
+        assert "-all" in report_script
         assert "-showempty on" in report_script
-        assert "-local off" in report_script
-        return SimpleNamespace(returncode=0, stdout=IMC_SUMMARY)
+        assert "-source on" in report_script
+        return SimpleNamespace(
+            returncode=0,
+            stdout="IMC detailed coverage evidence\n",
+        )
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
 
@@ -108,6 +119,11 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert result["inputs"] == [str(first), str(second)]
     assert Path(result["merged"]).parts[-3:] == ("cov_work", "scope", "merged")
     assert Path(result["summary"]).read_text(encoding="utf-8") == IMC_SUMMARY
+    assert Path(result["detail"]).read_text(encoding="utf-8") == (
+        "IMC detailed coverage evidence\n"
+    )
+    assert result["detail_status"] == "captured"
+    assert result["detail_returncode"] == 0
     assert result["metrics_status"] == "normalized"
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
     assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
@@ -134,6 +150,10 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert manifest["merge_model"] == "union_all"
     assert manifest["runfile"] == result["runfile"]
     assert manifest["merge_log"] == result["merge_log"]
+    assert manifest["detail"] == result["detail"]
+    assert manifest["detail_status"] == "captured"
+    assert manifest["detail_returncode"] == 0
+    assert "report -detail" in manifest["detail_command"][-1]
     assert len(manifest["merged_ucd_files"]) == 1
     assert len(manifest["merged_ucm_files"]) == 1
     assert manifest["metrics"]["scope"] == "tb_top"
@@ -144,6 +164,47 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert snapshots[0]["score"] == pytest.approx(82.50)
     assert snapshots[0]["by_metric"]["code_covered"] == pytest.approx(75.0)
     assert snapshots[0]["by_metric_counts"]["overall_covered"]["total"] == 40
+
+
+def test_merge_xcelium_coverage_retains_detail_tool_error_as_evidence(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    _coverage_run(project, "run-a")
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/cadence/bin/imc" if name == "imc" else None,
+    )
+
+    report_calls = 0
+
+    def fake_run(command, cwd):
+        nonlocal report_calls
+        if "-load" not in command:
+            merged = Path(cwd) / "cov_work" / "scope" / "merged"
+            merged.mkdir(parents=True)
+            (merged / "icc_merged.ucm").write_text("model\n", encoding="utf-8")
+            (merged / "icc_merged.ucd").write_text("data\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge ok\n")
+
+        report_calls += 1
+        script = command[command.index("-execcmd") + 1]
+        if "report -summary" in script:
+            return SimpleNamespace(returncode=0, stdout=IMC_SUMMARY)
+        return SimpleNamespace(returncode=2, stdout="detail unsupported\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_xcelium_coverage(project)
+
+    assert report_calls == 2
+    assert result["metrics_status"] == "normalized"
+    assert result["detail_status"] == "tool-error"
+    assert result["detail_returncode"] == 2
+    assert Path(result["detail"]).read_text(encoding="utf-8") == (
+        "detail unsupported\n"
+    )
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
