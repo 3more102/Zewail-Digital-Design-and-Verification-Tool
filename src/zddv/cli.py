@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_questa_toggle_coverage_report,
     parse_xcelium_imc_block_coverage,
     parse_xcelium_imc_expression_coverage,
     parse_xcelium_imc_toggle_coverage_points,
@@ -860,15 +861,39 @@ def cmd_coverage_holes(args) -> int:
             "condition",
             "expression",
             "fsm",
+            "toggle",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, expression, or fsm."
+                "--type statement, branch, condition, expression, fsm, or toggle."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
                 project,
                 output,
+                limit=args.limit,
+            )
+        elif args.point_type == "toggle":
+            source_path = (
+                project.root / ".zddv" / "coverage" / "toggle-details.txt"
+            ).resolve()
+            if not source_path.exists():
+                raise RuntimeError(
+                    f"Detailed Questa toggle coverage report not found at {source_path}. "
+                    "Run 'zddv coverage' first."
+                )
+            points = parse_questa_toggle_coverage_report(
+                source_path.read_text(encoding="utf-8", errors="replace")
+            )
+            if not points:
+                raise RuntimeError(
+                    f"No normalized Questa toggle transition rows found in "
+                    f"{source_path}. Unrecognized layouts remain evidence-only."
+                )
+            report = write_coverage_hole_report(
+                points,
+                output,
+                point_type="toggle",
                 limit=args.limit,
             )
         else:
