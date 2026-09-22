@@ -1949,7 +1949,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 ),
                 f"load -run {_imc_quote_path(merged_path)}",
                 (
-                    "report -summary -inst \"*...\" "
+                    'report -summary -inst "*..." -metrics all '
+                    "-cumulative on -showempty on -local off "
                     f"-out {_imc_quote_path(summary_path)}"
                 ),
                 "exit",
