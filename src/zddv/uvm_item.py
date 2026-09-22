@@ -79,6 +79,116 @@ def _normalize_event(item: Any, *, index: int) -> dict[str, Any]:
     }
 
 
+def _reconstruct_observed_arbitration(
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    grants: list[dict[str, Any]] = []
+    sequencers: dict[str, dict[str, Any]] = {}
+    observed_sequence_paths: set[tuple[str | None, str]] = set()
+    unscoped_grants = 0
+    unidentified_sequence_grants = 0
+
+    for event in events:
+        if event["event"] != "GRANT":
+            continue
+
+        sequencer = event.get("sequencer")
+        sequence_id = event.get("sequence_id")
+        if sequencer is None:
+            unscoped_grants += 1
+        if sequence_id is None:
+            unidentified_sequence_grants += 1
+        else:
+            observed_sequence_paths.add((sequencer, sequence_id))
+
+        grant = {
+            "grant_index": len(grants),
+            "event_index": int(event["event_index"]),
+            "item_id": event["item_id"],
+            "sequence_id": sequence_id,
+            "sequence": event.get("sequence"),
+            "sequencer": sequencer,
+            "item": event.get("item"),
+            "transaction_id": event.get("transaction_id"),
+            "time": event.get("time"),
+        }
+        grants.append(grant)
+
+        key = sequencer or "<unknown>"
+        entry = sequencers.get(key)
+        if entry is None:
+            entry = {
+                "sequencer": sequencer,
+                "grant_events": 0,
+                "sequence_ids": [],
+                "sequence_switches": 0,
+                "known_adjacent_grant_pairs": 0,
+                "longest_known_sequence_streak": 0,
+                "_previous_sequence_id": None,
+                "_has_previous_grant": False,
+                "_current_streak": 0,
+            }
+            sequencers[key] = entry
+
+        previous_sequence_id = entry["_previous_sequence_id"]
+        if (
+            entry["_has_previous_grant"]
+            and previous_sequence_id is not None
+            and sequence_id is not None
+        ):
+            entry["known_adjacent_grant_pairs"] += 1
+            if previous_sequence_id != sequence_id:
+                entry["sequence_switches"] += 1
+
+        if sequence_id is None:
+            entry["_current_streak"] = 0
+        elif previous_sequence_id == sequence_id and entry["_has_previous_grant"]:
+            entry["_current_streak"] += 1
+        else:
+            entry["_current_streak"] = 1
+        entry["longest_known_sequence_streak"] = max(
+            entry["longest_known_sequence_streak"],
+            entry["_current_streak"],
+        )
+
+        if sequence_id is not None and sequence_id not in entry["sequence_ids"]:
+            entry["sequence_ids"].append(sequence_id)
+        entry["grant_events"] += 1
+        entry["_previous_sequence_id"] = sequence_id
+        entry["_has_previous_grant"] = True
+
+    normalized_sequencers: list[dict[str, Any]] = []
+    for entry in sequencers.values():
+        normalized_sequencers.append(
+            {
+                key: value
+                for key, value in entry.items()
+                if not key.startswith("_")
+            }
+        )
+
+    return {
+        "model": "observed_grant_order",
+        "summary": {
+            "grant_events": len(grants),
+            "sequencers_observed": len(normalized_sequencers),
+            "sequence_ids_observed": len(observed_sequence_paths),
+            "sequence_switches": sum(
+                int(item["sequence_switches"]) for item in normalized_sequencers
+            ),
+            "unscoped_grant_events": unscoped_grants,
+            "unidentified_sequence_grant_events": unidentified_sequence_grants,
+        },
+        "grants": grants,
+        "sequencers": normalized_sequencers,
+        "limitations": [
+            "Grant order is reconstructed only from explicit GRANT events in trace order.",
+            "No waiting queue, arbitration mode, priority, lock state, or fairness policy is inferred.",
+            "Missing sequencer or sequence identity remains explicit and does not create synthetic context.",
+        ],
+    }
+
+
 def parse_uvm_item_data(
     payload: Any,
     *,
@@ -238,12 +348,13 @@ def parse_uvm_item_data(
         "event_types": list(_ITEM_EVENTS),
         "events": events,
         "items": normalized_items,
+        "arbitration": _reconstruct_observed_arbitration(events),
         "violations": violations,
         "limitations": [
             "Input is explicit normalized handshake evidence; vendor simulator logs are not guessed or reinterpreted.",
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
-            "Response payload comparison, arbitration priority/fairness, request/grant timing, and delta-cycle constraints are outside this foundation.",
+            "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
             "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
         ],
     }
