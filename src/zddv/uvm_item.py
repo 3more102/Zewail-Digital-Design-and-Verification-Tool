@@ -10,7 +10,7 @@ from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 
-_ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
+_ITEM_EVENTS = ("ARB_REQUEST", "GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
 
 
@@ -83,6 +83,7 @@ def parse_uvm_item_data(
     payload: Any,
     *,
     source: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("UVM item trace must be a JSON object")
@@ -90,6 +91,10 @@ def parse_uvm_item_data(
     raw_events = payload.get("events")
     if not isinstance(raw_events, list):
         raise ValueError("UVM item trace must contain an events array")
+
+    if max_bypass is not None:
+        if isinstance(max_bypass, bool) or not isinstance(max_bypass, int) or max_bypass < 0:
+            raise ValueError("max_bypass must be a non-negative integer or null")
 
     selected_source = source or payload.get("source") or "uvm-item-json"
     if not isinstance(selected_source, str) or not selected_source.strip():
@@ -129,7 +134,7 @@ def parse_uvm_item_data(
                 "transaction_id": event.get("transaction_id"),
                 "events": [],
                 "event_indices": [],
-                "partial": event["event"] != "GRANT",
+                "partial": event["event"] not in {"ARB_REQUEST", "GRANT"},
             }
             items[item_id] = instance
         else:
@@ -155,7 +160,15 @@ def parse_uvm_item_data(
                 f"Item {item_id} observed {event_type} more than once",
             )
 
-        if event_type == "GRANT":
+        if event_type == "ARB_REQUEST":
+            if any(name in observed for name in ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")):
+                add_violation(
+                    "LATE_ARB_REQUEST",
+                    event,
+                    f"Item {item_id} observed ARB_REQUEST after later handshake evidence",
+                )
+
+        elif event_type == "GRANT":
             if any(name in observed for name in ("REQUEST", "ITEM_DONE", "RESPONSE")):
                 add_violation(
                     "LATE_GRANT",
@@ -177,7 +190,14 @@ def parse_uvm_item_data(
                     f"Item {item_id} observed REQUEST after RESPONSE",
                 )
             if "GRANT" not in observed:
-                instance["partial"] = True
+                if "ARB_REQUEST" in observed:
+                    add_violation(
+                        "REQUEST_BEFORE_GRANT",
+                        event,
+                        f"Item {item_id} observed REQUEST before the requested arbitration grant",
+                    )
+                else:
+                    instance["partial"] = True
 
         elif event_type == "ITEM_DONE":
             if "REQUEST" not in observed:
@@ -220,6 +240,158 @@ def parse_uvm_item_data(
             }
         )
 
+
+    arbitration_records: dict[str, dict[str, Any]] = {}
+    pending: dict[str, dict[str, Any]] = {}
+    seen_arb_requests: set[str] = set()
+    seen_grants: set[str] = set()
+    matched_grants = 0
+    unmatched_grants = 0
+    contended_grants = 0
+    max_pending = 0
+    max_pending_by_sequencer: dict[str, int] = {}
+
+    for event in events:
+        item_id = event["item_id"]
+        event_type = event["event"]
+        sequencer = event.get("sequencer") or "<unknown>"
+
+        if event_type == "ARB_REQUEST":
+            if item_id in seen_arb_requests:
+                continue
+            seen_arb_requests.add(item_id)
+            record = {
+                "item_id": item_id,
+                "sequence_id": event.get("sequence_id"),
+                "sequence": event.get("sequence"),
+                "sequencer": sequencer,
+                "item": event.get("item"),
+                "transaction_id": event.get("transaction_id"),
+                "request_event_index": int(event["event_index"]),
+                "grant_event_index": None,
+                "bypasses": 0,
+                "granted": False,
+                "pending": True,
+            }
+            arbitration_records[item_id] = record
+            pending[item_id] = record
+            seq_pending = sum(
+                candidate["sequencer"] == sequencer for candidate in pending.values()
+            )
+            max_pending = max(max_pending, seq_pending)
+            max_pending_by_sequencer[sequencer] = max(
+                max_pending_by_sequencer.get(sequencer, 0),
+                seq_pending,
+            )
+            continue
+
+        if event_type != "GRANT" or item_id in seen_grants:
+            continue
+        seen_grants.add(item_id)
+
+        record = pending.get(item_id)
+        if record is None:
+            unmatched_grants += 1
+            continue
+
+        contenders = [
+            candidate
+            for candidate in pending.values()
+            if candidate["sequencer"] == record["sequencer"]
+        ]
+        if len(contenders) > 1:
+            contended_grants += 1
+        for candidate in contenders:
+            if candidate["item_id"] != item_id:
+                candidate["bypasses"] += 1
+
+        record["granted"] = True
+        record["pending"] = False
+        record["grant_event_index"] = int(event["event_index"])
+        matched_grants += 1
+        pending.pop(item_id, None)
+
+    event_by_index = {int(event["event_index"]): event for event in events}
+    if max_bypass is not None:
+        for record in arbitration_records.values():
+            if int(record["bypasses"]) <= max_bypass:
+                continue
+            anchor_index = (
+                record["grant_event_index"]
+                if record["grant_event_index"] is not None
+                else record["request_event_index"]
+            )
+            anchor = event_by_index[int(anchor_index)]
+            add_violation(
+                "ARBITRATION_BYPASS_LIMIT",
+                anchor,
+                (
+                    f"Item {record['item_id']} was bypassed by "
+                    f"{record['bypasses']} competing grant(s), exceeding "
+                    f"the configured maximum of {max_bypass}"
+                ),
+            )
+
+    sequence_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    grants_by_sequencer: dict[str, int] = {}
+    for record in arbitration_records.values():
+        sequence_key = (
+            record["sequence_id"]
+            or record["sequence"]
+            or "<unknown-sequence>"
+        )
+        key = (record["sequencer"], sequence_key)
+        row = sequence_rows.get(key)
+        if row is None:
+            row = {
+                "sequencer": record["sequencer"],
+                "sequence_id": record["sequence_id"],
+                "sequence": record["sequence"],
+                "requests": 0,
+                "grants": 0,
+                "pending": 0,
+                "bypasses": 0,
+                "max_bypass": 0,
+                "grant_share": 0.0,
+            }
+            sequence_rows[key] = row
+        row["requests"] += 1
+        row["grants"] += int(record["granted"])
+        row["pending"] += int(record["pending"])
+        row["bypasses"] += int(record["bypasses"])
+        row["max_bypass"] = max(row["max_bypass"], int(record["bypasses"]))
+        if record["granted"]:
+            grants_by_sequencer[record["sequencer"]] = (
+                grants_by_sequencer.get(record["sequencer"], 0) + 1
+            )
+
+    for row in sequence_rows.values():
+        total = grants_by_sequencer.get(row["sequencer"], 0)
+        row["grant_share"] = 100.0 * row["grants"] / total if total else 0.0
+
+    arbitration = {
+        "available": bool(arbitration_records),
+        "policy": {"max_bypass": max_bypass},
+        "summary": {
+            "requests": len(arbitration_records),
+            "matched_grants": matched_grants,
+            "grants_without_request_evidence": unmatched_grants,
+            "contended_grants": contended_grants,
+            "pending_requests": len(pending),
+            "max_pending": max_pending,
+            "max_bypass": max(
+                (int(record["bypasses"]) for record in arbitration_records.values()),
+                default=0,
+            ),
+        },
+        "max_pending_by_sequencer": dict(sorted(max_pending_by_sequencer.items())),
+        "requests": list(arbitration_records.values()),
+        "sequences": sorted(
+            sequence_rows.values(),
+            key=lambda row: (row["sequencer"], row["sequence_id"] or row["sequence"] or ""),
+        ),
+    }
+
     return {
         "analysis": "uvm_item_handshake",
         "source": selected_source,
@@ -239,12 +411,15 @@ def parse_uvm_item_data(
         "events": events,
         "items": normalized_items,
         "violations": violations,
+        "arbitration": arbitration,
         "limitations": [
             "Input is explicit normalized handshake evidence; vendor simulator logs are not guessed or reinterpreted.",
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
-            "Response payload comparison, arbitration priority/fairness, request/grant timing, and delta-cycle constraints are outside this foundation.",
-            "SQLite persistence stores normalized snapshot summaries and event evidence; vendor-specific automatic instrumentation remains outside this layer.",
+            "Fairness evidence requires explicit ARB_REQUEST events; vendor arbitration policy is not inferred from grant order alone.",
+            "The optional max_bypass policy is a user-supplied bound on competing grants while a request waits, not a universal UVM fairness rule.",
+            "Response payload comparison, request/grant delta-cycle timing, and vendor-specific automatic instrumentation remain outside this layer.",
+            "SQLite persistence stores normalized snapshot summaries and event evidence.",
         ],
     }
 
@@ -253,10 +428,11 @@ def parse_uvm_item_file(
     path: str | Path,
     *,
     source: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     input_path = Path(path)
     payload = json.loads(input_path.read_text(encoding="utf-8"))
-    return parse_uvm_item_data(payload, source=source)
+    return parse_uvm_item_data(payload, source=source, max_bypass=max_bypass)
 
 
 def analyze_uvm_item_file(
@@ -266,6 +442,7 @@ def analyze_uvm_item_file(
     source: str | None = None,
     output: str | Path = ".zddv/uvm/items/latest.json",
     run_id: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     input_path = Path(path)
     if not input_path.is_absolute():
@@ -280,7 +457,11 @@ def analyze_uvm_item_file(
         if run_record is None:
             raise ValueError(f"Unknown run ID: {run_id}")
 
-    report = parse_uvm_item_file(input_path, source=source)
+    report = parse_uvm_item_file(
+        input_path,
+        source=source,
+        max_bypass=max_bypass,
+    )
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
