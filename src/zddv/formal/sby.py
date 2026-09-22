@@ -226,16 +226,37 @@ class SymbiYosysBackend(FormalBackend):
         log_path.write_text(output, encoding="utf-8")
 
         status = _normalized_sby_status(outcome)
+        properties = ()
+        native_artifacts: tuple[Path, ...] = ()
+        engine = "smtbmc"
+
+        if not outcome.timed_out and _SBY_DONE.search(output):
+            from .sby_results import parse_sby_log
+
+            try:
+                native = parse_sby_log(
+                    log_path,
+                    mode=request.mode,
+                    depth=request.depth,
+                )
+            except ValueError:
+                native = None
+            if native is not None:
+                properties = native.properties
+                native_artifacts = native.artifacts
+                engine = native.engine or engine
+
+        artifacts = tuple(dict.fromkeys((config_path, *native_artifacts)))
         return FormalCheckResult(
             backend=self.name,
-            engine="smtbmc",
+            engine=engine,
             request=request,
             command=tuple(command),
             returncode=outcome.returncode,
             status=status,
             run_dir=run_dir,
             log_path=log_path,
-            properties=(),
-            artifacts=(config_path,),
+            properties=properties,
+            artifacts=artifacts,
             runtime_ms=runtime_ms,
         )
