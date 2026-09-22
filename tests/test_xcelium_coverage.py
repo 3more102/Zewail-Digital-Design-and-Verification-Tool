@@ -6,8 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from zddv.cli import cmd_coverage_history
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_coverage, merge_xcelium_coverage
+from zddv.coverage import (
+    merge_coverage,
+    merge_xcelium_coverage,
+    parse_xcelium_imc_summary,
+)
+from zddv.storage import list_coverage_score_snapshots
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -63,7 +69,13 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
         report_dir = out_dir / "xcelium-imc-report"
         (report_dir / "summary.txt").write_text(
-            "IMC summary fixture\n",
+            """IMC(64): test build
+Starting batch mode
+Legend: Metric* means cumulative
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+--------------------------------------------------------------------------------------------------------------------------------
+tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
+""",
             encoding="utf-8",
         )
         return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
@@ -73,8 +85,10 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     result = merge_coverage(project)
 
     assert result["inputs"] == [str(first), str(second)]
-    assert result["metrics"] is None
-    assert result["metrics_status"] == "not-normalized"
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
+    assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
+    assert result["metrics"]["by_metric"]["overall_covered"] == pytest.approx(82.50)
     assert Path(result["merged"]).name == "xcelium-imc-merged"
     assert Path(result["summary"]).name == "summary.txt"
 
@@ -93,10 +107,17 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
     )
     assert manifest["status"] == "merged-report-captured"
-    assert manifest["metrics_status"] == "not-normalized"
+    assert manifest["metrics_status"] == "normalized"
     assert manifest["input_count"] == 2
     assert len(manifest["merged_ucd_files"]) == 1
-    assert manifest["snapshot_id"] is None
+    assert manifest["snapshot_id"] == result["snapshot_id"]
+    assert manifest["metrics"]["scope"] == "tb_top"
+
+    snapshots = list_coverage_score_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+    assert snapshots[0]["score"] == pytest.approx(82.50)
+    assert snapshots[0]["by_metric"]["overall_average"] == pytest.approx(86.25)
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
@@ -142,3 +163,49 @@ def test_merge_xcelium_coverage_requires_imc(tmp_path: Path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="Cadence IMC was not found"):
         merge_xcelium_coverage(project)
+
+
+
+def test_parse_xcelium_imc_summary_requires_documented_header():
+    with pytest.raises(ValueError, match="Overall Average/Covered"):
+        parse_xcelium_imc_summary("name Other Columns\ntb_top 90.0%\n")
+
+
+def test_xcelium_coverage_history_uses_score_snapshots(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    from zddv.storage import record_coverage_score_snapshot
+
+    record_coverage_score_snapshot(
+        project,
+        {
+            "snapshot_id": "cov-score-xcelium-test",
+            "created_at": "2026-09-22T10:00:00+00:00",
+            "project": project.name,
+            "simulator": project.simulator,
+            "input_count": 1,
+            "score": 82.5,
+            "by_metric": {
+                "overall_average": 86.25,
+                "overall_covered": 82.5,
+            },
+            "by_metric_counts": {},
+            "merged": "/tmp/merged",
+            "summary": "/tmp/summary.txt",
+            "metrics_path": "/tmp/metrics.json",
+        },
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_history(
+        SimpleNamespace(project=str(project.root), limit=5)
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "82.50%" in output
+    assert "cov-score-xcelium-test" in output
+    assert "overall_average=86.25%" in output
