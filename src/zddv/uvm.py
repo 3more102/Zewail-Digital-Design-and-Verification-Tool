@@ -113,13 +113,13 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
         if event.get("report_id") == "RNTST" and event.get("message"):
             test_match = _RUNNING_TEST_RE.search(str(event["message"]))
             if test_match:
-                test_name = test_match.group("test")
+                test_name = test_match.group("test").rstrip(".")
 
     if test_name is None:
         for line in lines:
             test_match = _RUNNING_TEST_RE.search(_strip_simulator_prefix(line))
             if test_match:
-                test_name = test_match.group("test")
+                test_name = test_match.group("test").rstrip(".")
                 break
 
     summary_counts: dict[str, int] = {}
