@@ -24,7 +24,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import FormalCheckRequest, SymbiYosysBackend
 from zddv.formal.counterexample import ingest_formal_counterexample
-from zddv.formal.results import analyze_formal_result_file
+from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -389,6 +389,12 @@ def cmd_formal_bmc(args) -> int:
     backend = SymbiYosysBackend()
     print(f"Formal backend: {backend.version()}")
     result = backend.check(project, request)
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+        output=result.run_dir / "zddv-result.json",
+    )
     print(
         f"FORMAL BMC {result.status}: depth={request.depth} "
         f"engine={result.engine or '-'}"
@@ -396,6 +402,8 @@ def cmd_formal_bmc(args) -> int:
     print("Scope: BOUNDED (finite-depth evidence; not an unbounded proof)")
     print(f"Run directory: {result.run_dir}")
     print(f"Log: {result.log_path}")
+    print(f"Snapshot: {record['snapshot_id']}")
+    print(f"Report: {record['report_path']}")
     return 0 if result.status == "PASS" else 1
 
 def cmd_formal_counterexample(args) -> int:
