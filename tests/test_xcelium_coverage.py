@@ -89,6 +89,16 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
     assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
     assert result["metrics"]["by_metric"]["overall_covered"] == pytest.approx(82.50)
+    assert result["metrics"]["by_metric"]["code_average"] == pytest.approx(80.00)
+    assert result["metrics"]["by_metric"]["code_covered"] == pytest.approx(75.00)
+    assert result["metrics"]["by_metric"]["functional_average"] == pytest.approx(92.50)
+    assert result["metrics"]["by_metric"]["functional_covered"] == pytest.approx(90.00)
+    assert "fsm_average" not in result["metrics"]["by_metric"]
+    assert result["metrics"]["by_metric_counts"]["overall_covered"] == {
+        "covered": 33,
+        "total": 40,
+        "hit_rate": pytest.approx(82.5),
+    }
     assert Path(result["merged"]).name == "xcelium-imc-merged"
     assert Path(result["summary"]).name == "summary.txt"
 
@@ -101,6 +111,10 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert second.as_posix() in script
     assert "load -run" in script
     assert 'report -summary -inst "*..."' in script
+    assert "-metrics all" in script
+    assert "-cumulative on" in script
+    assert "-showempty on" in script
+    assert "-local off" in script
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
@@ -118,6 +132,8 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
     assert snapshots[0]["score"] == pytest.approx(82.50)
     assert snapshots[0]["by_metric"]["overall_average"] == pytest.approx(86.25)
+    assert snapshots[0]["by_metric"]["code_covered"] == pytest.approx(75.0)
+    assert snapshots[0]["by_metric_counts"]["overall_covered"]["covered"] == 33
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
@@ -209,3 +225,46 @@ def test_xcelium_coverage_history_uses_score_snapshots(
     assert "82.50%" in output
     assert "cov-score-xcelium-test" in output
     assert "overall_average=86.25%" in output
+
+
+def test_parse_xcelium_imc_summary_preserves_all_documented_grades():
+    text = """Legend: Metric* means cumulative
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+--------------------------------------------------------------------------------------------------------------------------------
+tb 91.25% 89.00% (89/100) 80.00% 75.00% (75/100) n/a n/a 100.00% 100.00% (8/8)
+"""
+
+    metrics = parse_xcelium_imc_summary(text)
+
+    assert metrics["source"] == "imc-summary"
+    assert metrics["scope"] == "tb"
+    assert metrics["tool_total_coverage"] == pytest.approx(89.0)
+    assert metrics["by_metric"]["overall_average"] == pytest.approx(91.25)
+    assert metrics["by_metric"]["overall_covered"] == pytest.approx(89.0)
+    assert metrics["by_metric"]["code_average"] == pytest.approx(80.0)
+    assert metrics["by_metric"]["code_covered"] == pytest.approx(75.0)
+    assert metrics["by_metric"]["functional_covered"] == pytest.approx(100.0)
+    assert "fsm_covered" not in metrics["by_metric"]
+    assert metrics["by_metric_counts"]["code_covered"] == {
+        "covered": 75,
+        "total": 100,
+        "hit_rate": pytest.approx(75.0),
+    }
+
+
+def test_parse_xcelium_imc_summary_rejects_out_of_range_grade():
+    text = """name Overall Average Overall Covered Code Average Code Covered Fsm Average Fsm Covered Functional Average Functional Covered
+tb 100.00% 101.00% (101/101) n/a n/a n/a n/a n/a n/a
+"""
+
+    with pytest.raises(ValueError, match="outside 0..100"):
+        parse_xcelium_imc_summary(text)
+
+
+def test_parse_xcelium_imc_summary_rejects_impossible_explicit_counts():
+    text = """name Overall Average Overall Covered Code Average Code Covered Fsm Average Fsm Covered Functional Average Functional Covered
+tb 100.00% 100.00% (3/2) n/a n/a n/a n/a n/a n/a
+"""
+
+    with pytest.raises(ValueError, match="exceeds total"):
+        parse_xcelium_imc_summary(text)
