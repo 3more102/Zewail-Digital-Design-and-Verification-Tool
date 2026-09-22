@@ -11,7 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
-- Formal adapter API with normalized check/property/result contracts, persisted evidence history, finite-depth SymbiYosys BMC execution, direct cover-property reachability, and native VCD counterexample/witness normalization
+- Formal adapter API with normalized check/property/result contracts, persisted evidence history, finite-depth SymbiYosys BMC execution, direct cover-property reachability, native VCD counterexample/witness normalization, and automatic snapshot-scoped normalization of persisted VCD traces
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -716,7 +716,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium verified block/expression/toggle item-level coverage-hole normalization
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
-- [x] Counterexample/witness normalization from normalized JSON and native VCD traces
+- [x] Counterexample/witness normalization from normalized JSON and native VCD traces, including automatic snapshot-scoped persistence normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
