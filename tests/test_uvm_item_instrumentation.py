@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from zddv.cli import main
 from zddv.config import initialize_project, load_project
 from zddv.storage import list_uvm_item_handshake_snapshots, record_run
 from zddv.uvm_item_instrumentation import (
@@ -165,3 +166,46 @@ def test_analyzes_instrumented_run_log_and_persists_snapshot(tmp_path: Path):
     )
     assert len(rows) == 1
     assert rows[0]["completed_count"] == 1
+
+
+def test_cli_generates_and_analyzes_instrumentation_log(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-instrument",
+        ]
+    )
+    assert rc == 0
+    generated_output = capsys.readouterr().out
+    assert "ZDDV_UVM_ITEM_V1" in generated_output
+
+    log_path = project.root / "instrumented.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                _line("GRANT", "item-cli", time="1"),
+                _line("REQUEST", "item-cli", time="1"),
+                _line("ITEM_DONE", "item-cli", time="5"),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-log-analyze",
+            str(log_path),
+            "--source",
+            "cli-instrumented",
+        ]
+    )
+    assert rc == 0
+    analyzed_output = capsys.readouterr().out
+    assert "UVM ITEM LOG PASS" in analyzed_output
+    assert "completed=1" in analyzed_output
