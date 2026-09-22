@@ -48,6 +48,7 @@ from zddv.storage import (
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
+from zddv.uvm_instrument import write_uvm_item_instrumentation
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
@@ -863,6 +864,21 @@ def cmd_uvm_item_log_analyze(args) -> int:
         print(f"... {len(result['violations']) - args.show} more violation(s)")
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_item_instrument(args) -> int:
+    project = load_project(_project_arg(args))
+    destination = write_uvm_item_instrumentation(
+        project,
+        output=args.output,
+    )
+    print(f"Generated UVM item instrumentation: {destination}")
+    print(
+        "Base class: "
+        "zddv_uvm_item_instrumentation_pkg::zddv_instrumented_sequencer"
+    )
+    print("Marker: ZDDV_UVM_ITEM")
+    return 0
 
 
 def cmd_uvm_item_history(args) -> int:
@@ -1842,6 +1858,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of item-handshake violations to print",
     )
     p_uvm_item_log.set_defaults(func=cmd_uvm_item_log_analyze)
+
+    p_uvm_item_instrument = sub.add_parser(
+        "uvm-item-instrument",
+        help="Generate portable UVM sequence-item instrumentation source",
+    )
+    p_uvm_item_instrument.add_argument(
+        "--output",
+        default=".zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh",
+        help="Generated SystemVerilog instrumentation include path",
+    )
+    p_uvm_item_instrument.set_defaults(func=cmd_uvm_item_instrument)
 
     p_uvm_item_history = sub.add_parser(
         "uvm-item-history",
