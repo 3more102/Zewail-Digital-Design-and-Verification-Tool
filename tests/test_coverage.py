@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from zddv.config import ProjectConfig
+from zddv.storage import list_functional_coverage_snapshots
 from zddv.coverage import (
     build_coverage_hole_report,
     merge_questa_coverage,
@@ -186,4 +187,7 @@ tb::cg                                 50.00%      100.00%   Uncovered
     assert result["functional_snapshot_id"] is not None
     assert Path(result["merged"]).exists()
     assert Path(result["metrics_path"]).exists()
-    assert (tmp_path / ".zddv" / "functional_coverage" / "latest.json").exists()
+    snapshots = list_functional_coverage_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["functional_snapshot_id"]
+    assert snapshots[0]["coverage_rate"] == 50.0
