@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion, native Questa build/run orchestration, and per-run UCDB capture on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, and per-run UCDB capture on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -14,6 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Questa per-run UCDB coverage capture when project coverage is enabled; UCDB merge/normalization is still pending
+- UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -335,7 +336,8 @@ separately from Verilator's annotation threshold.
 - [x] Targeted VCD value-change probing
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
-- [ ] Sequence/phase/objection-aware UVM result model
+- [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
+- [ ] Sequence-aware UVM result model
 
 ### APB Trace Analysis
 
