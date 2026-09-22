@@ -83,11 +83,19 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 
 ## v0.6 — UVM and Commercial Simulator Adapters
 
-- Questa adapter.
-- VCS adapter.
-- Xcelium adapter.
-- UVM test metadata.
-- Sequence/phase/objection-aware result ingestion where supported.
+Current status: simulator-independent UVM report-log ingestion is implemented, and
+the first commercial-simulator foundation is available for Questa. The Questa adapter
+uses the native `vlib` / `vlog` / `vsim` flow, preserves deterministic seeds and
+plusargs, records normal ZDDV run metadata, can emit VCD for debug, and automatically
+normalizes UVM report logs when they are present. Native Questa coverage normalization,
+VCS/Xcelium adapters, and phase/objection/sequence-aware UVM reconstruction remain planned.
+
+- [x] Questa compile/run adapter foundation.
+- [ ] Questa native coverage normalization and richer debug artifacts.
+- [ ] VCS adapter.
+- [ ] Xcelium adapter.
+- [x] UVM report severity/test metadata ingestion.
+- [ ] Sequence/phase/objection-aware result ingestion where supported.
 
 ## v0.7 — Formal
 
