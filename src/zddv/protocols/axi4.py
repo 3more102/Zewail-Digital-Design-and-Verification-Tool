@@ -51,6 +51,8 @@ _RESPONSE_NAMES = {0: "OKAY", 1: "EXOKAY", 2: "SLVERR", 3: "DECERR"}
 _RESPONSE_CODES = {name: code for code, name in _RESPONSE_NAMES.items()}
 _BURST_NAMES = {0: "FIXED", 1: "INCR", 2: "WRAP"}
 _BURST_CODES = {name: code for code, name in _BURST_NAMES.items()}
+# Arm IHI 0022H, A4.4 Table A4-5: all unlisted AxCACHE values are reserved.
+_AXCACHE_ENCODINGS = {0x0, 0x1, 0x2, 0x3, 0x6, 0x7, 0xA, 0xB, 0xE, 0xF}
 
 
 def _logic(value: Any, *, name: str) -> bool:
@@ -349,6 +351,24 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     expected=f"0..{limit}",
                     actual=value,
                 )
+
+        cache = values["cache"]
+        cache_field = f"{prefix}CACHE"
+        if (
+            cache_field in sample
+            and isinstance(cache, int)
+            and 0 <= cache <= 0xF
+            and cache not in _AXCACHE_ENCODINGS
+        ):
+            add_violation(
+                "reserved_cache_encoding",
+                sample,
+                f"{cache_field} uses a reserved AXI4 memory-type encoding",
+                channel=prefix,
+                signal=cache_field,
+                expected="0x0/0x1/0x2/0x3/0x6/0x7/0xA/0xB/0xE/0xF",
+                actual=cache,
+            )
 
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
@@ -947,7 +967,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands_cache_semantics",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
         "summary": {
@@ -972,7 +992,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION, and AxREGION is checked for 4KB-space consistency.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE memory-type encodings are rejected; and AxREGION is checked for 4KB-space consistency.",
             "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
