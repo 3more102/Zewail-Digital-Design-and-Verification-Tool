@@ -104,8 +104,27 @@ coordinates, source label, and the SHA-256 of the input file. Signal values stay
 as textual logic tokens; ZDDV does not invent radix, signedness, or vendor trace
 semantics.
 
+## Native SymbiYosys logfile import
+
+Completed SymbiYosys logs can be imported directly without first translating
+them to the normalized JSON contract:
+
+```text
+zddv --project <project> formal-sby-analyze <logfile> --mode bmc --depth 20
+zddv --project <project> formal-sby-analyze <logfile> --mode cover --depth 20
+```
+
+The importer requires an explicit terminal `DONE (..., rc=...)` marker and
+does not infer completion from a partial log. It retains the reported result
+status and return code, the engine summary when present, explicit failed
+assertion names, explicit reached cover statements, and explicitly reported VCD
+trace paths. It does not synthesize PASS rows for properties that the logfile
+never enumerates, and it does not convert a bounded PASS into an unbounded
+proof.
+
 ## Current boundary
 
-This slice does not parse vendor-native counterexample waveforms, provide
-tool-specific result ingestion beyond the explicit bounded SymbiYosys execution
-adapter, or claim formal coverage. Those remain separate v0.7 milestones.
+This slice does not parse vendor-native counterexample waveform contents or
+claim formal coverage. SymbiYosys native logfile result ingestion is supported;
+additional formal-tool native formats and formal coverage remain separate v0.7
+milestones.
