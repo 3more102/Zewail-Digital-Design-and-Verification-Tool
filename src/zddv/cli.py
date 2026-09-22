@@ -1380,7 +1380,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
     p_doctor.add_argument(
         "--simulator",
-        choices=("verilator", "questa", "questasim", "vcs"),
+        choices=("verilator", "questa", "questasim", "vcs", "xcelium", "xrun"),
         default=None,
         help="Simulator backend to check; defaults to verilator",
     )
