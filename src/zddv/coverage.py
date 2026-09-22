@@ -11,7 +11,7 @@ import uuid
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
-from zddv.storage import record_coverage_snapshot
+from zddv.storage import record_coverage_score_snapshot, record_coverage_snapshot
 
 
 _COVERAGE_RECORD = re.compile(r"^C\s+'(?P<name>.*)'\s+(?P<count>-?\d+)\s*$")
@@ -692,8 +692,105 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
     }
 
 
+_URG_DASHBOARD_METRICS = {
+    "SCORE": "score",
+    "LINE": "line",
+    "COND": "condition",
+    "TOGGLE": "toggle",
+    "FSM": "fsm",
+    "BRANCH": "branch",
+    "ASSERT": "assertion",
+    "GROUP": "group",
+}
+_URG_MISSING_SCORE = {"-", "--", "N/A", "NA"}
+
+
+def _parse_urg_score_token(token: str) -> float | None:
+    value = token.strip().rstrip("%")
+    if value.upper() in _URG_MISSING_SCORE:
+        return None
+    if not re.fullmatch(r"\d+(?:\.\d+)?", value):
+        raise ValueError(f"Unsupported URG score token: {token!r}")
+    parsed = float(value)
+    if not 0.0 <= parsed <= 100.0:
+        raise ValueError(f"URG coverage score out of range: {parsed}")
+    return parsed
+
+
+def parse_vcs_urg_dashboard(path: str | Path) -> dict:
+    """Parse the documented URG dashboard Total Coverage Summary scores."""
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+
+    section_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if "Total Coverage Summary" in line
+        ),
+        None,
+    )
+    if section_index is None:
+        raise ValueError("URG dashboard has no Total Coverage Summary section")
+
+    known_headers = set(_URG_DASHBOARD_METRICS)
+    for header_index in range(section_index + 1, min(len(lines), section_index + 16)):
+        header_line = lines[header_index]
+        header_tokens = [
+            token
+            for token in re.findall(r"[A-Za-z]+", header_line.upper())
+            if token in known_headers
+        ]
+        if not header_tokens or header_tokens[0] != "SCORE":
+            continue
+
+        for value_index in range(header_index + 1, min(len(lines), header_index + 8)):
+            raw = lines[value_index].strip()
+            if not raw or set(raw) <= {"-", "=", "+", "|", " "}:
+                continue
+
+            raw_tokens = [
+                token.strip()
+                for token in raw.replace("|", " ").split()
+                if token.strip()
+            ]
+            score_tokens: list[str] = []
+            for token in raw_tokens:
+                cleaned = token.rstrip("%")
+                if (
+                    cleaned.upper() in _URG_MISSING_SCORE
+                    or re.fullmatch(r"\d+(?:\.\d+)?", cleaned)
+                ):
+                    score_tokens.append(token)
+
+            if len(score_tokens) != len(header_tokens):
+                continue
+
+            parsed: dict[str, float | None] = {}
+            for header, token in zip(header_tokens, score_tokens, strict=True):
+                parsed[_URG_DASHBOARD_METRICS[header]] = _parse_urg_score_token(token)
+
+            score = parsed.pop("score", None)
+            if score is None:
+                raise ValueError("URG Total Coverage Summary has no SCORE value")
+
+            by_metric = {
+                name: value
+                for name, value in parsed.items()
+                if value is not None
+            }
+            return {
+                "tool_total_coverage": score,
+                "by_metric": by_metric,
+                "source": "urg-dashboard",
+                "dashboard": str(source.resolve()),
+            }
+
+    raise ValueError("URG Total Coverage Summary score row could not be parsed")
+
+
 def merge_vcs_coverage(project: ProjectConfig) -> dict:
-    """Merge per-run VCS coverage databases and retain URG report evidence."""
+    """Merge per-run VCS databases and normalize documented URG dashboard scores."""
     tool = shutil.which("urg")
     if tool is None:
         raise RuntimeError(
@@ -751,30 +848,77 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             + (result.stdout or "").strip()
         )
 
+    created_at = datetime.now(timezone.utc).isoformat()
+    dashboard_path = report_dir / "dashboard.txt"
+    metrics: dict | None = None
+    metrics_status = "dashboard-missing"
+    metrics_error: str | None = None
+    snapshot_id: str | None = None
+
+    if dashboard_path.exists():
+        try:
+            metrics = parse_vcs_urg_dashboard(dashboard_path)
+            metrics_status = "normalized"
+        except (OSError, ValueError) as exc:
+            metrics_status = "dashboard-unparsed"
+            metrics_error = str(exc)
+
+    if metrics is not None:
+        snapshot_id = (
+            datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
+            + "-"
+            + uuid.uuid4().hex[:8]
+        )
+
     payload = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": created_at,
         "project": project.name,
         "simulator": project.simulator,
         "status": "merged-report-captured",
-        "metrics_status": "pending-normalization",
+        "metrics_status": metrics_status,
         "input_count": len(inputs),
         "inputs": inputs,
         "merged": str(merged_path),
         "report_dir": str(report_dir),
+        "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
         "command": command,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
     }
+    if metrics_error is not None:
+        payload["metrics_error"] = metrics_error
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    summary_path = dashboard_path if dashboard_path.exists() else report_dir
+    if metrics is not None and snapshot_id is not None:
+        record_coverage_score_snapshot(
+            project,
+            {
+                "snapshot_id": snapshot_id,
+                "created_at": created_at,
+                "project": project.name,
+                "simulator": project.simulator,
+                "input_count": len(inputs),
+                "score": metrics["tool_total_coverage"],
+                "by_metric": metrics["by_metric"],
+                "merged": str(merged_path),
+                "summary": str(summary_path),
+                "metrics_path": str(manifest_path),
+            },
+        )
 
     return {
         "inputs": inputs,
         "merged": str(merged_path),
-        "summary": str(report_dir),
+        "summary": str(summary_path),
         "metrics_path": str(manifest_path),
         "report": result.stdout or "",
-        "metrics": None,
-        "snapshot_id": None,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
         "report_dir": str(report_dir),
-        "metrics_status": "pending-normalization",
+        "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "metrics_status": metrics_status,
+        "metrics_error": metrics_error,
     }
 
 
