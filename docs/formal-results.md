@@ -104,6 +104,29 @@ coordinates, source label, and the SHA-256 of the input file. Signal values stay
 as textual logic tokens; ZDDV does not invent radix, signedness, or vendor trace
 semantics.
 
+## Direct bounded SymbiYosys execution
+
+ZDDV can run finite-depth safety and cover-reachability jobs directly:
+
+```text
+zddv --project <project> formal-bmc --depth 20
+zddv --project <project> formal-cover --depth 20
+```
+
+Both commands retain the generated `.sby` job and native log. After a completed
+PASS/FAIL run, ZDDV queries the SBY status database with the documented
+`--statusfmt jsonl --latest` interface and retains the raw
+`property-status.jsonl` evidence when that interface is available.
+
+For BMC, explicit SBY `ASSERT` PASS/FAIL/UNKNOWN/ERROR rows map to assertion
+property results without strengthening them beyond the requested finite depth.
+For cover mode, SBY `COVER` PASS rows map to `COVERED` and FAIL rows map to
+`UNCOVERED`; reached-cover traces remain witness evidence. A cover task PASS
+therefore means all cover statements were reached within the configured depth,
+while FAIL can mean at least one cover statement was not reached within that
+bounded search. Status-query failure or malformed JSONL is retained as native
+evidence but does not create normalized property claims.
+
 ## Native SymbiYosys logfile import
 
 Completed SymbiYosys logs can be imported directly without first translating
@@ -125,6 +148,7 @@ proof.
 ## Current boundary
 
 This slice does not parse vendor-native counterexample waveform contents or
-claim formal coverage. SymbiYosys native logfile result ingestion is supported;
-additional formal-tool native formats and formal coverage remain separate v0.7
-milestones.
+claim aggregate formal coverage. SymbiYosys native logfile result ingestion,
+direct finite-depth BMC, and bounded cover-property reachability are supported;
+additional formal-tool native formats and formal-coverage aggregation/trending
+remain separate v0.7 milestones.
