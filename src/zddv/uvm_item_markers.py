@@ -97,7 +97,7 @@ def extract_uvm_item_markers(
 
         event = dict(payload)
         event_metadata = dict(metadata)
-        event_metadata.setdefault("log_line", line_number)
+        event_metadata["log_line"] = line_number
         event["metadata"] = event_metadata
         events.append(event)
 
