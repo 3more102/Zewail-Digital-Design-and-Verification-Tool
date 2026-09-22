@@ -17,14 +17,14 @@ from zddv.storage import record_coverage_snapshot
 
 _COVERAGE_RECORD = re.compile(r"^C\s+'(?P<name>.*)'\s+(?P<count>-?\d+)\s*$")
 _POINT_TYPE = re.compile(r"pagev_(?P<kind>[A-Za-z0-9_]+)")
-_QUESTA_FCOV_SCOPE = re.compile(r"^\\s*TYPE\\s+(?P<scope>\\S+)")
+_QUESTA_FCOV_SCOPE = re.compile(r"^\s*TYPE\s+(?P<scope>\S+)")
 _QUESTA_FCOV_ITEM = re.compile(
-    r"^\\s*(?P<kind>Coverpoint|Cross)\\s+(?P<name>\\S+)",
+    r"^\s*(?P<kind>Coverpoint|Cross)\s+(?P<name>\S+)",
     re.IGNORECASE,
 )
 _QUESTA_FCOV_BIN = re.compile(
-    r"^\\s*bin\\s+(?P<name>.+?)\\s+(?P<hits>\\d+)\\s+(?P<goal>\\d+)\\s+"
-    r"(?P<status>Covered|Uncovered|ZERO)\\s*$",
+    r"^\s*bin\s+(?P<name>.+?)\s+(?P<hits>\d+)\s+(?P<goal>\d+)\s+"
+    r"(?P<status>Covered|Uncovered|ZERO)\s*$",
     re.IGNORECASE,
 )
 
