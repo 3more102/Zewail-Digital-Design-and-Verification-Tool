@@ -267,6 +267,16 @@ Current executable backends:
 - **Verilator**: executable binary flow with optional waveform/code-coverage artifacts.
 - **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, assertion-log ingestion, and run-linked UVM log ingestion. When project coverage is enabled, the adapter instruments compilation with `+cover`, runs with `-coverage`, keeps the simulator alive after `$finish` with `-onfinish stop`, and saves a per-run `coverage.ucdb`. UCDB normalization, merge, and conversion into ZDDV coverage metrics are not yet implemented.
 
+### UVM Lifecycle Normalization
+
+The UVM log ingestion layer remains simulator-independent. In addition to severity/test
+metadata, it recognizes standard phase-trace report IDs emitted by `+UVM_PHASE_TRACE`
+and objection-trace reports tagged `OBJTN_TRC` by `+UVM_OBJECTION_TRACE`. Normalized
+phase and objection events retain log-line/time evidence and are persisted in dedicated
+SQLite tables alongside the source report messages. Sequence lifecycle reconstruction
+remains a separate future layer because there is no equivalent single portable sequence
+trace switch with one stable report contract.
+
 ## Next Architectural Steps
 
 1. Add test/seed/plusarg models.
