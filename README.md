@@ -41,7 +41,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
 - CI on Python 3.11, 3.12, and 3.13
-- End-to-end Verilator CI example
+- End-to-end Verilator CI examples, including a dual-clock asynchronous FIFO
+- SystemVerilog assertions enabled in Verilator build/lint flows
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - VCD waveform scope/signal index with FST artifact metadata support
@@ -73,6 +74,11 @@ zddv --project examples/counter build
 zddv --project examples/counter run --test counter_basic --seed 42
 zddv --project examples/counter regress examples/counter/regression.toml
 zddv --project examples/counter coverage
+
+zddv --project examples/async_fifo lint
+zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
+zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
+zddv --project examples/async_fifo coverage
 ```
 
 ## Current CLI
@@ -245,7 +251,8 @@ The CLI and future GUI must use the same core APIs. Simulator-specific command c
 ```text
 src/zddv/              Python package and CLI
 src/zddv/simulator/    Simulator adapter layer
-examples/counter/      Self-checking SystemVerilog example
+examples/counter/      Self-checking SystemVerilog counter example
+examples/async_fifo/   Dual-clock Gray-pointer FIFO verification example
 tests/                 Unit and integration tests
 docs/                  Architecture and roadmap
 .github/workflows/     Continuous integration
@@ -266,7 +273,7 @@ docs/                  Architecture and roadmap
 - [x] JSON build/run metadata
 - [x] Waveform artifact handling
 - [x] Self-checking counter example
-- [ ] RTL FIFO example
+- [x] RTL async FIFO example with concurrent CDC stress and assertions
 - [x] Async-FIFO CDC normalized-event invariant checker
 
 ### Phase 2 — Regression
