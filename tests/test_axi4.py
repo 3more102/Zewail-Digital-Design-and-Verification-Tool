@@ -840,3 +840,103 @@ def test_accepts_axi4_legacy_compatible_cache_encodings():
     assert attrs["modifiable"] is True
     assert attrs["read_allocate"] is True
     assert attrs["reserved"] is False
+
+
+def test_preserves_axi4_user_sidebands():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 0x11,
+            },
+            {
+                "cycle": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0xAA,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+                "WUSER": 0x22,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 1,
+                "BRESP": "OKAY",
+                "BUSER": 0x33,
+            },
+            {
+                "cycle": 3,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x200,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARUSER": 0x44,
+            },
+            {
+                "cycle": 4,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0xBB,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+                "RUSER": 0x55,
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    assert write["awuser"] == 0x11
+    assert write["write_user"] == [0x22]
+    assert write["buser"] == 0x33
+    assert read["aruser"] == 0x44
+    assert read["read_user"] == [0x55]
+
+
+def test_user_sideband_must_remain_stable_while_stalled():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 0,
+                "AWID": 1,
+                "AWADDR": 0x80,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 1,
+            },
+            {
+                "cycle": 1,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x80,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 2,
+            },
+        ]}
+    )
+
+    changes = [
+        item for item in result["violations"]
+        if item["code"] == "payload_changed_while_stalled"
+    ]
+    assert any(item.get("signal") == "AWUSER" for item in changes)
