@@ -25,12 +25,22 @@ candidate:<rank>, probe:<rank>, and limitation:<index>.
 ## Workflow
 
 1. Build deterministic evidence with ai-rca-context.
-2. Invoke a provider explicitly with ai-provider-run.
-3. Run ai-response-ingest with the raw response and the exact context file.
+2. Obtain model output through exactly one explicit path:
+   - invoke a configured provider with ai-provider-run, or
+   - import an already-obtained UTF-8 response with ai-response-import.
+3. Run ai-response-ingest with the raw response artifact and the exact context file.
 4. Review the validated payload and record approval with ai-response-review,
    passing the exact validated payload SHA-256 and --approve-reviewed.
 5. Export one approved proposal with ai-proposal-export.
 6. Use generated-stage separately on the exported proposal.
+
+### Offline/manual response import
+
+ai-response-import does not invoke a model and does not transmit project data. It
+binds the imported response bytes to the exact canonical model-request SHA-256 and
+context evidence SHA-256, records the imported-content SHA-256, and wraps the content
+as raw/untrusted provider output. The imported response must still pass the same
+schema/evidence validation and explicit human-review gate as provider output.
 
 Validation does not make a hypothesis true. Approval records review of the exact
 validated payload; it still does not stage, apply, compile, simulate, or execute
