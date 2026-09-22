@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, and per-run UCDB capture on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB coverage capture when project coverage is enabled; UCDB merge/normalization is still pending
+- Questa per-run UCDB coverage capture plus multi-run `vcover merge` and normalized `vcover report -summary` metrics; item-level UCDB hole normalization is still pending
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -89,8 +89,11 @@ zddv --project examples/async_fifo coverage
 
 For a Questa project, setting `coverage = true` in `[run]` enables native
 coverage instrumentation and writes `coverage.ucdb` inside each run directory.
-The `zddv coverage` merge/report command remains Verilator-specific until UCDB
-normalization and merge support are added.
+`zddv coverage` then merges run UCDBs with `vcover merge`, runs
+`vcover report -summary`, and stores normalized aggregate metrics in the same
+SQLite coverage-history model. Questa's weighted total coverage is preserved as
+a separate simulator-reported value; item-level `coverage-holes` remains
+Verilator-only until detailed UCDB normalization is implemented.
 
 ## Current CLI
 
@@ -254,7 +257,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← build/run foundation implemented
+       ├── Questa     ← build/run + UCDB summary coverage implemented
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
@@ -643,7 +646,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
 - [x] Questa native per-run UCDB coverage capture
-- [ ] Questa UCDB normalization/merge into ZDDV coverage metrics
+- [x] Questa UCDB merge + summary normalization into ZDDV coverage history
+- [ ] Questa item-level UCDB normalization and coverage-hole reporting
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API

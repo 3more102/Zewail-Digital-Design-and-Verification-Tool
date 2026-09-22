@@ -1017,6 +1017,26 @@ def test_unaligned_fixed_burst_keeps_same_partial_lane_window():
     assert result["transactions"][0]["allowed_write_strobes"] == [0x8, 0x8]
 
 
+def test_unaligned_fixed_burst_at_4kb_edge_stays_in_aligned_container():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWADDR": 0xFFF, "AWLEN": 1, "AWSIZE": 2, "AWBURST": "FIXED"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1, "WDATA": 0x11, "WSTRB": 0x8, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1, "WDATA": 0x22, "WSTRB": 0x8, "WLAST": 1},
+                {"cycle": 3, "BVALID": 1, "BREADY": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["allowed_write_strobes"] == [0x8, 0x8]
+    assert "burst_crosses_4kb_boundary" not in {
+        item["code"] for item in result["violations"]
+    }
+
+
 def test_reports_write_strobe_outside_transfer_lanes():
     result = analyze_axi4_trace(
         {

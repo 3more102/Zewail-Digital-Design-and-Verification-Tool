@@ -16,6 +16,35 @@ from zddv.storage import record_coverage_snapshot
 _COVERAGE_RECORD = re.compile(r"^C\s+'(?P<name>.*)'\s+(?P<count>-?\d+)\s*$")
 _POINT_TYPE = re.compile(r"pagev_(?P<kind>[A-Za-z0-9_]+)")
 
+_QUESTA_SUMMARY_ROW = re.compile(
+    r"^\s*(?P<kind>[A-Za-z][A-Za-z0-9 _/-]*?)\s+"
+    r"(?P<bins>\d+)\s+(?P<hits>\d+)\s+(?P<misses>\d+)\s+"
+    r"(?P<weight>\d+(?:\.\d+)?)\s+(?P<coverage>\d+(?:\.\d+)?)%\s*$"
+)
+_QUESTA_TOTAL_COVERAGE = re.compile(
+    r"Total coverage \(filtered view\):\s*(?P<coverage>\d+(?:\.\d+)?)%"
+)
+_QUESTA_KIND_ALIASES = {
+    "branches": "branch",
+    "branch": "branch",
+    "conditions": "condition",
+    "condition": "condition",
+    "expressions": "expression",
+    "expression": "expression",
+    "statements": "statement",
+    "statement": "statement",
+    "toggles": "toggle",
+    "toggle": "toggle",
+    "fsms": "fsm",
+    "fsm": "fsm",
+    "assertions": "assertion",
+    "assertion": "assertion",
+    "covergroups": "covergroup",
+    "covergroup": "covergroup",
+    "directives": "directive",
+    "directive": "directive",
+}
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -134,6 +163,145 @@ def write_coverage_hole_report(
     return {**report, "path": str(destination)}
 
 
+
+def _normalize_questa_coverage_kind(label: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")
+    return _QUESTA_KIND_ALIASES.get(normalized, normalized or "unknown")
+
+
+def parse_questa_coverage_summary(text: str) -> dict:
+    """Parse the numeric table emitted by vcover report -summary."""
+    by_type: dict[str, dict[str, int | float]] = {}
+    total_points = 0
+    hit_points = 0
+    unhit_points = 0
+
+    for raw_line in text.splitlines():
+        match = _QUESTA_SUMMARY_ROW.match(raw_line)
+        if match is None:
+            continue
+        kind = _normalize_questa_coverage_kind(match.group("kind"))
+        total = int(match.group("bins"))
+        hit = int(match.group("hits"))
+        misses = int(match.group("misses"))
+        reported_rate = float(match.group("coverage"))
+        by_type[kind] = {
+            "total": total,
+            "hit": hit,
+            "hit_rate": reported_rate,
+        }
+        total_points += total
+        hit_points += hit
+        unhit_points += misses
+
+    tool_total_match = _QUESTA_TOTAL_COVERAGE.search(text)
+    tool_total_coverage = (
+        float(tool_total_match.group("coverage"))
+        if tool_total_match is not None
+        else None
+    )
+
+    return {
+        "total_points": total_points,
+        "hit_points": hit_points,
+        "unhit_points": unhit_points,
+        "hit_rate": (
+            100.0 * hit_points / total_points
+            if total_points
+            else 0.0
+        ),
+        "by_type": dict(sorted(by_type.items())),
+        "tool_total_coverage": tool_total_coverage,
+    }
+
+
+def merge_questa_coverage(project: ProjectConfig) -> dict:
+    tool = shutil.which("vcover")
+    if tool is None:
+        raise RuntimeError(
+            "Questa vcover was not found in PATH. Install/configure Questa and retry."
+        )
+
+    run_root = (project.root / project.run_dir).resolve()
+    coverage_files = sorted(run_root.glob("*/coverage.ucdb"))
+    if not coverage_files:
+        raise RuntimeError(
+            f"No coverage.ucdb files found under {run_root}. "
+            "Run coverage-enabled Questa simulations first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    merged_path = out_dir / "coverage.ucdb"
+    summary_path = out_dir / "summary.txt"
+    metrics_path = out_dir / "metrics.json"
+    inputs = [str(path) for path in coverage_files]
+
+    if merged_path.exists():
+        merged_path.unlink()
+
+    merge_cmd = [tool, "merge", "-out", str(merged_path), *inputs]
+    merge = _run(merge_cmd, project.root)
+    if merge.returncode != 0 or not merged_path.exists():
+        raise RuntimeError(
+            "Questa UCDB merge failed:\n"
+            + "$ "
+            + " ".join(merge_cmd)
+            + "\n"
+            + (merge.stdout or "").strip()
+        )
+
+    report_cmd = [tool, "report", "-summary", str(merged_path)]
+    report = _run(report_cmd, project.root)
+    summary_path.write_text(report.stdout, encoding="utf-8")
+    if report.returncode != 0:
+        raise RuntimeError(f"Questa coverage report failed. See {summary_path}")
+
+    metrics = parse_questa_coverage_summary(report.stdout)
+    if not metrics["by_type"]:
+        raise RuntimeError(
+            f"No numeric coverage summary rows could be parsed from {summary_path}."
+        )
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    snapshot_id = (
+        datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
+    payload = {
+        "snapshot_id": snapshot_id,
+        "created_at": created_at,
+        "project": project.name,
+        "simulator": project.simulator,
+        "input_count": len(inputs),
+        **metrics,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+    }
+    metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    record_coverage_snapshot(
+        project,
+        {
+            **payload,
+            "metrics_path": str(metrics_path),
+        },
+    )
+
+    return {
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+        "metrics_path": str(metrics_path),
+        "report": report.stdout,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
+    }
+
+
+
 def merge_verilator_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("verilator_coverage")
     if tool is None:
@@ -226,3 +394,14 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
+
+
+def merge_coverage(project: ProjectConfig) -> dict:
+    simulator = project.simulator.strip().lower()
+    if simulator == "verilator":
+        return merge_verilator_coverage(project)
+    if simulator in {"questa", "questasim"}:
+        return merge_questa_coverage(project)
+    raise RuntimeError(
+        f"Coverage merge/report is not implemented for simulator: {project.simulator}"
+    )
