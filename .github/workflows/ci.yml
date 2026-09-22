@@ -157,6 +157,18 @@ jobs:
           grep -q '"completed_transactions": 2' examples/counter/.zddv/protocols/axi4/latest.json
           grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/latest.json
 
+      - name: Analyze AXI4 request sidebands
+        run: |
+          zddv --project examples/counter axi4-analyze ../axi4_sideband_trace.json --output .zddv/protocols/axi4/sidebands.json
+          test -s examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"arcache": 15' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"arprot": 5' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"arqos": 10' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"arregion": 3' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"awcache": 7' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"awqos": 9' examples/counter/.zddv/protocols/axi4/sidebands.json
+          grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/sidebands.json
+
       - name: Analyze AXI4 exclusive trace
         run: |
           zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json --output .zddv/protocols/axi4/exclusive.json
