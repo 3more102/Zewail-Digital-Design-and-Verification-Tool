@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native VCS coverage plus normalized URG score/count history**
 
 ## What Works Today
 
@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
+- Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -159,6 +160,9 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-item-analyze item_trace.json
+zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
+zddv --project my_project uvm-item-history --limit 20
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
@@ -279,7 +283,7 @@ CLI / future GUI
        │
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
-       ├── VCS        ← build/run + VDB/URG coverage implemented
+       ├── VCS        ← build/run + native VDB/URG coverage implemented
        └── Xcelium    ← xrun build/run foundation implemented
 ```
 
@@ -363,6 +367,7 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
+- [x] Normalized sequence-item handshake analysis with SQLite persistence/history
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
 
 ### APB Trace Analysis
@@ -677,8 +682,11 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
-- [ ] VCS normalized numeric coverage ingestion and history snapshots
-- [ ] Xcelium adapter
+- [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
+- [x] VCS documented global covergroup type/instance covered/expected count ingestion
+- [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
+- [x] Xcelium execution adapter foundation (xrun build/run, seed/test/plusargs, VCD, assertions, run-linked UVM)
+- [ ] Xcelium native coverage capture and normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
