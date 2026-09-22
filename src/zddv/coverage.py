@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -299,6 +301,98 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def _xml_local_name(name: str) -> str:
+    """Return a namespace-insensitive XML name for evidence inventory."""
+    if "}" in name:
+        name = name.rsplit("}", 1)[1]
+    if ":" in name:
+        name = name.rsplit(":", 1)[1]
+    return name
+
+
+def inspect_questa_coverage_xml(path: str | Path) -> dict:
+    """Inventory XML structure without assigning vendor-specific semantics.
+
+    The detailed Questa XML schema is treated as evidence. This helper records
+    only observable structure (root name, tag counts, and attribute names) plus
+    a stable schema fingerprint so later normalization can be fixture-driven
+    instead of relying on guessed tag meanings.
+    """
+    source = Path(path)
+    root = ET.parse(source).getroot()
+
+    tag_counts: dict[str, int] = defaultdict(int)
+    attributes_by_tag: dict[str, set[str]] = defaultdict(set)
+    element_count = 0
+
+    for element in root.iter():
+        element_count += 1
+        tag = _xml_local_name(str(element.tag))
+        tag_counts[tag] += 1
+        for attribute in element.attrib:
+            attributes_by_tag[tag].add(_xml_local_name(str(attribute)))
+
+    normalized_attributes = {
+        tag: sorted(attributes)
+        for tag, attributes in sorted(attributes_by_tag.items())
+    }
+    schema_basis = {
+        "root_tag": _xml_local_name(str(root.tag)),
+        "attributes_by_tag": normalized_attributes,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            schema_basis,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        "root_tag": schema_basis["root_tag"],
+        "element_count": element_count,
+        "tag_counts": dict(sorted(tag_counts.items())),
+        "attributes_by_tag": normalized_attributes,
+        "schema_fingerprint": fingerprint,
+    }
+
+
+def _write_questa_details_schema(details: dict, out_dir: Path) -> dict:
+    """Persist a bounded structural inventory for captured detailed XML."""
+    schema_path = out_dir / "details-schema.json"
+    if schema_path.exists():
+        schema_path.unlink()
+
+    if details.get("status") != "xml" or not details.get("path"):
+        return {
+            "status": "unavailable",
+            "path": None,
+            "schema": None,
+            "error": None,
+        }
+
+    try:
+        schema = inspect_questa_coverage_xml(details["path"])
+        schema_path.write_text(
+            json.dumps(schema, indent=2),
+            encoding="utf-8",
+        )
+    except (ET.ParseError, OSError, ValueError) as exc:
+        return {
+            "status": "invalid_xml",
+            "path": None,
+            "schema": None,
+            "error": str(exc),
+        }
+
+    return {
+        "status": "parsed",
+        "path": str(schema_path),
+        "schema": schema,
+        "error": None,
+    }
+
+
 def _capture_questa_details_xml(
     tool: str,
     merged_path: Path,
@@ -413,6 +507,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         out_dir,
         project.root,
     )
+    details_schema = _write_questa_details_schema(details, out_dir)
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -435,9 +530,18 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "details": details["path"],
         "details_capture": details["status"],
         "details_command": details["command"],
+        "details_schema": details_schema["path"],
+        "details_schema_status": details_schema["status"],
+        "details_schema_fingerprint": (
+            details_schema["schema"]["schema_fingerprint"]
+            if details_schema["schema"] is not None
+            else None
+        ),
     }
     if details["status"] != "xml":
         payload["details_error"] = details["output"].strip()
+    if details_schema["error"]:
+        payload["details_schema_error"] = details_schema["error"]
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     record_coverage_snapshot(
@@ -466,6 +570,14 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             if details["status"] != "xml"
             else None
         ),
+        "details_schema": details_schema["path"],
+        "details_schema_status": details_schema["status"],
+        "details_schema_fingerprint": (
+            details_schema["schema"]["schema_fingerprint"]
+            if details_schema["schema"] is not None
+            else None
+        ),
+        "details_schema_error": details_schema["error"],
     }
 
 
