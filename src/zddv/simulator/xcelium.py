@@ -13,6 +13,7 @@ from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_marker import analyze_uvm_marker_log, has_explicit_uvm_markers
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -312,11 +313,21 @@ class XceliumBackend(SimulatorBackend):
             log_path=log_path,
             created_at=now.isoformat(),
         )
-        if "UVM_" in output:
+        if any(
+            token in (output or "")
+            for token in ("UVM_INFO", "UVM_WARNING", "UVM_ERROR", "UVM_FATAL")
+        ):
             analyze_uvm_log(
                 project,
                 None,
                 source="xcelium-run",
+                run_id=run_id,
+            )
+        if has_explicit_uvm_markers(output or ""):
+            analyze_uvm_marker_log(
+                project,
+                None,
+                source="xcelium-marker-run",
                 run_id=run_id,
             )
 
