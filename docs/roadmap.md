@@ -169,6 +169,13 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] SHA-confirmed human review gate before reviewed model proposals can enter the existing generated-artifact staging/apply workflow.
 - [x] Read-only provenance-chain audit that re-verifies context evidence, provider-request, raw-response, validated-payload, and optional human-review hashes without model invocation.
 
+## v1.0 — Reproducible AI Review Workflow
+
+- [x] Offline/manual AI response import without model invocation or external transmission.
+- [x] Imported response bytes bound to the exact model-request and context-evidence SHA-256 provenance.
+- [x] End-to-end CI trust-chain coverage from offline import through validation, SHA-bound review, proposal export, and review-isolated staging.
+- [ ] Portable audit-bundle export for the complete context/raw/validated/review/proposal provenance chain.
+
 ## v1.0 — Verification Signoff
 
 Current status: the first deterministic signoff-review bundle is implemented. It
