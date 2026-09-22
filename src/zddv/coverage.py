@@ -1804,12 +1804,50 @@ def _imc_quote_path(path: Path) -> str:
     return f'"{value}"'
 
 
-def merge_xcelium_coverage(project: ProjectConfig) -> dict:
-    """Merge captured Xcelium run databases with Cadence IMC.
+_XCELIUM_IMC_SUMMARY_HEADER = re.compile(
+    r"^\\s*name\\s+Overall\\*?(?:\\s|$)",
+    re.IGNORECASE,
+)
+_XCELIUM_IMC_SUMMARY_ROW = re.compile(
+    r"^\\s*(?P<scope>\\S+)\\s+(?P<overall>\\d+(?:\\.\\d+)?)%(?:\\s|$)"
+)
 
-    This milestone deliberately retains merge/report evidence without parsing
-    simulator-specific numeric report text into ZDDV metrics yet.
-    """
+
+def parse_xcelium_imc_summary(text: str) -> dict:
+    """Normalize only the explicitly headed first Overall percentage from IMC."""
+    lines = text.splitlines()
+    header_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if _XCELIUM_IMC_SUMMARY_HEADER.match(line)
+        ),
+        None,
+    )
+    if header_index is None:
+        raise ValueError("IMC summary header with Overall coverage was not found")
+
+    for raw_line in lines[header_index + 1 :]:
+        match = _XCELIUM_IMC_SUMMARY_ROW.match(raw_line)
+        if match is None:
+            continue
+        score = float(match.group("overall"))
+        if not 0.0 <= score <= 100.0:
+            raise ValueError("IMC overall coverage score is outside 0..100")
+        return {
+            "tool_total_coverage": score,
+            "by_metric": {},
+            "by_metric_counts": {},
+            "scope": match.group("scope"),
+            "source": "imc-summary",
+            "metric_semantics": "first-overall-column",
+        }
+
+    raise ValueError("IMC summary data row could not be parsed")
+
+
+def merge_xcelium_coverage(project: ProjectConfig) -> dict:
+    """Merge captured Xcelium run databases and normalize verified IMC evidence."""
     tool = shutil.which("imc")
     if tool is None:
         raise RuntimeError(
@@ -1855,7 +1893,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 ),
                 f"load -run {_imc_quote_path(merged_path)}",
                 (
-                    "report -summary -inst \"*...\" "
+                    "report -summary -cumulative on -inst -local off "
                     f"-out {_imc_quote_path(summary_path)}"
                 ),
                 "exit",
@@ -1883,6 +1921,27 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
 
     created_at = datetime.now(timezone.utc).isoformat()
     summary_exists = summary_path.is_file()
+    metrics: dict | None = None
+    metrics_status = "summary-missing" if not summary_exists else "summary-unparsed"
+    metrics_error: str | None = None
+    snapshot_id: str | None = None
+
+    if summary_exists:
+        try:
+            metrics = parse_xcelium_imc_summary(
+                summary_path.read_text(encoding="utf-8", errors="replace")
+            )
+            metrics_status = "normalized"
+        except (OSError, ValueError) as exc:
+            metrics_error = str(exc)
+
+    if metrics is not None:
+        snapshot_id = (
+            datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
+            + "-"
+            + uuid.uuid4().hex[:8]
+        )
+
     payload = {
         "created_at": created_at,
         "project": project.name,
@@ -1892,7 +1951,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             if summary_exists
             else "merged-evidence-captured"
         ),
-        "metrics_status": "not-normalized",
+        "metrics_status": metrics_status,
         "input_count": len(coverage_dirs),
         "inputs": [str(path) for path in coverage_dirs],
         "merged": str(merged_path),
@@ -1901,13 +1960,33 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "summary": str(summary_path) if summary_exists else None,
         "script": str(script_path),
         "command": command,
-        "metrics": None,
-        "snapshot_id": None,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
     }
+    if metrics_error is not None:
+        payload["metrics_error"] = metrics_error
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",
     )
+
+    if metrics is not None and snapshot_id is not None:
+        record_coverage_score_snapshot(
+            project,
+            {
+                "snapshot_id": snapshot_id,
+                "created_at": created_at,
+                "project": project.name,
+                "simulator": project.simulator,
+                "input_count": len(coverage_dirs),
+                "score": metrics["tool_total_coverage"],
+                "by_metric": metrics.get("by_metric", {}),
+                "by_metric_counts": metrics.get("by_metric_counts", {}),
+                "merged": str(merged_path),
+                "summary": str(summary_path),
+                "metrics_path": str(manifest_path),
+            },
+        )
 
     return {
         "inputs": payload["inputs"],
@@ -1915,11 +1994,12 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "summary": str(summary_path) if summary_exists else str(report_dir),
         "metrics_path": str(manifest_path),
         "report": result.stdout or "",
-        "metrics": None,
-        "snapshot_id": None,
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
         "report_dir": str(report_dir),
         "script": str(script_path),
-        "metrics_status": "not-normalized",
+        "metrics_status": metrics_status,
+        "metrics_error": metrics_error,
     }
 
 
