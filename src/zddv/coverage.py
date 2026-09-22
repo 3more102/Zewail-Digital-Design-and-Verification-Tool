@@ -1930,19 +1930,6 @@ def parse_xcelium_imc_summary(text: str) -> dict:
     }
 
 
-def _imc_quote_path(path: Path) -> str:
-    """Quote a path for an IMC command file using Tcl-compatible double quotes."""
-    value = path.resolve().as_posix()
-    value = (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("$", "\\$")
-        .replace("[", "\\[")
-        .replace("]", "\\]")
-    )
-    return f'"{value}"'
-
-
 def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     """Merge Xcelium coverage with IMC and normalize its cumulative summary."""
     tool = shutil.which("imc")
