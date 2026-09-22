@@ -167,6 +167,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Opt-in pluggable model-provider adapters with explicit external-transmission gating.
 - [x] Schema-validated model-response ingestion with strict evidence-reference resolution and request/context provenance checks.
 - [x] SHA-confirmed human review gate before reviewed model proposals can enter the existing generated-artifact staging/apply workflow.
+- [x] Read-only provenance-chain audit that re-verifies context evidence, provider-request, raw-response, validated-payload, and optional human-review hashes without model invocation.
 
 ## Long-Term Direction
 
