@@ -8,6 +8,36 @@ from zddv.config import ProjectConfig
 from zddv.root_cause import rank_root_cause_candidates
 
 
+def _probeable_evidence(
+    candidate: dict[str, Any],
+) -> list[tuple[str, Any, str | None, dict[str, Any]]]:
+    """Return explicit signal evidence without requiring RTL cross-probe success."""
+
+    result: list[tuple[str, Any, str | None, dict[str, Any]]] = []
+    for evidence in candidate.get("evidence", []):
+        waveform_artifact = evidence.get("waveform_artifact")
+        signal = evidence.get("signal")
+        if isinstance(signal, str) and signal and waveform_artifact:
+            result.append(
+                (
+                    signal,
+                    waveform_artifact,
+                    evidence.get("signal_hint_match"),
+                    evidence,
+                )
+            )
+
+        for hint in evidence.get("signal_hints") or []:
+            if not isinstance(hint, dict):
+                continue
+            path = hint.get("path")
+            if not isinstance(path, str) or not path or not waveform_artifact:
+                continue
+            result.append((path, waveform_artifact, hint.get("match"), evidence))
+
+    return result
+
+
 def suggest_debug_probes(
     project: ProjectConfig,
     *,
@@ -33,12 +63,10 @@ def suggest_debug_probes(
     evidence_candidates = ranking["candidates"][:candidate_limit]
 
     for candidate in evidence_candidates:
-        for evidence in candidate.get("evidence", []):
-            signal = evidence.get("signal")
-            if not isinstance(signal, str) or not signal or signal in seen_signals:
-                continue
-            waveform_artifact = evidence.get("waveform_artifact")
-            if not waveform_artifact:
+        for signal, waveform_artifact, hint_match, evidence in _probeable_evidence(
+            candidate
+        ):
+            if signal in seen_signals:
                 continue
 
             seen_signals.add(signal)
@@ -66,7 +94,7 @@ def suggest_debug_probes(
                         "log_path": evidence.get("log_path"),
                         "log_line": evidence.get("log_line"),
                         "waveform_artifact": waveform_artifact,
-                        "signal_hint_match": evidence.get("signal_hint_match"),
+                        "signal_hint_match": hint_match,
                         "driver": evidence.get("driver"),
                         "source_declaration": evidence.get("source_declaration"),
                     },
@@ -102,6 +130,16 @@ def suggest_debug_probes(
                     "message": (
                         "No failing assertion supplied an exact indexed-waveform signal "
                         "name/path; ZDDV will not guess probe signals."
+                    ),
+                }
+            )
+        if not blockers:
+            blockers.append(
+                {
+                    "code": "NO_PROBEABLE_SIGNAL_EVIDENCE",
+                    "message": (
+                        "The inspected ranked candidates contain no explicit signal plus "
+                        "recorded waveform evidence; ZDDV will not invent a probe."
                     ),
                 }
             )
