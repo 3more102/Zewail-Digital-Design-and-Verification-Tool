@@ -278,6 +278,16 @@ jobs:
           grep -q '"max_bypass": 2' examples/counter/.zddv/uvm/items/arbitration.json
           grep -q '"pending_requests": 0' examples/counter/.zddv/uvm/items/arbitration.json
 
+      - name: Bridge UVM item requests into arbitration analysis
+        run: |
+          zddv --project examples/counter uvm-arbitration-analyze ../uvm_item_arbitration_trace.json --item-trace --source example-arbitration-bridge --fairness-bound 2 --output .zddv/uvm/arbitration/item-bridge.json
+          test -s examples/counter/.zddv/uvm/arbitration/item-bridge.json
+          grep -q '"input_mode": "uvm-item-trace-bridge"' examples/counter/.zddv/uvm/arbitration/item-bridge.json
+          grep -q '"decisions": 3' examples/counter/.zddv/uvm/arbitration/item-bridge.json
+          grep -q '"max_wait_decisions": 2' examples/counter/.zddv/uvm/arbitration/item-bridge.json
+          grep -q '"decisions_emitted": 3' examples/counter/.zddv/uvm/arbitration/item-bridge.json
+          zddv --project examples/counter uvm-arbitration-history --limit 5 | grep -q 'PASS'
+
       - name: Analyze explicit UVM item log markers
         run: |
           zddv --project examples/counter uvm-item-log-analyze ../uvm_item_marker.log --source example-item-log
