@@ -611,8 +611,9 @@ Without `--emit-dir`, ZDDV writes only
 `--emit-dir` is the explicit opt-in for code emission. Even then, the generated
 artifacts use the `.sv.disabled` suffix, are never added to project sources, and
 contain commented review/TODO scaffolds rather than invented clocks, resets,
-stimulus, expected DUT behavior, or property semantics. An engineer must edit,
-review, enable, and run any resulting verification code manually.
+stimulus, expected DUT behavior, or property semantics. Existing scaffold files are
+never overwritten implicitly; replacement requires explicit `--force`. An engineer
+must edit, review, enable, and run any resulting verification code manually.
 
 ### Assertion Result Markers
 
