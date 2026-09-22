@@ -1,0 +1,65 @@
+{
+  "source": "example-arbitration",
+  "fairness_bound": 2,
+  "decisions": [
+    {
+      "decision_id": "arb-0",
+      "sequencer": "uvm_test_top.env.seqr",
+      "granted_request_id": "req-a",
+      "time": "10 ns",
+      "contenders": [
+        {
+          "request_id": "req-a",
+          "sequence_id": "seq-a",
+          "sequence": "producer_a",
+          "item_id": "item-a",
+          "priority": 100
+        },
+        {
+          "request_id": "req-b",
+          "sequence_id": "seq-b",
+          "sequence": "producer_b",
+          "item_id": "item-b",
+          "priority": 100
+        }
+      ]
+    },
+    {
+      "decision_id": "arb-1",
+      "sequencer": "uvm_test_top.env.seqr",
+      "granted_request_id": "req-c",
+      "time": "20 ns",
+      "contenders": [
+        {
+          "request_id": "req-b",
+          "sequence_id": "seq-b",
+          "sequence": "producer_b",
+          "item_id": "item-b",
+          "priority": 100
+        },
+        {
+          "request_id": "req-c",
+          "sequence_id": "seq-c",
+          "sequence": "producer_c",
+          "item_id": "item-c",
+          "priority": 50
+        }
+      ]
+    },
+    {
+      "decision_id": "arb-2",
+      "sequencer": "uvm_test_top.env.seqr",
+      "granted_request_id": "req-b",
+      "time": "30 ns",
+      "contenders": [
+        {
+          "request_id": "req-b",
+          "sequence_id": "seq-b",
+          "sequence": "producer_b",
+          "item_id": "item-b",
+          "priority": 100
+        }
+      ]
+    }
+  ]
+}
