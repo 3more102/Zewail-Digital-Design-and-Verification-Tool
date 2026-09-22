@@ -145,10 +145,38 @@ trace paths. It does not synthesize PASS rows for properties that the logfile
 never enumerates, and it does not convert a bounded PASS into an unbounded
 proof.
 
+## Cross-run formal cover coverage
+
+Every newly persisted formal snapshot records a SHA-256 design fingerprint over the
+configured top plus the discovered formal source paths and file contents. A backend may
+also mark `property_set_complete=true` only when the normalized property rows represent
+the complete queried property universe. Direct SymbiYosys execution sets that marker only
+after a successful machine-readable `--statusfmt jsonl --latest` parse; native logfile
+imports remain incomplete because they may list reached goals without enumerating all
+unreached goals.
+
+The aggregate command is:
+
+```text
+zddv --project <project> formal-coverage
+zddv --project <project> formal-coverage --depth 20 --backend sby
+```
+
+It writes `.zddv/formal/coverage.json` by default. Snapshots are grouped only when all
+of the following are identical: design fingerprint, top, backend, engine, explicit finite
+depth, and complete cover-property name universe. Different depths or source revisions are
+reported as separate configurations instead of being blended into one percentage.
+
+Inside one compatible group, a goal is aggregate `COVERED` when at least one snapshot
+explicitly reports it covered. A goal remains `UNCOVERED` only when every compatible
+snapshot reports it uncovered; `UNKNOWN` and `ERROR` stay unresolved evidence.
+The report retains per-property covered/uncovered/unknown/error run counts plus every
+snapshot ID used in the calculation.
+
 ## Current boundary
 
 This slice does not parse vendor-native counterexample waveform contents or claim
 unbounded reachability/proof coverage. Direct finite-depth SymbiYosys cover-property
-reachability is supported and persisted as `COVERED`/`UNCOVERED` evidence;
-additional formal-tool native formats and broader proof-coverage metrics remain separate
-future work.
+reachability and conservative cross-run aggregation are supported. Incomplete property
+universes, snapshots without a design fingerprint, different source revisions, different
+engines, different depths, or different property sets are never silently merged.
