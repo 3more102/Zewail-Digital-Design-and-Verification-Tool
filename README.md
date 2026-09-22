@@ -369,7 +369,8 @@ separately from Verilator's annotation threshold.
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
-- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
+- [x] Observed UVM grant order plus explicit ARB_REQUEST contention/bypass evidence
+- [ ] Automatic sequence/item instrumentation adapters and vendor-policy-aware arbitration reconstruction
 
 ### APB Trace Analysis
 
