@@ -244,7 +244,7 @@ def parse_uvm_item_data(
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
             "Response payload comparison, arbitration priority/fairness, request/grant timing, and delta-cycle constraints are outside this foundation.",
-            "SQLite persistence stores normalized snapshot summaries and event evidence; vendor-specific automatic instrumentation remains outside this layer.",
+            "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
         ],
     }
 
