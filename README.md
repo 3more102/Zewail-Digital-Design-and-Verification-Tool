@@ -112,7 +112,7 @@ weighted total coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. ZDDV also parses documented module-level Line and Branch total/covered rows from `modinfo.txt` and persists them as explicitly scoped `module_line` and `module_branch` counts; these counts do not replace the design-wide dashboard percentages. Condition/toggle/FSM module counts and instance-level code-metric aggregation remain pending. If the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
-For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. With `coverage = true`, build enables `-coverage all`; each run is assigned an isolated Cadence coverage hierarchy through `-covworkdir`, `-covscope`, and `-covtest`, and ZDDV records the run database only when a `.ucd` artifact is actually present. IMC merge/report and normalized Xcelium coverage metrics remain pending.
+For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. With `coverage = true`, build enables `-coverage all`; each run is assigned an isolated Cadence coverage hierarchy through `-covworkdir`, `-covscope`, and `-covtest`, and ZDDV records the run database only when a `.ucd` artifact is actually present. `zddv coverage` can merge those captured run databases through Cadence IMC, retain the merged native database plus a summary report and the exact batch script as evidence, and records that the result is not numerically normalized yet. Xcelium metric normalization into ZDDV coverage history remains pending.
 
 ## Current CLI
 
@@ -692,7 +692,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] VCS remaining condition/toggle/FSM module counts and instance-level code-metric aggregation
 - [x] Xcelium execution adapter foundation
 - [x] Xcelium native per-run coverage database capture
-- [ ] Xcelium IMC merge/report and metric normalization
+- [x] Xcelium IMC multi-run merge/report evidence retention
+- [ ] Xcelium metric normalization into ZDDV coverage history
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
