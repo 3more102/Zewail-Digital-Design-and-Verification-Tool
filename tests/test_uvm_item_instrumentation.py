@@ -26,7 +26,7 @@ def _line(
     time: str = "10",
 ) -> str:
     return (
-        "ZDDV_UVM_ITEM_V1|"
+        "ZDDV_ITEM_TRACE_V1|"
         f"{event}|{item_id}|{sequence_id}|{sequence}|{sequencer}|"
         f"{item}|{transaction_id}|{time}"
     )
@@ -78,7 +78,7 @@ def test_parses_missing_optional_fields_without_inventing_context():
 def test_rejects_malformed_instrumentation_record():
     with pytest.raises(ValueError, match="expected 8 fields"):
         parse_uvm_item_instrumentation_log(
-            "ZDDV_UVM_ITEM_V1|GRANT|item-1|seq-1"
+            "ZDDV_ITEM_TRACE_V1|GRANT|item-1|seq-1"
         )
 
 
@@ -95,7 +95,7 @@ def test_generator_writes_portable_package_and_adds_it_first(tmp_path: Path):
     assert generated.is_file()
     text = generated.read_text(encoding="utf-8")
     assert "package zddv_uvm_item_trace_pkg;" in text
-    assert "ZDDV_UVM_ITEM_V1|" in text
+    assert "ZDDV_ITEM_TRACE_V1|" in text
     assert "`define ZDDV_UVM_ITEM_GRANT" in text
 
     loaded = load_project(project.root)
@@ -157,7 +157,7 @@ def test_analyzes_instrumented_run_log_and_persists_snapshot(tmp_path: Path):
     assert result["status"] == "PASS"
     assert result["run_id"] == run_id
     assert result["summary"]["completed"] == 1
-    assert result["events"][0]["metadata"]["instrumentation"] == "ZDDV_UVM_ITEM_V1"
+    assert result["events"][0]["metadata"]["instrumentation"] == "ZDDV_ITEM_TRACE_V1"
 
     rows = list_uvm_item_handshake_snapshots(
         project,
@@ -180,7 +180,7 @@ def test_cli_generates_and_analyzes_instrumentation_log(tmp_path: Path, capsys):
     )
     assert rc == 0
     generated_output = capsys.readouterr().out
-    assert "ZDDV_UVM_ITEM_V1" in generated_output
+    assert "ZDDV_ITEM_TRACE_V1" in generated_output
 
     log_path = project.root / "instrumented.log"
     log_path.write_text(
