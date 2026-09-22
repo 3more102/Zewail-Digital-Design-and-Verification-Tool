@@ -169,13 +169,16 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         data_width_bits: int | None = None
         data_bus_bytes: int | None = None
     else:
+        legal_widths = {8, 16, 32, 64, 128, 256, 512, 1024}
         if (
             isinstance(raw_data_width_bits, bool)
             or not isinstance(raw_data_width_bits, int)
-            or raw_data_width_bits <= 0
-            or raw_data_width_bits % 8
+            or raw_data_width_bits not in legal_widths
         ):
-            raise ValueError("data_width_bits must be a positive multiple of 8")
+            raise ValueError(
+                "data_width_bits must be one of "
+                "8, 16, 32, 64, 128, 256, 512, or 1024"
+            )
         data_width_bits = raw_data_width_bits
         data_bus_bytes = data_width_bits // 8
 
@@ -682,26 +685,22 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         if data_bus_bytes is None:
             return
 
-        beat_bytes = request.get("beat_bytes")
-        if (
-            not isinstance(beat_bytes, int)
-            or beat_bytes <= 0
-            or beat_bytes > data_bus_bytes
-        ):
-            return
-
-        addresses = burst_addresses(request, len(beats))
-        if addresses is None:
-            return
-
         bus_mask = (1 << data_bus_bytes) - 1
-        for beat_index, (beat, beat_addr) in enumerate(zip(beats, addresses)):
+        beat_bytes = request.get("beat_bytes")
+        addresses = burst_addresses(request, len(beats))
+
+        for beat_index, beat in enumerate(beats):
             strobe = beat.get("strb")
-            if not isinstance(strobe, int) or strobe < 0 or strobe > bus_mask:
+            if (
+                isinstance(strobe, bool)
+                or not isinstance(strobe, int)
+                or strobe < 0
+                or strobe > bus_mask
+            ):
                 add_violation(
                     "invalid_write_strobe",
                     beat["sample"],
-                    f"WSTRB on write beat {beat_index} must fit the {data_bus_bytes}-byte data bus",
+                    f"WSTRB on write beat {beat_index + 1} must fit the {data_bus_bytes}-byte data bus",
                     channel="W",
                     transaction_index=request["index"],
                     signal="WSTRB",
@@ -711,6 +710,16 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 beat["allowed_strb_mask"] = None
                 continue
 
+            if (
+                addresses is None
+                or not isinstance(beat_bytes, int)
+                or beat_bytes <= 0
+                or beat_bytes > data_bus_bytes
+            ):
+                beat["allowed_strb_mask"] = None
+                continue
+
+            beat_addr = addresses[beat_index]
             aligned_addr = beat_addr - (beat_addr % beat_bytes)
             lower_lane = beat_addr % data_bus_bytes
             upper_lane = (aligned_addr + beat_bytes - 1) % data_bus_bytes
@@ -726,7 +735,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 add_violation(
                     "write_strobe_outside_transfer",
                     beat["sample"],
-                    f"WSTRB asserts byte lanes outside write beat {beat_index}'s address/size window",
+                    f"WSTRB asserts byte lanes outside write beat {beat_index + 1}'s address/size window",
                     channel="W",
                     transaction_index=request["index"],
                     signal="WSTRB",
