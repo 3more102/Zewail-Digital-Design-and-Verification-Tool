@@ -7,7 +7,19 @@ from types import SimpleNamespace
 import pytest
 
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_coverage, merge_xcelium_coverage
+from zddv.coverage import (
+    merge_coverage,
+    merge_xcelium_coverage,
+    parse_xcelium_imc_summary,
+)
+from zddv.storage import list_coverage_score_snapshots
+
+
+CADENCE_IMC_SUMMARY = """Legend: Metric* means cumulative e.g. Block* means Cumulative Block Coverage
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+----------------------------------------------------------------------------------------------------------------------------------
+tb 93.25% 91.00% (8/10) 88.00% 87.00% (4/5) n/a n/a n/a 100.00% 100.00% (4/4)
+"""
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -36,7 +48,23 @@ def _coverage_run(project: ProjectConfig, run_id: str) -> Path:
     return path
 
 
-def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
+def test_parse_xcelium_imc_summary_normalizes_first_overall_column():
+    metrics = parse_xcelium_imc_summary(CADENCE_IMC_SUMMARY)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(93.25)
+    assert metrics["scope"] == "tb"
+    assert metrics["source"] == "imc-summary"
+    assert metrics["metric_semantics"] == "first-overall-column"
+    assert metrics["by_metric"] == {}
+    assert metrics["by_metric_counts"] == {}
+
+
+def test_parse_xcelium_imc_summary_requires_documented_overall_header():
+    with pytest.raises(ValueError, match="Overall coverage"):
+        parse_xcelium_imc_summary("IMC summary fixture without documented headings\n")
+
+
+def test_merge_xcelium_coverage_uses_imc_and_persists_verified_score(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -63,7 +91,7 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
         report_dir = out_dir / "xcelium-imc-report"
         (report_dir / "summary.txt").write_text(
-            "IMC summary fixture\n",
+            CADENCE_IMC_SUMMARY,
             encoding="utf-8",
         )
         return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
@@ -73,8 +101,9 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     result = merge_coverage(project)
 
     assert result["inputs"] == [str(first), str(second)]
-    assert result["metrics"] is None
-    assert result["metrics_status"] == "not-normalized"
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(93.25)
+    assert result["snapshot_id"] is not None
     assert Path(result["merged"]).name == "xcelium-imc-merged"
     assert Path(result["summary"]).name == "summary.txt"
 
@@ -86,17 +115,61 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     assert first.as_posix() in script
     assert second.as_posix() in script
     assert "load -run" in script
-    assert 'report -summary -inst "*..."' in script
+    assert "report -summary -cumulative on -inst -local off" in script
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
     )
     assert manifest["status"] == "merged-report-captured"
-    assert manifest["metrics_status"] == "not-normalized"
+    assert manifest["metrics_status"] == "normalized"
     assert manifest["input_count"] == 2
     assert len(manifest["merged_ucd_files"]) == 1
-    assert manifest["snapshot_id"] is None
+    assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(93.25)
+    assert manifest["snapshot_id"] == result["snapshot_id"]
+
+    history = list_coverage_score_snapshots(project)
+    assert len(history) == 1
+    assert history[0]["simulator"] == "xcelium"
+    assert history[0]["score"] == pytest.approx(93.25)
+    assert history[0]["input_count"] == 2
+    assert history[0]["by_metric"] == {}
+    assert history[0]["by_metric_counts"] == {}
+
+
+def test_merge_xcelium_coverage_keeps_unknown_summary_evidence_only(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    _coverage_run(project, "run-a")
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/cadence/bin/imc" if name == "imc" else None,
+    )
+
+    def fake_run(command, cwd):
+        out_dir = project.root / ".zddv" / "coverage"
+        merged = out_dir / "xcelium-imc-merged"
+        merged.mkdir(parents=True)
+        (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
+        report_dir = out_dir / "xcelium-imc-report"
+        (report_dir / "summary.txt").write_text(
+            "IMC summary fixture without documented headings\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_xcelium_coverage(project)
+
+    assert result["metrics"] is None
+    assert result["metrics_status"] == "summary-unparsed"
+    assert result["snapshot_id"] is None
+    assert result["metrics_error"]
+    assert Path(result["summary"]).is_file()
+    assert list_coverage_score_snapshots(project) == []
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
