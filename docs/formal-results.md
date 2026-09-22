@@ -118,6 +118,14 @@ four-state textual values, timestamps and timescale metadata. Repeated `--signal
 arguments accept exact paths or unambiguous short names. `--max-steps` is an explicit
 memory/evidence bound; exceeding it is an error rather than silent truncation.
 
+Formal result persistence also auto-normalizes backend-reported VCD counterexamples and
+cover witnesses. Each successful trace is written under the formal run directory as
+`normalized-traces/<property-index>-<role>.json`, while the result report records a
+`trace_normalization` summary plus per-trace status, resolved path, SHA-256 provenance,
+and normalized output path. Relative backend paths are resolved against `run_dir`.
+Missing, malformed, non-VCD, or evidence-only traces stay visible as non-fatal status
+records instead of blocking the formal snapshot.
+
 ## Direct SymbiYosys bounded execution
 
 ZDDV can execute finite-depth safety and cover-reachability jobs directly:
@@ -189,11 +197,11 @@ snapshot ID used in the calculation.
 
 ## Current boundary
 
-Native VCD counterexample/witness contents are supported through the explicit
-`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
-during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
-finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
-conservative cross-run aggregation are supported. Incomplete property universes,
+Native VCD counterexample/witness contents are supported through both the explicit
+`formal-vcd-trace` importer and automatic normalization during formal-result persistence.
+ZDDV does not claim unbounded reachability/proof coverage from finite-depth evidence.
+Direct finite-depth SymbiYosys cover-property reachability and conservative cross-run
+aggregation are supported. Incomplete property universes,
 snapshots without a design fingerprint, different source revisions, different engines,
 different depths, or different property sets are never silently merged. Additional
 vendor-native waveform formats, automatic trace cross-probing, and broader proof-coverage
