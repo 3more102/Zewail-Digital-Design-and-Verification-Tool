@@ -214,3 +214,41 @@ def test_doctor_can_check_questa_backend(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ZDDV 0.6.0" in output
     assert "[PASS] Questa test" in output
+
+
+def test_questa_explicit_uvm_test_plusarg_is_not_duplicated(tmp_path, monkeypatch):
+    project = _project(tmp_path, waveform=False)
+    backend = QuestaBackend()
+    (project.root / ".zddv" / "build" / "work").mkdir(parents=True)
+
+    monkeypatch.setattr(backend, "version", lambda: "Questa test")
+    monkeypatch.setattr(backend, "_tool", lambda name: name)
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = list(command)
+        return SimpleNamespace(returncode=0, stdout="simulation complete\n")
+
+    monkeypatch.setattr("zddv.simulator.questa.subprocess.run", fake_run)
+
+    result = backend.run(
+        project,
+        test_name="zddv_label",
+        plusargs=["+UVM_TESTNAME=explicit_uvm_test", "+MODE=stress"],
+    )
+
+    command = captured["command"]
+    uvm_test_args = [
+        arg for arg in command
+        if str(arg).startswith("+UVM_TESTNAME=")
+    ]
+    assert uvm_test_args == ["+UVM_TESTNAME=explicit_uvm_test"]
+    assert "+ZDDV_TEST=zddv_label" in command
+
+    run_record = loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
+    assert run_record["test"] == "zddv_label"
+    assert run_record["plusargs"] == [
+        "+UVM_TESTNAME=explicit_uvm_test",
+        "+MODE=stress",
+    ]
