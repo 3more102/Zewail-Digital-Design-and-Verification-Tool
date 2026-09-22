@@ -20,6 +20,7 @@ class VcsBackend(SimulatorBackend):
     """Synopsys VCS compile/run adapter using the native vcs -> simv flow."""
 
     name = "vcs"
+    coverage_metrics = "line+cond+fsm+tgl+branch"
 
     @staticmethod
     def _tool() -> str:
@@ -33,7 +34,7 @@ class VcsBackend(SimulatorBackend):
 
     def version(self) -> str:
         result = subprocess.run(
-            [self._tool(), "-ID"],
+            [self._tool(), "-id"],
             check=False,
             text=True,
             capture_output=True,
@@ -78,8 +79,10 @@ class VcsBackend(SimulatorBackend):
             project.top,
             "-o",
             str(executable),
-            *[str(path) for path in sources],
         ]
+        if project.coverage:
+            command.extend(["-cm", self.coverage_metrics])
+        command.extend(str(path) for path in sources)
 
         completed = subprocess.run(
             command,
@@ -96,7 +99,7 @@ class VcsBackend(SimulatorBackend):
             if completed.returncode == 0 and executable.exists()
             else None
         )
-        coverage_capture = "unsupported" if project.coverage else "disabled"
+        coverage_capture = "instrumented" if project.coverage else "disabled"
         manifest = {
             "simulator": self.name,
             "simulator_version": simulator_version,
@@ -106,6 +109,7 @@ class VcsBackend(SimulatorBackend):
             "waveform_capture": "vcd" if project.waveform else "disabled",
             "coverage_requested": project.coverage,
             "coverage_capture": coverage_capture,
+            "coverage_metrics": self.coverage_metrics if project.coverage else None,
             "uvm_library": "uvm-1.2",
             "command": command,
             "returncode": completed.returncode,
@@ -153,6 +157,9 @@ class VcsBackend(SimulatorBackend):
 
         runtime_plusargs = list(plusargs or [])
         command = [str(executable)]
+        coverage_path = run_dir / "coverage.vdb" if project.coverage else None
+        if coverage_path is not None:
+            command.extend(["-cm", self.coverage_metrics, "-cm_dir", str(coverage_path)])
         if project.waveform:
             command.append("+vcs+dumpvars+waveform.vcd")
         if test_name:
@@ -199,7 +206,13 @@ class VcsBackend(SimulatorBackend):
         if not waveform_path.exists():
             waveform_path = None
 
-        coverage_capture = "unsupported" if project.coverage else "disabled"
+        if coverage_path is not None and not coverage_path.exists():
+            coverage_path = None
+        coverage_capture = (
+            "vdb"
+            if coverage_path is not None
+            else ("missing" if project.coverage else "disabled")
+        )
         status = "TIMEOUT" if timed_out else ("PASS" if returncode == 0 else "FAIL")
         simulator_version = self.version()
         record = {
@@ -221,8 +234,9 @@ class VcsBackend(SimulatorBackend):
             "log": str(log_path),
             "waveform": str(waveform_path) if waveform_path else None,
             "coverage_requested": project.coverage,
-            "coverage": None,
+            "coverage": str(coverage_path) if coverage_path else None,
             "coverage_capture": coverage_capture,
+            "coverage_metrics": self.coverage_metrics if project.coverage else None,
             "build_artifact": str(executable),
         }
         (run_dir / "run.json").write_text(
@@ -252,7 +266,7 @@ class VcsBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform_path,
-            coverage_path=None,
+            coverage_path=coverage_path,
             test_name=test_name,
             seed=seed,
         )

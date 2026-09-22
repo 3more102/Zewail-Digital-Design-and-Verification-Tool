@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM Foundation — run-aware UVM ingestion with phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, native Questa UCDB/code/functional coverage evidence, and Verilator/Questa/VCS execution foundations on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization; native VCS coverage normalization remains pending
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, and per-run native `.vdb` coverage capture; normalized VCS coverage merge/reporting remains pending
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -64,6 +64,7 @@ Requirements:
 - Python 3.11+
 - Verilator available in `PATH` for the default backend
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
+- Optional Synopsys VCS: `vcs` available in `PATH`
 
 Install ZDDV for development:
 
@@ -103,6 +104,8 @@ report for zero-hit source/file-line evidence. These artifacts are evidence only
 and are not yet normalized into code `coverage-holes`. Questa's weighted total
 coverage remains a separate simulator-reported value.
 
+For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. VCS coverage merge/report normalization is still pending.
+
 ## Current CLI
 
 ```bash
@@ -113,6 +116,7 @@ zddv --project my_project add tb "tb/*.sv"
 
 zddv --project my_project config simulator verilator
 # or: zddv --project my_project config simulator questa
+# or: zddv --project my_project config simulator vcs
 zddv --project my_project config top tb_top
 
 zddv doctor
