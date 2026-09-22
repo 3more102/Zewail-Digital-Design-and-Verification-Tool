@@ -282,6 +282,16 @@ jobs:
           grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Generate portable UVM item instrumentation
+        run: |
+          zddv --project examples/counter uvm-item-instrument
+          test -s examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+          grep -q 'class zddv_instrumented_sequencer' examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+          grep -q 'virtual task wait_for_grant' examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+          grep -q 'virtual function void send_request' examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+          grep -q 'virtual function void item_done' examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+          grep -q 'virtual function void put_response' examples/counter/.zddv/uvm/instrumentation/zddv_uvm_item_instrumentation.svh
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
