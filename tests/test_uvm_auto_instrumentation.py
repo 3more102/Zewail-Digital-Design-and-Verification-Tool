@@ -96,6 +96,25 @@ def test_generator_can_skip_source_registration(tmp_path: Path):
     assert load_project(project.root).tb == ["tb/*.sv"]
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        "tb/zddv_uvm_sequence_trace_pkg.sv",
+        "tb/zddv_uvm_item_trace_pkg.sv",
+    ],
+)
+def test_generator_rejects_adapter_helper_path_collision(
+    tmp_path: Path,
+    output: str,
+):
+    project = initialize_project(tmp_path / "demo")
+
+    with pytest.raises(ValueError, match="distinct"):
+        write_uvm_auto_instrumentation(project, output=output)
+
+    assert not (project.root / output).exists()
+
+
 def test_generator_rejects_external_registered_path_before_writing(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     outside = tmp_path / "outside.sv"
