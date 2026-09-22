@@ -132,10 +132,10 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 ## v0.7 — Formal
 
 - [x] Formal adapter API.
-- [ ] Bounded checks.
+- [x] Finite-depth bounded checks through SymbiYosys BMC with retained run evidence.
 - [x] Normalized property/cover result persistence and history.
 - [ ] Tool-specific formal result ingestion.
-- [ ] Counterexample artifact model.
+- [x] Counterexample/witness artifact model core (normalized evidence contract).\n- [ ] Tool-specific counterexample/witness trace translation.
 - [ ] Formal coverage.
 
 ## v0.8 — Intelligent Debug
