@@ -44,6 +44,7 @@ from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.formal.sby_results import analyze_sby_log
 from zddv.lint import lint_project
+from zddv.model_provider import invoke_model_provider
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
 from zddv.protocols.axi4 import analyze_axi4_file
@@ -410,6 +411,36 @@ def cmd_ai_rca_context(args) -> int:
     print("External transmission: disabled")
     print("Automatic model invocation: disabled")
     print(f"Evidence SHA-256: {result['provenance']['evidence_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_provider_run(args) -> int:
+    project = load_project(_project_arg(args))
+    result = invoke_model_provider(
+        project,
+        context_path=args.context,
+        provider=args.provider,
+        expected_evidence_sha256=args.expected_evidence_sha256,
+        approve_external_transmission=args.approve_external_transmission,
+        output=args.output,
+        endpoint=args.endpoint,
+        model=args.model,
+        api_key_env=args.api_key_env,
+        timeout_seconds=args.timeout_seconds,
+        max_response_bytes=args.max_response_bytes,
+    )
+    transport = result["response"].get("transport", {})
+    status = transport.get("http_status", "adapter")
+    print(
+        f"AI PROVIDER RAW RESPONSE: provider={result['provider']} "
+        f"status={status}"
+    )
+    print(f"Evidence SHA-256: {result['context']['evidence_sha256']}")
+    print(f"Response SHA-256: {result['provenance']['response_sha256']}")
+    print("Schema validated: no")
+    print("Response trusted: no")
+    print("Human review required: yes")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2744,6 +2775,64 @@ def build_parser() -> argparse.ArgumentParser:
         help="Provider-neutral evidence bundle JSON path",
     )
     p_ai_context.set_defaults(func=cmd_ai_rca_context)
+
+    p_ai_provider = sub.add_parser(
+        "ai-provider-run",
+        help="Explicitly send a reviewed AI RCA context to a registered model-provider adapter",
+    )
+    p_ai_provider.add_argument(
+        "--context",
+        default=".zddv/debug/ai-rca-context.json",
+        help="Reviewed AI RCA context JSON path",
+    )
+    p_ai_provider.add_argument(
+        "--provider",
+        default="http-json",
+        help="Registered provider adapter name",
+    )
+    p_ai_provider.add_argument(
+        "--endpoint",
+        default=None,
+        help="HTTP JSON provider endpoint; HTTPS required except localhost loopback",
+    )
+    p_ai_provider.add_argument(
+        "--model",
+        default=None,
+        help="Optional provider model identifier passed through without interpretation",
+    )
+    p_ai_provider.add_argument(
+        "--api-key-env",
+        default="ZDDV_MODEL_API_KEY",
+        help="Environment variable containing an optional bearer token; never persisted",
+    )
+    p_ai_provider.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=60.0,
+        help="Provider request timeout in seconds",
+    )
+    p_ai_provider.add_argument(
+        "--max-response-bytes",
+        type=int,
+        default=2_000_000,
+        help="Maximum raw provider response size retained by ZDDV",
+    )
+    p_ai_provider.add_argument(
+        "--expected-evidence-sha256",
+        required=True,
+        help="Exact SHA-256 printed by ai-rca-context after human review",
+    )
+    p_ai_provider.add_argument(
+        "--approve-external-transmission",
+        action="store_true",
+        help="Explicit opt-in to transmit the reviewed context to the selected adapter",
+    )
+    p_ai_provider.add_argument(
+        "--output",
+        default=".zddv/debug/ai-provider-response.json",
+        help="Raw untrusted provider response artifact path",
+    )
+    p_ai_provider.set_defaults(func=cmd_ai_provider_run)
 
     p_generated_stage = sub.add_parser(
         "generated-stage",
