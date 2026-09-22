@@ -144,6 +144,18 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("AXI4 trace must contain a 'samples' list")
 
     samples = [_normalize_sample(sample, index) for index, sample in enumerate(raw_samples)]
+    write_data_bus_bytes = payload.get("write_data_bus_bytes")
+    if write_data_bus_bytes is not None:
+        if (
+            isinstance(write_data_bus_bytes, bool)
+            or not isinstance(write_data_bus_bytes, int)
+            or write_data_bus_bytes not in {1, 2, 4, 8, 16, 32, 64, 128}
+        ):
+            raise ValueError(
+                "write_data_bus_bytes must be one of "
+                "1, 2, 4, 8, 16, 32, 64, or 128"
+            )
+
     violations: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
 
@@ -421,6 +433,23 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         beats = length + 1 if valid_len else 1
         beat_bytes = 1 << size if valid_size else None
 
+        if (
+            prefix == "AW"
+            and write_data_bus_bytes is not None
+            and beat_bytes is not None
+            and beat_bytes > write_data_bus_bytes
+        ):
+            add_violation(
+                "write_transfer_exceeds_bus_width",
+                sample,
+                "AWSIZE selects a transfer wider than the write data bus",
+                channel="AW",
+                transaction_index=index,
+                signal="AWSIZE",
+                expected=f"<= {write_data_bus_bytes} byte(s) per beat",
+                actual=beat_bytes,
+            )
+
         if burst in {"FIXED", "WRAP"} and beats > 16:
             add_violation(
                 "burst_length_not_supported_for_type", sample,
@@ -611,6 +640,76 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 current = wrap_base
         return result
 
+    def validate_write_strobes(
+        request: dict[str, Any],
+        beats: list[dict[str, Any]],
+    ) -> None:
+        if write_data_bus_bytes is None:
+            return
+
+        full_mask = (1 << write_data_bus_bytes) - 1
+        addresses = burst_addresses(request, len(beats))
+        beat_bytes = request.get("beat_bytes")
+
+        for beat_index, beat in enumerate(beats):
+            strobe = beat.get("strb")
+            sample = beat["sample"]
+            if (
+                isinstance(strobe, bool)
+                or not isinstance(strobe, int)
+                or not 0 <= strobe <= full_mask
+            ):
+                add_violation(
+                    "invalid_wstrb_value",
+                    sample,
+                    "WSTRB must fit the configured write-data bus width",
+                    channel="W",
+                    transaction_index=request["index"],
+                    signal="WSTRB",
+                    expected=f"0..0x{full_mask:X}",
+                    actual=strobe,
+                )
+                continue
+
+            if (
+                addresses is None
+                or beat_bytes is None
+                or beat_bytes > write_data_bus_bytes
+            ):
+                continue
+
+            address = addresses[beat_index]
+            aligned_address = address - (address % beat_bytes)
+            lower_lane = address % write_data_bus_bytes
+            upper_lane = (
+                aligned_address + beat_bytes - 1
+            ) % write_data_bus_bytes
+            if upper_lane < lower_lane:
+                allowed_mask = (
+                    ((1 << (write_data_bus_bytes - lower_lane)) - 1)
+                    << lower_lane
+                )
+            else:
+                allowed_mask = (
+                    (1 << (upper_lane - lower_lane + 1)) - 1
+                ) << lower_lane
+
+            illegal_lanes = strobe & ~allowed_mask
+            if illegal_lanes:
+                add_violation(
+                    "wstrb_outside_transfer_lanes",
+                    sample,
+                    (
+                        f"WSTRB enables byte lane(s) outside the valid "
+                        f"transfer lanes on write beat {beat_index + 1}"
+                    ),
+                    channel="W",
+                    transaction_index=request["index"],
+                    signal="WSTRB",
+                    expected=f"subset of 0x{allowed_mask:X}",
+                    actual=strobe,
+                )
+
     def pair_write_bursts() -> None:
         while aw_queue and completed_w_bursts:
             request = aw_queue.popleft()
@@ -631,6 +730,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     channel="W", transaction_index=request["index"],
                     signal="WLAST", expected=f"beat {expected}", actual=f"beat {observed}",
                 )
+            validate_write_strobes(request, beats)
             pending_write_responses[request["id"]].append(
                 {"request": request, "beats": beats}
             )
@@ -947,7 +1047,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands_wstrb",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
         "summary": {
@@ -973,10 +1073,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION, and AxREGION is checked for 4KB-space consistency.",
+            "When write_data_bus_bytes is provided or extracted from VCD, WSTRB width and per-beat byte-lane legality are checked.",
             "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
+    if write_data_bus_bytes is not None:
+        result["write_data_bus_bytes"] = write_data_bus_bytes
     if isinstance(payload.get("waveform"), dict):
         result["waveform"] = payload["waveform"]
     return result
