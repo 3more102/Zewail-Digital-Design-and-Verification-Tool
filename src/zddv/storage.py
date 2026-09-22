@@ -181,6 +181,52 @@ CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequence
 CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequencer
     ON uvm_sequence_events(sequencer_name);
 
+CREATE TABLE IF NOT EXISTS uvm_sequence_lifecycle_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    sequence_count INTEGER NOT NULL,
+    event_count INTEGER NOT NULL,
+    violation_count INTEGER NOT NULL,
+    finished_count INTEGER NOT NULL,
+    stopped_count INTEGER NOT NULL,
+    active_count INTEGER NOT NULL,
+    run_id TEXT,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_lifecycle_created
+    ON uvm_sequence_lifecycle_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_lifecycle_status
+    ON uvm_sequence_lifecycle_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_lifecycle_run
+    ON uvm_sequence_lifecycle_snapshots(run_id);
+
+CREATE TABLE IF NOT EXISTS uvm_sequence_state_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    sequence_id TEXT NOT NULL,
+    sequence_name TEXT NOT NULL,
+    sequencer TEXT,
+    parent_sequence_id TEXT,
+    state TEXT NOT NULL,
+    time_text TEXT,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_state_events_sequence
+    ON uvm_sequence_state_events(snapshot_id, sequence_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_state_events_state
+    ON uvm_sequence_state_events(state);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -848,6 +894,135 @@ def list_uvm_sequence_events(
             (snapshot_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def record_uvm_sequence_lifecycle_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_sequence_lifecycle_snapshots (
+                snapshot_id, created_at, project, source, status,
+                sequence_count, event_count, violation_count,
+                finished_count, stopped_count, active_count, run_id,
+                input_path, normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record["status"],
+                int(summary["sequences"]),
+                int(summary["events"]),
+                int(summary["violations"]),
+                int(summary["finished"]),
+                int(summary["stopped"]),
+                int(summary["active"]),
+                record.get("run_id"),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_sequence_state_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_sequence_state_events (
+                snapshot_id, event_index, sequence_id, sequence_name,
+                sequencer, parent_sequence_id, state, time_text, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["sequence_id"],
+                    item["sequence"],
+                    item.get("sequencer"),
+                    item.get("parent_sequence_id"),
+                    item["state"],
+                    item.get("time"),
+                    json.dumps(item.get("metadata", {}), sort_keys=True),
+                )
+                for item in record["events"]
+            ],
+        )
+    return path
+
+
+def list_uvm_sequence_lifecycle_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM sequence status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, status,
+               sequence_count, event_count, violation_count,
+               finished_count, stopped_count, active_count, run_id,
+               input_path, normalized_path, report_path
+        FROM uvm_sequence_lifecycle_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_sequence_state_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    sequence_id: str | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT snapshot_id, event_index, sequence_id, sequence_name,
+               sequencer, parent_sequence_id, state, time_text, metadata_json
+        FROM uvm_sequence_state_events
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if sequence_id is not None:
+        query += " AND sequence_id = ?"
+        params.append(sequence_id)
+    query += " ORDER BY event_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
 
 
 def record_functional_coverage_snapshot(
