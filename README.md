@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
 
-> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4 with core exclusive-access checks, async-FIFO CDC invariants, and public UCIe FLIT/link-health analysis**
+> Status: **v0.6 UVM result ingestion started — simulator-independent UVM log parsing/storage is implemented on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -35,6 +35,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
+- Simulator-independent UVM report-log ingestion with normalized severity/test metadata and SQLite history
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
@@ -120,6 +121,8 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
+zddv --project my_project uvm-analyze simulation.log --source questa
+zddv --project my_project uvm-history --limit 20
 zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
@@ -309,7 +312,8 @@ separately from Verilator's annotation threshold.
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
-- [ ] UVM-aware result model
+- [x] UVM report-log/result ingestion foundation
+- [ ] Sequence/phase/objection-aware UVM result model
 
 ### APB Trace Analysis
 
