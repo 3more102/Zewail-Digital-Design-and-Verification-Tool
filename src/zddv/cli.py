@@ -33,6 +33,7 @@ from zddv.formal import (
     write_formal_cover_coverage_report,
 )
 from zddv.formal.counterexample import ingest_formal_counterexample
+from zddv.formal.trace_crossprobe import write_formal_trace_crossprobe_report
 from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.formal.sby_results import analyze_sby_log
@@ -538,6 +539,43 @@ def cmd_formal_vcd_trace(args) -> int:
     print(f"Input SHA-256: {result['input_sha256']}")
     print(f"Normalized trace: {result['normalized_path']}")
     return 0
+
+
+def cmd_formal_trace_crossprobe(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_formal_trace_crossprobe_report(
+        project,
+        args.path,
+        selectors=args.signal,
+        max_signals=args.max_signals,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL TRACE CROSSPROBE: property={result['property']} "
+        f"trace={result['trace_kind']} signals={summary['selected_signals']}"
+    )
+    print(
+        f"Matched/Partial/Unresolved: {summary['matched']}/"
+        f"{summary['partial']}/{summary['unresolved']}"
+    )
+    for item in result["signals"][: args.show]:
+        crossprobe = item.get("crossprobe")
+        label = item["signal"]
+        if crossprobe is not None:
+            source = crossprobe.get("source")
+            declaration = None if source is None else source.get("declaration")
+            if declaration is not None:
+                label += f" -> {declaration['file']}:{declaration['line']}"
+            elif crossprobe.get("hierarchy") is not None:
+                label += f" -> {crossprobe['hierarchy']['design_path']}"
+        if item.get("error"):
+            label += f" error={item['error']}"
+        print(f"[{item['status']}] {label}")
+    if len(result["signals"]) > args.show:
+        print(f"... {len(result['signals']) - args.show} more signal(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if summary["unresolved"] == 0 else 1
 
 
 def cmd_formal_sby_analyze(args) -> int:
@@ -2531,6 +2569,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalized formal trace JSON output path",
     )
     p_formal_vcd_trace.set_defaults(func=cmd_formal_vcd_trace)
+
+    p_formal_trace_crossprobe = sub.add_parser(
+        "formal-trace-crossprobe",
+        help="Cross-probe normalized formal trace signals to RTL source/connectivity",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON trace",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--signal",
+        action="append",
+        default=[],
+        help="Optional full signal path or unique short name; repeat to select signals",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--max-signals",
+        type=int,
+        default=256,
+        help="Maximum formal trace signals to cross-probe in one report",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum signal mappings to print",
+    )
+    p_formal_trace_crossprobe.add_argument(
+        "--output",
+        default=".zddv/formal/crossprobe/latest.json",
+        help="Formal trace cross-probe JSON report path",
+    )
+    p_formal_trace_crossprobe.set_defaults(func=cmd_formal_trace_crossprobe)
 
     p_formal_sby = sub.add_parser(
         "formal-sby-analyze",
