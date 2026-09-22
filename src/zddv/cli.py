@@ -366,18 +366,26 @@ def cmd_coverage(args) -> int:
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
-    metrics = result["metrics"]
-    print(
-        f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
-        f"({metrics['hit_rate']:.1f}%)"
-    )
-    if metrics.get("tool_total_coverage") is not None:
+    metrics = result.get("metrics")
+    if metrics is not None:
         print(
-            "Simulator-reported total coverage: "
-            f"{metrics['tool_total_coverage']:.2f}%"
+            f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
+            f"({metrics['hit_rate']:.1f}%)"
         )
-    print(f"Metrics: {result['metrics_path']}")
-    print(f"Snapshot: {result['snapshot_id']}")
+        if metrics.get("tool_total_coverage") is not None:
+            print(
+                "Simulator-reported total coverage: "
+                f"{metrics['tool_total_coverage']:.2f}%"
+            )
+        print(f"Metrics: {result['metrics_path']}")
+        if result.get("snapshot_id"):
+            print(f"Snapshot: {result['snapshot_id']}")
+    else:
+        print(
+            "Coverage metrics: "
+            f"{result.get('metrics_status', 'not-normalized')}"
+        )
+        print(f"Coverage evidence: {result['metrics_path']}")
     if result.get("functional_snapshot_id"):
         print(f"Functional coverage bins: {result.get('functional_bins', 0)}")
         print(f"Functional snapshot: {result['functional_snapshot_id']}")
