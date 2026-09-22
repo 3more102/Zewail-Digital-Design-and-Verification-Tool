@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -98,6 +99,134 @@ def parse_verilator_coverage(path: str | Path) -> list[dict]:
             }
         )
     return points
+
+
+def _xml_local_name(element: ET.Element) -> str:
+    return element.tag.rsplit("}", 1)[-1].lower()
+
+
+def _questa_code_point_type(tag: str) -> str | None:
+    aliases = {
+        "stmt": "statement",
+        "statement": "statement",
+        "branch": "branch",
+        "br": "branch",
+        "condition": "condition",
+        "cond": "condition",
+        "expression": "expression",
+        "expr": "expression",
+        "toggle": "toggle",
+        "tog": "toggle",
+        "fsmstate": "fsm_state",
+        "fsm_state": "fsm_state",
+        "fsmtransition": "fsm_transition",
+        "fsm_transition": "fsm_transition",
+    }
+    return aliases.get(tag)
+
+
+def parse_questa_code_coverage_xml(path: str | Path) -> list[dict]:
+    """Normalize explicit point records from a detailed Questa XML report.
+
+    The parser is intentionally evidence-driven: only XML elements with a known
+    code-coverage tag and an explicit hit/count attribute become ZDDV points.
+    """
+    source = Path(path)
+    root = ET.parse(source).getroot()
+    instances = [
+        element
+        for element in root.iter()
+        if _xml_local_name(element) in {"instance", "instancedata"}
+    ]
+    scopes = instances or [root]
+    points_by_name: dict[str, dict] = {}
+
+    for scope_index, scope in enumerate(scopes):
+        attrs = {str(key).lower(): str(value) for key, value in scope.attrib.items()}
+        scope_path = (
+            attrs.get("path")
+            or attrs.get("name")
+            or attrs.get("du")
+            or f"scope-{scope_index}"
+        )
+
+        files: dict[str, str] = {}
+        for element in scope.iter():
+            if _xml_local_name(element) not in {"file", "filemap"}:
+                continue
+            file_attrs = {
+                str(key).lower(): str(value) for key, value in element.attrib.items()
+            }
+            file_id = (
+                file_attrs.get("fn")
+                or file_attrs.get("id")
+                or file_attrs.get("index")
+            )
+            file_path = file_attrs.get("path") or file_attrs.get("name")
+            if file_id is not None and file_path:
+                files[file_id] = file_path
+
+        for element_index, element in enumerate(scope.iter()):
+            xml_tag = _xml_local_name(element)
+            kind = _questa_code_point_type(xml_tag)
+            if kind is None:
+                continue
+
+            point_attrs = {
+                str(key).lower(): str(value) for key, value in element.attrib.items()
+            }
+            raw_hits = point_attrs.get("hits") or point_attrs.get("count")
+            if raw_hits is None:
+                continue
+            try:
+                hits = int(raw_hits.replace(",", ""))
+            except ValueError:
+                continue
+
+            file_id = point_attrs.get("fn") or point_attrs.get("file")
+            file_path = files.get(file_id or "", file_id or "")
+            line_text = point_attrs.get("ln") or point_attrs.get("line")
+            line: int | str | None
+            if line_text is None:
+                line = None
+            elif line_text.isdigit():
+                line = int(line_text)
+            else:
+                line = line_text
+
+            item_id = (
+                point_attrs.get("name")
+                or point_attrs.get("signal")
+                or point_attrs.get("id")
+                or point_attrs.get("st")
+                or point_attrs.get("index")
+                or str(element_index)
+            )
+            location = [scope_path]
+            if file_path:
+                location.append(file_path)
+            if line is not None:
+                location.append(f"line:{line}")
+            location.append(f"{kind}:{item_id}")
+            name = "::".join(location)
+
+            point = {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": kind,
+                "metadata": {
+                    "scope": scope_path,
+                    "file": file_path or None,
+                    "line": line,
+                    "xml_tag": xml_tag,
+                },
+            }
+            previous = points_by_name.get(name)
+            if previous is None or hits > int(previous["count"]):
+                points_by_name[name] = point
+
+    return list(points_by_name.values())
 
 
 def summarize_coverage_points(points: list[dict]) -> dict:
@@ -322,6 +451,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     metrics_path = out_dir / "metrics.json"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
+    code_report_path = out_dir / "code.xml"
+    points_path = out_dir / "points.json"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -349,6 +480,44 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         raise RuntimeError(
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
+
+    if code_report_path.exists():
+        code_report_path.unlink()
+    if points_path.exists():
+        points_path.unlink()
+
+    code_cmd = [
+        tool,
+        "report",
+        "-xml",
+        "-details",
+        "-zeros",
+        "-codeAll",
+        "-output",
+        str(code_report_path),
+        str(merged_path),
+    ]
+    code_report = _run(code_cmd, project.root)
+    code_capture = "unavailable"
+    code_error: str | None = None
+    code_points: list[dict] = []
+    if code_report.returncode == 0 and code_report_path.exists():
+        try:
+            code_points = parse_questa_code_coverage_xml(code_report_path)
+            points_path.write_text(
+                json.dumps(code_points, indent=2),
+                encoding="utf-8",
+            )
+            code_capture = "xml" if code_points else "xml_no_points"
+        except (ET.ParseError, OSError, ValueError) as exc:
+            code_capture = "invalid_xml"
+            code_error = str(exc)
+            if points_path.exists():
+                points_path.unlink()
+    else:
+        code_error = (code_report.stdout or "").strip() or None
+        if code_report_path.exists():
+            code_report_path.unlink()
 
     functional_cmd = [tool, "report", "-cvg", "-details", str(merged_path)]
     functional_report = _run(functional_cmd, project.root)
@@ -393,6 +562,16 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "code_report": (
+            str(code_report_path)
+            if code_capture in {"xml", "xml_no_points"}
+            else None
+        ),
+        "code_capture": code_capture,
+        "code_points": len(code_points),
+        "points": str(points_path) if points_path.exists() else None,
+        "code_command": code_cmd,
+        "code_error": code_error,
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -408,6 +587,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "inputs": inputs,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "points_path": str(points_path),
         "metrics_path": str(metrics_path),
         "report": report.stdout,
         "metrics": metrics,
@@ -415,6 +595,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "code_report": payload["code_report"],
+        "code_capture": code_capture,
+        "code_points": len(code_points),
+        "points_path": payload["points"],
+        "code_error": code_error,
     }
 
 
@@ -440,6 +625,7 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
     merged_path = out_dir / "coverage.dat"
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
+    points_path = out_dir / "points.json"
     inputs = [str(path) for path in coverage_files]
 
     # Verilator 5.020 uses the legacy -write/-read form. New releases accept
@@ -470,6 +656,7 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         raise RuntimeError(f"Coverage report failed. See {summary_path}")
 
     points = parse_verilator_coverage(merged_path)
+    points_path.write_text(json.dumps(points, indent=2), encoding="utf-8")
     metrics = summarize_coverage_points(points)
     if metrics["total_points"] == 0:
         raise RuntimeError(
@@ -491,6 +678,7 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "points": str(points_path),
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -511,6 +699,28 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
+
+
+def load_normalized_coverage_points(project: ProjectConfig) -> list[dict]:
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    points_path = out_dir / "points.json"
+    if points_path.exists():
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(
+                f"Normalized coverage points are invalid: {points_path}"
+            )
+        return payload
+
+    if project.simulator.strip().lower() == "verilator":
+        legacy_path = out_dir / "coverage.dat"
+        if legacy_path.exists():
+            return parse_verilator_coverage(legacy_path)
+
+    raise RuntimeError(
+        f"Normalized code-coverage points not found under {out_dir}. "
+        "Run 'zddv coverage' first; for Questa, detailed XML export must be available."
+    )
 
 
 def merge_coverage(project: ProjectConfig) -> dict:
