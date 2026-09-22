@@ -41,6 +41,7 @@ package zddv_uvm_auto_trace_pkg;
     protected string zddv_trace_id;
     protected string zddv_trace_sequencer;
     protected string zddv_item_by_transaction[int];
+    protected bit zddv_transaction_ambiguous[int];
 
     function new(string name = "zddv_instrumented_sequence");
       super.new(name);
@@ -131,6 +132,7 @@ package zddv_uvm_auto_trace_pkg;
       );
       zddv_trace_sequencer = zddv_sequencer_label(sequencer);
       zddv_item_by_transaction.delete();
+      zddv_transaction_ambiguous.delete();
 
       zddv_emit_sequence_state("UVM_CREATED");
       super.start(sequencer, parent_sequence, this_priority, call_pre_post);
@@ -206,14 +208,21 @@ package zddv_uvm_auto_trace_pkg;
 
       if (item != null) begin
         transaction_id = item.get_transaction_id();
-        if (transaction_id >= 0)
-          zddv_item_by_transaction[transaction_id] = item_id;
+        if (transaction_id >= 0) begin
+          if (zddv_item_by_transaction.exists(transaction_id)) begin
+            if (zddv_item_by_transaction[transaction_id] != item_id)
+              zddv_transaction_ambiguous[transaction_id] = 1'b1;
+          end
+          else begin
+            zddv_item_by_transaction[transaction_id] = item_id;
+          end
+        end
         zddv_emit_item_event("ITEM_DONE", item, item.get_sequencer(), item_id);
       end
     endtask
 
     // UVM 1800.2-2020 14.3.3.3. A response is linked back to the original
-    // request when an explicit transaction_id matches one observed above.
+    // request only when an explicit transaction_id maps unambiguously to one request.
     virtual task get_response(
       output RSP response,
       input int transaction_id = -1
@@ -226,7 +235,8 @@ package zddv_uvm_auto_trace_pkg;
         observed_transaction_id = response.get_transaction_id();
         if (
           (observed_transaction_id >= 0) &&
-          zddv_item_by_transaction.exists(observed_transaction_id)
+          zddv_item_by_transaction.exists(observed_transaction_id) &&
+          !zddv_transaction_ambiguous.exists(observed_transaction_id)
         )
           item_id = zddv_item_by_transaction[observed_transaction_id];
         else
@@ -404,6 +414,7 @@ def write_uvm_auto_instrumentation(
             "Overriding start/pre_start/pre_body/post_body/post_start without calling super bypasses the corresponding adapter markers.",
             "Automatic item markers cover inherited start_item/finish_item/get_response calls.",
             "Direct wait_for_grant/send_request flows and response_handler callbacks require explicit instrumentation.",
+            "Duplicate transaction IDs are treated as ambiguous rather than forcing response-to-request correlation.",
             "No hidden sequencer queues, arbitration policy, lock/grab state, or vendor transcript semantics are inferred.",
         ],
     }
