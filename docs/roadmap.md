@@ -96,12 +96,12 @@ simulation runs; and exposes `uvm-analyze` plus `uvm-history`. The Questa founda
 native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD capture, assertion
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented;
-item-level UCDB normalization/holes remain planned; phase/objection lifecycle normalization is implemented, while sequence-aware UVM semantics remain planned.
+item-level XML normalization/coverage-hole reporting and phase/objection lifecycle normalization are implemented, while sequence-aware UVM semantics remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
 - [x] Questa UCDB merge and summary-level ZDDV coverage reporting.
-- [ ] Questa item-level UCDB normalization and coverage-hole reporting.
+- [x] Questa item-level XML normalization and coverage-hole reporting.
 - [ ] VCS execution adapter.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
