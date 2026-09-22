@@ -72,18 +72,19 @@ def _staged_source_name(project: ProjectConfig, source: Path, index: int) -> str
     return Path(*parts).as_posix()
 
 
-def render_sby_bmc_config(
+def _render_sby_config(
     project: ProjectConfig,
     request: FormalCheckRequest,
 ) -> str:
-    """Render one bounded SymbiYosys job without inferring proof semantics."""
-    if request.mode != "bmc":
-        raise ValueError("SymbiYosys bounded execution currently supports bmc mode only")
+    if request.mode not in {"bmc", "cover"}:
+        raise ValueError(
+            "SymbiYosys direct execution currently supports bmc and cover modes only"
+        )
     if request.depth is None:
-        raise ValueError("SymbiYosys bounded checks require an explicit depth")
+        raise ValueError("SymbiYosys finite-depth checks require an explicit depth")
     if request.properties:
         raise ValueError(
-            "SymbiYosys property filters are not supported by the bounded backend yet"
+            "SymbiYosys property filters are not supported by the direct backend yet"
         )
 
     sources = project.source_files()
@@ -124,7 +125,7 @@ def render_sby_bmc_config(
     return "\n".join(
         [
             "[options]",
-            "mode bmc",
+            f"mode {request.mode}",
             f"depth {request.depth}",
             *(
                 [f"timeout {max(1, math.ceil(request.timeout_s))}"]
@@ -145,6 +146,26 @@ def render_sby_bmc_config(
     )
 
 
+def render_sby_bmc_config(
+    project: ProjectConfig,
+    request: FormalCheckRequest,
+) -> str:
+    """Render one finite-depth SymbiYosys BMC job."""
+    if request.mode != "bmc":
+        raise ValueError("SymbiYosys bounded execution supports bmc mode only")
+    return _render_sby_config(project, request)
+
+
+def render_sby_cover_config(
+    project: ProjectConfig,
+    request: FormalCheckRequest,
+) -> str:
+    """Render one finite-depth SymbiYosys cover-reachability job."""
+    if request.mode != "cover":
+        raise ValueError("SymbiYosys cover execution supports cover mode only")
+    return _render_sby_config(project, request)
+
+
 def _normalized_sby_status(outcome: _ProcessOutcome) -> str:
     if outcome.timed_out:
         return "UNKNOWN"
@@ -159,8 +180,16 @@ def _normalized_sby_status(outcome: _ProcessOutcome) -> str:
     return "UNKNOWN"
 
 
-def parse_sby_status_jsonl(text: str) -> tuple[FormalPropertyResult, ...]:
-    """Normalize documented SBY JSONL rows for assertion property status."""
+def parse_sby_status_jsonl(
+    text: str,
+    *,
+    mode: str = "bmc",
+) -> tuple[FormalPropertyResult, ...]:
+    """Normalize documented SBY JSONL rows for direct-run property status."""
+
+    mode = str(mode).strip().lower()
+    if mode not in {"bmc", "cover"}:
+        raise ValueError("SBY JSONL normalization supports bmc and cover modes only")
 
     properties: dict[str, FormalPropertyResult] = {}
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
@@ -180,38 +209,53 @@ def parse_sby_status_jsonl(text: str) -> tuple[FormalPropertyResult, ...]:
             )
 
         kind = str(row.get("kind", "")).strip().upper()
-        if kind != "ASSERT":
+        expected_kind = "ASSERT" if mode == "bmc" else "COVER"
+        if kind != expected_kind:
             continue
 
         name = row.get("name")
         if not isinstance(name, str) or not name.strip():
             raise ValueError(
-                f"SBY assertion status line {line_number} is missing a property name"
+                f"SBY {kind.lower()} status line {line_number} "
+                "is missing a property name"
             )
 
         raw_status = str(row.get("status", "")).strip().upper()
         if raw_status not in {"PASS", "FAIL", "UNKNOWN", "ERROR"}:
             continue
 
+        if mode == "cover":
+            normalized_status = {
+                "PASS": "COVERED",
+                "FAIL": "UNCOVERED",
+                "UNKNOWN": "UNKNOWN",
+                "ERROR": "ERROR",
+            }[raw_status]
+            normalized_kind = "cover"
+        else:
+            normalized_status = raw_status
+            normalized_kind = "assert"
+
         depth = row.get("depth")
         if depth is not None:
             if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
                 raise ValueError(
-                    f"SBY assertion status line {line_number} has invalid depth"
+                    f"SBY {kind.lower()} status line {line_number} has invalid depth"
                 )
 
         trace_path = row.get("trace")
         if trace_path is not None:
             if not isinstance(trace_path, str) or not trace_path.strip():
                 raise ValueError(
-                    f"SBY assertion status line {line_number} has invalid trace path"
+                    f"SBY {kind.lower()} status line {line_number} "
+                    "has invalid trace path"
                 )
             trace_path = Path(trace_path)
 
         item = FormalPropertyResult(
             name=name.strip(),
-            kind="assert",
-            status=raw_status,
+            kind=normalized_kind,
+            status=normalized_status,
             depth=depth,
             trace_path=trace_path,
         )
@@ -230,6 +274,7 @@ def _query_sby_property_statuses(
     *,
     project: ProjectConfig,
     run_dir: Path,
+    mode: str,
     timeout_s: float | None,
 ) -> tuple[tuple[FormalPropertyResult, ...], Path]:
     command = [
@@ -249,7 +294,7 @@ def _query_sby_property_statuses(
         artifact = run_dir / "property-status.jsonl"
         artifact.write_text(outcome.output, encoding="utf-8")
         try:
-            return parse_sby_status_jsonl(outcome.output), artifact
+            return parse_sby_status_jsonl(outcome.output, mode=mode), artifact
         except ValueError:
             # Keep malformed/unsupported native evidence, but do not promote it.
             return (), artifact
@@ -265,7 +310,7 @@ def _query_sby_property_statuses(
 
 
 class SymbiYosysBackend(FormalBackend):
-    """First concrete ZDDV formal backend: finite-depth SymbiYosys BMC."""
+    """Concrete finite-depth SymbiYosys backend for BMC and cover reachability."""
 
     name = "sby"
 
@@ -297,12 +342,19 @@ class SymbiYosysBackend(FormalBackend):
         request: FormalCheckRequest,
     ) -> FormalCheckResult:
         executable = self._executable()
-        config_text = render_sby_bmc_config(project, request)
+        if request.mode == "bmc":
+            config_text = render_sby_bmc_config(project, request)
+        elif request.mode == "cover":
+            config_text = render_sby_cover_config(project, request)
+        else:
+            raise ValueError(
+                "SymbiYosys direct execution currently supports bmc and cover modes only"
+            )
 
         root = (project.root / ".zddv" / "formal" / "sby").resolve()
         root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        run_id = f"bmc-{stamp}"
+        run_id = f"{request.mode}-{stamp}"
         config_path = root / f"{run_id}.sby"
         run_dir = root / run_id
         config_path.write_text(config_text, encoding="utf-8")
@@ -339,6 +391,7 @@ class SymbiYosysBackend(FormalBackend):
                 executable,
                 project=project,
                 run_dir=run_dir,
+                mode=request.mode,
                 timeout_s=request.timeout_s,
             )
             artifacts.append(status_artifact)

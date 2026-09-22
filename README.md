@@ -11,7 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
-- Formal adapter API with normalized check/property/result contracts, persisted evidence history, and finite-depth SymbiYosys BMC execution
+- Formal adapter API with normalized check/property/result contracts, persisted evidence history, finite-depth SymbiYosys BMC execution, and direct cover-property reachability
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -145,6 +145,7 @@ zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
 zddv --project my_project formal-bmc --depth 20
+zddv --project my_project formal-cover --depth 20
 zddv --project my_project formal-history --limit 20
 
 zddv --project my_project run
