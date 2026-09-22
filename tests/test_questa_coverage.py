@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from zddv.cli import cmd_coverage
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
@@ -216,3 +217,36 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert len(holes) == 1
     assert holes[0]["coverpoint"] == "APB_cg::type_cp"
     assert holes[0]["bin_name"] == "write"
+
+
+def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    monkeypatch.setattr(
+        "zddv.cli.merge_coverage",
+        lambda loaded: {
+            "inputs": ["run-a/coverage.ucdb"],
+            "merged": "/tmp/coverage.ucdb",
+            "summary": "/tmp/summary.txt",
+            "metrics_path": "/tmp/metrics.json",
+            "metrics": {
+                "hit_points": 2,
+                "total_points": 3,
+                "hit_rate": 100.0 * 2 / 3,
+                "tool_total_coverage": 66.67,
+            },
+            "snapshot_id": "cov-test",
+            "report": "",
+            "functional_bins": 3,
+            "functional_snapshot_id": "fcov-test",
+            "functional_report": "/tmp/functional.txt",
+        },
+    )
+
+    rc = cmd_coverage(SimpleNamespace(project=str(project.root)))
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Functional coverage bins: 3" in output
+    assert "Functional snapshot: fcov-test" in output
+    assert "Functional report: /tmp/functional.txt" in output
