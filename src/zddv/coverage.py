@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -95,6 +96,141 @@ def parse_verilator_coverage(path: str | Path) -> list[dict]:
                 "count": count,
                 "hit": count > 0,
                 "type": type_match.group("kind") if type_match else "unknown",
+            }
+        )
+    return points
+
+
+def _xml_tag(element: ET.Element) -> str:
+    return element.tag.rsplit("}", 1)[-1].lower()
+
+
+def _questa_code_type(tag: str) -> str | None:
+    aliases = {
+        "stmt": "statement",
+        "statement": "statement",
+        "branch": "branch",
+        "br": "branch",
+        "condition": "condition",
+        "cond": "condition",
+        "expression": "expression",
+        "expr": "expression",
+        "toggle": "toggle",
+        "tog": "toggle",
+        "fsmstate": "fsm_state",
+        "fsm_state": "fsm_state",
+        "fsmtransition": "fsm_transition",
+        "fsm_transition": "fsm_transition",
+    }
+    return aliases.get(tag)
+
+
+def parse_questa_code_coverage_xml(path: str | Path) -> list[dict]:
+    """Normalize item-level code coverage from a vcover XML report."""
+    source = Path(path)
+    root = ET.parse(source).getroot()
+
+    instances = [
+        element
+        for element in root.iter()
+        if _xml_tag(element) in {"instance", "instancedata"}
+    ]
+    scopes = instances or [root]
+    points_by_name: dict[str, dict] = {}
+
+    for scope_index, scope in enumerate(scopes):
+        scope_path = str(
+            scope.attrib.get("path")
+            or scope.attrib.get("name")
+            or scope.attrib.get("du")
+            or f"scope-{scope_index}"
+        )
+        files: dict[str, str] = {}
+        for element in scope.iter():
+            if _xml_tag(element) not in {"file", "filemap"}:
+                continue
+            attrs = {str(key).lower(): str(value) for key, value in element.attrib.items()}
+            file_id = attrs.get("fn") or attrs.get("id") or attrs.get("index")
+            file_path = attrs.get("path") or attrs.get("name")
+            if file_id is not None and file_path:
+                files[file_id] = file_path
+
+        for element_index, element in enumerate(scope.iter()):
+            kind = _questa_code_type(_xml_tag(element))
+            if kind is None:
+                continue
+
+            attrs = {str(key).lower(): str(value) for key, value in element.attrib.items()}
+            raw_hits = attrs.get("hits") or attrs.get("count")
+            if raw_hits is None:
+                continue
+            try:
+                hits = int(raw_hits.replace(",", ""))
+            except ValueError:
+                continue
+
+            file_id = attrs.get("fn") or attrs.get("file")
+            file_path = files.get(file_id or "", file_id or "")
+            line = attrs.get("ln") or attrs.get("line")
+            item = (
+                attrs.get("name")
+                or attrs.get("signal")
+                or attrs.get("state")
+                or attrs.get("st")
+                or attrs.get("id")
+                or str(element_index)
+            )
+            location_parts = [scope_path]
+            if file_path:
+                location_parts.append(file_path)
+            if line:
+                location_parts.append(f"line:{line}")
+            location_parts.append(f"{kind}:{item}")
+            name = "::".join(location_parts)
+
+            point = {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": kind,
+                "metadata": {
+                    "scope": scope_path,
+                    "file": file_path or None,
+                    "line": int(line) if line and line.isdigit() else line,
+                    "xml_tag": _xml_tag(element),
+                },
+            }
+            previous = points_by_name.get(name)
+            if previous is None or hits > int(previous["count"]):
+                points_by_name[name] = point
+
+    return list(points_by_name.values())
+
+
+def _functional_payload_to_points(payload: dict) -> list[dict]:
+    points: list[dict] = []
+    for item in payload.get("bins", []):
+        hits = int(item["hits"])
+        goal = int(item["goal"])
+        name = "::".join(
+            part
+            for part in (
+                str(item.get("scope") or ""),
+                str(item.get("coverpoint") or ""),
+                str(item.get("bin") or ""),
+            )
+            if part
+        )
+        points.append(
+            {
+                "name": name,
+                "count": hits,
+                "hit": hits >= goal,
+                "type": "covergroup_bin",
+                "metadata": {
+                    "goal": goal,
+                    **dict(item.get("metadata") or {}),
+                },
             }
         )
     return points
@@ -320,6 +456,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
+    points_path = out_dir / "points.json"
+    code_report_path = out_dir / "code.xml"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
     inputs = [str(path) for path in coverage_files]
@@ -358,6 +496,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     )
     functional_snapshot_id = None
     functional_bins = 0
+    functional_payload = {"source": "questa-vcover", "bins": []}
     if functional_report.returncode == 0:
         functional_payload = parse_questa_functional_coverage_report(
             functional_report.stdout or ""
@@ -375,6 +514,47 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             )
             functional_snapshot_id = functional_record["snapshot_id"]
 
+    if code_report_path.exists():
+        code_report_path.unlink()
+    if points_path.exists():
+        points_path.unlink()
+
+    code_cmd = [
+        tool,
+        "report",
+        "-xml",
+        "-codeAll",
+        "-zeros",
+        "-output",
+        str(code_report_path),
+        str(merged_path),
+    ]
+    code_report = _run(code_cmd, project.root)
+    code_points: list[dict] = []
+    item_capture_status = "unavailable"
+    item_capture_error: str | None = None
+
+    if code_report.returncode == 0 and code_report_path.exists():
+        try:
+            code_points = parse_questa_code_coverage_xml(code_report_path)
+        except (ET.ParseError, OSError, ValueError) as exc:
+            item_capture_status = "parse_error"
+            item_capture_error = str(exc)
+        else:
+            item_capture_status = "ok" if code_points else "empty"
+    else:
+        item_capture_error = (
+            (code_report.stdout or "").strip()
+            or f"vcover XML report exited with status {code_report.returncode}"
+        )
+
+    points: list[dict] = []
+    item_metrics = None
+    if item_capture_status == "ok":
+        points = [*code_points, *_functional_payload_to_points(functional_payload)]
+        points_path.write_text(json.dumps(points, indent=2), encoding="utf-8")
+        item_metrics = summarize_coverage_points(points)
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -390,6 +570,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "points": str(points_path) if points_path.exists() else None,
+        "item_metrics": item_metrics,
+        "item_capture_status": item_capture_status,
+        "item_capture_error": item_capture_error,
+        "code_report": str(code_report_path) if code_report_path.exists() else None,
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -409,6 +594,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "merged": str(merged_path),
         "summary": str(summary_path),
         "metrics_path": str(metrics_path),
+        "points_path": str(points_path) if points_path.exists() else None,
+        "code_report": str(code_report_path) if code_report_path.exists() else None,
+        "item_metrics": item_metrics,
+        "item_capture_status": item_capture_status,
+        "item_capture_error": item_capture_error,
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
@@ -470,6 +660,8 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         raise RuntimeError(f"Coverage report failed. See {summary_path}")
 
     points = parse_verilator_coverage(merged_path)
+    points_path = out_dir / "points.json"
+    points_path.write_text(json.dumps(points, indent=2), encoding="utf-8")
     metrics = summarize_coverage_points(points)
     if metrics["total_points"] == 0:
         raise RuntimeError(
@@ -491,6 +683,7 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "points": str(points_path),
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -507,10 +700,45 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
         "merged": str(merged_path),
         "summary": str(summary_path),
         "metrics_path": str(metrics_path),
+        "points_path": str(points_path),
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
+
+
+def load_normalized_coverage_points(project: ProjectConfig) -> list[dict]:
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    points_path = out_dir / "points.json"
+    if points_path.exists():
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Normalized coverage points are invalid: {points_path}")
+        return payload
+
+    if project.simulator.strip().lower() == "verilator":
+        legacy_path = out_dir / "coverage.dat"
+        if legacy_path.exists():
+            return parse_verilator_coverage(legacy_path)
+
+    metrics_path = out_dir / "metrics.json"
+    if metrics_path.exists():
+        try:
+            metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            metrics_payload = {}
+        status = metrics_payload.get("item_capture_status")
+        if status and status != "ok":
+            detail = metrics_payload.get("item_capture_error")
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(
+                f"Normalized item-level coverage is unavailable ({status}){suffix}"
+            )
+
+    raise RuntimeError(
+        f"Normalized coverage points not found under {out_dir}. "
+        "Run 'zddv coverage' first."
+    )
 
 
 def merge_coverage(project: ProjectConfig) -> dict:
