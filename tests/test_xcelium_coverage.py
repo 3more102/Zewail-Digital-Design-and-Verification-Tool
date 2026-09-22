@@ -114,10 +114,10 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
         )
         report_script = command[command.index("-execcmd") + 1]
         if "report -detail" in report_script:
-            assert '-inst "*..."' in report_script
             assert "-metrics toggle" in report_script
             assert "-all" in report_script
-            assert "-source on" in report_script
+            assert '-inst "*..."' in report_script
+            assert "-source on" not in report_script
             return SimpleNamespace(returncode=0, stdout=IMC_TOGGLE_DETAIL)
 
         assert 'report -summary -inst "*..."' in report_script
