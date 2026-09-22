@@ -177,6 +177,9 @@ zddv --project my_project generated-apply .zddv/generated/drafts/<draft-id>/mani
 zddv --project my_project ai-rca-context --run <run-id>
 zddv ai-providers
 zddv --project my_project ai-provider-run --context .zddv/debug/ai-rca-context.json --provider openai-compatible --endpoint https://provider.example/v1/chat/completions --model provider-model --api-key-env PROVIDER_API_KEY --allow-external
+zddv --project my_project ai-response-ingest --response .zddv/ai/provider-response.json --context .zddv/debug/ai-rca-context.json
+zddv --project my_project ai-response-review .zddv/ai/validated-response.json --expected-sha256 <validated-sha256> --approve-reviewed
+zddv --project my_project ai-proposal-export .zddv/ai/reviews/<review-id>.json --proposal 1
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
