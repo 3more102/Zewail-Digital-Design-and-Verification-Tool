@@ -43,6 +43,25 @@ zddv --project my_project signoff \
 Coverage percentage comes from the newest persisted normalized coverage artifact:
 native percentage score snapshots are supported as well as hit/total snapshots.
 
+## Exact evidence pinning
+
+For release-candidate review, signoff can pin exact persisted evidence instead of
+implicitly selecting the newest records:
+
+```bash
+zddv --project my_project signoff \
+  --run-id run-001 \
+  --run-id run-002 \
+  --coverage-snapshot-id cov-release \
+  --formal-snapshot-id formal-release \
+  --uvm-snapshot-id uvm-release
+```
+
+Pinned IDs are part of the signoff policy SHA-256. A requested run or snapshot that
+does not exist blocks the review; ZDDV does not silently fall back to newer or older
+evidence. When no pin is supplied, the original recent/latest selection behavior is
+preserved.
+
 The command returns exit code 0 only for `READY_FOR_REVIEW`; a blocked review returns
 exit code 1, making the artifact usable as an explicit CI gate without hiding the
 underlying evidence.
