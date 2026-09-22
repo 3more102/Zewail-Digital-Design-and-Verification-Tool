@@ -13,10 +13,14 @@ class BuildResult:
     returncode: int
     log_path: Path
     executable: Path | None
+    artifact: Path | None = None
 
     @property
     def passed(self) -> bool:
-        return self.returncode == 0 and self.executable is not None
+        return (
+            self.returncode == 0
+            and (self.executable is not None or self.artifact is not None)
+        )
 
 
 @dataclass(frozen=True)
