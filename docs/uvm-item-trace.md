@@ -16,6 +16,7 @@ zddv --project <project> uvm-item-history --run <run-id>
 
 The normalized event vocabulary is:
 
+- `ARB_REQUEST` — optional evidence that an item/sequence entered sequencer arbitration and began waiting for a grant.
 - `GRANT` — sequencer arbitration granted the sequence/item path.
 - `REQUEST` — the sequence sent the item request to the sequencer.
 - `ITEM_DONE` — the driver completed the request through the UVM item-done/put completion path.
@@ -58,10 +59,20 @@ For every explicit `GRANT`, ZDDV preserves the trace-order grant index and group
 
 This is an observed grant-order reconstruction only. ZDDV does not infer the sequencer arbitration mode, request waiting queue, priority, lock state, or fairness from grant order alone.
 
+When explicit `ARB_REQUEST` events are present, ZDDV additionally reconstructs the observed pending-request set per sequencer. It reports matched grants, grants without request evidence, contended grants, maximum pending depth, requests still pending at trace end, per-request bypass counts, and per-sequence request/grant statistics. Existing GRANT-only traces remain valid and do not gain synthetic waiting evidence.
+
+A user may optionally impose a verification bound on observed bypasses:
+
+```text
+zddv --project <project> uvm-item-analyze <trace.json> --max-bypass 3
+```
+
+A request that remains pending while more than the configured number of competing grants are observed produces `ARBITRATION_BYPASS_LIMIT`. This threshold is an explicit user policy; ZDDV does not treat any bypass count as a universal UVM fairness rule.
+
 ## Persistence and current boundary
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
+This layer validates event ordering, duplicate events, stable item identity, reconstructs observed grant order from explicit GRANT evidence, and reconstructs waiting/contended request evidence only when ARB_REQUEST is explicitly provided. It does not infer vendor log formats, the configured arbitration mode/priority/lock policy, delta-cycle timing, or transaction payload equality.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
