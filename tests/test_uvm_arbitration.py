@@ -355,8 +355,7 @@ def _record_run(
     project,
     run_id: str,
     *,
-    log_text: str = "simulation complete\
-",
+    log_text: str = "simulation complete\\n",
 ) -> None:
     run_dir = project.root / ".zddv" / "runs" / run_id
     run_dir.mkdir(parents=True)
