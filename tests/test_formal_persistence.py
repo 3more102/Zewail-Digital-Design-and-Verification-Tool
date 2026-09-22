@@ -144,3 +144,57 @@ def test_formal_cli_analyze_and_history(tmp_path: Path, capsys):
     history_output = capsys.readouterr().out
     assert "BOUNDED" in history_output
     assert "example" in history_output
+
+
+def test_formal_persistence_auto_normalizes_attached_vcd_trace(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "artifacts" / "p_failure.vcd"
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    trace.write_text(
+        """$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 2 \" state [1:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b00 \"
+#5
+1!
+b01 \"
+""",
+        encoding="utf-8",
+    )
+
+    payload = _payload()
+    source = project.root / "formal.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+
+    record = analyze_formal_result_file(project, source)
+
+    counterexample = record["properties"][1]["trace"]
+    assert counterexample["role"] == "COUNTEREXAMPLE"
+    assert counterexample["normalization"]["status"] == "NORMALIZED"
+    assert counterexample["normalization"]["signals"] == 2
+    assert counterexample["normalization"]["steps"] == 2
+
+    normalized_path = Path(counterexample["normalization"]["path"])
+    assert normalized_path.is_file()
+    normalized = json.loads(normalized_path.read_text(encoding="utf-8"))
+    assert normalized["property"] == "p_failure"
+    assert normalized["property_kind"] == "assert"
+    assert normalized["trace_kind"] == "counterexample"
+    assert normalized["source"] == "example-auto-vcd"
+    assert normalized["input_path"] == str(trace.resolve())
+
+    missing_witness = record["properties"][2]["trace"]
+    assert missing_witness["role"] == "WITNESS"
+    assert missing_witness["normalization"] == {
+        "status": "MISSING",
+        "path": "artifacts/c_reachable.vcd",
+    }
+
+    saved = json.loads(Path(record["report_path"]).read_text(encoding="utf-8"))
+    assert saved["properties"][1]["trace"]["normalization"]["status"] == "NORMALIZED"
+    assert saved["properties"][2]["trace"]["normalization"]["status"] == "MISSING"
