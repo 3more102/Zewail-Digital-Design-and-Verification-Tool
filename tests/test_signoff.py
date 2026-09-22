@@ -150,3 +150,16 @@ def test_signoff_writer_and_cli(tmp_path: Path, capsys):
     assert "SIGNOFF READY_FOR_REVIEW" in output
     assert "Signoff SHA-256:" in output
     assert (project.root / ".zddv" / "signoff" / "cli.json").is_file()
+
+
+def test_signoff_writer_rejects_output_outside_project(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-pass", "PASS"))
+
+    outside = tmp_path / "outside-signoff.json"
+    try:
+        write_verification_signoff_bundle(project, output=outside)
+    except ValueError as exc:
+        assert "inside the project root" in str(exc)
+    else:
+        raise AssertionError("expected signoff writer to reject an external output path")
