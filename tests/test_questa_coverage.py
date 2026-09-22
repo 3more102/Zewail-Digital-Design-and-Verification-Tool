@@ -10,8 +10,13 @@ from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
     parse_questa_coverage_summary,
+    parse_questa_functional_coverage_report,
 )
-from zddv.storage import list_coverage_snapshots
+from zddv.storage import (
+    list_coverage_snapshots,
+    list_functional_coverage_bins,
+    list_functional_coverage_snapshots,
+)
 
 
 QUESTA_SUMMARY = """QuestaSim-64 vcover 2024.2 Coverage Utility 2024.05 May 20 2024
@@ -24,6 +29,20 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Statements                    4920      4920         0         1   100.00%
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
+"""
+
+QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
+--------------------
+Covergroup                              Metric       Goal    Status
+APB_seq_item_pkg::APB_cg               95.00%      100.00%   Uncovered
+
+    Coverpoint APB_cg::type_cp          50.00%      100.00%   Uncovered
+        bin write                         0          1         ZERO
+        bin read                        154          1         Covered
+
+    Cross APB_cg::write_x_data          40.00%      100.00%   Uncovered
+        bin legal_pair                    2          2         Covered
+        illegal bin bad_pair              1          1         Covered
 """
 
 
@@ -59,6 +78,43 @@ def test_parse_questa_summary_preserves_tool_score_separately():
     assert metrics["by_type"]["toggle"]["hit"] == 37574
 
 
+
+def test_parse_questa_summary_accepts_comma_grouped_counts():
+    text = QUESTA_SUMMARY.replace("3044", "3,044").replace(
+        "2982", "2,982"
+    ).replace("1665", "1,665").replace("1143", "1,143").replace(
+        "4920", "4,920"
+    ).replace("72906", "72,906").replace("37574", "37,574").replace(
+        "35332", "35,332"
+    )
+
+    metrics = parse_questa_coverage_summary(text)
+
+    assert metrics["total_points"] == 82535
+    assert metrics["hit_points"] == 46619
+    assert metrics["by_type"]["branch"]["total"] == 3044
+
+
+def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
+    payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
+
+    assert payload["source"] == "questa-vcover"
+    assert len(payload["bins"]) == 3
+    assert payload["bins"][0] == {
+        "scope": "APB_seq_item_pkg::APB_cg",
+        "coverpoint": "APB_cg::type_cp",
+        "bin": "write",
+        "hits": 0,
+        "goal": 1,
+        "metadata": {
+            "questa_status": "ZERO",
+            "coverage_kind": "coverpoint",
+        },
+    }
+    assert payload["bins"][2]["coverpoint"] == "APB_cg::write_x_data"
+    assert payload["bins"][2]["metadata"]["coverage_kind"] == "cross"
+
+
 def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     tmp_path: Path,
     monkeypatch,
@@ -88,6 +144,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:4] == ["report", "-cvg", "-details"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -106,6 +164,13 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-summary",
         result["merged"],
     ]
+    assert commands[2] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-cvg",
+        "-details",
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -115,9 +180,33 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["input_count"] == 2
     assert payload["tool_total_coverage"] == 79.53
     assert payload["by_type"]["expression"]["hit"] == 1143
+    assert payload["functional_bins"] == 3
+    assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
+    assert Path(result["functional_report"]).read_text(
+        encoding="utf-8"
+    ) == QUESTA_FUNCTIONAL
 
     snapshots = list_coverage_snapshots(project, limit=5)
     assert len(snapshots) == 1
     assert snapshots[0]["simulator"] == "questa"
     assert snapshots[0]["total_points"] == 82535
     assert snapshots[0]["hit_points"] == 46619
+
+
+    functional_snapshots = list_functional_coverage_snapshots(project, limit=5)
+    assert len(functional_snapshots) == 1
+    assert (
+        functional_snapshots[0]["snapshot_id"]
+        == result["functional_snapshot_id"]
+    )
+    assert functional_snapshots[0]["source"] == "questa-vcover"
+    assert functional_snapshots[0]["coverage_rate"] == pytest.approx(2 * 100.0 / 3)
+
+    holes = list_functional_coverage_bins(
+        project,
+        result["functional_snapshot_id"],
+        status="UNCOVERED",
+    )
+    assert len(holes) == 1
+    assert holes[0]["coverpoint"] == "APB_cg::type_cp"
+    assert holes[0]["bin_name"] == "write"
