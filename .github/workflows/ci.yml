@@ -349,6 +349,17 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
+      - name: Build reviewable verification proposals
+        run: |
+          zddv --project examples/counter verification-proposals --limit 1 --show 1
+          test -s examples/counter/.zddv/debug/verification-proposals.json
+          if find examples/counter -type f -name '*.sv.disabled' -print -quit | grep -q .; then
+            echo "verification-proposals emitted code without explicit opt-in"
+            exit 1
+          fi
+          zddv --project examples/counter verification-proposals --limit 1 --emit-dir .zddv/generated/review
+          test "$(find examples/counter/.zddv/generated/review -type f -name '*.sv.disabled' | wc -l)" -eq 2
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50
