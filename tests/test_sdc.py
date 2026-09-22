@@ -40,7 +40,10 @@ def test_parse_opensta_style_clock_and_io_constraints():
     assert clock.queries[0].arguments == ("clk",)
 
     input_delay = document.commands[1]
-    assert input_delay.positionals == ("0.0920",)
+    assert input_delay.positionals == (
+        "0.0920",
+        "[get_ports {req_msg[0] req_val reset}]",
+    )
     assert input_delay.has_option("-add_delay")
     assert [query.command for query in input_delay.queries] == [
         "get_clocks",
