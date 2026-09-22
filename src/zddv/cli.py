@@ -21,6 +21,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -38,6 +39,7 @@ from zddv.storage import (
     list_coverage_snapshots,
     list_functional_coverage_bins,
     list_functional_coverage_snapshots,
+    list_formal_result_snapshots,
     list_run_records,
     list_runs,
     list_uvm_arbitration_snapshots,
@@ -1477,6 +1479,55 @@ def cmd_axi4lite_waveform(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
+def cmd_formal_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_formal_result_file(
+        project,
+        args.path,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL {result['status']}: "
+        f"{summary['properties']} property result(s), "
+        f"{summary['counterexamples']} counterexample(s), "
+        f"{summary['proved_assertions']} proved assertion(s), "
+        f"{summary['bounded_safe_assertions']} bounded-safe assertion(s)"
+    )
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_formal_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_formal_result_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        backend=args.backend,
+    )
+    if not rows:
+        print("No formal result snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<8} {'MODE':<7} {'BACKEND':<16} "
+        f"{'PROP':>4} {'CEX':>3} {'PROVED':>6} {'B-SAFE':>6}  SNAPSHOT"
+    )
+    for row in rows:
+        print(
+            f"{row['status']:<8} {row['mode']:<7} "
+            f"{row['backend'][:16]:<16} "
+            f"{row['property_count']:>4} "
+            f"{row['counterexample_count']:>3} "
+            f"{row['proved_count']:>6} "
+            f"{row['bounded_safe_count']:>6}  "
+            f"{row['snapshot_id']}"
+        )
+    return 0
+
+
 def cmd_runs(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_runs(project, limit=args.limit, status=args.status)
@@ -2489,6 +2540,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional exact assertion name filter",
     )
     p_assertions.set_defaults(func=cmd_assertions)
+
+    p_formal_import = sub.add_parser(
+        "formal-import",
+        help="Import normalized formal result evidence and persist it",
+    )
+    p_formal_import.add_argument("path")
+    p_formal_import.add_argument(
+        "--output",
+        default=".zddv/formal/latest.json",
+        help="Normalized formal evidence JSON output path",
+    )
+    p_formal_import.set_defaults(func=cmd_formal_import)
+
+    p_formal_history = sub.add_parser(
+        "formal-history",
+        help="Show normalized formal result history",
+    )
+    p_formal_history.add_argument("--limit", type=int, default=20)
+    p_formal_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL", "UNKNOWN", "ERROR"),
+        default=None,
+        help="Optional formal result status filter",
+    )
+    p_formal_history.add_argument(
+        "--backend",
+        default=None,
+        help="Optional exact formal backend filter",
+    )
+    p_formal_history.set_defaults(func=cmd_formal_history)
 
     p_runs = sub.add_parser("runs", help="Show verification run history")
     p_runs.add_argument("--limit", type=int, default=20)
