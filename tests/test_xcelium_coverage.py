@@ -6,12 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage_history
+from zddv.cli import cmd_coverage_history, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_coverage,
     merge_xcelium_coverage,
     parse_xcelium_imc_summary,
+    parse_xcelium_imc_toggle_coverage_points,
 )
 from zddv.storage import list_coverage_score_snapshots
 
@@ -22,6 +23,23 @@ Legend: Metric* means cumulative
 name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
 --------------------------------------------------------------------------------------------------------------------------------
 tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
+"""
+
+IMC_TOGGLE_DETAIL = """IMC(64): test build
+Coverage Report: Toggle Coverage
+
+Instance name: tb_top.dut
+Module/Entity name: dut
+File name: /work/dut.sv
+Number of signal bits fully toggled: 1 of 3
+Number of signal bits partially toggled(rise): 1 of 3
+Number of signal bits partially toggled(fall): 0 of 3
+
+Hit(Full)  Hit(Rise)  Hit(Fall)   Signal
+-----------------------------------------
+0          0          0           idle
+0          1          0           data[3]
+1          1          1           ready
 """
 
 
@@ -109,7 +127,7 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
         assert "-source on" in report_script
         return SimpleNamespace(
             returncode=0,
-            stdout="IMC detailed coverage evidence\n",
+            stdout=IMC_TOGGLE_DETAIL,
         )
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -119,11 +137,12 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert result["inputs"] == [str(first), str(second)]
     assert Path(result["merged"]).parts[-3:] == ("cov_work", "scope", "merged")
     assert Path(result["summary"]).read_text(encoding="utf-8") == IMC_SUMMARY
-    assert Path(result["detail"]).read_text(encoding="utf-8") == (
-        "IMC detailed coverage evidence\n"
-    )
+    assert Path(result["detail"]).read_text(encoding="utf-8") == IMC_TOGGLE_DETAIL
     assert result["detail_status"] == "captured"
     assert result["detail_returncode"] == 0
+    assert result["toggle_detail_status"] == "normalized"
+    assert result["toggle_detail_points"] == 3
+    assert result["toggle_detail_holes"] == 2
     assert result["metrics_status"] == "normalized"
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
     assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
@@ -153,6 +172,9 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert manifest["detail"] == result["detail"]
     assert manifest["detail_status"] == "captured"
     assert manifest["detail_returncode"] == 0
+    assert manifest["toggle_detail_status"] == "normalized"
+    assert manifest["toggle_detail_points"] == 3
+    assert manifest["toggle_detail_holes"] == 2
     assert "report -detail" in manifest["detail_command"][-1]
     assert len(manifest["merged_ucd_files"]) == 1
     assert len(manifest["merged_ucm_files"]) == 1
@@ -202,9 +224,77 @@ def test_merge_xcelium_coverage_retains_detail_tool_error_as_evidence(
     assert result["metrics_status"] == "normalized"
     assert result["detail_status"] == "tool-error"
     assert result["detail_returncode"] == 2
+    assert result["toggle_detail_status"] == "tool-error"
+    assert result["toggle_detail_points"] == 0
+    assert result["toggle_detail_holes"] == 0
     assert Path(result["detail"]).read_text(encoding="utf-8") == (
         "detail unsupported\n"
     )
+
+
+def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
+    points = parse_xcelium_imc_toggle_coverage_points(IMC_TOGGLE_DETAIL)
+
+    assert len(points) == 3
+    assert points[0]["name"] == "tb_top.dut.idle"
+    assert points[0]["hit"] is False
+    assert points[0]["evidence"] == {"full": 0, "rise": 0, "fall": 0}
+    assert points[0]["source_file"] == "/work/dut.sv"
+    assert points[1]["name"] == "tb_top.dut.data[3]"
+    assert points[1]["hit"] is False
+    assert points[1]["evidence"] == {"full": 0, "rise": 1, "fall": 0}
+    assert points[2]["name"] == "tb_top.dut.ready"
+    assert points[2]["hit"] is True
+    assert points[2]["count"] == 1
+
+
+def test_xcelium_coverage_holes_cli_writes_toggle_holes(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    detail_path = (
+        project.root
+        / ".zddv"
+        / "coverage"
+        / "xcelium"
+        / "detail.txt"
+    )
+    detail_path.parent.mkdir(parents=True)
+    detail_path.write_text(IMC_TOGGLE_DETAIL, encoding="utf-8")
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/holes.json",
+            point_type="toggle",
+            limit=200,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (toggle): 2 unhit point(s); 2 written" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["total_holes"] == 2
+    assert payload["by_type"] == {"toggle": 2}
+    assert [hole["name"] for hole in payload["holes"]] == [
+        "tb_top.dut.data[3]",
+        "tb_top.dut.idle",
+    ]
+    assert payload["holes"][0]["evidence"] == {
+        "full": 0,
+        "rise": 1,
+        "fall": 0,
+    }
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
