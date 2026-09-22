@@ -27,8 +27,9 @@ The self-checking testbench covers:
 - Blocked write while full.
 - Drain-to-empty.
 - Pointer wrap-around.
-- Mixed seeded push/pop stress.
-- End-to-end data ordering with a scoreboard queue.
+- Independent seeded producer/consumer stress on unrelated clocks.
+- Explicit proof that accepted read/write activity overlaps during stress.
+- End-to-end data ordering against a precomputed deterministic sequence.
 - SystemVerilog assertions for one-bit Gray-pointer transitions.
 - SystemVerilog assertions for accepted-operation pointer increments.
 - SystemVerilog assertions that full/empty blocked operations keep pointers stable.
