@@ -61,18 +61,20 @@ attached to a covered goal is labeled `WITNESS`. Other traces remain generic
 `EVIDENCE` instead of receiving invented semantics.
 
 The result-level status is retained from the backend. Property outcomes are also
-summarized independently so later storage/CLI layers can query both without
-reinterpreting vendor output.
+summarized independently. Imported snapshots and per-property outcomes are also
+stored in the shared `.zddv/results.db` history without reinterpreting vendor output.
 
 ## File import
 
 `analyze_formal_result_file(project, path)` writes a normalized record to
 `.zddv/formal/latest.json` by default. The record includes a snapshot ID, UTC
 creation time, project name, input path, execution evidence, property summaries,
-trace roles, and retained artifact paths.
+trace roles, and retained artifact paths. The same normalized snapshot is persisted
+into `formal_result_snapshots`, with ordered property rows in
+`formal_property_results` for later history and filtered queries.
 
 ## Current boundary
 
-This slice does not execute a formal engine, persist formal history in SQLite,
-parse counterexample waveforms, or claim formal coverage. Those remain separate
-v0.7 milestones.
+This slice does not execute a formal engine, parse counterexample waveforms, or
+claim formal coverage. Tool-specific formal ingestion and execution backends remain
+separate v0.7 milestones.
