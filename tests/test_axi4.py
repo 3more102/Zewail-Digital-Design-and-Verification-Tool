@@ -682,7 +682,10 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
     assert tx["prot"] == 0x7
     assert tx["qos"] == 0xA
     assert tx["region"] == 0x5
+    assert tx["arcache"] == 0xF
     assert tx["arprot"] == 0x7
+    assert tx["arqos"] == 0xA
+    assert tx["arregion"] == 0x5
 
 
 def test_preserves_valid_write_address_sidebands():
@@ -726,4 +729,7 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["prot"] == 0x2
     assert tx["qos"] == 0xC
     assert tx["region"] == 0x7
+    assert tx["awcache"] == 0x3
     assert tx["awprot"] == 0x2
+    assert tx["awqos"] == 0xC
+    assert tx["awregion"] == 0x7

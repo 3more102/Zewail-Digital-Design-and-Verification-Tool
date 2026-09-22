@@ -179,8 +179,16 @@ against AxLEN, FIXED/INCR/WRAP burst geometry, WRAP length/alignment, and the 4K
 burst-boundary rule. Legal SLVERR/DECERR responses remain transaction outcomes
 rather than protocol violations.
 
-ACE coherency, AXI5 additions, USER sidebands, QoS policy, and exhaustive
-exclusive/system-ordering semantics remain outside this first AXI4 contract.
+Observed optional AXI4 request sidebands are validated at the interface boundary.
+ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGION
+(4 bits), preserves them in reconstructed transactions, and exposes both generic
+metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
+observed value must remain constant for requests in the same 4KB address space.
+
+These checks intentionally stop at properties observable from the normalized
+interface trace. ACE coherency, AXI5 additions, USER sidebands, system-level QoS
+policy, topology-dependent cache reachability, and exhaustive system-ordering
+semantics remain outside this AXI4 contract.
 
 ## v0.5 AXI4 Waveform Extraction Contract
 
