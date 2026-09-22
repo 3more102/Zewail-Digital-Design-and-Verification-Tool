@@ -223,6 +223,9 @@ def build_coverage_hole_report(
                         "statement",
                         "condition",
                         "expression",
+                        "expression_index",
+                        "truth_row",
+                        "imc_type_name",
                         "fec_context",
                         "fec_target",
                         "bit",
@@ -2314,6 +2317,44 @@ def _imc_quote_path(path: Path) -> str:
 
 _IMC_GRADE_TOKEN = r"(?:\d+(?:\.\d+)?%|n/a)"
 _IMC_COUNT_TOKEN = r"\d[\d,]*/\d[\d,]*"
+_IMC_DETAIL_INSTANCE = re.compile(
+    r"^\s*Instance\s+name:\s*(?P<instance>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_TYPE = re.compile(
+    r"^\s*Type\s+name:\s*(?P<type_name>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_FILE = re.compile(
+    r"^\s*File\s+name:\s*(?P<file>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_EXPRESSION_HEADER = re.compile(
+    r"^\s*index\s*\|\s*grade\s*\|\s*line\s*\|\s*expression\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_EXPRESSION_SUMMARY = re.compile(
+    r"^\s*(?P<index>\d+(?:\.\d+)*)\s*\|\s*"
+    r"(?P<grade>[^|]+?)\s*\|\s*(?P<line>\d+)\s*\|\s*"
+    r"(?P<expression>.+?)\s*$",
+)
+_IMC_DETAIL_EXPRESSION_CONTEXT = re.compile(
+    r"^\s*index:\s*(?P<index>\d+(?:\.\d+)*)\s+"
+    r"grade:\s*(?P<grade>.+?)\s+line:\s*(?P<line>\d+)\s+"
+    r"source:\s*(?P<source>.*?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_EXPRESSION_ROW_HEADER = re.compile(
+    r"^\s*index\s*\|\s*hit\s*\|\s*rval(?:\s*\|.*)?$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_EXPRESSION_ROW = re.compile(
+    r"^\s*(?P<row>\d+(?:\.\d+)+)\s*\|\s*"
+    r"(?P<hit>IGN|\d[\d,]*)\s*\|\s*(?P<rval>\S+)"
+    r"(?:\s*\|\s*(?P<terms>.*?))?\s*$",
+    re.IGNORECASE,
+)
+
 _IMC_SUMMARY_ROW = re.compile(
     rf"^\s*(?P<name>\S+)\s+"
     rf"(?P<overall_average>{_IMC_GRADE_TOKEN})\s+"
@@ -2359,6 +2400,139 @@ def _imc_counts(value: str | None, *, grade: float | None) -> dict | None:
     if grade is not None:
         result["hit_rate"] = grade
     return result
+
+
+def parse_xcelium_imc_expression_coverage(text: str) -> list[dict]:
+    """Normalize documented IMC expression truth-table rows.
+
+    Cadence IMC detailed expression reports identify an instance, type, file,
+    expression index/source line, and truth-table rows with an explicit hit
+    column. Only numeric hit rows are coverage goals here. Rows marked IGN
+    are intentionally excluded rather than rewritten as covered or uncovered.
+    """
+    points: list[dict] = []
+    instance = ""
+    type_name = ""
+    source_file = ""
+    expression_section = False
+    expressions: dict[str, tuple[int, str]] = {}
+    context: dict[str, str | int] | None = None
+    in_truth_table = False
+
+    for raw_line in text.splitlines():
+        instance_match = _IMC_DETAIL_INSTANCE.match(raw_line)
+        if instance_match is not None:
+            instance = instance_match.group("instance").strip()
+            type_name = ""
+            source_file = ""
+            expression_section = False
+            expressions = {}
+            context = None
+            in_truth_table = False
+            continue
+
+        type_match = _IMC_DETAIL_TYPE.match(raw_line)
+        if type_match is not None:
+            type_name = type_match.group("type_name").strip()
+            continue
+
+        file_match = _IMC_DETAIL_FILE.match(raw_line)
+        if file_match is not None:
+            source_file = file_match.group("file").strip()
+            continue
+
+        if _IMC_DETAIL_EXPRESSION_HEADER.match(raw_line) is not None:
+            expression_section = True
+            context = None
+            in_truth_table = False
+            continue
+
+        if not expression_section or not source_file:
+            continue
+
+        summary_match = _IMC_DETAIL_EXPRESSION_SUMMARY.match(raw_line)
+        if summary_match is not None:
+            expressions[summary_match.group("index")] = (
+                int(summary_match.group("line")),
+                summary_match.group("expression").strip(),
+            )
+            continue
+
+        context_match = _IMC_DETAIL_EXPRESSION_CONTEXT.match(raw_line)
+        if context_match is not None:
+            expression_index = context_match.group("index")
+            summary = expressions.get(expression_index)
+            line_number = int(context_match.group("line"))
+            expression = summary[1] if summary is not None else ""
+            if summary is not None and summary[0] != line_number:
+                context = None
+                in_truth_table = False
+                continue
+            context = {
+                "index": expression_index,
+                "line": line_number,
+                "expression": expression,
+                "source": context_match.group("source").strip(),
+            }
+            in_truth_table = False
+            continue
+
+        if context is None:
+            continue
+
+        if _IMC_DETAIL_EXPRESSION_ROW_HEADER.match(raw_line) is not None:
+            in_truth_table = True
+            continue
+
+        if not in_truth_table:
+            continue
+
+        row_match = _IMC_DETAIL_EXPRESSION_ROW.match(raw_line)
+        if row_match is None:
+            continue
+
+        hit_token = row_match.group("hit").strip()
+        if hit_token.upper() == "IGN":
+            continue
+
+        hits = int(hit_token.replace(",", ""))
+        truth_row = row_match.group("row")
+        result_value = row_match.group("rval").strip()
+        terms = (row_match.group("terms") or "").strip()
+        expression_index = str(context["index"])
+        line_number = int(context["line"])
+        expression = str(context["expression"])
+        source = str(context["source"])
+        target = f"rval={result_value}"
+        if terms:
+            target += f"; terms={terms}"
+
+        scope = instance
+        identity = (
+            f"{scope}|{source_file}:{line_number}|"
+            f"expression:{expression_index}|row:{truth_row}"
+        )
+        points.append(
+            {
+                "name": identity,
+                "count": hits,
+                "hit": hits > 0,
+                "type": "expression",
+                "scope": scope,
+                "source_file": source_file,
+                "line": line_number,
+                "expression": expression,
+                "expression_index": expression_index,
+                "truth_row": truth_row,
+                "fec_context": expression,
+                "fec_target": target,
+                "evidence": f"IMC hit={hits}; {target}",
+                "detail": source,
+                "imc_type_name": type_name,
+            }
+        )
+
+    return points
 
 
 def parse_xcelium_imc_summary(text: str) -> dict:
