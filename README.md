@@ -699,7 +699,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium execution adapter foundation
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
-- [x] Xcelium explicit top-level Overall Average/Covered score normalization into ZDDV coverage history\n- [ ] Xcelium deeper code/FSM/functional metric and item-level normalization
+- [x] Xcelium explicit top-level Overall Average/Covered score normalization into ZDDV coverage history
+- [ ] Xcelium deeper code/FSM/functional metric and item-level normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
