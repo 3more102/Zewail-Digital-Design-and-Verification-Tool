@@ -13,6 +13,9 @@ from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_item_instrumentation import (
+    analyze_uvm_item_instrumentation_log_if_present,
+)
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -318,6 +321,12 @@ class QuestaBackend(SimulatorBackend):
                 source="questa-run",
                 run_id=run_id,
             )
+        analyze_uvm_item_instrumentation_log_if_present(
+            project,
+            log_path,
+            run_id=run_id,
+            source="questa-zddv-item",
+        )
 
         return RunResult(
             run_id=run_id,
