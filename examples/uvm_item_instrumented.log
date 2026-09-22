@@ -1,0 +1,4 @@
+QuestaSim transcript header
+# ZDDV_ITEM_TRACE_V1|GRANT|item-21|seq-4|axi_write_seq|uvm_test_top.env.seqr|axi_item|21|120
+# ZDDV_ITEM_TRACE_V1|REQUEST|item-21|seq-4|axi_write_seq|uvm_test_top.env.seqr|axi_item|21|120
+# ZDDV_ITEM_TRACE_V1|ITEM_DONE|item-21|seq-4|axi_write_seq|uvm_test_top.env.seqr|axi_item|21|145
