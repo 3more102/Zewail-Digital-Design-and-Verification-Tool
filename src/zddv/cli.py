@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_questa_fec_coverage_report,
     parse_verilator_coverage,
     write_coverage_hole_report,
     write_questa_statement_hole_report,
@@ -434,6 +435,14 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch detail: {result['code_report']}")
+    fec_detail_status = result.get("fec_detail_status")
+    if fec_detail_status is not None:
+        print(
+            "Normalized Questa condition/expression FEC coverage: "
+            f"{fec_detail_status} "
+            f"{result.get('fec_detail_points', 0)} row(s), "
+            f"{result.get('fec_detail_holes', 0)} hole(s)"
+        )
     detailed = result.get("detailed_code_coverage_evidence") or {}
     if detailed:
         xml = detailed.get("xml", {})
@@ -533,10 +542,16 @@ def cmd_coverage_holes(args) -> int:
             limit=args.limit,
         )
     elif simulator in {"questa", "questasim"}:
-        if args.point_type not in {None, "statement", "branch"}:
+        if args.point_type not in {
+            None,
+            "statement",
+            "branch",
+            "condition",
+            "expression",
+        }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement or --type branch."
+                "--type statement, branch, condition, or expression."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
@@ -553,12 +568,29 @@ def cmd_coverage_holes(args) -> int:
                     f"Detailed Questa code coverage report not found at {source_path}. "
                     "Run 'zddv coverage' first."
                 )
-            points = parse_questa_code_coverage_report(
-                source_path.read_text(encoding="utf-8", errors="replace")
+            report_text = source_path.read_text(
+                encoding="utf-8",
+                errors="replace",
             )
+            points = [
+                *parse_questa_code_coverage_report(report_text),
+                *parse_questa_fec_coverage_report(report_text),
+            ]
             if not points:
                 raise RuntimeError(
                     f"No normalized coverage points found in {source_path}."
+                )
+            if (
+                args.point_type in {"condition", "expression"}
+                and not any(
+                    point.get("type") == args.point_type
+                    for point in points
+                )
+            ):
+                raise RuntimeError(
+                    f"No normalized Questa {args.point_type} FEC rows found in "
+                    f"{source_path}. Scalar FEC rows are supported; multibit "
+                    "FEC tables are not normalized yet."
                 )
             report = write_coverage_hole_report(
                 points,
