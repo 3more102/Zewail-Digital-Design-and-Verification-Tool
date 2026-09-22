@@ -123,7 +123,9 @@ def _interpret_property(
         if item.status == "FAIL":
             return "COUNTEREXAMPLE"
         if request.mode == "bmc":
-            return "BOUNDED_SAFE"
+            if item.depth is not None or request.depth is not None:
+                return "BOUNDED_SAFE"
+            return "PASS_BOUNDED_UNSCOPED"
         if request.mode == "prove":
             return "PROVED"
         return "ASSERT_PASS"
