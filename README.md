@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native VCS coverage plus normalized URG score/count history**
+> Status: **v0.9 AI-Assisted Debug Foundation — deterministic evidence bundles, opt-in provider adapters, strict response/evidence validation, SHA-confirmed human review, read-only provenance-chain auditing, plus the existing multi-simulator/UVM/formal/coverage foundation**
 
 ## What Works Today
 
@@ -33,6 +33,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic coverage-hole test-intent suggestions that retain source evidence, require review, and never execute stimulus automatically
 - Review-gated generated SystemVerilog assertion/test artifacts with isolated staging, SHA-256 provenance, explicit apply approval, overwrite refusal, and no automatic execution
 - Provider-neutral AI-assisted RCA context bundles with deterministic evidence hashing, explicit uncertainty rules, and no automatic external transmission or model invocation
+- Opt-in model-provider invocation with strict response-schema/evidence-reference validation, SHA-confirmed human review, and no automatic code staging or execution
+- Read-only AI provenance-chain auditing across context, provider request/response, validated payload, and optional human review artifacts
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -181,6 +183,7 @@ zddv --project my_project ai-provider-run --context .zddv/debug/ai-rca-context.j
 zddv --project my_project ai-response-ingest --response .zddv/ai/provider-response.json --context .zddv/debug/ai-rca-context.json
 zddv --project my_project ai-response-review .zddv/ai/validated-response.json --expected-sha256 <validated-sha256> --approve-reviewed
 zddv --project my_project ai-proposal-export .zddv/ai/reviews/<review-id>.json --proposal 1
+zddv --project my_project ai-chain-audit --context .zddv/debug/ai-rca-context.json --response .zddv/ai/provider-response.json --validated .zddv/ai/validated-response.json --review .zddv/ai/reviews/<review-id>.json
 zddv --project my_project assertions --limit 100
 zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
@@ -795,7 +798,7 @@ bundle is review-required before any external use.
 - [x] Evidence-backed coverage-hole test objectives with review-required output
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
-- [ ] AI-assisted root-cause analysis
+- [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
 - [ ] Desktop debug GUI
 
 ## Design Principles
@@ -813,6 +816,7 @@ bundle is review-required before any external use.
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
 - [Generated Verification Review Workflow](docs/generated-verification.md)
+- [AI Provenance Chain Audit](docs/ai-chain-audit.md)
 - [AI RCA Context](docs/ai-rca-context.md)
 
 ## License
