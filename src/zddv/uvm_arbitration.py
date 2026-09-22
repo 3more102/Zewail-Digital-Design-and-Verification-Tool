@@ -8,6 +8,11 @@ import uuid
 
 from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_arbitration_snapshot
+from zddv.uvm_item import (
+    derive_uvm_arbitration_trace,
+    parse_uvm_item_file,
+    parse_uvm_item_log,
+)
 
 
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "item_id", "priority", "sequencer")
@@ -317,33 +322,20 @@ def parse_uvm_arbitration_file(
     )
 
 
-def analyze_uvm_arbitration_file(
+def _persist_uvm_arbitration_analysis(
     project: ProjectConfig,
-    path: str | Path,
+    report: dict[str, Any],
+    input_path: Path,
     *,
-    source: str | None = None,
-    fairness_bound: int | None = None,
-    output: str | Path = ".zddv/uvm/arbitration/latest.json",
-    run_id: str | None = None,
+    output: str | Path,
+    run_id: str | None,
 ) -> dict[str, Any]:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
-
     run_record: dict[str, Any] | None = None
     if run_id is not None:
         run_record = get_run_record(project, run_id)
         if run_record is None:
             raise ValueError(f"Unknown run ID: {run_id}")
 
-    report = parse_uvm_arbitration_file(
-        input_path,
-        source=source,
-        fairness_bound=fairness_bound,
-    )
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-arb-%Y%m%dT%H%M%S")
@@ -351,7 +343,9 @@ def analyze_uvm_arbitration_file(
         + uuid.uuid4().hex[:8]
     )
 
-    snapshot_dir = (project.root / ".zddv" / "uvm" / "arbitration" / "snapshots").resolve()
+    snapshot_dir = (
+        project.root / ".zddv" / "uvm" / "arbitration" / "snapshots"
+    ).resolve()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     normalized_path = snapshot_dir / f"{snapshot_id}.json"
 
@@ -385,3 +379,89 @@ def analyze_uvm_arbitration_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_arbitration_snapshot(project, record)
     return record
+
+
+def analyze_uvm_arbitration_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    report = parse_uvm_arbitration_file(
+        input_path,
+        source=source,
+        fairness_bound=fairness_bound,
+    )
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_id=run_id,
+    )
+
+
+def analyze_uvm_arbitration_item_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    log_input: bool = False,
+    source: str | None = None,
+    fairness_bound: int | None = None,
+    output: str | Path = ".zddv/uvm/arbitration/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Derive arbitration decisions from explicit item evidence and analyze them."""
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    item_source = source or (
+        "uvm-item-log-marker" if log_input else "uvm-item-json"
+    )
+    item_report = (
+        parse_uvm_item_log(input_path, source=item_source)
+        if log_input
+        else parse_uvm_item_file(input_path, source=item_source)
+    )
+    derived = derive_uvm_arbitration_trace(item_report, source=item_report["source"])
+    if not derived["decisions"]:
+        raise ValueError(
+            "No arbitration decisions could be derived from explicit "
+            "ARB_REQUEST/GRANT evidence"
+        )
+
+    report = parse_uvm_arbitration_data(
+        {
+            "source": derived["source"],
+            "decisions": derived["decisions"],
+        },
+        source=derived["source"],
+        fairness_bound=fairness_bound,
+    )
+    report["input_mode"] = (
+        "uvm-item-log-adapter" if log_input else "uvm-item-trace-adapter"
+    )
+    report["item_source"] = item_report["source"]
+    report["adapter"] = derived["adapter"]
+    report["adapter_limitations"] = derived["limitations"]
+    return _persist_uvm_arbitration_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_id=run_id,
+    )
