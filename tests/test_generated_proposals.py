@@ -165,3 +165,59 @@ def test_coverage_scaffold_cli_requires_explicit_emit_dir(tmp_path: Path, capsys
         (project.root / ".zddv" / "coverage" / "review-scaffolds").glob("*.sv.disabled")
     )
     assert len(emitted) == 2
+
+
+def test_cli_requires_explicit_emit_opt_in(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    source = project.root / ".zddv" / "coverage" / "test-suggestions.json"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(json.dumps(_suggestions()), encoding="utf-8")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "verification-proposals",
+            "--limit",
+            "1",
+            "--show",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "VERIFICATION PROPOSALS: 1 review-required proposal(s); emitted=0" in output
+    assert "Automatic source modification: disabled" in output
+    assert "Automatic execution: disabled" in output
+    assert "use --emit-dir to opt in" in output
+    assert not list(project.root.rglob("*.sv.disabled"))
+    report = (
+        project.root / ".zddv" / "debug" / "verification-proposals.json"
+    )
+    assert report.is_file()
+
+
+def test_cli_emit_dir_is_explicit_and_disabled(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    source = project.root / ".zddv" / "coverage" / "test-suggestions.json"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(json.dumps(_suggestions()), encoding="utf-8")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "verification-proposals",
+            "--limit",
+            "1",
+            "--emit-dir",
+            ".zddv/generated/review",
+        ]
+    )
+
+    assert rc == 0
+    capsys.readouterr()
+    emitted = list((project.root / ".zddv" / "generated" / "review").glob("*.sv.disabled"))
+    assert len(emitted) == 2
+    assert all("REVIEW REQUIRED" in path.read_text(encoding="utf-8") for path in emitted)
