@@ -278,6 +278,55 @@ CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_item
 CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_event
     ON uvm_item_handshake_events(event);
 
+CREATE TABLE IF NOT EXISTS uvm_arbitration_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    round_count INTEGER NOT NULL,
+    sequence_count INTEGER NOT NULL,
+    violation_count INTEGER NOT NULL,
+    max_wait_rounds INTEGER NOT NULL,
+    run_id TEXT,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_created
+    ON uvm_arbitration_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_status
+    ON uvm_arbitration_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_run
+    ON uvm_arbitration_snapshots(run_id);
+
+CREATE TABLE IF NOT EXISTS uvm_arbitration_candidates (
+    snapshot_id TEXT NOT NULL,
+    round_index INTEGER NOT NULL,
+    candidate_index INTEGER NOT NULL,
+    round_id TEXT NOT NULL,
+    sequencer TEXT NOT NULL,
+    sequence_id TEXT NOT NULL,
+    sequence_name TEXT,
+    request_order INTEGER,
+    priority INTEGER,
+    winner INTEGER NOT NULL,
+    time_text TEXT,
+    round_metadata_json TEXT NOT NULL,
+    candidate_metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, round_index, candidate_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_candidates_sequence
+    ON uvm_arbitration_candidates(snapshot_id, sequencer, sequence_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_candidates_round
+    ON uvm_arbitration_candidates(snapshot_id, round_index);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -1238,6 +1287,145 @@ def list_uvm_item_handshake_events(
     for row in rows:
         item = dict(row)
         item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
+
+
+def record_uvm_arbitration_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_arbitration_snapshots (
+                snapshot_id, created_at, project, source, mode, status,
+                round_count, sequence_count, violation_count, max_wait_rounds,
+                run_id, input_path, normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record["mode"],
+                record["status"],
+                int(summary["rounds"]),
+                int(summary["sequences"]),
+                int(summary["violations"]),
+                int(summary["max_wait_rounds"]),
+                record.get("run_id"),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_arbitration_candidates WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        rows: list[tuple[Any, ...]] = []
+        for round_data in record["rounds"]:
+            winner_id = round_data["winner_sequence_id"]
+            for candidate in round_data["candidates"]:
+                rows.append(
+                    (
+                        record["snapshot_id"],
+                        int(round_data["round_index"]),
+                        int(candidate["candidate_index"]),
+                        round_data["round_id"],
+                        round_data["sequencer"],
+                        candidate["sequence_id"],
+                        candidate.get("sequence"),
+                        candidate.get("request_order"),
+                        candidate.get("priority"),
+                        1 if candidate["sequence_id"] == winner_id else 0,
+                        round_data.get("time"),
+                        json.dumps(round_data.get("metadata", {}), sort_keys=True),
+                        json.dumps(candidate.get("metadata", {}), sort_keys=True),
+                    )
+                )
+        db.executemany(
+            """
+            INSERT INTO uvm_arbitration_candidates (
+                snapshot_id, round_index, candidate_index, round_id,
+                sequencer, sequence_id, sequence_name, request_order,
+                priority, winner, time_text, round_metadata_json,
+                candidate_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    return path
+
+
+def list_uvm_arbitration_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM arbitration status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, mode, status,
+               round_count, sequence_count, violation_count, max_wait_rounds,
+               run_id, input_path, normalized_path, report_path
+        FROM uvm_arbitration_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_arbitration_candidates(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    sequence_id: str | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT snapshot_id, round_index, candidate_index, round_id,
+               sequencer, sequence_id, sequence_name, request_order,
+               priority, winner, time_text, round_metadata_json,
+               candidate_metadata_json
+        FROM uvm_arbitration_candidates
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if sequence_id is not None:
+        query += " AND sequence_id = ?"
+        params.append(sequence_id)
+    query += " ORDER BY round_index, candidate_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["round_metadata"] = json.loads(item.pop("round_metadata_json"))
+        item["metadata"] = json.loads(item.pop("candidate_metadata_json"))
         result.append(item)
     return result
 
