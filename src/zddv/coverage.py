@@ -2330,6 +2330,22 @@ _IMC_SUMMARY_ROW = re.compile(
     rf"(?:\s+\((?P<functional_counts>{_IMC_COUNT_TOKEN})\))?\s*$",
     re.IGNORECASE,
 )
+_IMC_TOGGLE_INSTANCE = re.compile(
+    r"^\s*Instance name:\s*(?P<scope>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_TOGGLE_FILE = re.compile(
+    r"^\s*File name:\s*(?P<file>.+?)\s*$",
+    re.IGNORECASE,
+)
+_IMC_TOGGLE_HEADER = re.compile(
+    r"^\s*Hit\(Full\)\s+Hit\(Rise\)\s+Hit\(Fall\)\s+Signal\s*$",
+    re.IGNORECASE,
+)
+_IMC_TOGGLE_ROW = re.compile(
+    r"^\s*(?P<full>[01])\s+(?P<rise>[01])\s+(?P<fall>[01])\s+"
+    r"(?P<signal>\S.*?)\s*$"
+)
 
 
 def _imc_grade(value: str) -> float | None:
@@ -2359,6 +2375,68 @@ def _imc_counts(value: str | None, *, grade: float | None) -> dict | None:
     if grade is not None:
         result["hit_rate"] = grade
     return result
+
+
+def parse_xcelium_imc_toggle_coverage_points(text: str) -> list[dict]:
+    """Normalize the verified native IMC bit-level toggle table only."""
+    points: list[dict] = []
+    scope: str | None = None
+    source_file: str | None = None
+    in_toggle_table = False
+
+    for raw_line in text.splitlines():
+        instance_match = _IMC_TOGGLE_INSTANCE.match(raw_line)
+        if instance_match is not None:
+            scope = instance_match.group("scope").strip()
+            in_toggle_table = False
+            continue
+
+        file_match = _IMC_TOGGLE_FILE.match(raw_line)
+        if file_match is not None:
+            source_file = file_match.group("file").strip()
+            continue
+
+        if _IMC_TOGGLE_HEADER.match(raw_line) is not None:
+            in_toggle_table = True
+            continue
+
+        if not in_toggle_table:
+            continue
+
+        stripped = raw_line.strip()
+        if not stripped or set(stripped) <= {"-", "=", " "}:
+            continue
+
+        row = _IMC_TOGGLE_ROW.match(raw_line)
+        if row is None:
+            if ":" in raw_line or raw_line.lstrip().startswith("Coverage Report"):
+                in_toggle_table = False
+            continue
+
+        full = int(row.group("full"))
+        rise = int(row.group("rise"))
+        fall = int(row.group("fall"))
+        signal = row.group("signal").strip()
+        name = f"{scope}.{signal}" if scope else signal
+
+        point = {
+            "name": name,
+            "count": full,
+            "hit": bool(full),
+            "type": "toggle",
+            "evidence": {
+                "full": full,
+                "rise": rise,
+                "fall": fall,
+            },
+        }
+        if scope is not None:
+            point["scope"] = scope
+        if source_file is not None:
+            point["source_file"] = source_file
+        points.append(point)
+
+    return points
 
 
 def parse_xcelium_imc_summary(text: str) -> dict:
@@ -2548,6 +2626,27 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
     detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
 
+    toggle_points: list[dict] = []
+    toggle_detail_error: str | None = None
+    if detail_report.returncode == 0:
+        toggle_points = parse_xcelium_imc_toggle_coverage_points(
+            detail_report.stdout or ""
+        )
+        toggle_detail_status = (
+            "normalized" if toggle_points else "detail-unparsed"
+        )
+        if not toggle_points:
+            toggle_detail_error = (
+                "No verified Hit(Full)/Hit(Rise)/Hit(Fall)/Signal rows "
+                "were found in the native IMC detail report"
+            )
+    else:
+        toggle_detail_status = "tool-error"
+        toggle_detail_error = (detail_report.stdout or "").strip() or (
+            "IMC detailed coverage report exited with status "
+            f"{detail_report.returncode}"
+        )
+
     metrics: dict | None = None
     metrics_error: str | None = None
     metrics_status = "summary-unparsed"
@@ -2582,6 +2681,11 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail": str(detail_path),
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
+        "toggle_detail_status": toggle_detail_status,
+        "toggle_detail_points": len(toggle_points),
+        "toggle_detail_holes": sum(
+            not bool(point.get("hit")) for point in toggle_points
+        ),
         "script": str(script_path),
         "merge_model": "union_all",
         "merge_command": merge_command,
@@ -2592,6 +2696,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+    if toggle_detail_error is not None:
+        payload["toggle_detail_error"] = toggle_detail_error
 
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
@@ -2624,6 +2730,12 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
         "detail_command": detail_command,
+        "toggle_detail_status": toggle_detail_status,
+        "toggle_detail_points": len(toggle_points),
+        "toggle_detail_holes": sum(
+            not bool(point.get("hit")) for point in toggle_points
+        ),
+        "toggle_detail_error": toggle_detail_error,
         "metrics_path": str(manifest_path),
         "report": report.stdout or "",
         "metrics": metrics,
