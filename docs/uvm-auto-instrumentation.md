@@ -110,9 +110,11 @@ item marker package, then adapter package before existing testbench sources.
 `--no-add-source` writes the files without changing `zddv.toml` source
 ordering.
 
-Existing marker helpers are reused and never overwritten implicitly. An
-existing adapter is replaced only with `--force`. The adapter output is also
-rejected if it collides with either marker-helper path.
+Existing marker helpers are reused and never overwritten implicitly. Before reuse,
+ZDDV checks that each helper still exposes the expected package and emitter API; an
+incompatible existing helper is rejected instead of being silently accepted. An
+existing adapter is replaced only with `--force`. The adapter output is also rejected
+if it collides with either marker-helper path.
 
 ## Evidence boundary
 
@@ -120,6 +122,8 @@ This is automatic instrumentation **after explicit adoption**, not a zero-touch
 UVM-library patch. The following remain explicit/manual:
 
 - sequences that override `body()` instead of implementing `zddv_body()`;
+- derived overrides of `start`, `pre_start`, `pre_body`, `post_body`, or
+  `post_start` that do not call `super`;
 - direct `wait_for_grant` / `send_request` / `wait_for_item_done` flows;
 - response delivery handled only through `response_handler()`;
 - arbitration contender sets, priorities, request order, lock/grab state, and
