@@ -2,7 +2,10 @@
 
 Raw provider output cannot enter ZDDV's generated-verification workflow directly.
 This boundary validates the response schema and every evidence reference, then
-requires a separate human approval tied to the exact validated SHA-256.
+requires a separate human approval tied to the exact validated SHA-256. Before a
+saved RCA context can be used for provider invocation or response ingestion, ZDDV
+also recomputes the canonical SHA-256 of its evidence payload and rejects the file
+if it no longer matches the recorded provenance digest.
 
 ## Expected response
 
