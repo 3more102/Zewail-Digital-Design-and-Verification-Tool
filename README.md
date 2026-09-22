@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM Ingestion Foundation — v0.5 protocol verification plus simulator-independent UVM report normalization, persistence, and history**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM result ingestion plus native Questa build/run orchestration on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -12,6 +12,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - RTL/testbench source discovery
 - Simulator-adapter architecture
 - Verilator detection and version reporting
+- Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -57,7 +58,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 Requirements:
 
 - Python 3.11+
-- Verilator available in `PATH`
+- Verilator available in `PATH` for the default backend
+- Optional Questa/QuestaSim: `vlib`, `vlog`, and `vsim` available in `PATH`
 
 Install ZDDV for development:
 
@@ -66,6 +68,7 @@ git clone https://github.com/3more102/Zewail-Digital-Design-and-Verification-Too
 cd Zewail-Digital-Design-and-Verification-Tool
 python -m pip install -e ".[dev]"
 zddv doctor
+zddv doctor --simulator questa
 ```
 
 Run the included counter example:
@@ -91,6 +94,7 @@ zddv --project my_project add rtl "rtl/*.sv"
 zddv --project my_project add tb "tb/*.sv"
 
 zddv --project my_project config simulator verilator
+# or: zddv --project my_project config simulator questa
 zddv --project my_project config top tb_top
 
 zddv doctor
@@ -243,7 +247,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← planned
+       ├── Questa     ← build/run foundation implemented
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
@@ -322,7 +326,9 @@ separately from Verilator's annotation threshold.
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
-- [ ] UVM-aware result model
+- [x] Simulator-independent UVM report/test metadata ingestion
+- [x] UVM snapshot-to-run correlation
+- [ ] Sequence/phase/objection-aware UVM result model
 
 ### APB Trace Analysis
 
@@ -611,7 +617,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 ### Phase 4 — Advanced Verification
 
-- [ ] Questa adapter
+- [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM; coverage capture pending)
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
