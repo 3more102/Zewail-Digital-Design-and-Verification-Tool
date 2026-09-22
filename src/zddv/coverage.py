@@ -2541,12 +2541,12 @@ _IMC_SUMMARY_ROW = re.compile(
 
 
 _IMC_DETAIL_SECTION_HEADER = re.compile(
-    r"^\\s*Coverage Report:\\s*(?P<title>.+?)\\s*$",
+    r"^\s*Coverage Report:\s*(?P<title>.+?)\s*$",
     re.IGNORECASE,
 )
 _IMC_DETAIL_CONTEXT_FIELD = re.compile(
-    r"^\\s*(?P<label>Instance name|Module/Entity name|Type name|File name):"
-    r"\\s*(?P<value>.*?)\\s*$",
+    r"^\s*(?P<label>Instance name|Module/Entity name|Type name|File name):"
+    r"\s*(?P<value>.*?)\s*$",
     re.IGNORECASE,
 )
 
