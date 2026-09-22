@@ -24,7 +24,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import FormalCheckRequest, SymbiYosysBackend
 from zddv.formal.counterexample import ingest_formal_counterexample
-from zddv.formal.results import analyze_formal_result_file, persist_formal_result
+from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -389,12 +389,6 @@ def cmd_formal_bmc(args) -> int:
     backend = SymbiYosysBackend()
     print(f"Formal backend: {backend.version()}")
     result = backend.check(project, request)
-    source_path = result.artifacts[0] if result.artifacts else result.log_path
-    record = persist_formal_result(
-        project,
-        result,
-        input_path=source_path,
-    )
     print(
         f"FORMAL BMC {result.status}: depth={request.depth} "
         f"engine={result.engine or '-'}"
@@ -402,8 +396,6 @@ def cmd_formal_bmc(args) -> int:
     print("Scope: BOUNDED (finite-depth evidence; not an unbounded proof)")
     print(f"Run directory: {result.run_dir}")
     print(f"Log: {result.log_path}")
-    print(f"Snapshot: {record['snapshot_id']}")
-    print(f"Report: {record['report_path']}")
     return 0 if result.status == "PASS" else 1
 
 def cmd_formal_counterexample(args) -> int:
@@ -557,6 +549,19 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition/expression/FSM detail: {result['code_report']}")
+    multibit_expression_status = result.get("multibit_expression_status")
+    if multibit_expression_status is not None:
+        print(
+            "Normalized Questa multibit expression coverage: "
+            f"{multibit_expression_status} "
+            f"{result.get('multibit_expression_points', 0)} point(s), "
+            f"{result.get('multibit_expression_holes', 0)} hole(s)"
+        )
+        if result.get("multibit_expression_report"):
+            print(
+                "Questa multibit expression detail: "
+                f"{result['multibit_expression_report']}"
+            )
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -700,6 +705,26 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
+            if args.point_type in {None, "expression"}:
+                multibit_source = (
+                    project.root
+                    / ".zddv"
+                    / "coverage"
+                    / "multibit-expression.txt"
+                ).resolve()
+                if multibit_source.exists():
+                    multibit_points = parse_questa_code_coverage_report(
+                        multibit_source.read_text(
+                            encoding="utf-8",
+                            errors="replace",
+                        )
+                    )
+                    points.extend(
+                        point
+                        for point in multibit_points
+                        if point.get("type") == "expression"
+                        and point.get("multibit") is True
+                    )
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -707,10 +732,15 @@ def cmd_coverage_holes(args) -> int:
                     for point in points
                 )
             ):
+                if args.point_type == "expression":
+                    raise RuntimeError(
+                        "No normalized Questa expression FEC rows found. "
+                        "Scalar FEC rows and documented multibit expression "
+                        "rows are supported."
+                    )
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Scalar FEC rows are supported; multibit "
-                    "FEC tables are not normalized yet."
+                    f"{source_path}. Scalar condition FEC rows are supported."
                 )
             if (
                 args.point_type == "fsm"
