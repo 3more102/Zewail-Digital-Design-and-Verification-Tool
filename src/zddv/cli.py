@@ -48,7 +48,7 @@ from zddv.storage import (
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
 from zddv.uvm_item import analyze_uvm_item_file
-from zddv.uvm_sequence import analyze_uvm_sequence_file
+from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
 
@@ -906,6 +906,47 @@ def cmd_uvm_sequence_analyze(args) -> int:
             f"(simulator-status={result['run_status']}, "
             f"returncode={result['run_returncode']})"
         )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] event={violation['event_index']} "
+            f"sequence={violation['sequence_id']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_sequence_log_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_sequence_log(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM SEQUENCE LOG {result['status']}: "
+        f"{summary['sequences']} sequence(s), "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Terminal: finished={summary['finished']} stopped={summary['stopped']} "
+        f"active={summary['active']} complete={summary['complete']}"
+    )
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    print(
+        f"Markers: {result.get('marker', 'ZDDV_UVM_SEQUENCE')} "
+        f"count={len(result.get('marker_lines', []))}"
+    )
     for violation in result["violations"][: args.show]:
         print(
             f"[{violation['code']}] event={violation['event_index']} "
@@ -1833,6 +1874,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of lifecycle violations to print",
     )
     p_uvm_sequence.set_defaults(func=cmd_uvm_sequence_analyze)
+
+    p_uvm_sequence_log = sub.add_parser(
+        "uvm-sequence-log-analyze",
+        help="Analyze explicit ZDDV_UVM_SEQUENCE markers from a simulator/UVM log",
+    )
+    p_uvm_sequence_log.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Simulation log file; optional when --run is supplied",
+    )
+    p_uvm_sequence_log.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
+    p_uvm_sequence_log.add_argument(
+        "--source",
+        default=None,
+        help="Optional simulator/adapter label overriding the inferred source",
+    )
+    p_uvm_sequence_log.add_argument(
+        "--output",
+        default=".zddv/uvm/sequences/latest.json",
+        help="Normalized UVM sequence JSON report path",
+    )
+    p_uvm_sequence_log.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of lifecycle violations to print",
+    )
+    p_uvm_sequence_log.set_defaults(func=cmd_uvm_sequence_log_analyze)
 
     p_uvm_sequence_history = sub.add_parser(
         "uvm-sequence-history",
