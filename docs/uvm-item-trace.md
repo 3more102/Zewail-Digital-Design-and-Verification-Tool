@@ -52,6 +52,27 @@ A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item
 
 Once earlier evidence is present, backward ordering is a violation. Examples include `ITEM_DONE` after an observed `GRANT` but before `REQUEST`, or a late `GRANT` after `REQUEST`.
 
+## Portable instrumentation adapter
+
+Generate a simulator-independent SystemVerilog helper with:
+
+```text
+zddv --project <project> uvm-item-instrument
+```
+
+By default ZDDV writes `tb/zddv_uvm_item_trace_pkg.sv` and inserts that exact file at the front of the project's testbench source list so the package is compiled before normal testbench sources. Use `--no-add-source` when source ordering is managed externally, and `--force` to replace an existing generated helper.
+
+The generated package exposes `zddv_uvm_item_emit(...)` plus convenience macros for the four normalized events. Instrumentation remains explicit: the verification environment supplies a stable `item_id` and emits events at the UVM semantic points it owns, such as after grant, after request submission, and after driver completion. ZDDV does not patch UVM library internals or infer hidden sequencer state.
+
+The helper writes one machine-readable line per event using the `ZDDV_ITEM_TRACE_V1` record format. Existing logs can be normalized with:
+
+```text
+zddv --project <project> uvm-item-log-analyze simulation.log
+zddv --project <project> uvm-item-log-analyze --run <run-id>
+```
+
+For native Questa and VCS runs, ZDDV automatically detects valid `ZDDV_ITEM_TRACE_V1` records in `simulation.log`, converts them to the same normalized JSON item contract, persists the snapshot/events in SQLite, and correlates them with the run ID. Malformed marker records do not change the simulator PASS/FAIL/TIMEOUT result; the adapter records an ingest-error artifact under `.zddv/uvm/items/ingest-errors/`.
+
 ## Observed arbitration evidence
 
 For every explicit `GRANT`, ZDDV preserves the trace-order grant index and groups grants by sequencer. The report includes observed sequence IDs, adjacent sequence switches, and the longest contiguous known sequence streak. A partial trace with no `GRANT` does not create synthetic arbitration evidence.
@@ -62,6 +83,6 @@ This is an observed grant-order reconstruction only. ZDDV does not infer the seq
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
+This layer validates event ordering, duplicate events, stable item identity, reconstructs observed grant order from explicit GRANT evidence, and supports an opt-in portable log instrumentation adapter. It does not provide zero-touch UVM-library interception, infer arbitration mode/priority/fairness or waiting queues, validate delta-cycle timing, or compare transaction payloads.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
