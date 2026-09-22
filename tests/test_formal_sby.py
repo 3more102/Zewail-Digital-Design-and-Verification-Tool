@@ -8,7 +8,11 @@ import pytest
 from zddv.cli import main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
-from zddv.formal.sby import parse_sby_status_jsonl, render_sby_bmc_config
+from zddv.formal.sby import (
+    parse_sby_status_jsonl,
+    render_sby_bmc_config,
+    render_sby_cover_config,
+)
 from zddv.storage import list_formal_result_snapshots
 
 
@@ -386,3 +390,141 @@ def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, 
     assert not row["input_path"].endswith("job.sby")
     assert row["report_path"].endswith("zddv-formal-result.json")
     assert Path(row["report_path"]).is_file()
+
+
+def test_render_sby_cover_config_uses_explicit_bound_and_project_sources(tmp_path: Path):
+    project = _project(tmp_path)
+    request = FormalCheckRequest(mode="cover", depth=24)
+
+    text = render_sby_cover_config(project, request)
+
+    assert "[options]" in text
+    assert "mode cover" in text
+    assert "depth 24" in text
+    assert "[engines]\nsmtbmc" in text
+    assert "read_verilog -formal -sv rtl/dut.sv" in text
+    assert "prep -top formal_top" in text
+
+
+def test_render_sby_cover_config_rejects_non_cover_mode(tmp_path: Path):
+    with pytest.raises(ValueError, match="requires cover mode"):
+        render_sby_cover_config(
+            _project(tmp_path),
+            FormalCheckRequest(mode="bmc", depth=8),
+        )
+
+
+def test_sby_backend_executes_bounded_cover_mode(tmp_path: Path, monkeypatch):
+    project = _project(tmp_path)
+    monkeypatch.setattr(
+        "zddv.formal.sby.shutil.which",
+        lambda name: "/opt/sby/bin/sby" if name == "sby" else None,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_process(command, *, cwd, timeout_s):
+        if "--statusfmt" in command:
+            captured["status_command"] = list(command)
+            return SimpleNamespace(returncode=0, output="", timed_out=False)
+
+        config = Path(command[-1])
+        config_text = config.read_text(encoding="utf-8")
+        captured["config"] = config_text
+        captured["command"] = list(command)
+        return SimpleNamespace(
+            returncode=0,
+            output="SBY [cover] DONE (PASS, rc=0)\n",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr("zddv.formal.sby._run_process", fake_process)
+
+    result = SymbiYosysBackend().check(
+        project,
+        FormalCheckRequest(mode="cover", depth=24, timeout_s=3.0),
+    )
+
+    assert result.status == "PASS"
+    assert result.request.mode == "cover"
+    assert result.request.depth == 24
+    assert result.run_dir.name.startswith("cover-")
+    assert "mode cover" in captured["config"]
+    assert "depth 24" in captured["config"]
+    assert result.artifacts[0].suffix == ".sby"
+
+
+def test_formal_cover_cli_persists_explicit_reached_goal(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+
+    class FakeBackend:
+        def version(self) -> str:
+            return "sby test"
+
+        def check(self, loaded, request):
+            assert loaded.root == project.root
+            assert request.mode == "cover"
+            assert request.depth == 20
+            assert request.timeout_s == pytest.approx(2.0)
+            run_dir = project.root / ".zddv" / "formal" / "sby" / "cover-test"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            log_path = run_dir / "formal.log"
+            log_path.write_text(
+                "SBY [cover] engine_0: ## Reached cover statement at c_hit in step 4.\n"
+                "SBY [cover] engine_0: ## Writing trace to VCD file: engine_0/trace.vcd\n"
+                "SBY [cover] summary: engine_0 (smtbmc boolector) returned PASS\n"
+                "SBY [cover] DONE (PASS, rc=0)\n",
+                encoding="utf-8",
+            )
+            return FormalCheckResult(
+                backend="sby",
+                engine="smtbmc",
+                request=request,
+                command=("sby", "cover"),
+                returncode=0,
+                status="PASS",
+                run_dir=run_dir,
+                log_path=log_path,
+                artifacts=(run_dir / "job.sby",),
+                runtime_ms=5.0,
+            )
+
+    monkeypatch.setattr("zddv.cli.SymbiYosysBackend", FakeBackend)
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-cover",
+            "--depth",
+            "20",
+            "--timeout",
+            "2",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert rc == 0
+    assert "FORMAL COVER PASS: depth=20 engine=smtbmc" in output
+    assert "Explicit reached goals: 1" in output
+    assert "Scope: COVER" in output
+    assert "Snapshot:" in output
+    assert "Report:" in output
+
+    rows = list_formal_result_snapshots(project)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["backend"] == "sby"
+    assert row["status"] == "PASS"
+    assert row["mode"] == "cover"
+    assert row["proof_scope"] == "COVER"
+    assert row["request_depth"] == 20
+    assert row["property_count"] == 1
+    assert row["cover_count"] == 1
+    assert row["covered_goal_count"] == 1
+    assert row["unreached_goal_count"] == 0
+    assert row["input_path"].endswith("formal.log")
+    assert row["report_path"].endswith("zddv-formal-result.json")
