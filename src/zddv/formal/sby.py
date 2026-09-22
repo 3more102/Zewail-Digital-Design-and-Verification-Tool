@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import math
 import re
 import shutil
@@ -11,7 +12,7 @@ import time
 
 from zddv.config import ProjectConfig
 
-from .base import FormalBackend, FormalCheckRequest, FormalCheckResult
+from .base import FormalBackend, FormalCheckRequest, FormalCheckResult, FormalPropertyResult
 
 
 _SBY_DONE = re.compile(
@@ -158,6 +159,110 @@ def _normalized_sby_status(outcome: _ProcessOutcome) -> str:
     return "UNKNOWN"
 
 
+def parse_sby_status_jsonl(text: str) -> tuple[FormalPropertyResult, ...]:
+    """Normalize documented SBY JSONL property-status rows for bounded assertions."""
+
+    properties: dict[str, FormalPropertyResult] = {}
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"invalid SBY property-status JSONL at line {line_number}"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"SBY property-status JSONL line {line_number} must be an object"
+            )
+
+        kind = str(row.get("kind", "")).strip().upper()
+        if kind != "ASSERT":
+            continue
+
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(
+                f"SBY assertion status line {line_number} is missing a property name"
+            )
+
+        raw_status = str(row.get("status", "")).strip().upper()
+        if raw_status not in {"PASS", "FAIL", "UNKNOWN", "ERROR"}:
+            continue
+
+        depth = row.get("depth")
+        if depth is not None:
+            if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
+                raise ValueError(
+                    f"SBY assertion status line {line_number} has invalid depth"
+                )
+
+        trace_path = row.get("trace")
+        if trace_path is not None:
+            if not isinstance(trace_path, str) or not trace_path.strip():
+                raise ValueError(
+                    f"SBY assertion status line {line_number} has invalid trace path"
+                )
+            trace_path = Path(trace_path)
+
+        item = FormalPropertyResult(
+            name=name.strip(),
+            kind="assert",
+            status=raw_status,
+            depth=depth,
+            trace_path=trace_path,
+        )
+        previous = properties.get(item.name)
+        if previous is not None and previous != item:
+            raise ValueError(
+                f"conflicting SBY property-status rows for {item.name!r}"
+            )
+        properties[item.name] = item
+
+    return tuple(properties.values())
+
+
+def _query_sby_property_statuses(
+    executable: str,
+    *,
+    project: ProjectConfig,
+    run_dir: Path,
+    timeout_s: float | None,
+) -> tuple[tuple[FormalPropertyResult, ...], Path]:
+    command = [
+        executable,
+        "--statusfmt",
+        "jsonl",
+        "--latest",
+        str(run_dir),
+    ]
+    outcome = _run_process(
+        command,
+        cwd=project.root,
+        timeout_s=timeout_s,
+    )
+
+    if outcome.returncode == 0 and not outcome.timed_out:
+        artifact = run_dir / "property-status.jsonl"
+        artifact.write_text(outcome.output, encoding="utf-8")
+        try:
+            return parse_sby_status_jsonl(outcome.output), artifact
+        except ValueError:
+            return (), artifact
+
+    artifact = run_dir / "property-status-query.log"
+    output = outcome.output
+    if outcome.timed_out:
+        if output and not output.endswith("\n"):
+            output += "\n"
+        output += "ZDDV: SBY property-status query timed out\n"
+    artifact.write_text(output, encoding="utf-8")
+    return (), artifact
+
+
 class SymbiYosysBackend(FormalBackend):
     """First concrete ZDDV formal backend: finite-depth SymbiYosys BMC."""
 
@@ -226,6 +331,17 @@ class SymbiYosysBackend(FormalBackend):
         log_path.write_text(output, encoding="utf-8")
 
         status = _normalized_sby_status(outcome)
+        properties: tuple[FormalPropertyResult, ...] = ()
+        artifacts: list[Path] = [config_path]
+        if not outcome.timed_out:
+            properties, status_artifact = _query_sby_property_statuses(
+                executable,
+                project=project,
+                run_dir=run_dir,
+                timeout_s=request.timeout_s,
+            )
+            artifacts.append(status_artifact)
+
         return FormalCheckResult(
             backend=self.name,
             engine="smtbmc",
@@ -235,7 +351,7 @@ class SymbiYosysBackend(FormalBackend):
             status=status,
             run_dir=run_dir,
             log_path=log_path,
-            properties=(),
-            artifacts=(config_path,),
+            properties=properties,
+            artifacts=tuple(artifacts),
             runtime_ms=runtime_ms,
         )
