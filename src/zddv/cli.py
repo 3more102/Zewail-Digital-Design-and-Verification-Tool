@@ -40,12 +40,14 @@ from zddv.storage import (
     list_functional_coverage_snapshots,
     list_run_records,
     list_runs,
+    list_uvm_arbitration_snapshots,
     list_uvm_item_handshake_snapshots,
     list_uvm_log_snapshots,
     list_uvm_sequence_lifecycle_snapshots,
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_arbitration import analyze_uvm_arbitration_file
 from zddv.uvm_item import analyze_uvm_item_file
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
@@ -846,6 +848,78 @@ def cmd_uvm_item_history(args) -> int:
             f"{row['status']:<6} {row['item_count']:>5} "
             f"{row['event_count']:>6} {row['violation_count']:>5} "
             f"{handshake:<15} {activity:<12} "
+            f"{run_id[:24]:<24} {row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_uvm_arbitration_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_arbitration_file(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+        max_bypass=args.max_bypass,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM ARBITRATION {result['status']}: "
+        f"mode={result['mode']} "
+        f"{summary['requests']} request(s), "
+        f"{summary['grants']} grant(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Queue: pending={summary['pending']} "
+        f"sequences={summary['sequences']} "
+        f"decisions={summary['decisions']} "
+        f"max-bypass={summary['max_bypass_observed']}"
+    )
+    if summary.get("max_bypass_limit") is not None:
+        print(f"Fairness policy: max-bypass-limit={summary['max_bypass_limit']}")
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] event={violation['event_index']} "
+            f"request={violation['request_id']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_arbitration_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_uvm_arbitration_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        run_id=args.run_id,
+        mode=args.mode,
+    )
+    if not rows:
+        print("No UVM arbitration snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<6} {'MODE':<25} {'REQ':>4} {'GNT':>4} {'PEND':>4} "
+        f"{'DEC':>4} {'VIOL':>5} {'BYPASS':>6} {'RUN':<24} SNAPSHOT"
+    )
+    for row in rows:
+        run_id = row["run_id"] or "-"
+        print(
+            f"{row['status']:<6} {row['mode'][:25]:<25} "
+            f"{row['request_count']:>4} {row['grant_count']:>4} "
+            f"{row['pending_count']:>4} {row['decision_count']:>4} "
+            f"{row['violation_count']:>5} {row['max_bypass_observed']:>6} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
         )
     return 0
@@ -1754,6 +1828,76 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter item-handshake snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_item_history.set_defaults(func=cmd_uvm_item_history)
+
+    p_uvm_arb = sub.add_parser(
+        "uvm-arb-analyze",
+        aliases=["uvm-arbitration-analyze"],
+        help="Analyze explicit UVM sequencer arbitration REQUEST/GRANT evidence",
+    )
+    p_uvm_arb.add_argument(
+        "path",
+        help="Normalized UVM arbitration event JSON file",
+    )
+    p_uvm_arb.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID to correlate with this arbitration snapshot",
+    )
+    p_uvm_arb.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label overriding the JSON source",
+    )
+    p_uvm_arb.add_argument(
+        "--output",
+        default=".zddv/uvm/arbitration/latest.json",
+        help="Normalized UVM arbitration JSON report path",
+    )
+    p_uvm_arb.add_argument(
+        "--max-bypass",
+        type=int,
+        default=None,
+        help="Optional ZDDV fairness policy: maximum grants that may bypass a pending request",
+    )
+    p_uvm_arb.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of arbitration/fairness violations to print",
+    )
+    p_uvm_arb.set_defaults(func=cmd_uvm_arbitration_analyze)
+
+    p_uvm_arbitration_history = sub.add_parser(
+        "uvm-arbitration-history",
+        help="Show persisted UVM sequencer arbitration snapshots",
+    )
+    p_uvm_arbitration_history.add_argument("--limit", type=int, default=20)
+    p_uvm_arbitration_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL"),
+        default=None,
+    )
+    p_uvm_arbitration_history.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Filter arbitration snapshots linked to a recorded ZDDV run ID",
+    )
+    p_uvm_arbitration_history.add_argument(
+        "--mode",
+        choices=(
+            "UVM_SEQ_ARB_FIFO",
+            "UVM_SEQ_ARB_WEIGHTED",
+            "UVM_SEQ_ARB_RANDOM",
+            "UVM_SEQ_ARB_STRICT_FIFO",
+            "UVM_SEQ_ARB_STRICT_RANDOM",
+            "UVM_SEQ_ARB_USER",
+        ),
+        default=None,
+        help="Filter arbitration snapshots by UVM arbitration mode",
+    )
+    p_uvm_arbitration_history.set_defaults(func=cmd_uvm_arbitration_history)
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",
