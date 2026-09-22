@@ -48,7 +48,11 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
-from zddv.uvm_arbitration import analyze_uvm_arbitration_file
+from zddv.uvm_arbitration import (
+    analyze_uvm_arbitration_file,
+    analyze_uvm_arbitration_from_item_file,
+    analyze_uvm_arbitration_from_item_log,
+)
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.waveform import write_waveform_index
@@ -925,16 +929,7 @@ def cmd_uvm_item_violations(args) -> int:
     return 0
 
 
-def cmd_uvm_arbitration_analyze(args) -> int:
-    project = load_project(_project_arg(args))
-    result = analyze_uvm_arbitration_file(
-        project,
-        args.path,
-        source=args.source,
-        fairness_bound=args.fairness_bound,
-        output=args.output,
-        run_id=args.run_id,
-    )
+def _print_uvm_arbitration_result(result: dict, args) -> int:
     summary = result["summary"]
     print(
         f"UVM ARBITRATION {result['status']}: "
@@ -948,6 +943,15 @@ def cmd_uvm_arbitration_analyze(args) -> int:
         f"fairness-violations={summary['fairness_violations']} "
         f"pending={summary['pending']}"
     )
+    adapter = result.get("adapter")
+    if adapter:
+        print(
+            "Item adapter: "
+            f"requests={adapter['arbitration_request_events']} "
+            f"decisions={adapter['generated_decisions']} "
+            f"pending={adapter['pending_requests_at_end']} "
+            f"skipped-grants={adapter['skipped_grants_missing_identity']}"
+        )
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
@@ -965,6 +969,44 @@ def cmd_uvm_arbitration_analyze(args) -> int:
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
 
+
+def cmd_uvm_arbitration_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_arbitration_file(
+        project,
+        args.path,
+        source=args.source,
+        fairness_bound=args.fairness_bound,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    return _print_uvm_arbitration_result(result, args)
+
+
+def cmd_uvm_arbitration_from_items(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_arbitration_from_item_file(
+        project,
+        args.path,
+        source=args.source,
+        fairness_bound=args.fairness_bound,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    return _print_uvm_arbitration_result(result, args)
+
+
+def cmd_uvm_arbitration_from_item_log(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_arbitration_from_item_log(
+        project,
+        args.path,
+        source=args.source,
+        fairness_bound=args.fairness_bound,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    return _print_uvm_arbitration_result(result, args)
 
 def cmd_uvm_arbitration_history(args) -> int:
     project = load_project(_project_arg(args))
@@ -2035,6 +2077,84 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of arbitration/fairness violations to print",
     )
     p_uvm_arbitration.set_defaults(func=cmd_uvm_arbitration_analyze)
+
+    p_uvm_arbitration_items = sub.add_parser(
+        "uvm-arbitration-from-items",
+        help="Adapt normalized UVM item evidence into canonical arbitration decisions",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "path",
+        help="Normalized UVM sequence-item event JSON file",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID to correlate with this arbitration snapshot",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "--source",
+        default=None,
+        help="Optional arbitration adapter source label",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "--fairness-bound",
+        type=int,
+        default=None,
+        help="Project-defined maximum observed losing-decision count",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "--output",
+        default=".zddv/uvm/arbitration/latest.json",
+        help="Normalized UVM arbitration JSON report path",
+    )
+    p_uvm_arbitration_items.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of arbitration/fairness violations to print",
+    )
+    p_uvm_arbitration_items.set_defaults(func=cmd_uvm_arbitration_from_items)
+
+    p_uvm_arbitration_item_log = sub.add_parser(
+        "uvm-arbitration-from-item-log",
+        help="Adapt explicit ZDDV_UVM_ITEM log markers into canonical arbitration decisions",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Simulation/UVM log file; optional when --run is supplied",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Recorded ZDDV run ID; uses its simulation log when path is omitted",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "--source",
+        default=None,
+        help="Optional arbitration adapter source label",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "--fairness-bound",
+        type=int,
+        default=None,
+        help="Project-defined maximum observed losing-decision count",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "--output",
+        default=".zddv/uvm/arbitration/latest.json",
+        help="Normalized UVM arbitration JSON report path",
+    )
+    p_uvm_arbitration_item_log.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of arbitration/fairness violations to print",
+    )
+    p_uvm_arbitration_item_log.set_defaults(func=cmd_uvm_arbitration_from_item_log)
 
     p_uvm_arbitration_history = sub.add_parser(
         "uvm-arbitration-history",
