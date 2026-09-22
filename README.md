@@ -13,6 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, and automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`; detailed code-item/source hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -71,6 +72,7 @@ cd Zewail-Digital-Design-and-Verification-Tool
 python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
+zddv doctor --simulator vcs
 ```
 
 Run the included counter example:
@@ -98,7 +100,7 @@ inspect those normalized bins. Questa's weighted total coverage is preserved as
 a separate simulator-reported value; detailed code-item/source `coverage-holes`
 remains pending.
 
-## Current CLI
+For a VCS project, ZDDV compiles SystemVerilog with the native `vcs` flow and runs the generated `simv` executable. The foundation uses bundled UVM 1.2, transports deterministic seeds with `+ntb_random_seed=<seed>`, preserves runtime plusargs, can request `waveform.vcd`, and links UVM/assertion evidence to the recorded run. Native VCS coverage capture/normalization is not enabled yet; requested coverage is recorded explicitly as `unsupported` rather than as a false artifact.\n\n## Current CLI
 
 ```bash
 zddv init my_project
@@ -108,6 +110,7 @@ zddv --project my_project add tb "tb/*.sv"
 
 zddv --project my_project config simulator verilator
 # or: zddv --project my_project config simulator questa
+# or: zddv --project my_project config simulator vcs
 zddv --project my_project config top tb_top
 
 zddv doctor
