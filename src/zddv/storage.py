@@ -426,6 +426,61 @@ CREATE TABLE IF NOT EXISTS coverage_score_metric_counts (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_score_metric_counts_snapshot
     ON coverage_score_metric_counts(snapshot_id);
+
+CREATE TABLE IF NOT EXISTS formal_result_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    backend TEXT NOT NULL,
+    engine TEXT,
+    status TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    proof_scope TEXT NOT NULL,
+    request_depth INTEGER,
+    property_count INTEGER NOT NULL,
+    assertion_count INTEGER NOT NULL,
+    cover_count INTEGER NOT NULL,
+    counterexample_count INTEGER NOT NULL,
+    bounded_safe_count INTEGER NOT NULL,
+    proved_count INTEGER NOT NULL,
+    covered_goal_count INTEGER NOT NULL,
+    unreached_goal_count INTEGER NOT NULL,
+    input_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_result_created_at
+    ON formal_result_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_formal_result_status
+    ON formal_result_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_formal_result_backend
+    ON formal_result_snapshots(backend);
+
+CREATE TABLE IF NOT EXISTS formal_property_results (
+    snapshot_id TEXT NOT NULL,
+    property_index INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    interpretation TEXT NOT NULL,
+    depth INTEGER,
+    effective_depth INTEGER,
+    message TEXT,
+    trace_path TEXT,
+    trace_role TEXT,
+    PRIMARY KEY (snapshot_id, property_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_property_snapshot
+    ON formal_property_results(snapshot_id);
+
+CREATE INDEX IF NOT EXISTS idx_formal_property_name
+    ON formal_property_results(name);
+
+CREATE INDEX IF NOT EXISTS idx_formal_property_status
+    ON formal_property_results(status);
 """
 
 
@@ -442,6 +497,155 @@ def _connect(project: ProjectConfig) -> sqlite3.Connection:
     connection.execute("PRAGMA busy_timeout=30000")
     connection.executescript(SCHEMA)
     return connection
+
+
+def record_formal_result_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    request = record["request"]
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO formal_result_snapshots (
+                snapshot_id, created_at, project, backend, engine, status,
+                mode, proof_scope, request_depth, property_count,
+                assertion_count, cover_count, counterexample_count,
+                bounded_safe_count, proved_count, covered_goal_count,
+                unreached_goal_count, input_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["backend"],
+                record.get("engine"),
+                record["status"],
+                request["mode"],
+                request["scope"],
+                request.get("depth"),
+                int(summary["properties"]),
+                int(summary["assertions"]),
+                int(summary["covers"]),
+                int(summary["counterexamples"]),
+                int(summary["bounded_safe_assertions"]),
+                int(summary["proved_assertions"]),
+                int(summary["covered_goals"]),
+                int(summary["unreached_goals"]),
+                record["input_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM formal_property_results WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO formal_property_results (
+                snapshot_id, property_index, name, kind, status,
+                interpretation, depth, effective_depth, message,
+                trace_path, trace_role
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    index,
+                    item["name"],
+                    item["kind"],
+                    item["status"],
+                    item["interpretation"],
+                    item.get("depth"),
+                    item.get("effective_depth"),
+                    item.get("message"),
+                    (
+                        item.get("trace", {}).get("path")
+                        if item.get("trace") is not None
+                        else None
+                    ),
+                    (
+                        item.get("trace", {}).get("role")
+                        if item.get("trace") is not None
+                        else None
+                    ),
+                )
+                for index, item in enumerate(record["properties"])
+            ],
+        )
+    return path
+
+
+def list_formal_result_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    backend: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL", "UNKNOWN", "ERROR"}:
+        raise ValueError(f"Unsupported formal status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, backend, engine, status,
+               mode, proof_scope, request_depth, property_count,
+               assertion_count, cover_count, counterexample_count,
+               bounded_safe_count, proved_count, covered_goal_count,
+               unreached_goal_count, input_path, report_path
+        FROM formal_result_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if backend is not None:
+        clauses.append("backend = ?")
+        params.append(backend)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_formal_property_results(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    kind: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    if kind is not None and kind not in {"assert", "cover"}:
+        raise ValueError(f"Unsupported formal property kind: {kind}")
+
+    query = """
+        SELECT snapshot_id, property_index, name, kind, status,
+               interpretation, depth, effective_depth, message,
+               trace_path, trace_role
+        FROM formal_property_results
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if kind is not None:
+        query += " AND kind = ?"
+        params.append(kind)
+    if status is not None:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY property_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
 
 
 def record_run(project: ProjectConfig, record: dict[str, Any]) -> Path:
