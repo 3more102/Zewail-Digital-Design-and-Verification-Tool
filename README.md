@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection and sequence-item history, normalized sequence lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native VCS coverage plus normalized URG score history**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, and multi-run URG merge/report evidence; numeric VCS coverage normalization remains pending
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, documented `dashboard.txt` score normalization, and percentage-native SQLite coverage history
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch source-linked `coverage-holes`; condition/expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
+- Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -155,6 +156,9 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-item-analyze item_trace.json
+zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
+zddv --project my_project uvm-item-history --limit 20
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
@@ -247,7 +251,6 @@ Example `regression.toml`:
 [regression]
 name = "counter-smoke"
 jobs = 2
-
 [[tests]]
 name = "counter_basic"
 seeds = [1, 7, 42, 100]
@@ -275,7 +278,7 @@ CLI / future GUI
        │
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
-       ├── VCS        ← planned
+       ├── VCS        ← build/run + native VDB/URG score coverage implemented
        └── Xcelium    ← planned
 ```
 
@@ -497,7 +500,6 @@ The extracted trace is written to
 `.zddv/protocols/axi4lite/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4lite/waveform-latest.json`. AW, W, AR, and response
 timestamps are preserved in reconstructed transactions.
-
 ### UCIe Public FLIT Trace Analysis
 
 `zddv ucie-analyze <trace.json>` adds an intentionally conservative UCIe-oriented
@@ -673,7 +675,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
-- [ ] VCS normalized numeric coverage ingestion and history snapshots
+- [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
+- [ ] VCS covered/total object-count ingestion beyond dashboard percentage scores
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
