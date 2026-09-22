@@ -964,3 +964,141 @@ def test_checks_user_sideband_stability_while_channel_is_stalled():
     assert violation["expected"] == 1
     assert violation["actual"] == 2
 
+
+def test_accepts_unaligned_write_strobe_lane_subset():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 1,
+                 "AWADDR": 0x101, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0xAABBCC00, "WSTRB": 0xE, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 1, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["data_width_bits"] == 32
+    write = result["transactions"][0]
+    assert write["beat_addresses"] == [0x101]
+    assert write["write_strobe_allowed_masks"] == [0xE]
+
+
+def test_reports_write_strobe_outside_unaligned_transfer_window():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 2,
+                 "AWADDR": 0x101, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0x11223344, "WSTRB": 0xF, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 2, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "write_strobe_outside_transfer"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "WSTRB"
+    assert violation["expected"] == "subset of 0xE"
+    assert violation["actual"] == "0xF"
+
+
+def test_tracks_narrow_write_strobe_lanes_across_incr_burst():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 3,
+                 "AWADDR": 0x101, "AWLEN": 2, "AWSIZE": 0, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0x0000AA00, "WSTRB": 0x2, "WLAST": 0},
+                {"cycle": 2, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0x00BB0000, "WSTRB": 0x4, "WLAST": 0},
+                {"cycle": 3, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0xCC000000, "WSTRB": 0x8, "WLAST": 1},
+                {"cycle": 4, "BVALID": 1, "BREADY": 1,
+                 "BID": 3, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    write = result["transactions"][0]
+    assert write["beat_addresses"] == [0x101, 0x102, 0x103]
+    assert write["write_strobe_allowed_masks"] == [0x2, 0x4, 0x8]
+
+
+def test_accepts_all_zero_write_strobe():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 4,
+                 "AWADDR": 0x200, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0, "WSTRB": 0, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 4, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["write_strobe_allowed_masks"] == [0xF]
+
+
+def test_reports_write_strobe_wider_than_data_bus():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "AWVALID": 1, "AWREADY": 1, "AWID": 5,
+                 "AWADDR": 0x200, "AWLEN": 0, "AWSIZE": 2, "AWBURST": "INCR"},
+                {"cycle": 1, "WVALID": 1, "WREADY": 1,
+                 "WDATA": 0, "WSTRB": 0x10, "WLAST": 1},
+                {"cycle": 2, "BVALID": 1, "BREADY": 1,
+                 "BID": 5, "BRESP": "OKAY"},
+            ],
+        }
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "invalid_write_strobe"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["expected"] == "0x0..0xF"
+    assert violation["actual"] == 0x10
+
+
+def test_reports_transfer_size_larger_than_known_data_bus():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {"cycle": 0, "ARVALID": 1, "ARREADY": 1, "ARID": 6,
+                 "ARADDR": 0x200, "ARLEN": 0, "ARSIZE": 3, "ARBURST": "INCR"},
+                {"cycle": 1, "RVALID": 1, "RREADY": 1,
+                 "RID": 6, "RDATA": 0, "RRESP": "OKAY", "RLAST": 1},
+            ],
+        }
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "transfer_size_exceeds_data_bus"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "ARSIZE"
+    assert violation["expected"] == "transfer size <= 4 bytes"
+    assert violation["actual"] == 8
+
