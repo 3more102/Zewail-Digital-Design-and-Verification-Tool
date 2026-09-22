@@ -30,7 +30,7 @@ def test_extracts_embedded_uvm_item_markers_with_log_line_provenance(tmp_path: P
                         "item_id": "item-1",
                         "event": "GRANT",
                         "sequence_id": "seq-1",
-                        "metadata": {"origin": "sequence"},
+                        "metadata": {"origin": "sequence", "log_line": 999},
                     }
                 ),
                 _marker(
