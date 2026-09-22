@@ -47,11 +47,9 @@ def _waveform_signal(item: Any, *, index: int) -> dict[str, Any]:
     else:
         scope = str(scope_raw).strip()
 
+    name = path.rsplit(".", 1)[-1]
     reference_raw = metadata.get("reference")
-    if reference_raw is None:
-        name = path.rsplit(".", 1)[-1]
-    else:
-        name = str(reference_raw).strip() or path.rsplit(".", 1)[-1]
+    reference = name if reference_raw is None else str(reference_raw).strip() or name
 
     width_raw = item.get("width")
     width = None if width_raw is None else int(width_raw)
@@ -60,7 +58,7 @@ def _waveform_signal(item: Any, *, index: int) -> dict[str, Any]:
         "path": path,
         "scope": scope,
         "name": name,
-        "reference": name,
+        "reference": reference,
         "range": metadata.get("range"),
         "var_type": metadata.get("var_type"),
         "width": width,
