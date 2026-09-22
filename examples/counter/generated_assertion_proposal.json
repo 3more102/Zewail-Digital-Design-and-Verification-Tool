@@ -1,0 +1,12 @@
+{
+  "kind": "assertion",
+  "language": "systemverilog",
+  "name": "p_req_ack_review_example",
+  "target_path": "reviewed_generated/p_req_ack_review_example.sv",
+  "source": "zddv-example",
+  "evidence": {
+    "purpose": "Demonstrate review-gated handling of proposed verification code",
+    "semantics": "Example-only generic req/ack property; not inferred from the counter DUT"
+  },
+  "content": "module zddv_generated_review_example(\n    input logic clk,\n    input logic rst_n,\n    input logic req,\n    input logic ack\n);\n    p_req_ack_review_example: assert property (\n        @(posedge clk) disable iff (!rst_n) req |-> ##[1:2] ack\n    );\nendmodule\n"
+}

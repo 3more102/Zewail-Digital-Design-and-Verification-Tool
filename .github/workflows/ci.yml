@@ -349,6 +349,18 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
+      - name: Stage and explicitly apply reviewed generated assertion
+        run: |
+          zddv --project examples/counter generated-stage generated_assertion_proposal.json
+          MANIFEST=$(realpath "$(find examples/counter/.zddv/generated/drafts -name manifest.json -print -quit)")
+          test -s "$MANIFEST"
+          SHA=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["content_sha256"])' "$MANIFEST")
+          test ! -e examples/counter/reviewed_generated/p_req_ack_review_example.sv
+          zddv --project examples/counter generated-apply "$MANIFEST" --expected-sha256 "$SHA" --approve-reviewed
+          test -s examples/counter/reviewed_generated/p_req_ack_review_example.sv
+          grep -q '"approved": true' examples/counter/.zddv/generated/applied/*.json
+          grep -q '"execution_enabled": false' examples/counter/.zddv/generated/applied/*.json
+
       - name: Generate HTML dashboard
         run: |
           zddv --project examples/counter report --limit 50
