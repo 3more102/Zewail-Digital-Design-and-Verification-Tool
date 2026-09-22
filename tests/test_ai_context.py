@@ -77,7 +77,7 @@ def _patch_sources(monkeypatch, run_id: str) -> None:
         lambda *args, **kwargs: _ranking(run_id),
     )
     monkeypatch.setattr(
-        "zddv.ai_context.suggest_debug_probes",
+        "zddv.ai_context.suggest_debug_probes_from_ranking",
         lambda *args, **kwargs: _probes(run_id),
     )
 
