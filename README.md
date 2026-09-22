@@ -14,6 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, and documented global covergroup type/instance counts
+- Cadence Xcelium native `xrun` two-step foundation with elaborated snapshot reuse, deterministic SystemVerilog seeds, test/plusarg transport, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization; Xcelium coverage capture remains pending
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch source-linked `coverage-holes`; condition/expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -275,8 +276,8 @@ CLI / future GUI
        │
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
-       ├── VCS        ← planned
-       └── Xcelium    ← planned
+       ├── VCS        ← build/run + native VDB/URG coverage implemented
+       └── Xcelium    ← build/run foundation implemented; coverage planned
 ```
 
 The CLI and future GUI must use the same core APIs. Simulator-specific command construction stays inside simulator adapters.
@@ -673,8 +674,11 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
-- [ ] VCS normalized numeric coverage ingestion and history snapshots
-- [ ] Xcelium adapter
+- [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
+- [x] VCS documented global covergroup type/instance covered/expected count ingestion
+- [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
+- [x] Xcelium execution adapter foundation (xrun build/run, seed/test/plusargs, VCD, assertions, run-linked UVM)
+- [ ] Xcelium native coverage capture and normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
