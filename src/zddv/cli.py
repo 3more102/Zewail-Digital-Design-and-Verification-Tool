@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_questa_toggle_coverage_xml,
     parse_xcelium_imc_block_coverage,
     parse_xcelium_imc_expression_coverage,
     parse_xcelium_imc_toggle_coverage_points,
@@ -714,6 +715,16 @@ def cmd_coverage(args) -> int:
                 "Questa multibit expression normalized detail: "
                 f"{result['multibit_expression_report']}"
             )
+    questa_toggle_status = result.get("questa_toggle_status")
+    if questa_toggle_status is not None:
+        print(
+            "Normalized Questa toggle coverage: "
+            f"{questa_toggle_status} "
+            f"{result.get('questa_toggle_points', 0)} point(s), "
+            f"{result.get('questa_toggle_holes', 0)} hole(s)"
+        )
+        if result.get("questa_toggle_report"):
+            print(f"Questa toggle normalized detail: {result['questa_toggle_report']}")
     toggle_detail_status = result.get("toggle_detail_status")
     if toggle_detail_status is not None:
         print(
@@ -860,15 +871,38 @@ def cmd_coverage_holes(args) -> int:
             "condition",
             "expression",
             "fsm",
+            "toggle",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, expression, or fsm."
+                "--type statement, branch, condition, expression, fsm, or toggle."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
                 project,
                 output,
+                limit=args.limit,
+            )
+        elif args.point_type == "toggle":
+            toggle_source = (
+                project.root / ".zddv" / "coverage" / "toggle-details.xml"
+            ).resolve()
+            if not toggle_source.exists():
+                raise RuntimeError(
+                    f"Questa toggle XML report not found at {toggle_source}. "
+                    "Run 'zddv coverage' first."
+                )
+            points = parse_questa_toggle_coverage_xml(toggle_source)
+            if not points:
+                raise RuntimeError(
+                    f"No normalized binary/extended Questa toggle transition "
+                    f"items found in {toggle_source}. Unknown or enumerated "
+                    "toggle layouts remain evidence-only."
+                )
+            report = write_coverage_hole_report(
+                points,
+                output,
+                point_type="toggle",
                 limit=args.limit,
             )
         else:
@@ -903,6 +937,12 @@ def cmd_coverage_holes(args) -> int:
                         if point.get("type") == "expression"
                         and point.get("multibit") is True
                     )
+            if args.point_type is None:
+                toggle_source = (
+                    project.root / ".zddv" / "coverage" / "toggle-details.xml"
+                ).resolve()
+                if toggle_source.exists():
+                    points.extend(parse_questa_toggle_coverage_xml(toggle_source))
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
