@@ -272,3 +272,24 @@ def test_doctor_can_check_vcs_backend(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ZDDV 0.6.0" in output
     assert "[PASS] VCS test" in output
+
+
+def test_vcs_version_uses_documented_id_option(monkeypatch):
+    backend = VcsBackend()
+    monkeypatch.setattr(backend, "_tool", lambda: "vcs")
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = list(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Compiler version = VCS test\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("zddv.simulator.vcs.subprocess.run", fake_run)
+
+    version = backend.version()
+
+    assert version == "Compiler version = VCS test"
+    assert captured["command"] == ["vcs", "-id"]
