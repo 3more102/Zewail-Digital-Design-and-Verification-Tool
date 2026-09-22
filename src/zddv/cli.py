@@ -2651,10 +2651,14 @@ def cmd_signoff(args) -> int:
     result = write_verification_signoff_bundle(
         project,
         run_limit=args.run_limit,
+        run_ids=args.run_ids,
         require_coverage=args.require_coverage,
         min_coverage=args.min_coverage,
+        coverage_snapshot_id=args.coverage_snapshot_id,
         require_formal=args.require_formal,
+        formal_snapshot_id=args.formal_snapshot_id,
         require_uvm=args.require_uvm,
+        uvm_snapshot_id=args.uvm_snapshot_id,
         output=args.output,
     )
     summary = result["summary"]
@@ -4384,7 +4388,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-limit",
         type=int,
         default=100,
-        help="Maximum recent persisted simulation runs to include",
+        help="Maximum recent persisted simulation runs to include when --run-id is absent",
+    )
+    p_signoff.add_argument(
+        "--run-id",
+        dest="run_ids",
+        action="append",
+        default=None,
+        help="Pin one exact persisted simulation run ID; repeat to pin multiple runs",
     )
     p_signoff.add_argument(
         "--require-coverage",
@@ -4398,14 +4409,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum normalized coverage percentage; also requires coverage evidence",
     )
     p_signoff.add_argument(
+        "--coverage-snapshot-id",
+        default=None,
+        help="Pin one exact normalized coverage snapshot ID",
+    )
+    p_signoff.add_argument(
         "--require-formal",
         action="store_true",
         help="Block review when no normalized formal snapshot is available",
     )
     p_signoff.add_argument(
+        "--formal-snapshot-id",
+        default=None,
+        help="Pin one exact normalized formal snapshot ID",
+    )
+    p_signoff.add_argument(
         "--require-uvm",
         action="store_true",
         help="Block review when no normalized UVM log snapshot is available",
+    )
+    p_signoff.add_argument(
+        "--uvm-snapshot-id",
+        default=None,
+        help="Pin one exact normalized UVM log snapshot ID",
     )
     p_signoff.add_argument(
         "--output",

@@ -11,6 +11,7 @@ from zddv.storage import (
     list_coverage_score_snapshots,
     list_coverage_snapshots,
     list_formal_result_snapshots,
+    get_run_record,
     list_run_records,
     list_uvm_log_snapshots,
 )
@@ -26,10 +27,17 @@ def _canonical_sha256(payload: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
+def _select_coverage(
+    project: ProjectConfig,
+    snapshot_id: str | None = None,
+) -> dict[str, Any] | None:
     candidates: list[dict[str, Any]] = []
 
-    score_rows = list_coverage_score_snapshots(project, limit=1)
+    score_rows = list_coverage_score_snapshots(
+        project,
+        limit=1,
+        snapshot_id=snapshot_id,
+    )
     if score_rows:
         row = score_rows[0]
         candidates.append(
@@ -43,7 +51,11 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
             }
         )
 
-    point_rows = list_coverage_snapshots(project, limit=1)
+    point_rows = list_coverage_snapshots(
+        project,
+        limit=1,
+        snapshot_id=snapshot_id,
+    )
     if point_rows:
         row = point_rows[0]
         candidates.append(
@@ -59,6 +71,11 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
 
     if not candidates:
         return None
+    if snapshot_id is not None and len(candidates) > 1:
+        raise ValueError(
+            "Pinned coverage snapshot ID is ambiguous across normalized "
+            f"coverage stores: {snapshot_id}"
+        )
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
@@ -81,10 +98,14 @@ def build_verification_signoff_bundle(
     project: ProjectConfig,
     *,
     run_limit: int = 100,
+    run_ids: list[str] | tuple[str, ...] | None = None,
     require_coverage: bool = False,
     min_coverage: float | None = None,
+    coverage_snapshot_id: str | None = None,
     require_formal: bool = False,
+    formal_snapshot_id: str | None = None,
     require_uvm: bool = False,
+    uvm_snapshot_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic, evidence-backed verification signoff review bundle.
 
@@ -97,12 +118,62 @@ def build_verification_signoff_bundle(
     if min_coverage is not None and not 0.0 <= float(min_coverage) <= 100.0:
         raise ValueError("min_coverage must be between 0 and 100")
 
-    coverage_required = bool(require_coverage or min_coverage is not None)
+    normalized_run_ids: list[str] = []
+    seen_run_ids: set[str] = set()
+    for raw_run_id in run_ids or ():
+        run_id = str(raw_run_id).strip()
+        if not run_id:
+            raise ValueError("Pinned run IDs must be non-empty")
+        if run_id not in seen_run_ids:
+            normalized_run_ids.append(run_id)
+            seen_run_ids.add(run_id)
 
-    runs = list_run_records(project, limit=run_limit)
-    coverage = _latest_coverage(project)
-    formal_rows = list_formal_result_snapshots(project, limit=1)
-    uvm_rows = list_uvm_log_snapshots(project, limit=1)
+    def _optional_id(value: str | None, label: str) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{label} must be non-empty when supplied")
+        return normalized
+
+    coverage_snapshot_id = _optional_id(
+        coverage_snapshot_id,
+        "coverage_snapshot_id",
+    )
+    formal_snapshot_id = _optional_id(formal_snapshot_id, "formal_snapshot_id")
+    uvm_snapshot_id = _optional_id(uvm_snapshot_id, "uvm_snapshot_id")
+
+    coverage_required = bool(
+        require_coverage
+        or min_coverage is not None
+        or coverage_snapshot_id is not None
+    )
+    formal_required = bool(require_formal or formal_snapshot_id is not None)
+    uvm_required = bool(require_uvm or uvm_snapshot_id is not None)
+
+    missing_run_ids: list[str] = []
+    if normalized_run_ids:
+        runs: list[dict[str, Any]] = []
+        for run_id in normalized_run_ids:
+            record = get_run_record(project, run_id)
+            if record is None:
+                missing_run_ids.append(run_id)
+            else:
+                runs.append(record)
+    else:
+        runs = list_run_records(project, limit=run_limit)
+
+    coverage = _select_coverage(project, coverage_snapshot_id)
+    formal_rows = list_formal_result_snapshots(
+        project,
+        limit=1,
+        snapshot_id=formal_snapshot_id,
+    )
+    uvm_rows = list_uvm_log_snapshots(
+        project,
+        limit=1,
+        snapshot_id=uvm_snapshot_id,
+    )
     formal = formal_rows[0] if formal_rows else None
     uvm = uvm_rows[0] if uvm_rows else None
 
@@ -114,10 +185,17 @@ def build_verification_signoff_bundle(
     }
     policy = {
         "run_limit": int(run_limit),
+        "run_selection": {
+            "mode": "pinned" if normalized_run_ids else "recent",
+            "run_ids": normalized_run_ids,
+        },
         "coverage_required": coverage_required,
         "min_coverage": None if min_coverage is None else float(min_coverage),
-        "formal_required": bool(require_formal),
-        "uvm_required": bool(require_uvm),
+        "coverage_snapshot_id": coverage_snapshot_id,
+        "formal_required": formal_required,
+        "formal_snapshot_id": formal_snapshot_id,
+        "uvm_required": uvm_required,
+        "uvm_snapshot_id": uvm_snapshot_id,
     }
 
     checks: list[dict[str, Any]] = []
@@ -128,13 +206,33 @@ def build_verification_signoff_bundle(
         for row in runs
         if str(row["status"]).upper() != "PASS"
     ]
-    if not runs:
+    run_selection_details = {
+        "mode": "pinned" if normalized_run_ids else "recent",
+        "requested_run_ids": normalized_run_ids,
+        "missing_run_ids": missing_run_ids,
+    }
+    if missing_run_ids:
         checks.append(
             _check(
                 "simulation",
                 "MISSING",
                 blocking=True,
                 details={
+                    **run_selection_details,
+                    "selected_runs": len(runs),
+                    "status_counts": dict(sorted(status_counts.items())),
+                    "nonpass_run_ids": nonpass_runs,
+                },
+            )
+        )
+    elif not runs:
+        checks.append(
+            _check(
+                "simulation",
+                "MISSING",
+                blocking=True,
+                details={
+                    **run_selection_details,
                     "selected_runs": 0,
                     "status_counts": {},
                     "nonpass_run_ids": [],
@@ -148,6 +246,7 @@ def build_verification_signoff_bundle(
                 "FAIL",
                 blocking=True,
                 details={
+                    **run_selection_details,
                     "selected_runs": len(runs),
                     "status_counts": dict(sorted(status_counts.items())),
                     "nonpass_run_ids": nonpass_runs,
@@ -161,6 +260,7 @@ def build_verification_signoff_bundle(
                 "PASS",
                 blocking=False,
                 details={
+                    **run_selection_details,
                     "selected_runs": len(runs),
                     "status_counts": dict(sorted(status_counts.items())),
                     "nonpass_run_ids": [],
@@ -176,6 +276,7 @@ def build_verification_signoff_bundle(
                 blocking=coverage_required,
                 details={
                     "required": coverage_required,
+                    "requested_snapshot_id": coverage_snapshot_id,
                     "min_coverage": policy["min_coverage"],
                 },
             )
@@ -194,6 +295,7 @@ def build_verification_signoff_bundle(
                 blocking=below_threshold,
                 details={
                     "required": coverage_required,
+                    "requested_snapshot_id": coverage_snapshot_id,
                     "snapshot_id": coverage["snapshot_id"],
                     "kind": coverage["kind"],
                     "percent": percent,
@@ -206,9 +308,12 @@ def build_verification_signoff_bundle(
         checks.append(
             _check(
                 "formal",
-                "MISSING" if require_formal else "NOT_PRESENT",
-                blocking=bool(require_formal),
-                details={"required": bool(require_formal)},
+                "MISSING" if formal_required else "NOT_PRESENT",
+                blocking=formal_required,
+                details={
+                    "required": formal_required,
+                    "requested_snapshot_id": formal_snapshot_id,
+                },
             )
         )
     else:
@@ -219,10 +324,11 @@ def build_verification_signoff_bundle(
                 "formal",
                 "FAIL"
                 if formal_failed
-                else ("PASS" if require_formal else "PRESENT"),
+                else ("PASS" if formal_required else "PRESENT"),
                 blocking=formal_failed,
                 details={
-                    "required": bool(require_formal),
+                    "required": formal_required,
+                    "requested_snapshot_id": formal_snapshot_id,
                     "snapshot_id": formal["snapshot_id"],
                     "status": formal_status,
                     "mode": formal["mode"],
@@ -235,9 +341,12 @@ def build_verification_signoff_bundle(
         checks.append(
             _check(
                 "uvm",
-                "MISSING" if require_uvm else "NOT_PRESENT",
-                blocking=bool(require_uvm),
-                details={"required": bool(require_uvm)},
+                "MISSING" if uvm_required else "NOT_PRESENT",
+                blocking=uvm_required,
+                details={
+                    "required": uvm_required,
+                    "requested_snapshot_id": uvm_snapshot_id,
+                },
             )
         )
     else:
@@ -248,10 +357,11 @@ def build_verification_signoff_bundle(
                 "uvm",
                 "FAIL"
                 if uvm_failed
-                else ("PASS" if require_uvm else "PRESENT"),
+                else ("PASS" if uvm_required else "PRESENT"),
                 blocking=uvm_failed,
                 details={
-                    "required": bool(require_uvm),
+                    "required": uvm_required,
+                    "requested_snapshot_id": uvm_snapshot_id,
                     "snapshot_id": uvm["snapshot_id"],
                     "status": uvm_status,
                     "test_name": uvm.get("test_name"),
@@ -306,19 +416,27 @@ def write_verification_signoff_bundle(
     project: ProjectConfig,
     *,
     run_limit: int = 100,
+    run_ids: list[str] | tuple[str, ...] | None = None,
     require_coverage: bool = False,
     min_coverage: float | None = None,
+    coverage_snapshot_id: str | None = None,
     require_formal: bool = False,
+    formal_snapshot_id: str | None = None,
     require_uvm: bool = False,
+    uvm_snapshot_id: str | None = None,
     output: str | Path = ".zddv/signoff/signoff.json",
 ) -> dict[str, Any]:
     bundle = build_verification_signoff_bundle(
         project,
         run_limit=run_limit,
+        run_ids=run_ids,
         require_coverage=require_coverage,
         min_coverage=min_coverage,
+        coverage_snapshot_id=coverage_snapshot_id,
         require_formal=require_formal,
+        formal_snapshot_id=formal_snapshot_id,
         require_uvm=require_uvm,
+        uvm_snapshot_id=uvm_snapshot_id,
     )
     destination = Path(output)
     if not destination.is_absolute():
