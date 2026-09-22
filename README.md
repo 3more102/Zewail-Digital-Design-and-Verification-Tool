@@ -586,6 +586,8 @@ point into a deterministic, reviewable test intent:
 ```bash
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-suggest --show 20
+zddv --project my_project verification-proposals --show 20
+zddv --project my_project verification-proposals --emit-dir .zddv/generated/review
 ```
 
 The default output is `.zddv/coverage/test-suggestions.json`. Suggestions preserve
@@ -755,6 +757,21 @@ artifact, and any resolved RTL driver/declaration evidence.
 When no waveform artifact or exact signal hint exists, the report emits explicit
 blockers instead of inventing a signal or time window. Probe suggestions are written
 to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
+
+### Reviewable Generated Verification Proposals
+
+`zddv verification-proposals` consumes the JSON produced by
+`zddv coverage-suggest` and creates a review bundle for each explicit coverage
+objective. The default command writes only
+`.zddv/debug/verification-proposals.json`; it does not modify RTL/testbench
+sources, generate executable stimulus, or run a simulator.
+
+Code-like artifacts require an explicit `--emit-dir` opt-in. Even then, ZDDV
+writes only `.sv.disabled` test and assertion/cover scaffolds marked
+`REVIEW REQUIRED`. The scaffolds preserve the normalized evidence and objective
+but intentionally leave clocks, resets, legal stimulus, expected DUT behavior,
+and assert/assume/cover semantics as engineer-reviewed TODOs. Nothing is added to
+the project's configured source lists or executed automatically.
 
 ### Phase 4 — Advanced Verification
 
