@@ -134,6 +134,14 @@ def load_ai_context(
     evidence_sha = str(provenance.get("evidence_sha256") or "").lower()
     if not _SHA256_RE.fullmatch(evidence_sha):
         raise ValueError("AI context has an invalid evidence_sha256")
+    evidence = context.get("evidence")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("AI context evidence must be an object")
+    calculated_sha = _canonical_sha256(evidence)
+    if calculated_sha != evidence_sha:
+        raise ValueError(
+            "AI context evidence SHA-256 does not match the canonical evidence payload"
+        )
     return context
 
 

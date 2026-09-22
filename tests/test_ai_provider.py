@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -19,7 +21,18 @@ from zddv.ai_provider import (
 from zddv.config import initialize_project
 
 
+def _evidence_sha(payload: dict) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _context() -> dict:
+    evidence = {"run": {"run_id": "run-fail"}}
     return {
         "schema_version": 1,
         "analysis": "ai_rca_context",
@@ -36,10 +49,10 @@ def _context() -> dict:
             "review_required_before_external_use": True,
         },
         "provenance": {
-            "evidence_sha256": "a" * 64,
+            "evidence_sha256": _evidence_sha(evidence),
             "deterministic": True,
         },
-        "evidence": {"run": {"run_id": "run-fail"}},
+        "evidence": evidence,
     }
 
 
@@ -68,10 +81,14 @@ class _FakeLocalProvider:
 
 
 def test_model_request_preserves_context_and_contract():
-    request = build_model_request(_context())
+    context = _context()
+    request = build_model_request(context)
 
     assert request["task"] == "zddv_root_cause_analysis"
-    assert request["context"]["provenance"]["evidence_sha256"] == "a" * 64
+    assert (
+        request["context"]["provenance"]["evidence_sha256"]
+        == context["provenance"]["evidence_sha256"]
+    )
     assert "Use only evidence present in this bundle." in request["instructions"]
     assert any("analysis only" in item for item in request["instructions"])
     assert any("strict JSON object" in item for item in request["instructions"])
@@ -151,8 +168,6 @@ def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
     context_path.parent.mkdir(parents=True)
-    import json
-
     context_path.write_text(json.dumps(_context()), encoding="utf-8")
 
     loaded = load_ai_context(project, context_path)
@@ -169,6 +184,18 @@ def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
 
     with pytest.raises(ValueError, match="inside the project root"):
         load_ai_context(project, tmp_path / "outside.json")
+
+
+def test_context_loader_rejects_evidence_changed_after_digest(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    context = _context()
+    context["evidence"]["run"]["run_id"] = "tampered-run"
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match the canonical evidence payload"):
+        load_ai_context(project, context_path)
 
 
 def test_registry_is_pluggable_and_builtin_openai_adapter_is_safe():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -30,7 +31,36 @@ class _FakeProvider:
         return {"content": self.content}
 
 
+def _evidence_sha(payload: dict) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _context() -> dict:
+    evidence = {
+        "run": {"run_id": "run-fail"},
+        "failure_signature": "assertion:count_guard",
+        "candidates": [
+            {
+                "rank": 1,
+                "kind": "rtl_driver",
+                "subject": "rtl/counter.sv:8 count",
+            }
+        ],
+        "limitations": ["waveform truncated"],
+        "debug_probe_suggestions": [
+            {
+                "rank": 1,
+                "signal": "TOP.tb_top.dut.count",
+            }
+        ],
+        "debug_probe_blockers": [],
+    }
     return {
         "schema_version": 1,
         "analysis": "ai_rca_context",
@@ -47,28 +77,10 @@ def _context() -> dict:
             "review_required_before_external_use": True,
         },
         "provenance": {
-            "evidence_sha256": "a" * 64,
+            "evidence_sha256": _evidence_sha(evidence),
             "deterministic": True,
         },
-        "evidence": {
-            "run": {"run_id": "run-fail"},
-            "failure_signature": "assertion:count_guard",
-            "candidates": [
-                {
-                    "rank": 1,
-                    "kind": "rtl_driver",
-                    "subject": "rtl/counter.sv:8 count",
-                }
-            ],
-            "limitations": ["waveform truncated"],
-            "debug_probe_suggestions": [
-                {
-                    "rank": 1,
-                    "signal": "TOP.tb_top.dut.count",
-                }
-            ],
-            "debug_probe_blockers": [],
-        },
+        "evidence": evidence,
     }
 
 
