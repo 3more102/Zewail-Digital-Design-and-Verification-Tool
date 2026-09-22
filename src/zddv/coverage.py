@@ -546,6 +546,14 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         out_dir,
         project.root,
     )
+    statements = _capture_questa_statement_points(
+        tool,
+        merged_path,
+        out_dir,
+        project.root,
+    )
+    statement_points = statements["points"]
+    statement_holes = sum(not bool(item["hit"]) for item in statement_points)
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -568,6 +576,13 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "details": details["path"],
         "details_capture": details["status"],
         "details_command": details["command"],
+        "statement_report": statements["report"],
+        "statement_points_path": statements["points_path"],
+        "statement_capture": statements["status"],
+        "statement_points": len(statement_points),
+        "statement_holes": statement_holes,
+        "statement_command": statements["command"],
+        "statement_error": statements["error"],
     }
     if details["status"] != "xml":
         payload["details_error"] = details["output"].strip()
@@ -599,6 +614,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             if details["status"] != "xml"
             else None
         ),
+        "statement_report": statements["report"],
+        "statement_points_path": statements["points_path"],
+        "statement_capture": statements["status"],
+        "statement_points": len(statement_points),
+        "statement_holes": statement_holes,
+        "statement_error": statements["error"],
     }
 
 
@@ -705,4 +726,34 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_questa_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
+    )
+
+
+def load_coverage_hole_points(project: ProjectConfig) -> list[dict]:
+    simulator = project.simulator.strip().lower()
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+
+    if simulator == "verilator":
+        merged_path = out_dir / "coverage.dat"
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            )
+        return parse_verilator_coverage(merged_path)
+
+    if simulator in {"questa", "questasim"}:
+        points_path = out_dir / "statement-points.json"
+        if not points_path.exists():
+            raise RuntimeError(
+                "Questa statement coverage points were not found. Run 'zddv coverage' "
+                "with a vcover version that can emit the documented by-instance XML "
+                "statement report."
+            )
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Invalid normalized coverage points: {points_path}")
+        return payload
+
+    raise RuntimeError(
+        f"Coverage-hole itemization is not implemented for simulator: {project.simulator}"
     )
