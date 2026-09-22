@@ -1731,31 +1731,45 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
 
     out_dir = (project.root / ".zddv" / "coverage").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    merged_path = out_dir / "xcelium-imc-merged"
+    imc_work_dir = out_dir / "xcelium-imc-work"
+    merged_name = "zddv_merged"
+    merged_path = imc_work_dir / "cov_work" / "scope" / merged_name
     report_dir = out_dir / "xcelium-imc-report"
     summary_path = report_dir / "summary.txt"
     script_path = out_dir / "xcelium-imc-merge.tcl"
+    runfile_path = out_dir / "xcelium-imc-runs.txt"
     manifest_path = out_dir / "xcelium-coverage.json"
 
-    for stale in (merged_path, report_dir):
+    for stale in (imc_work_dir, report_dir):
         if stale.exists():
             if stale.is_dir():
                 shutil.rmtree(stale)
             else:
                 stale.unlink()
+    imc_work_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    input_args = " ".join(_imc_quote_path(path) for path in coverage_dirs)
+    input_ucd_files = sorted(
+        ucd.resolve()
+        for coverage_dir in coverage_dirs
+        for ucd in coverage_dir.glob("*.ucd")
+    )
+    runfile_path.write_text(
+        "".join(f"{path.as_posix()}\n" for path in input_ucd_files),
+        encoding="utf-8",
+    )
+
     script_path.write_text(
         "\n".join(
             [
                 (
-                    f"merge -out {_imc_quote_path(merged_path)} -overwrite "
-                    f"{input_args}"
+                    f"merge -runfile {_imc_quote_path(runfile_path)} "
+                    f"-out {merged_name} -metrics all "
+                    "-initial_model union_all -message 1 -overwrite"
                 ),
                 f"load -run {_imc_quote_path(merged_path)}",
                 (
-                    "report -summary -inst \"*...\" "
+                    'report -summary -cumulative on -inst "*..." -metrics all '
                     f"-out {_imc_quote_path(summary_path)}"
                 ),
                 "exit",
@@ -1765,8 +1779,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         encoding="utf-8",
     )
 
-    command = [tool, "-batch", "-exec", str(script_path)]
-    result = _run(command, out_dir)
+    command = [tool, "-exec", str(script_path)]
+    result = _run(command, imc_work_dir)
     merged_ucd = (
         list(merged_path.rglob("*.ucd"))
         if merged_path.exists() and merged_path.is_dir()
@@ -1795,11 +1809,14 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "metrics_status": "not-normalized",
         "input_count": len(coverage_dirs),
         "inputs": [str(path) for path in coverage_dirs],
+        "input_ucd_files": [str(path) for path in input_ucd_files],
         "merged": str(merged_path),
         "merged_ucd_files": [str(path) for path in sorted(merged_ucd)],
+        "imc_work_dir": str(imc_work_dir),
         "report_dir": str(report_dir),
         "summary": str(summary_path) if summary_exists else None,
         "script": str(script_path),
+        "runfile": str(runfile_path),
         "command": command,
         "metrics": None,
         "snapshot_id": None,
@@ -1819,9 +1836,9 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "snapshot_id": None,
         "report_dir": str(report_dir),
         "script": str(script_path),
+        "runfile": str(runfile_path),
         "metrics_status": "not-normalized",
     }
-
 
 
 def merge_coverage(project: ProjectConfig) -> dict:
