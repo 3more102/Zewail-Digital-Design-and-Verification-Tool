@@ -347,3 +347,66 @@ def test_uvm_sequence_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path
     assert result["input_mode"] == "explicit-log-marker"
     events = list_uvm_sequence_state_events(project, result["snapshot_id"])
     assert events[0]["metadata"]["log_line"] == 1
+
+def test_cli_uvm_sequence_log_analysis_supports_direct_and_recorded_run(
+    tmp_path: Path, capsys
+):
+    project = initialize_project(tmp_path / "demo")
+    direct_log = project.root / "sequence.log"
+    direct_log.write_text(
+        "\n".join(
+            [
+                _sequence_marker(_event("seq-direct", "direct_seq", "UVM_BODY")),
+                _sequence_marker(_event("seq-direct", "direct_seq", "UVM_ENDED")),
+                _sequence_marker(_event("seq-direct", "direct_seq", "UVM_POST_START")),
+                _sequence_marker(_event("seq-direct", "direct_seq", "UVM_FINISHED")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-sequence-log-analyze",
+            str(direct_log),
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM SEQUENCE PASS" in output
+    assert "Markers: 4 explicit marker(s)" in output
+    assert "finished=1 stopped=0 active=0" in output
+
+    _record_run(project, "run-sequence-cli")
+    run_log = project.root / ".zddv" / "runs" / "run-sequence-cli" / "simulation.log"
+    run_log.write_text(
+        "\n".join(
+            [
+                _sequence_marker(_event("seq-run", "run_seq", "UVM_BODY")),
+                _sequence_marker(_event("seq-run", "run_seq", "UVM_ENDED")),
+                _sequence_marker(_event("seq-run", "run_seq", "UVM_POST_START")),
+                _sequence_marker(_event("seq-run", "run_seq", "UVM_FINISHED")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-sequence-log-analyze",
+            "--run",
+            "run-sequence-cli",
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM SEQUENCE PASS" in output
+    assert "Markers: 4 explicit marker(s)" in output
+    assert "Run: run-sequence-cli" in output
+
