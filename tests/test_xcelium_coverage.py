@@ -58,7 +58,12 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         captured["script"] = script_path.read_text(encoding="utf-8")
 
         out_dir = project.root / ".zddv" / "coverage"
-        merged = out_dir / "xcelium-imc-merged"
+        merged = (
+            Path(cwd)
+            / "cov_work"
+            / "scope"
+            / "zddv_merged"
+        )
         merged.mkdir(parents=True)
         (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
         report_dir = out_dir / "xcelium-imc-report"
@@ -75,18 +80,27 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     assert result["inputs"] == [str(first), str(second)]
     assert result["metrics"] is None
     assert result["metrics_status"] == "not-normalized"
-    assert Path(result["merged"]).name == "xcelium-imc-merged"
+    assert Path(result["merged"]).name == "zddv_merged"
+    assert Path(result["merged"]).parent.name == "scope"
     assert Path(result["summary"]).name == "summary.txt"
 
     command = captured["command"]
-    assert command[:3] == ["/opt/cadence/bin/imc", "-batch", "-exec"]
+    assert command[:2] == ["/opt/cadence/bin/imc", "-exec"]
     script = str(captured["script"])
-    assert "merge -out" in script
+    assert "merge -runfile" in script
+    assert "-out zddv_merged" in script
+    assert "-metrics all" in script
+    assert "-initial_model union_all" in script
+    assert "-message 1" in script
     assert "-overwrite" in script
-    assert first.as_posix() in script
-    assert second.as_posix() in script
     assert "load -run" in script
-    assert 'report -summary -inst "*..."' in script
+    assert 'report -summary -cumulative on -inst "*..." -metrics all' in script
+
+    runfile = Path(result["runfile"]).read_text(encoding="utf-8").splitlines()
+    assert runfile == [
+        (first / "run-a.ucd").as_posix(),
+        (second / "run-b.ucd").as_posix(),
+    ]
     assert script.rstrip().endswith("exit")
 
     manifest = json.loads(
@@ -95,6 +109,8 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     assert manifest["status"] == "merged-report-captured"
     assert manifest["metrics_status"] == "not-normalized"
     assert manifest["input_count"] == 2
+    assert manifest["input_ucd_files"] == runfile
+    assert manifest["runfile"] == result["runfile"]
     assert len(manifest["merged_ucd_files"]) == 1
     assert manifest["snapshot_id"] is None
 
