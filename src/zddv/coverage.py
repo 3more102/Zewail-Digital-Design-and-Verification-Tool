@@ -67,6 +67,17 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_CODE_DETAIL_HEADER = re.compile(
+    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"(?P<file>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CODE_DETAIL_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<item>\d+)\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
+    r"(?:\s+(?P<detail>.*?))?\s*$"
+)
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -299,6 +310,89 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_code_coverage_report(text: str) -> list[dict]:
+    """Normalize statement and branch items from detailed vcover text output.
+
+    Each normalized item keeps source file, line, item index, hit count, and the
+    vendor detail text. Non-item summary rows are ignored because they are not
+    independently coverable bins.
+    """
+    points: list[dict] = []
+    kind = ""
+    source_file = ""
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            kind = header.group("kind").strip().lower()
+            source_file = header.group("file").strip()
+            continue
+
+        if kind not in {"statement", "branch"} or not source_file:
+            continue
+
+        item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
+        if item is None:
+            continue
+
+        raw_hits = item.group("hits").replace("*", "").replace(",", "")
+        hits = int(raw_hits)
+        line_number = int(item.group("line"))
+        item_number = int(item.group("item"))
+        detail = (item.group("detail") or "").strip()
+
+        name = f"{source_file}:{line_number}:{item_number}"
+        if detail:
+            name += f" {detail}"
+
+        points.append(
+            {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": kind,
+                "source_file": source_file,
+                "line": line_number,
+                "item": item_number,
+                "detail": detail,
+            }
+        )
+
+    return points
+
+
+def load_normalized_coverage_points(project: ProjectConfig) -> list[dict]:
+    """Load item-level points produced by the selected simulator adapter."""
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    simulator = project.simulator.strip().lower()
+
+    if simulator == "verilator":
+        merged_path = out_dir / "coverage.dat"
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. "
+                "Run 'zddv coverage' first."
+            )
+        return parse_verilator_coverage(merged_path)
+
+    if simulator in {"questa", "questasim"}:
+        points_path = out_dir / "points.json"
+        if not points_path.exists():
+            raise RuntimeError(
+                f"Normalized Questa code coverage points not found at {points_path}. "
+                "Run 'zddv coverage' first and ensure detailed statement/branch "
+                "coverage is available."
+            )
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Invalid normalized coverage points: {points_path}")
+        return [dict(item) for item in payload]
+
+    raise RuntimeError(
+        f"Coverage-hole itemization is not implemented for simulator: {project.simulator}"
+    )
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -320,6 +414,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
+    code_report_path = out_dir / "code-details.txt"
+    points_path = out_dir / "points.json"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
     inputs = [str(path) for path in coverage_files]
@@ -349,6 +445,26 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         raise RuntimeError(
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
+
+    code_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-code",
+        "sb",
+        str(merged_path),
+    ]
+    code_report = _run(code_cmd, project.root)
+    code_report_path.write_text(code_report.stdout or "", encoding="utf-8")
+    code_points = (
+        parse_questa_code_coverage_report(code_report.stdout or "")
+        if code_report.returncode == 0
+        else []
+    )
+    if code_points:
+        points_path.write_text(json.dumps(code_points, indent=2), encoding="utf-8")
+    elif points_path.exists():
+        points_path.unlink()
 
     functional_cmd = [tool, "report", "-cvg", "-details", str(merged_path)]
     functional_report = _run(functional_cmd, project.root)
@@ -390,6 +506,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "code_report": str(code_report_path),
+        "code_detail_capture": "text" if code_report.returncode == 0 else "unavailable",
+        "code_detail_points": len(code_points),
+        "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "points": str(points_path) if code_points else None,
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -412,6 +533,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
+        "code_report": str(code_report_path),
+        "code_detail_capture": "text" if code_report.returncode == 0 else "unavailable",
+        "code_detail_points": len(code_points),
+        "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "points_path": str(points_path) if code_points else None,
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
