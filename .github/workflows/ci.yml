@@ -249,6 +249,15 @@ jobs:
           grep -q '"errors": 0' examples/counter/.zddv/uvm/latest.json
           zddv --project examples/counter uvm-history --limit 5 | grep -q 'zddv_uvm_smoke'
 
+      - name: Analyze UVM sequence lifecycle trace
+        run: |
+          zddv --project examples/counter uvm-sequence-analyze ../uvm_sequence_trace.json --source example-sequence
+          test -s examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"analysis": "uvm_sequence_lifecycle"' examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/uvm/sequences/latest.json
+          grep -q '"finished": 2' examples/counter/.zddv/uvm/sequences/latest.json
+          zddv --project examples/counter uvm-sequence-history --limit 5 | grep -q 'PASS'
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
