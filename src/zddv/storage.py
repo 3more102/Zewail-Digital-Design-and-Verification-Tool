@@ -972,6 +972,7 @@ def list_uvm_log_snapshots(
     limit: int = 20,
     status: str | None = None,
     run_id: str | None = None,
+    snapshot_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
@@ -1006,6 +1007,9 @@ def list_uvm_log_snapshots(
     if run_id is not None:
         clauses.append("l.run_id = ?")
         params.append(run_id)
+    if snapshot_id is not None:
+        clauses.append("s.snapshot_id = ?")
+        params.append(snapshot_id)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY s.created_at DESC LIMIT ?"
@@ -1767,21 +1771,25 @@ def list_coverage_score_snapshots(
     project: ProjectConfig,
     *,
     limit: int = 20,
+    snapshot_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
 
+    query = """
+        SELECT snapshot_id, created_at, project, simulator, input_count,
+               score, by_metric_json, merged_path, summary_path, metrics_path
+        FROM coverage_score_snapshots
+    """
+    params: list[Any] = []
+    if snapshot_id is not None:
+        query += " WHERE snapshot_id = ?"
+        params.append(snapshot_id)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
     with _connect(project) as db:
-        rows = db.execute(
-            """
-            SELECT snapshot_id, created_at, project, simulator, input_count,
-                   score, by_metric_json, merged_path, summary_path, metrics_path
-            FROM coverage_score_snapshots
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        rows = db.execute(query, params).fetchall()
 
         counts_by_snapshot: dict[str, dict[str, dict[str, int | float]]] = {}
         for row in rows:
@@ -1821,22 +1829,26 @@ def list_coverage_snapshots(
     project: ProjectConfig,
     *,
     limit: int = 20,
+    snapshot_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
 
+    query = """
+        SELECT snapshot_id, created_at, project, simulator, input_count,
+               total_points, hit_points, hit_rate, by_type_json,
+               merged_path, summary_path, metrics_path
+        FROM coverage_snapshots
+    """
+    params: list[Any] = []
+    if snapshot_id is not None:
+        query += " WHERE snapshot_id = ?"
+        params.append(snapshot_id)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
     with _connect(project) as db:
-        rows = db.execute(
-            """
-            SELECT snapshot_id, created_at, project, simulator, input_count,
-                   total_points, hit_points, hit_rate, by_type_json,
-                   merged_path, summary_path, metrics_path
-            FROM coverage_snapshots
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        rows = db.execute(query, params).fetchall()
 
     result: list[dict[str, Any]] = []
     for row in rows:
@@ -1940,6 +1952,7 @@ def list_formal_result_snapshots(
     limit: int = 20,
     status: str | None = None,
     mode: str | None = None,
+    snapshot_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
@@ -1973,6 +1986,9 @@ def list_formal_result_snapshots(
     if mode is not None:
         clauses.append("mode = ?")
         params.append(mode)
+    if snapshot_id is not None:
+        clauses.append("snapshot_id = ?")
+        params.append(snapshot_id)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY created_at DESC LIMIT ?"
