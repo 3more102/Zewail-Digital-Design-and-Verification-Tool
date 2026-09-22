@@ -692,12 +692,101 @@ def merge_verilator_coverage(project: ProjectConfig) -> dict:
     }
 
 
+def merge_vcs_coverage(project: ProjectConfig) -> dict:
+    """Merge per-run VCS coverage databases and retain URG report evidence."""
+    tool = shutil.which("urg")
+    if tool is None:
+        raise RuntimeError(
+            "Synopsys URG was not found in PATH. Install/configure VCS/URG and retry."
+        )
+
+    run_root = (project.root / project.run_dir).resolve()
+    coverage_dirs = sorted(run_root.glob("*/coverage.vdb"))
+    if not coverage_dirs:
+        raise RuntimeError(
+            f"No coverage.vdb directories found under {run_root}. "
+            "Run coverage-enabled VCS simulations first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    merged_path = out_dir / "coverage.vdb"
+    report_dir = out_dir / "urg-report"
+    manifest_path = out_dir / "vcs-coverage.json"
+
+    if merged_path.exists():
+        if merged_path.is_dir():
+            shutil.rmtree(merged_path)
+        else:
+            merged_path.unlink()
+    if report_dir.exists():
+        if report_dir.is_dir():
+            shutil.rmtree(report_dir)
+        else:
+            report_dir.unlink()
+
+    inputs = [str(path) for path in coverage_dirs]
+    command = [
+        tool,
+        "-dir",
+        *inputs,
+        "-dbname",
+        merged_path.name,
+        "-report",
+        report_dir.name,
+        "-format",
+        "both",
+    ]
+    result = _run(command, out_dir)
+    if (
+        result.returncode != 0
+        or not merged_path.exists()
+        or not report_dir.exists()
+    ):
+        raise RuntimeError(
+            "VCS coverage merge/report failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + (result.stdout or "").strip()
+        )
+
+    payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "project": project.name,
+        "simulator": project.simulator,
+        "status": "merged-report-captured",
+        "metrics_status": "pending-normalization",
+        "input_count": len(inputs),
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "report_dir": str(report_dir),
+        "command": command,
+    }
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    return {
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "summary": str(report_dir),
+        "metrics_path": str(manifest_path),
+        "report": result.stdout or "",
+        "metrics": None,
+        "snapshot_id": None,
+        "report_dir": str(report_dir),
+        "metrics_status": "pending-normalization",
+    }
+
+
+
 def merge_coverage(project: ProjectConfig) -> dict:
     simulator = project.simulator.strip().lower()
     if simulator == "verilator":
         return merge_verilator_coverage(project)
     if simulator in {"questa", "questasim"}:
         return merge_questa_coverage(project)
+    if simulator == "vcs":
+        return merge_vcs_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
     )

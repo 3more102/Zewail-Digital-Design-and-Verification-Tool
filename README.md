@@ -104,7 +104,7 @@ report for zero-hit source/file-line evidence. These artifacts are evidence only
 and are not yet normalized into code `coverage-holes`. Questa's weighted total
 coverage remains a separate simulator-reported value.
 
-For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. VCS coverage merge/report normalization is still pending.
+For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. Numeric URG metric normalization is deliberately still pending, so this stage records merge/report evidence without creating a fake SQLite coverage snapshot.
 
 ## Current CLI
 
