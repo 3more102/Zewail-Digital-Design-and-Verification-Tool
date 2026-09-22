@@ -4,10 +4,77 @@ from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.storage import (
     list_uvm_log_snapshots,
+    list_uvm_objection_events,
+    list_uvm_phase_events,
     list_uvm_report_messages,
     record_run,
 )
 from zddv.uvm import analyze_uvm_log, parse_uvm_log_text
+
+
+def test_parses_standard_uvm_phase_and_objection_lifecycle():
+    result = parse_uvm_log_text(
+        """
+UVM_INFO @ 0: reporter [PH/TRC/STRT] Phase 'common.run' (id=42) Starting phase
+UVM_INFO @ 0: run [OBJTN_TRC] Object uvm_test_top raised 1 objection(s): count=1 total=1
+UVM_INFO @ 0: run [OBJTN_TRC] Object uvm_top added 1 objection(s) to its total (raised from source object uvm_test_top): count=0 total=1
+UVM_INFO @ 100: run [OBJTN_TRC] Object uvm_test_top dropped 1 objection(s): count=0 total=0
+UVM_INFO @ 100: run [OBJTN_TRC] Object uvm_test_top all_dropped 1 objection(s): count=0 total=0
+UVM_INFO @ 100: reporter [PH/TRC/EXE/ALLDROP] Phase 'common.run' (id=42) PHASE EXIT ALL_DROPPED
+UVM_INFO @ 100: reporter [PH/TRC/DONE] Phase 'common.run' (id=42) Completed phase
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert [item["action"] for item in lifecycle["phase_events"]] == [
+        "started",
+        "exit_all_dropped",
+        "done",
+    ]
+    assert lifecycle["phase_events"][0]["phase"] == "common.run"
+    assert lifecycle["phase_events"][0]["phase_id"] == 42
+
+    assert [item["action"] for item in lifecycle["objection_events"]] == [
+        "raised",
+        "propagated_raise",
+        "dropped",
+        "all_dropped",
+    ]
+    assert lifecycle["objection_events"][1]["object"] == "uvm_top"
+    assert lifecycle["objection_events"][1]["source_object"] == "uvm_test_top"
+    assert lifecycle["summary"]["direct_raises"] == 1
+    assert lifecycle["summary"]["direct_drops"] == 1
+    assert lifecycle["summary"]["all_dropped"] == 1
+    assert lifecycle["summary"]["propagated_events"] == 1
+    assert lifecycle["summary"]["max_observed_total"] == 1
+
+
+def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "uvm_lifecycle.log"
+    log.write_text(
+        "UVM_INFO @ 0: reporter [PH/TRC/STRT] "
+        "Phase 'common.run' (id=7) Starting phase\n"
+        "UVM_INFO @ 0: run [OBJTN_TRC] "
+        "Object uvm_test_top raised 1 objection(s): count=1 total=1\n"
+        "UVM_INFO @ 25: run [OBJTN_TRC] "
+        "Object uvm_test_top dropped 1 objection(s): count=0 total=0\n"
+        "UVM_INFO @ 25: reporter [PH/TRC/DONE] "
+        "Phase 'common.run' (id=7) Completed phase\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_log(project, log, source="questa")
+    phases = list_uvm_phase_events(project, result["snapshot_id"])
+    objections = list_uvm_objection_events(project, result["snapshot_id"])
+
+    assert [row["action"] for row in phases] == ["started", "done"]
+    assert phases[0]["phase_name"] == "common.run"
+    assert phases[0]["phase_instance_id"] == 7
+    assert [row["action"] for row in objections] == ["raised", "dropped"]
+    assert objections[0]["objection_name"] == "run"
+    assert objections[0]["object_name"] == "uvm_test_top"
+    assert objections[0]["total_count"] == 1
 
 
 def test_parses_uvm_summary_and_test_metadata():
@@ -168,6 +235,7 @@ def test_uvm_cli_and_history(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "UVM PASS: test=cli_case" in output
     assert "I/W/E/F=1/0/0/0" in output
+    assert "Lifecycle:" not in output
 
     rc = main(
         [
