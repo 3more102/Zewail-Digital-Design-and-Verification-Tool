@@ -67,6 +67,7 @@ Requirements:
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 - Optional Synopsys VCS: `vcs` available in `PATH`
 - Optional Cadence Xcelium: `xrun` available in `PATH`
+- Optional Cadence Xcelium: `xrun` available in `PATH`
 
 Install ZDDV for development:
 
@@ -77,6 +78,7 @@ python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
 zddv doctor --simulator vcs
+zddv doctor --simulator xcelium
 zddv doctor --simulator xcelium
 ```
 
@@ -163,6 +165,7 @@ zddv --project my_project uvm-history --run <run-id>
 zddv --project my_project uvm-item-analyze item_trace.json
 zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
 zddv --project my_project uvm-item-history --limit 20
+zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
@@ -367,7 +370,7 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
-- [x] Normalized sequence-item handshake analysis with SQLite persistence/history
+- [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
 
 ### APB Trace Analysis
@@ -685,7 +688,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
-- [ ] Xcelium adapter
+- [x] Xcelium execution adapter foundation (xrun build/run, seed/test/plusargs, VCD, assertions, run-linked UVM)
+- [ ] Xcelium native coverage capture and normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
