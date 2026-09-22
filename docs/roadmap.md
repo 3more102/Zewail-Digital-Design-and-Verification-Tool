@@ -97,13 +97,15 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database; detailed code-coverage item/source holes remain planned.
+functional-coverage database, and a machine-readable XML coverage report is retained as
+raw evidence; detailed code-coverage item/source normalization and holes remain planned.
 Phase/objection lifecycle normalization and explicit sequence report-context evidence are implemented, while sequence start/end semantics remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
 - [x] Questa UCDB merge and summary-level ZDDV coverage reporting.
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
+- [x] Questa detailed XML coverage evidence retention.
 - [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting.
 - [ ] VCS execution adapter.
 - [ ] Xcelium execution adapter.
