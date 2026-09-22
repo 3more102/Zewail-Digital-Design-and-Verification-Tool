@@ -5,11 +5,16 @@ from pathlib import Path
 
 import pytest
 
+from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.formal.results import (
     analyze_formal_result_file,
     formal_result_from_data,
     formal_result_to_record,
+)
+from zddv.storage import (
+    list_formal_property_results,
+    list_formal_snapshots,
 )
 
 
@@ -203,3 +208,78 @@ def test_analyze_formal_result_file_writes_evidence_record(tmp_path: Path):
     assert persisted["project"] == project.name
     assert persisted["input_path"] == str(input_path.resolve())
     assert persisted["summary"]["counterexamples"] == 1
+
+    snapshots = list_formal_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == record["snapshot_id"]
+    assert snapshots[0]["backend"] == "example"
+    assert snapshots[0]["status"] == "FAIL"
+    assert snapshots[0]["mode"] == "bmc"
+    assert snapshots[0]["depth"] == 20
+    assert snapshots[0]["property_count"] == 4
+    assert snapshots[0]["counterexample_count"] == 1
+    assert snapshots[0]["command"] == ["example-formal", "--mode", "bmc"]
+
+    properties = list_formal_property_results(project, record["snapshot_id"])
+    assert len(properties) == 4
+    assert properties[0]["interpretation"] == "BOUNDED_SAFE"
+    assert properties[0]["effective_depth"] == 20
+    assert properties[1]["interpretation"] == "COUNTEREXAMPLE"
+    assert properties[1]["trace_role"] == "COUNTEREXAMPLE"
+    assert properties[2]["trace_role"] == "WITNESS"
+
+    assert list_formal_snapshots(project, status="PASS") == []
+    assert len(list_formal_snapshots(project, status="FAIL", mode="bmc")) == 1
+
+
+def test_formal_import_and_history_cli(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    input_path = project.root / "formal-result.json"
+    input_path.write_text(json.dumps(_payload()), encoding="utf-8")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-import",
+            str(input_path),
+        ]
+    )
+    assert rc == 0
+    imported = capsys.readouterr().out
+    assert "FORMAL: status=FAIL mode=bmc backend=example properties=4" in imported
+    assert "Counterexamples: 1" in imported
+    assert "Snapshot:" in imported
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-history",
+            "--status",
+            "FAIL",
+            "--mode",
+            "bmc",
+            "--backend",
+            "example",
+        ]
+    )
+    assert rc == 0
+    history = capsys.readouterr().out
+    assert "STATUS" in history
+    assert "example" in history
+    assert "FAIL" in history
+    assert "bmc" in history
+    assert " 1 " in history or "    1" in history
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-history",
+            "--status",
+            "PASS",
+        ]
+    )
+    assert rc == 0
+    assert "No formal snapshots found." in capsys.readouterr().out
