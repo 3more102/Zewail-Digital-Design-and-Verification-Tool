@@ -6,6 +6,21 @@ ZDDV can analyze explicit, simulator-independent sequence-item handshake evidenc
 zddv --project <project> uvm-item-analyze <trace.json>
 ```
 
+ZDDV can also consume explicit item evidence directly from ordinary UVM report logs when instrumentation emits the dedicated `[ZDDV_ITEM]` report ID:
+
+```text
+zddv --project <project> uvm-item-log <simulation.log>
+zddv --project <project> uvm-item-log --run <run-id>
+```
+
+A report payload is a shell-like list of `key=value` tokens. `event` and `item_id` are required; `sequence_id`, `sequence`, `sequencer`, `item`, `transaction_id`, and `time` are optional. Unknown keys are preserved as event metadata, and values containing spaces may be quoted. When `time` is omitted, the timestamp from the UVM report line is retained.
+
+Example:
+
+```text
+UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=GRANT item_id=item-17 sequence_id=seq-3 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=17
+```
+
 Each analysis is also persisted in the project SQLite database. Query recent snapshots with:
 
 ```text
@@ -56,6 +71,6 @@ Once earlier evidence is present, backward ordering is a violation. Examples inc
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, or compare transaction payloads.
+This layer validates event ordering, duplicate events, and stable item identity. The `ZDDV_ITEM` adapter is explicit instrumentation: ZDDV does not guess vendor-private log formats. Automatic interception of UVM sequence/sequencer calls, arbitration priority/fairness reconstruction, delta-cycle timing validation, and transaction-payload comparison remain outside this layer.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
