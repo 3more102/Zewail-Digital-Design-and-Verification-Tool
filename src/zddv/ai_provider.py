@@ -137,6 +137,108 @@ def load_ai_context(
     return context
 
 
+def model_evidence_references(context: Mapping[str, Any]) -> list[str]:
+    """Return the exact evidence-reference vocabulary exposed to a model."""
+    evidence = context.get("evidence")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("AI context evidence must be an object")
+
+    refs: set[str] = set()
+    run = evidence.get("run")
+    if isinstance(run, Mapping):
+        run_id = run.get("run_id")
+        if isinstance(run_id, str) and run_id.strip():
+            refs.add(f"run:{run_id.strip()}")
+
+    candidates = evidence.get("candidates")
+    if isinstance(candidates, list):
+        for item in candidates:
+            if isinstance(item, Mapping):
+                rank = item.get("rank")
+                if isinstance(rank, int) and rank >= 1:
+                    refs.add(f"candidate:{rank}")
+
+    probes = evidence.get("debug_probe_suggestions")
+    if isinstance(probes, list):
+        for item in probes:
+            if isinstance(item, Mapping):
+                rank = item.get("rank")
+                if isinstance(rank, int) and rank >= 1:
+                    refs.add(f"probe:{rank}")
+
+    limitations = evidence.get("limitations")
+    if isinstance(limitations, list):
+        for index, _ in enumerate(limitations, start=1):
+            refs.add(f"limitation:{index}")
+
+    if not refs:
+        raise ValueError("AI context exposes no evidence references")
+    return sorted(refs)
+
+
+def build_model_response_contract(
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Describe the strict JSON response accepted by ai-response-ingest."""
+    return {
+        "format": "strict-json-object",
+        "markdown_fences_allowed": False,
+        "additional_properties_allowed": False,
+        "required": [
+            "schema_version",
+            "analysis",
+            "observed_facts",
+            "hypotheses",
+            "unknowns",
+            "next_checks",
+            "generated_proposals",
+        ],
+        "schema": {
+            "schema_version": 1,
+            "analysis": "zddv_ai_rca_response",
+            "observed_facts": [
+                {
+                    "statement": "non-empty string",
+                    "evidence_refs": ["one-or-more allowed evidence refs"],
+                }
+            ],
+            "hypotheses": [
+                {
+                    "statement": "non-empty string",
+                    "evidence_refs": ["one-or-more allowed evidence refs"],
+                }
+            ],
+            "unknowns": ["non-empty string"],
+            "next_checks": [
+                {
+                    "description": "non-empty string",
+                    "evidence_refs": ["one-or-more allowed evidence refs"],
+                }
+            ],
+            "generated_proposals": [
+                {
+                    "kind": "assertion or test",
+                    "language": "systemverilog",
+                    "name": "identifier",
+                    "content": "non-empty SystemVerilog text",
+                    "target_path": "optional .sv or .svh project-relative path",
+                    "evidence_refs": ["one-or-more allowed evidence refs"],
+                }
+            ],
+        },
+        "allowed_evidence_refs": model_evidence_references(context),
+        "semantics": [
+            "Every observed fact must cite evidence_refs.",
+            "Every hypothesis must cite evidence_refs and remain a hypothesis.",
+            "Every proposed next check must cite evidence_refs.",
+            "Every generated proposal must cite evidence_refs.",
+            "Unknown evidence references will be rejected.",
+            "Schema validation does not establish that a hypothesis is correct.",
+            "Generated proposals remain unreviewed and cannot be auto-applied.",
+        ],
+    }
+
+
 def build_model_request(context: Mapping[str, Any]) -> dict[str, Any]:
     prompt_contract = context.get("prompt_contract")
     if not isinstance(prompt_contract, list) or not all(
@@ -144,14 +246,19 @@ def build_model_request(context: Mapping[str, Any]) -> dict[str, Any]:
     ):
         raise ValueError("AI context prompt_contract must be a non-empty string list")
 
+    response_contract = build_model_response_contract(context)
     return {
         "schema_version": 1,
         "task": "zddv_root_cause_analysis",
         "instructions": [
             "Return analysis only from the supplied ZDDV evidence bundle.",
             *prompt_contract,
+            "Return exactly one strict JSON object matching response_contract.",
+            "Do not wrap the JSON in Markdown fences and do not add prose before or after it.",
+            "Use only evidence_refs listed in response_contract.allowed_evidence_refs.",
             "Treat this request as analysis only. Do not claim any generated code was reviewed, applied, compiled, or executed.",
         ],
+        "response_contract": response_contract,
         "context": dict(context),
     }
 
@@ -293,7 +400,8 @@ class OpenAICompatibleProvider:
                     "content": (
                         "You are assisting a hardware verification engineer. "
                         "Use only supplied evidence, separate facts from hypotheses, "
-                        "and do not claim actions were executed."
+                        "and do not claim actions were executed. Return only the strict "
+                        "JSON object required by the supplied response_contract."
                     ),
                 },
                 {
