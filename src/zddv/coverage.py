@@ -2452,7 +2452,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
 
     toggle_detail_path = out_dir / "toggle-details.txt"
     toggle_detail_script = (
-        'report -detail -inst "*..." -metrics toggle -all -source on; exit'
+        'report -detail -metrics toggle -all -inst "*..."; exit'
     )
     toggle_detail_command = [
         tool,
