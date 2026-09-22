@@ -107,6 +107,49 @@ CREATE INDEX IF NOT EXISTS idx_uvm_messages_severity
 CREATE INDEX IF NOT EXISTS idx_uvm_messages_report_id
     ON uvm_report_messages(report_id);
 
+CREATE TABLE IF NOT EXISTS uvm_phase_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    report_id TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    phase_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    premature INTEGER NOT NULL,
+    time_text TEXT,
+    log_line INTEGER NOT NULL,
+    detail TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_phase_events_phase
+    ON uvm_phase_events(phase);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_phase_events_state
+    ON uvm_phase_events(state);
+
+CREATE TABLE IF NOT EXISTS uvm_objection_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    object_name TEXT NOT NULL,
+    source_object TEXT NOT NULL,
+    objection TEXT NOT NULL,
+    delta INTEGER NOT NULL,
+    source_count INTEGER NOT NULL,
+    total_count INTEGER NOT NULL,
+    description TEXT,
+    propagated INTEGER NOT NULL,
+    time_text TEXT,
+    log_line INTEGER NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_action
+    ON uvm_objection_events(action);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_object
+    ON uvm_objection_events(object_name);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -523,6 +566,64 @@ def record_uvm_log_snapshot(
                 for item in record["messages"]
             ],
         )
+        db.execute(
+            "DELETE FROM uvm_phase_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_phase_events (
+                snapshot_id, event_index, report_id, phase, phase_id, state,
+                premature, time_text, log_line, detail
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["report_id"],
+                    item["phase"],
+                    int(item["phase_id"]),
+                    item["state"],
+                    1 if item.get("premature") else 0,
+                    item.get("time"),
+                    int(item["log_line"]),
+                    item["detail"],
+                )
+                for item in record.get("lifecycle", {}).get("phase_events", [])
+            ],
+        )
+        db.execute(
+            "DELETE FROM uvm_objection_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_objection_events (
+                snapshot_id, event_index, action, object_name, source_object,
+                objection, delta, source_count, total_count, description,
+                propagated, time_text, log_line
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["action"],
+                    item["object"],
+                    item["source_object"],
+                    item["objection"],
+                    int(item["delta"]),
+                    int(item["count"]),
+                    int(item["total"]),
+                    item.get("description"),
+                    1 if item.get("propagated") else 0,
+                    item.get("time"),
+                    int(item["log_line"]),
+                )
+                for item in record.get("lifecycle", {}).get("objection_events", [])
+            ],
+        )
     return path
 
 
@@ -585,6 +686,51 @@ def list_uvm_report_messages(
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_uvm_phase_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, report_id, phase, phase_id, state,
+                   premature, time_text, log_line, detail
+            FROM uvm_phase_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+
+    result = [dict(row) for row in rows]
+    for item in result:
+        item["premature"] = bool(item["premature"])
+    return result
+
+
+def list_uvm_objection_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, action, object_name, source_object,
+                   objection, delta, source_count, total_count, description,
+                   propagated, time_text, log_line
+            FROM uvm_objection_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+
+    result = [dict(row) for row in rows]
+    for item in result:
+        item["propagated"] = bool(item["propagated"])
+    return result
 
 
 def record_functional_coverage_snapshot(
