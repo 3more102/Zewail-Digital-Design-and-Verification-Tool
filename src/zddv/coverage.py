@@ -260,6 +260,11 @@ def _capture_questa_report_file(
         "path": str(output),
         "returncode": int(result.returncode),
         "command": command,
+        "diagnostic": (
+            (result.stdout or "").strip()
+            if status != "captured"
+            else None
+        ),
     }
 
 
