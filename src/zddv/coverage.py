@@ -1805,18 +1805,51 @@ def _imc_quote_path(path: Path) -> str:
 
 
 _XCELIUM_IMC_SUMMARY_HEADER = re.compile(
-    r"^\s*name\s+Overall\*?\s+Average\s+Overall\*?\s+Covered(?:\s|$)",
+    r"^\s*name\s+"
+    r"Overall\*?\s+Average\s+Overall\*?\s+Covered\s+"
+    r"Code\*?\s+Average\s+Code\*?\s+Covered\s+"
+    r"Fsm\*?\s+Average\s+Fsm\*?\s+Covered\s+"
+    r"Functional\*?\s+Average\s+Functional\*?\s+Covered(?:\s|$)",
     re.IGNORECASE,
 )
+
+_XCELIUM_IMC_GRADE = r"(?:n/?a|\d+(?:\.\d+)?%)"
+_XCELIUM_IMC_COUNT = r"\([^)]*\)"
 _XCELIUM_IMC_SUMMARY_ROW = re.compile(
-    r"^\s*(?P<scope>\S+)\s+"
-    r"(?P<average>\d+(?:\.\d+)?)%\s+"
-    r"(?P<covered>\d+(?:\.\d+)?)%(?:\s|$)",
+    rf"^\s*(?P<scope>\S+)\s+"
+    rf"(?P<overall_average>{_XCELIUM_IMC_GRADE})\s+"
+    rf"(?P<overall_covered>{_XCELIUM_IMC_GRADE})"
+    rf"(?:\s+(?P<overall_count>{_XCELIUM_IMC_COUNT}))?\s+"
+    rf"(?P<code_average>{_XCELIUM_IMC_GRADE})\s+"
+    rf"(?P<code_covered>{_XCELIUM_IMC_GRADE})"
+    rf"(?:\s+(?P<code_count>{_XCELIUM_IMC_COUNT}))?\s+"
+    rf"(?P<fsm_average>{_XCELIUM_IMC_GRADE})\s+"
+    rf"(?P<fsm_covered>{_XCELIUM_IMC_GRADE})"
+    rf"(?:\s+(?P<fsm_count>{_XCELIUM_IMC_COUNT}))?\s+"
+    rf"(?P<functional_average>{_XCELIUM_IMC_GRADE})\s+"
+    rf"(?P<functional_covered>{_XCELIUM_IMC_GRADE})"
+    rf"(?:\s+(?P<functional_count>{_XCELIUM_IMC_COUNT}))?\s*$",
+    re.IGNORECASE,
 )
+
+
+def _parse_xcelium_imc_grade(token: str) -> float | None:
+    value = token.strip().lower()
+    if value in {"n/a", "na"}:
+        return None
+    grade = float(value[:-1])
+    if not 0.0 <= grade <= 100.0:
+        raise ValueError("IMC coverage grade is outside 0..100")
+    return grade
 
 
 def parse_xcelium_imc_summary(text: str) -> dict:
-    """Normalize explicitly labelled Overall scores from an IMC summary."""
+    """Normalize explicitly labelled IMC summary grades.
+
+    Only columns whose semantics are present in the retained header are
+    normalized. Parenthesized count payloads are preserved as raw evidence;
+    their field semantics are not inferred here.
+    """
     lines = text.splitlines()
     header_index = next(
         (
@@ -1828,29 +1861,41 @@ def parse_xcelium_imc_summary(text: str) -> dict:
     )
     if header_index is None:
         raise ValueError(
-            "IMC summary header with Overall Average/Covered was not found"
+            "IMC summary header with labelled Overall/Code/Fsm/Functional "
+            "Average/Covered columns was not found"
         )
 
+    row = None
     for raw_line in lines[header_index + 1 :]:
         match = _XCELIUM_IMC_SUMMARY_ROW.match(raw_line)
-        if match is None:
-            continue
+        if match is not None:
+            row = match
+            break
+    if row is None:
+        raise ValueError("IMC summary data row could not be parsed")
 
-        average = float(match.group("average"))
-        covered = float(match.group("covered"))
-        if not 0.0 <= average <= 100.0 or not 0.0 <= covered <= 100.0:
-            raise ValueError("IMC overall coverage score is outside 0..100")
-        return {
-            "tool_total_coverage": covered,
-            "by_metric": {
-                "overall_average": average,
-                "overall_covered": covered,
-            },
-            "scope": match.group("scope"),
-            "metric_semantics": "imc-summary-overall",
-        }
+    by_metric: dict[str, float] = {}
+    count_evidence: dict[str, str] = {}
+    for kind in ("overall", "code", "fsm", "functional"):
+        for grade_kind in ("average", "covered"):
+            value = _parse_xcelium_imc_grade(row.group(f"{kind}_{grade_kind}"))
+            if value is not None:
+                by_metric[f"{kind}_{grade_kind}"] = value
+        raw_count = row.group(f"{kind}_count")
+        if raw_count is not None:
+            count_evidence[kind] = raw_count.strip()
 
-    raise ValueError("IMC summary data row could not be parsed")
+    overall_covered = by_metric.get("overall_covered")
+    if overall_covered is None:
+        raise ValueError("IMC Overall Covered grade is not numeric")
+
+    return {
+        "tool_total_coverage": overall_covered,
+        "by_metric": by_metric,
+        "scope": row.group("scope"),
+        "metric_semantics": "imc-summary-labelled-grades",
+        "count_evidence": count_evidence,
+    }
 
 
 def merge_xcelium_coverage(project: ProjectConfig) -> dict:
