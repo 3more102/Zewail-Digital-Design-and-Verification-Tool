@@ -14,8 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, and documented module-level line/branch covered/total counts from `modinfo.txt`
-- Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, and isolated per-run native coverage databases when `coverage = true`
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch/condition source-linked `coverage-holes`; expression/toggle/FSM item normalization remains pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch plus scalar condition/expression FEC source-linked `coverage-holes`; multibit condition/expression rows and toggle/FSM item normalization remain pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -112,7 +111,7 @@ weighted total coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. ZDDV also parses documented module-level Line and Branch total/covered rows from `modinfo.txt` and persists them as explicitly scoped `module_line` and `module_branch` counts; these counts do not replace the design-wide dashboard percentages. Condition/toggle/FSM module counts and instance-level code-metric aggregation remain pending. If the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
-For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. With `coverage = true`, build enables `-coverage all`; each run is assigned an isolated Cadence coverage hierarchy through `-covworkdir`, `-covscope`, and `-covtest`, and ZDDV records the run database only when a `.ucd` artifact is actually present. IMC merge/report and normalized Xcelium coverage metrics remain pending.
+For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. Native Xcelium coverage collection/merge is intentionally not claimed yet; projects using this backend must keep `coverage = false` until that layer is implemented.
 
 ## Current CLI
 
@@ -681,8 +680,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
-- [x] Questa statement/branch/condition item/source normalization and coverage-hole reporting
-- [ ] Questa expression/toggle/FSM item-level normalization
+- [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting
+- [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
@@ -690,9 +689,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [x] VCS documented module-level line/branch covered/total count ingestion from `modinfo.txt`
 - [ ] VCS remaining condition/toggle/FSM module counts and instance-level code-metric aggregation
-- [x] Xcelium execution adapter foundation
-- [x] Xcelium native per-run coverage database capture
-- [ ] Xcelium IMC merge/report and metric normalization
+- [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
