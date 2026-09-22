@@ -118,6 +118,14 @@ four-state textual values, timestamps and timescale metadata. Repeated `--signal
 arguments accept exact paths or unambiguous short names. `--max-steps` is an explicit
 memory/evidence bound; exceeding it is an error rather than silent truncation.
 
+Formal result persistence also auto-normalizes an existing VCD attached to a failed
+assertion or reached cover goal. The normalized JSON is written under the immutable
+snapshot namespace `.zddv/formal/counterexamples/<snapshot-id>/`, added to the
+snapshot artifact list, and linked from the property's native trace record with its
+input SHA-256 and normalization summary. Missing VCD files, unsupported waveform
+formats, and parser errors remain explicit normalization states and do not rewrite
+the backend's formal PASS/FAIL/reachability result.
+
 ## Direct SymbiYosys bounded execution
 
 ZDDV can execute finite-depth safety and cover-reachability jobs directly:
@@ -190,8 +198,9 @@ snapshot ID used in the calculation.
 ## Current boundary
 
 Native VCD counterexample/witness contents are supported through the explicit
-`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
-during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
+`formal-vcd-trace` importer and are auto-normalized during result persistence when a
+failed assertion or reached cover goal links an existing VCD. Other waveform formats
+remain evidence-only. ZDDV does not claim unbounded reachability/proof coverage from
 finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
 conservative cross-run aggregation are supported. Incomplete property universes,
 snapshots without a design fingerprint, different source revisions, different engines,
