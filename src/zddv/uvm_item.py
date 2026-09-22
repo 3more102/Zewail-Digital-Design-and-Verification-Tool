@@ -10,7 +10,7 @@ from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 
-_ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
+_ITEM_EVENTS = ("ARB_REQUEST", "GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
 _ITEM_LOG_MARKER = "ZDDV_UVM_ITEM"
 
@@ -240,7 +240,7 @@ def parse_uvm_item_data(
                 "transaction_id": event.get("transaction_id"),
                 "events": [],
                 "event_indices": [],
-                "partial": event["event"] != "GRANT",
+                "partial": event["event"] not in {"ARB_REQUEST", "GRANT"},
             }
             items[item_id] = instance
         else:
@@ -266,7 +266,15 @@ def parse_uvm_item_data(
                 f"Item {item_id} observed {event_type} more than once",
             )
 
-        if event_type == "GRANT":
+        if event_type == "ARB_REQUEST":
+            if any(name in observed for name in ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")):
+                add_violation(
+                    "LATE_ARB_REQUEST",
+                    event,
+                    f"Item {item_id} observed ARB_REQUEST after later handshake evidence",
+                )
+
+        elif event_type == "GRANT":
             if any(name in observed for name in ("REQUEST", "ITEM_DONE", "RESPONSE")):
                 add_violation(
                     "LATE_GRANT",
@@ -288,7 +296,14 @@ def parse_uvm_item_data(
                     f"Item {item_id} observed REQUEST after RESPONSE",
                 )
             if "GRANT" not in observed:
-                instance["partial"] = True
+                if "ARB_REQUEST" in observed:
+                    add_violation(
+                        "REQUEST_BEFORE_GRANT",
+                        event,
+                        f"Item {item_id} observed REQUEST before its arbitration grant",
+                    )
+                else:
+                    instance["partial"] = True
 
         elif event_type == "ITEM_DONE":
             if "REQUEST" not in observed:
@@ -354,6 +369,7 @@ def parse_uvm_item_data(
         "limitations": [
             "Input is explicit normalized handshake evidence; vendor simulator logs are not guessed or reinterpreted.",
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
+            "ARB_REQUEST is explicit pre-grant waiting evidence used by the canonical arbitration adapter; it is never inferred from ordinary UVM text.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
             "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
             "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
