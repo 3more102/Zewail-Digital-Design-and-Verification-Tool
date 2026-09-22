@@ -154,9 +154,13 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
-            out_path = Path(command[command.index("-output") + 1])
-            out_path.write_text("<coverage/>\n", encoding="utf-8")
-            return SimpleNamespace(returncode=0, stdout="")
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("<coverage/>\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="xml report written\n")
+        if command[1:4] == ["report", "-zeros", "-details"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="zero report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -186,15 +190,24 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "/opt/questa/bin/vcover",
         "report",
         "-xml",
+        "-codeAll",
         "-output",
-        result["details"],
+        str(Path(result["merged"]).with_name("details.xml")),
+        result["merged"],
+    ]
+    assert commands[4] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-zeros",
+        "-details",
+        "-codeAll",
+        "-output",
+        str(Path(result["merged"]).with_name("zeros.txt")),
         result["merged"],
     ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
-    assert result["details_capture"] == "xml"
-    assert Path(result["details"]).read_text(encoding="utf-8") == "<coverage/>\n"
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["simulator"] == "questa"
@@ -203,8 +216,11 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["by_type"]["expression"]["hit"] == 1143
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
-    assert payload["details_capture"] == "xml"
-    assert payload["details"] == result["details"]
+    evidence = payload["detailed_code_coverage_evidence"]
+    assert evidence["xml"]["status"] == "captured"
+    assert evidence["zero_detail"]["status"] == "captured"
+    assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
+    assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -256,6 +272,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "functional_bins": 3,
             "functional_snapshot_id": "fcov-test",
             "functional_report": "/tmp/functional.txt",
+            "detailed_code_coverage_evidence": {
+                "xml": {"status": "captured", "path": "/tmp/details.xml"},
+                "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
+            },
         },
     )
 
@@ -266,16 +286,23 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
+    assert "Detailed code coverage XML: captured /tmp/details.xml" in output
+    assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
 
 
-def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
+def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
     tmp_path: Path,
     monkeypatch,
 ):
     project = _project(tmp_path)
     run_dir = (project.root / project.run_dir / "run-a").resolve()
     run_dir.mkdir(parents=True)
-    (run_dir / "coverage.ucdb").write_text("run fixture\n", encoding="utf-8")
+    (run_dir / "coverage.ucdb").write_text("fixture\n", encoding="utf-8")
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True)
+    (out_dir / "details.xml").write_text("stale\n", encoding="utf-8")
+    (out_dir / "zeros.txt").write_text("stale\n", encoding="utf-8")
 
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
@@ -284,30 +311,26 @@ def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
 
     def fake_run(command, cwd):
         if command[1] == "merge":
-            out_path = Path(command[command.index("-out") + 1])
-            out_path.write_text("merged fixture\n", encoding="utf-8")
+            output = Path(command[command.index("-out") + 1])
+            output.write_text("merged\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:4] == ["report", "-cvg", "-details"]:
-            return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
-        if command[1:3] == ["report", "-xml"]:
-            return SimpleNamespace(returncode=1, stdout="XML export unavailable\n")
+            return SimpleNamespace(returncode=0, stdout="")
+        if "-xml" in command or "-zeros" in command:
+            return SimpleNamespace(returncode=2, stdout="unsupported fixture\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
 
     result = merge_questa_coverage(project)
+    evidence = result["detailed_code_coverage_evidence"]
 
-    assert result["details"] is None
-    assert result["details_capture"] == "unavailable"
-    assert result["details_error"] == "XML export unavailable"
-
-    payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
-    assert payload["details"] is None
-    assert payload["details_capture"] == "unavailable"
-    assert payload["details_error"] == "XML export unavailable"
-
-    snapshots = list_coverage_snapshots(project, limit=5)
-    assert len(snapshots) == 1
-    assert snapshots[0]["total_points"] == 82535
+    assert evidence["xml"]["status"] == "failed"
+    assert evidence["xml"]["returncode"] == 2
+    assert evidence["xml"]["diagnostic"] == "unsupported fixture"
+    assert evidence["zero_detail"]["status"] == "failed"
+    assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
+    assert not Path(evidence["xml"]["path"]).exists()
+    assert not Path(evidence["zero_detail"]["path"]).exists()
