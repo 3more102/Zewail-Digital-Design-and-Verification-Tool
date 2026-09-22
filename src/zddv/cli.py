@@ -781,6 +781,7 @@ def cmd_uvm_item_analyze(args) -> int:
     print(f"Report: {result['report_path']}")
     return 0 if result["status"] == "PASS" else 1
 
+
 def cmd_uvm_item_history(args) -> int:
     project = load_project(_project_arg(args))
     rows = list_uvm_item_handshake_snapshots(
