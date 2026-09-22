@@ -95,6 +95,13 @@ SQLite coverage-history model. Questa's weighted total coverage is preserved as
 a separate simulator-reported value; item-level `coverage-holes` remains
 Verilator-only until detailed UCDB normalization is implemented.
 
+For UVM lifecycle evidence, enable standard phase and objection tracing in the
+simulation (for example, `+UVM_PHASE_TRACE` and `+UVM_OBJECTION_TRACE`) and
+analyze the resulting log with `zddv uvm-analyze`. ZDDV also records sequence
+activity when a UVM report component explicitly exposes a
+`sequencer@@sequence` context. This is report-context evidence only; ZDDV does
+not infer sequence start/end lifecycle from ordinary UVM messages.
+
 ## Current CLI
 
 ```bash
@@ -340,7 +347,7 @@ separately from Verilator's annotation threshold.
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
-- [ ] Sequence-aware UVM result model
+- [x] Explicit UVM sequence report-context evidence and SQLite persistence
 
 ### APB Trace Analysis
 
