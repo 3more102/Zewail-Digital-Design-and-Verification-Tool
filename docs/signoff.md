@@ -65,3 +65,40 @@ preserved.
 The command returns exit code 0 only for `READY_FOR_REVIEW`; a blocked review returns
 exit code 1, making the artifact usable as an explicit CI gate without hiding the
 underlying evidence.
+
+
+## Signed reproducible release export
+
+A `READY_FOR_REVIEW` signoff bundle can be promoted into a deterministic release
+archive only after the caller confirms the exact reviewed `signoff_sha256`.
+
+```bash
+zddv --project my_project release-export \
+  --signoff .zddv/signoff/signoff.json \
+  --expected-signoff-sha256 <reviewed-signoff-sha256> \
+  --private-key /secure/path/release-private.pem \
+  --key-id lab-release-2026 \
+  --output .zddv/signoff/release.zip
+```
+
+The archive contains exactly two files: the normalized signoff JSON and a release
+manifest. Members are stored in lexicographic order with fixed ZIP metadata and no
+compression, so identical signoff bytes, key, and key ID produce byte-identical ZIP
+archives.
+
+The manifest is signed with Ed25519. The private key is never copied into the
+archive. Verification requires a separately trusted public key:
+
+```bash
+zddv --project my_project release-verify \
+  .zddv/signoff/release.zip \
+  --public-key /trusted/path/release-public.pem
+```
+
+Verification checks the Ed25519 signature, public-key fingerprint, manifest payload
+SHA-256, bundled-file SHA-256, signoff provenance hashes, and the
+`READY_FOR_REVIEW` state. A valid signature authenticates the release manifest; it
+does not independently prove that verification is specification-complete.
+
+Install the optional signing support with `pip install 'zddv[signing]'` when the
+base package was installed without development extras.
