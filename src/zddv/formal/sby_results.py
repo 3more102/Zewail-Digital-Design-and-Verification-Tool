@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 from typing import Any
+import uuid
 
 from zddv.config import ProjectConfig
 
@@ -15,11 +16,16 @@ _DONE_RE = re.compile(
     re.IGNORECASE,
 )
 _ENGINE_RE = re.compile(
-    r"summary:\s+engine_\d+\s+\((?P<engine>[^)]+)\)\s+returned\b",
+    r"summary:\s+engine(?:_|\s+)\d+\s+\((?P<engine>[^)]+)\)\s+returned\b",
     re.IGNORECASE,
 )
 _ASSERT_FAIL_RE = re.compile(
     r"##\s+Assert failed in\s+(?P<scope>[^:]+):\s*(?P<name>.+?)\s*$",
+    re.IGNORECASE,
+)
+_SUMMARY_ASSERT_FAIL_RE = re.compile(
+    r"summary:\s+failed assertion\s+(?P<name>\S+)\s+at\s+"
+    r"(?P<location>.+?)\s+in step\s+(?P<step>\d+)\s*$",
     re.IGNORECASE,
 )
 _COVER_REACHED_RE = re.compile(
@@ -53,6 +59,13 @@ def parse_sby_log(
 ) -> FormalCheckResult:
     """Normalize only explicit evidence from a completed SymbiYosys logfile."""
 
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in {"bmc", "cover"}:
+        raise ValueError(
+            "native SymbiYosys logfile import currently supports bmc and cover only; "
+            "prove mode requires phase-aware basecase/induction interpretation"
+        )
+
     log_path = Path(path).resolve()
     text = log_path.read_text(encoding="utf-8", errors="replace")
 
@@ -65,7 +78,7 @@ def parse_sby_log(
     terminal = terminals[-1]
     status = terminal.group("status").upper()
     returncode = int(terminal.group("rc"))
-    request = FormalCheckRequest(mode=mode, depth=depth)
+    request = FormalCheckRequest(mode=normalized_mode, depth=depth)
     run_dir = log_path.parent
 
     engines = list(_ENGINE_RE.finditer(text))
@@ -76,6 +89,7 @@ def parse_sby_log(
     pending_index: int | None = None
     artifacts: list[Path] = []
     artifact_seen: set[Path] = set()
+    pending_counterexample_trace: Path | None = None
 
     def remember_artifact(raw_path: str) -> Path:
         resolved = _resolve_artifact(run_dir, raw_path)
@@ -84,25 +98,52 @@ def parse_sby_log(
             artifacts.append(resolved)
         return resolved
 
+    def remember_failed_assertion(
+        *,
+        name: str,
+        message: str,
+    ) -> int:
+        nonlocal pending_counterexample_trace
+        key = ("assert", name, "FAIL")
+        index = row_index.get(key)
+        if index is None:
+            rows.append(
+                {
+                    "name": name,
+                    "kind": "assert",
+                    "status": "FAIL",
+                    "message": message,
+                    "trace_path": pending_counterexample_trace,
+                }
+            )
+            index = len(rows) - 1
+            row_index[key] = index
+            pending_counterexample_trace = None
+        return index
+
     for line in text.splitlines():
         match = _ASSERT_FAIL_RE.search(line)
         if match:
             scope = match.group("scope").strip()
             name = match.group("name").strip()
-            key = ("assert", name, "FAIL")
-            pending_index = row_index.get(key)
-            if pending_index is None:
-                rows.append(
-                    {
-                        "name": name,
-                        "kind": "assert",
-                        "status": "FAIL",
-                        "message": f"SymbiYosys reported assertion failure in {scope}",
-                        "trace_path": None,
-                    }
-                )
-                pending_index = len(rows) - 1
-                row_index[key] = pending_index
+            pending_index = remember_failed_assertion(
+                name=name,
+                message=f"SymbiYosys reported assertion failure in {scope}",
+            )
+            continue
+
+        match = _SUMMARY_ASSERT_FAIL_RE.search(line)
+        if match:
+            name = match.group("name").strip()
+            location = match.group("location").strip()
+            step = int(match.group("step"))
+            pending_index = remember_failed_assertion(
+                name=name,
+                message=(
+                    "SymbiYosys summary reported assertion failure "
+                    f"at {location} in solver step {step}"
+                ),
+            )
             continue
 
         match = _COVER_REACHED_RE.search(line)
@@ -138,11 +179,15 @@ def parse_sby_log(
         match = _COUNTEREXAMPLE_RE.search(line)
         if match:
             trace = remember_artifact(match.group("path"))
+            attached = False
             for index in range(len(rows) - 1, -1, -1):
                 if rows[index]["kind"] == "assert" and rows[index]["status"] == "FAIL":
                     if rows[index]["trace_path"] is None:
                         rows[index]["trace_path"] = trace
+                        attached = True
                     break
+            if not attached:
+                pending_counterexample_trace = trace
 
     properties = tuple(
         FormalPropertyResult(
@@ -175,7 +220,7 @@ def analyze_sby_log(
     *,
     mode: str,
     depth: int | None = None,
-    output: str | Path = ".zddv/formal/sby/latest.json",
+    output: str | Path | None = None,
 ) -> dict[str, Any]:
     """Import a native SymbiYosys logfile into normalized persisted evidence."""
 
@@ -185,9 +230,14 @@ def analyze_sby_log(
     input_path = input_path.resolve()
 
     result = parse_sby_log(input_path, mode=mode, depth=depth)
+    report_path = (
+        Path(output)
+        if output is not None
+        else Path(".zddv/formal/sby") / f"import-{uuid.uuid4().hex}.json"
+    )
     return persist_formal_result(
         project,
         result,
         input_path=input_path,
-        output=output,
+        output=report_path,
     )
