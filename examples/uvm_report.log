@@ -1,0 +1,12 @@
+# UVM_INFO @ 0: reporter [RNTST] Running test zddv_uvm_smoke...
+# UVM_INFO env.sv(21) @ 10 ns: uvm_test_top.env [BUILD] environment ready
+# UVM_WARNING monitor.sv(48) @ 25 ns: uvm_test_top.env.monitor [LATENCY] response arrived after target latency
+# UVM_INFO test.sv(72) @ 40 ns: uvm_test_top [TEST_DONE] smoke sequence complete
+#
+# --- UVM Report Summary ---
+#
+# ** Report counts by severity
+# UVM_INFO : 3
+# UVM_WARNING : 1
+# UVM_ERROR : 0
+# UVM_FATAL : 0
