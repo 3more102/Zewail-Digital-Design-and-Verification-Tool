@@ -68,7 +68,7 @@ _QUESTA_CVG_BIN = re.compile(
 )
 
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>[A-Za-z][A-Za-z0-9 _/-]*?)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
@@ -324,7 +324,7 @@ def parse_questa_code_coverage_holes(text: str) -> list[dict]:
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
-            kind = header.group("kind").strip().lower()
+            kind = _normalize_questa_coverage_kind(header.group("kind"))
             source_file = header.group("file").strip()
             continue
 
