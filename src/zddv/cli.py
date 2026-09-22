@@ -48,7 +48,10 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
-from zddv.uvm_arbitration import analyze_uvm_arbitration_file
+from zddv.uvm_arbitration import (
+    analyze_uvm_arbitration_file,
+    analyze_uvm_arbitration_item_file,
+)
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.waveform import write_waveform_index
@@ -967,14 +970,25 @@ def cmd_uvm_item_violations(args) -> int:
 
 def cmd_uvm_arbitration_analyze(args) -> int:
     project = load_project(_project_arg(args))
-    result = analyze_uvm_arbitration_file(
-        project,
-        args.path,
-        source=args.source,
-        fairness_bound=args.fairness_bound,
-        output=args.output,
-        run_id=args.run_id,
-    )
+    if args.item_trace or args.item_log:
+        result = analyze_uvm_arbitration_item_file(
+            project,
+            args.path,
+            log_input=args.item_log,
+            source=args.source,
+            fairness_bound=args.fairness_bound,
+            output=args.output,
+            run_id=args.run_id,
+        )
+    else:
+        result = analyze_uvm_arbitration_file(
+            project,
+            args.path,
+            source=args.source,
+            fairness_bound=args.fairness_bound,
+            output=args.output,
+            run_id=args.run_id,
+        )
     summary = result["summary"]
     print(
         f"UVM ARBITRATION {result['status']}: "
@@ -988,6 +1002,17 @@ def cmd_uvm_arbitration_analyze(args) -> int:
         f"fairness-violations={summary['fairness_violations']} "
         f"pending={summary['pending']}"
     )
+    adapter = result.get("adapter")
+    if isinstance(adapter, dict):
+        print(
+            "Item bridge: "
+            f"requests={adapter['requests_seen']} "
+            f"grants={adapter['grants_seen']} "
+            f"decisions={adapter['decisions_emitted']} "
+            f"incomplete={adapter['incomplete_requests']} "
+            f"skipped={adapter['skipped_incomplete_decisions']} "
+            f"pending={adapter['pending_requests']}"
+        )
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
@@ -2053,7 +2078,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_uvm_arbitration.add_argument(
         "path",
-        help="Normalized UVM arbitration decision JSON file",
+        help=(
+            "Arbitration decision JSON by default; with --item-trace/--item-log, "
+            "explicit ARB_REQUEST/GRANT item evidence"
+        ),
+    )
+    p_uvm_arbitration_input = p_uvm_arbitration.add_mutually_exclusive_group()
+    p_uvm_arbitration_input.add_argument(
+        "--item-trace",
+        action="store_true",
+        help="Derive arbitration decisions from normalized UVM item-trace JSON",
+    )
+    p_uvm_arbitration_input.add_argument(
+        "--item-log",
+        action="store_true",
+        help="Derive arbitration decisions from explicit ZDDV_UVM_ITEM log markers",
     )
     p_uvm_arbitration.add_argument(
         "--run",
