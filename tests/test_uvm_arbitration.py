@@ -23,6 +23,7 @@ def _contender(
     *,
     item_id: str | None = None,
     priority: int | None = None,
+    request_order: int | None = None,
 ) -> dict[str, object]:
     return {
         "request_id": request_id,
@@ -30,6 +31,7 @@ def _contender(
         "sequence": sequence,
         "item_id": item_id,
         "priority": priority,
+        "request_order": request_order,
     }
 
 
@@ -39,14 +41,18 @@ def _decision(
     contenders: list[dict[str, object]],
     *,
     time: str | None = None,
+    mode: str | None = None,
 ) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "decision_id": decision_id,
         "sequencer": "uvm_test_top.env.seqr",
         "granted_request_id": granted_request_id,
         "time": time,
         "contenders": contenders,
     }
+    if mode is not None:
+        result["mode"] = mode
+    return result
 
 
 def _fair_trace() -> dict[str, object]:
@@ -120,6 +126,173 @@ def test_detects_grant_not_in_contenders_and_request_identity_change():
     assert "GRANT_NOT_A_CONTENDER" in codes
     assert "REQUEST_IDENTITY_CHANGED" in codes
     assert result["status"] == "FAIL"
+
+
+def test_explicit_fifo_policy_checks_request_order():
+    result = parse_uvm_arbitration_data(
+        {
+            "mode": "UVM_SEQ_ARB_FIFO",
+            "decisions": [
+                _decision(
+                    "fifo-bad",
+                    "req-late",
+                    [
+                        _contender(
+                            "req-early",
+                            "seq-a",
+                            "producer_a",
+                            request_order=0,
+                        ),
+                        _contender(
+                            "req-late",
+                            "seq-b",
+                            "producer_b",
+                            request_order=1,
+                        ),
+                    ],
+                )
+            ],
+        }
+    )
+
+    assert result["status"] == "FAIL"
+    assert result["arbitration_mode"] == "UVM_SEQ_ARB_FIFO"
+    assert result["decisions"][0]["policy_check"]["checked"] is True
+    assert result["decisions"][0]["policy_check"]["expected_request_id"] == "req-early"
+    assert any(
+        violation["code"] == "FIFO_ORDER_MISMATCH"
+        for violation in result["violations"]
+    )
+
+
+def test_strict_modes_use_explicit_priority_and_fifo_tie_evidence():
+    strict_random = parse_uvm_arbitration_data(
+        {
+            "decisions": [
+                _decision(
+                    "strict-random",
+                    "req-low",
+                    [
+                        _contender(
+                            "req-low",
+                            "seq-low",
+                            "low_seq",
+                            priority=100,
+                        ),
+                        _contender(
+                            "req-high",
+                            "seq-high",
+                            "high_seq",
+                            priority=300,
+                        ),
+                    ],
+                    mode="UVM_SEQ_ARB_STRICT_RANDOM",
+                )
+            ]
+        }
+    )
+    assert strict_random["status"] == "FAIL"
+    assert any(
+        violation["code"] == "STRICT_PRIORITY_MISMATCH"
+        for violation in strict_random["violations"]
+    )
+
+    strict_fifo = parse_uvm_arbitration_data(
+        {
+            "decisions": [
+                _decision(
+                    "strict-fifo",
+                    "req-second",
+                    [
+                        _contender(
+                            "req-first",
+                            "seq-a",
+                            "producer_a",
+                            priority=300,
+                            request_order=0,
+                        ),
+                        _contender(
+                            "req-second",
+                            "seq-b",
+                            "producer_b",
+                            priority=300,
+                            request_order=1,
+                        ),
+                    ],
+                    mode="UVM_SEQ_ARB_STRICT_FIFO",
+                )
+            ]
+        }
+    )
+    assert strict_fifo["status"] == "FAIL"
+    assert any(
+        violation["code"] == "STRICT_FIFO_ORDER_MISMATCH"
+        for violation in strict_fifo["violations"]
+    )
+
+
+def test_policy_checks_are_skipped_when_required_evidence_is_absent():
+    fifo = parse_uvm_arbitration_data(
+        {
+            "mode": "UVM_SEQ_ARB_FIFO",
+            "decisions": [
+                _decision(
+                    "fifo-observational",
+                    "req-b",
+                    [
+                        _contender("req-a", "seq-a", "producer_a"),
+                        _contender("req-b", "seq-b", "producer_b"),
+                    ],
+                )
+            ],
+        }
+    )
+    assert fifo["status"] == "PASS"
+    assert fifo["decisions"][0]["policy_check"]["checked"] is False
+
+    random_mode = parse_uvm_arbitration_data(
+        {
+            "mode": "UVM_SEQ_ARB_RANDOM",
+            "decisions": [
+                _decision(
+                    "random-observational",
+                    "req-b",
+                    [
+                        _contender(
+                            "req-a",
+                            "seq-a",
+                            "producer_a",
+                            priority=100,
+                            request_order=0,
+                        ),
+                        _contender(
+                            "req-b",
+                            "seq-b",
+                            "producer_b",
+                            priority=1,
+                            request_order=1,
+                        ),
+                    ],
+                )
+            ],
+        }
+    )
+    assert random_mode["status"] == "PASS"
+    assert random_mode["decisions"][0]["policy_check"]["checked"] is False
+
+
+def test_rejects_unknown_explicit_arbitration_mode():
+    try:
+        parse_uvm_arbitration_data(
+            {
+                "mode": "NOT_A_UVM_MODE",
+                "decisions": [],
+            }
+        )
+    except ValueError as exc:
+        assert "mode must be one of" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for invalid arbitration mode")
 
 
 def _record_run(project, run_id: str) -> None:
