@@ -1320,7 +1320,7 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
 
 
 _VCS_URG_MODULE_HEADER = re.compile(
-    r"^\s*(?P<kind>Line|Branch)\s+Coverage\s+for\s+Module\s*:\s*"
+    r"^\s*(?P<kind>Line|Branch|Cond(?:ition)?|Toggle)\s+Coverage\s+for\s+Module\s*:\s*"
     r"(?P<module>.+?)\s*$",
     re.IGNORECASE,
 )
@@ -1341,15 +1341,27 @@ _VCS_URG_MODULE_TOTAL_ROWS = {
         r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
     ),
+    "condition": re.compile(
+        r"^\s*Conditions\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
+        re.IGNORECASE,
+    ),
+    "toggle_bits": re.compile(
+        r"^\s*Total\s+Bits\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
+        re.IGNORECASE,
+    ),
 }
 
 
 def parse_vcs_urg_module_counts(path: str | Path) -> dict:
-    """Parse documented module-level line/branch totals from URG modinfo.txt.
+    """Parse documented module-level code totals from URG modinfo.txt.
 
-    Count names are intentionally module_line/module_branch: they describe
-    module-definition report totals and do not replace design-wide dashboard
-    percentage metrics.
+    Count names are explicitly scoped to module definitions. Toggle coverage
+    uses the documented Total Bits row because that is the module TOGGLE score;
+    these counts do not replace design-wide dashboard percentages.
     """
     source = Path(path)
     lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -1360,7 +1372,13 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
         if header is None:
             continue
 
-        kind = header.group("kind").lower()
+        raw_kind = header.group("kind").lower()
+        if raw_kind.startswith("cond"):
+            kind = "condition"
+        elif raw_kind == "toggle":
+            kind = "toggle_bits"
+        else:
+            kind = raw_kind
         module = header.group("module").strip()
         row_pattern = _VCS_URG_MODULE_TOTAL_ROWS[kind]
 
@@ -1404,7 +1422,7 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
         records[key] = record
 
     aggregates: dict[str, dict[str, int | float]] = {}
-    for kind in ("line", "branch"):
+    for kind in ("line", "branch", "condition", "toggle_bits"):
         selected = [
             record
             for (record_kind, _), record in records.items()
