@@ -7,6 +7,7 @@ from zddv.storage import (
     list_uvm_objection_events,
     list_uvm_phase_events,
     list_uvm_report_messages,
+    list_uvm_sequence_events,
     record_run,
 )
 from zddv.uvm import analyze_uvm_log, parse_uvm_log_text
@@ -75,6 +76,49 @@ def test_persists_uvm_phase_and_objection_lifecycle(tmp_path: Path):
     assert objections[0]["objection_name"] == "run"
     assert objections[0]["object_name"] == "uvm_test_top"
     assert objections[0]["total_count"] == 1
+
+
+def test_parses_and_persists_explicit_uvm_sequence_report_context(tmp_path: Path):
+    result = parse_uvm_log_text(
+        """
+UVM_INFO seq.sv(10) @ 5 ns: uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent
+UVM_INFO seq.sv(11) @ 7 ns: uvm_test_top.env.seqr@@smoke_seq [SEQ] item done
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["summary"]["sequence_events"] == 2
+    assert lifecycle["summary"]["sequences_seen"] == ["smoke_seq"]
+    assert lifecycle["sequence_events"][0]["sequencer"] == "uvm_test_top.env.seqr"
+    assert lifecycle["sequence_events"][0]["sequence"] == "smoke_seq"
+    assert lifecycle["sequence_events"][0]["action"] == "report"
+    assert lifecycle["sequence_events"][0]["evidence"] == "uvm_report_context"
+    assert lifecycle["sequence_events"][0]["message"] == "item sent"
+
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "uvm_sequence.log"
+    log.write_text(
+        "UVM_INFO seq.sv(10) @ 5 ns: "
+        "uvm_test_top.env.seqr@@smoke_seq [SEQ] item sent\n",
+        encoding="utf-8",
+    )
+    stored = analyze_uvm_log(project, log, source="questa")
+    rows = list_uvm_sequence_events(project, stored["snapshot_id"])
+
+    assert len(rows) == 1
+    assert rows[0]["sequencer"] == "uvm_test_top.env.seqr"
+    assert rows[0]["sequence_name"] == "smoke_seq"
+    assert rows[0]["action"] == "report"
+    assert rows[0]["evidence"] == "uvm_report_context"
+
+
+def test_does_not_infer_sequence_without_explicit_report_context():
+    result = parse_uvm_log_text(
+        "UVM_INFO @ 5 ns: uvm_test_top.env.seqr [SEQ] smoke_seq item sent\n"
+    )
+
+    assert result["lifecycle"]["summary"]["sequence_events"] == 0
+    assert result["lifecycle"]["sequence_events"] == []
 
 
 def test_parses_uvm_summary_and_test_metadata():
@@ -248,6 +292,8 @@ def test_uvm_cli_and_history(tmp_path: Path, capsys):
     )
     assert rc == 0
     history = capsys.readouterr().out
+    assert "P/O/S" in history
+    assert "0/0/0" in history
     assert "cli_case" in history
     assert "uvm_report_summary" in history
 
