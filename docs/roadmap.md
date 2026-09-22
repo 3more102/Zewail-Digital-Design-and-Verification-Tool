@@ -97,7 +97,7 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement, branch, and condition FEC detail rows are normalized into the shared coverage-hole model; expression/toggle/FSM itemization remains planned.
+functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement/branch rows plus scalar condition/expression FEC detail rows are normalized into the shared coverage-hole model. Standard two-state toggle transition counts are normalized from the native toggle report; multibit FEC layouts, extended-Z toggle transitions, and FSM itemization remain planned.
 Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
@@ -106,8 +106,9 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
-- [x] Questa statement/branch/condition item/source normalization and coverage-hole reporting.
-- [ ] Questa expression/toggle/FSM item-level normalization.
+- [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting.
+- [x] Questa standard two-state toggle transition item-level normalization and coverage-hole reporting.
+- [ ] Questa multibit condition/expression FEC, extended-Z toggle, and FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
