@@ -148,12 +148,14 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 
 ## v0.8 — Intelligent Debug
 
-- Log/waveform/assertion correlation.
-- Failure clustering.
-- Root-cause candidate ranking from evidence.
-- Suggested next debug probes.
-- Coverage-hole test suggestions.
-- Generated assertions/tests kept reviewable and opt-in.
+- [x] Log/waveform/assertion correlation.
+- [x] Failure clustering.
+- [x] Deterministic root-cause candidate localization/ranking from retained assertion, waveform, RTL declaration, structural-connectivity, recurrence, and exact-name formal context evidence.
+- [ ] Suggested next debug probes.
+- [ ] Coverage-hole test suggestions.
+- [ ] Generated assertions/tests kept reviewable and opt-in.
+
+The candidate ranking is a transparent debug-priority ordering, not a causal probability. Formal history is included only as exact property-name context and does not affect the ranking unless a stronger run-level correlation contract is added later.
 
 ## Long-Term Direction
 
