@@ -9,6 +9,7 @@ import sys
 from zddv import __version__
 from zddv.ai_context import write_ai_rca_context
 from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
+from zddv.ai_response import ingest_provider_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
@@ -473,6 +474,33 @@ def cmd_ai_provider_run(args) -> int:
     print("Automatic staging: disabled")
     print("Automatic command execution: disabled")
     print(f"Request SHA-256: {result['request_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_response_ingest(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_provider_response(
+        project,
+        raw_response_path=args.response,
+        context_path=args.context,
+        output=args.output,
+    )
+    summary = result["validated_response"]["summary"]
+    policy = result["policy"]
+    print(
+        f"AI RESPONSE VALIDATED: hypotheses={summary['hypotheses']} "
+        f"evidence_refs={summary['resolved_evidence_refs']}"
+    )
+    print("Evidence references resolved: yes")
+    print(
+        "Model output trust: "
+        + ("untrusted" if policy["model_output_remains_untrusted"] else "trusted")
+    )
+    print("Automatic staging: disabled")
+    print("Automatic command execution: disabled")
+    print("Human review required: yes")
+    print(f"Validated SHA-256: {result['provenance']['validated_payload_sha256']}")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2866,6 +2894,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Raw untrusted provider-response JSON path",
     )
     p_ai_provider_run.set_defaults(func=cmd_ai_provider_run)
+
+    p_ai_response_ingest = sub.add_parser(
+        "ai-response-ingest",
+        help=(
+            "Schema-validate raw model output and resolve its explicit references "
+            "against reviewed ZDDV evidence"
+        ),
+    )
+    p_ai_response_ingest.add_argument(
+        "--response",
+        default=".zddv/ai/provider-response.json",
+        help="Raw ai_provider_response_raw JSON path inside the project",
+    )
+    p_ai_response_ingest.add_argument(
+        "--context",
+        default=".zddv/debug/ai-rca-context.json",
+        help="Reviewed ai-rca-context JSON path used for evidence resolution",
+    )
+    p_ai_response_ingest.add_argument(
+        "--output",
+        default=".zddv/ai/validated-response.json",
+        help="Schema-validated response artifact path",
+    )
+    p_ai_response_ingest.set_defaults(func=cmd_ai_response_ingest)
 
     p_generated_stage = sub.add_parser(
         "generated-stage",
