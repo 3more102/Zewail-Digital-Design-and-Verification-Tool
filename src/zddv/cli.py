@@ -6,6 +6,7 @@ import platform
 import sys
 
 from zddv import __version__
+from zddv.ai_context import write_ai_rca_context
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
@@ -383,6 +384,31 @@ def cmd_debug_probes(args) -> int:
         print(f"... {len(result['suggestions']) - args.show} more suggestion(s)")
     for blocker in result["blockers"]:
         print(f"WITHHELD {blocker['code']}: {blocker['message']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_rca_context(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_ai_rca_context(
+        project,
+        run_id=args.run_id,
+        candidate_limit=args.candidate_limit,
+        event_limit=args.event_limit,
+        signal_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"AI RCA CONTEXT: run={result['run']['run_id']} "
+        f"candidates={summary['candidates_included']}/"
+        f"{summary['candidates_available']} "
+        f"probes={summary['probe_suggestions']} "
+        f"blockers={summary['probe_blockers']}"
+    )
+    print("External transmission: disabled")
+    print("Automatic model invocation: disabled")
+    print(f"Evidence SHA-256: {result['provenance']['evidence_sha256']}")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2635,6 +2661,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evidence-backed debug probe suggestion JSON path",
     )
     p_debug_probes.set_defaults(func=cmd_debug_probes)
+
+    p_ai_context = sub.add_parser(
+        "ai-rca-context",
+        help="Build a provider-neutral evidence bundle for optional AI-assisted RCA",
+    )
+    p_ai_context.add_argument(
+        "--run",
+        dest="run_id",
+        required=True,
+        help="Exact failing or timed-out run ID",
+    )
+    p_ai_context.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=10,
+        help="Maximum ranked root-cause candidates to include",
+    )
+    p_ai_context.add_argument(
+        "--event-limit",
+        type=int,
+        default=100,
+        help="Maximum failing assertion events used by evidence ranking",
+    )
+    p_ai_context.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum exact waveform signal hints per assertion",
+    )
+    p_ai_context.add_argument(
+        "--output",
+        default=".zddv/debug/ai-rca-context.json",
+        help="Provider-neutral evidence bundle JSON path",
+    )
+    p_ai_context.set_defaults(func=cmd_ai_rca_context)
 
     p_generated_stage = sub.add_parser(
         "generated-stage",
