@@ -149,6 +149,7 @@ zddv --project my_project formal-bmc --depth 20
 zddv --project my_project formal-cover --depth 20
 zddv --project my_project formal-vcd-trace trace.vcd --property top.p_safe --kind assert
 zddv --project my_project formal-vcd-trace witness.vcd --property top.c_reached --kind cover --signal state
+zddv --project my_project formal-trace-crossprobe .zddv/formal/counterexamples/latest.json state
 zddv --project my_project formal-history --limit 20
 
 zddv --project my_project run
@@ -717,6 +718,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
+- [x] Formal trace signal cross-probing to RTL/source hierarchy and structural connectivity
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
