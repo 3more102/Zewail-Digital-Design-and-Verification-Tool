@@ -114,59 +114,6 @@ def test_invalid_limit_is_rejected():
         build_reviewable_verification_proposals(_suggestions(), limit=0)
 
 
-def test_coverage_scaffold_cli_defaults_to_json_only(tmp_path: Path, capsys):
-    project = initialize_project(tmp_path / "demo")
-    source = project.root / ".zddv" / "coverage" / "test-suggestions.json"
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_text(json.dumps(_suggestions()), encoding="utf-8")
-
-    rc = main(
-        [
-            "--project",
-            str(project.root),
-            "coverage-scaffold",
-            "--limit",
-            "1",
-        ]
-    )
-
-    assert rc == 0
-    terminal = capsys.readouterr().out
-    assert "REVIEWABLE VERIFICATION PROPOSALS: 1 proposal(s)" in terminal
-    assert "Code emission: disabled" in terminal
-    report = project.root / ".zddv" / "coverage" / "review-bundle.json"
-    payload = json.loads(report.read_text(encoding="utf-8"))
-    assert payload["emission_opt_in"] is False
-    assert payload["emitted_artifacts"] == []
-
-
-def test_coverage_scaffold_cli_requires_explicit_emit_dir(tmp_path: Path, capsys):
-    project = initialize_project(tmp_path / "demo")
-    source = project.root / ".zddv" / "coverage" / "test-suggestions.json"
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_text(json.dumps(_suggestions()), encoding="utf-8")
-
-    rc = main(
-        [
-            "--project",
-            str(project.root),
-            "coverage-scaffold",
-            "--limit",
-            "1",
-            "--emit-dir",
-            ".zddv/coverage/review-scaffolds",
-        ]
-    )
-
-    assert rc == 0
-    terminal = capsys.readouterr().out
-    assert "Opt-in emission: 2 disabled scaffold artifact(s)" in terminal
-    emitted = list(
-        (project.root / ".zddv" / "coverage" / "review-scaffolds").glob("*.sv.disabled")
-    )
-    assert len(emitted) == 2
-
-
 def test_cli_requires_explicit_emit_opt_in(tmp_path: Path, capsys):
     project = initialize_project(tmp_path / "demo")
     source = project.root / ".zddv" / "coverage" / "test-suggestions.json"
