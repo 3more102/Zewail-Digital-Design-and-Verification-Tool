@@ -369,6 +369,10 @@ def cmd_coverage(args) -> int:
         print(f"Detailed coverage XML: {result['details']}")
     elif result.get("details_capture") == "unavailable":
         print("Detailed coverage XML: unavailable")
+    if result.get("zero_details"):
+        print(f"Zero-hit source detail: {result['zero_details']}")
+    elif result.get("zero_details_capture") == "unavailable":
+        print("Zero-hit source detail: unavailable")
     metrics = result["metrics"]
     print(
         f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
