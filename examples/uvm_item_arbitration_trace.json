@@ -1,0 +1,17 @@
+{
+  "source": "example-arbitration",
+  "events": [
+    {"item_id":"item-b","event":"ARB_REQUEST","sequence_id":"seq-b","sequence":"read_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":20,"time":"8 ns"},
+    {"item_id":"item-a","event":"ARB_REQUEST","sequence_id":"seq-a","sequence":"write_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":10,"time":"9 ns"},
+    {"item_id":"item-a","event":"GRANT","sequence_id":"seq-a","sequence":"write_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":10,"time":"10 ns"},
+    {"item_id":"item-a","event":"REQUEST","sequence_id":"seq-a","sequence":"write_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":10,"time":"10 ns"},
+    {"item_id":"item-a","event":"ITEM_DONE","sequence_id":"seq-a","sequence":"write_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":10,"time":"14 ns"},
+    {"item_id":"item-c","event":"ARB_REQUEST","sequence_id":"seq-c","sequence":"control_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":30,"time":"15 ns"},
+    {"item_id":"item-c","event":"GRANT","sequence_id":"seq-c","sequence":"control_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":30,"time":"16 ns"},
+    {"item_id":"item-c","event":"REQUEST","sequence_id":"seq-c","sequence":"control_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":30,"time":"16 ns"},
+    {"item_id":"item-c","event":"ITEM_DONE","sequence_id":"seq-c","sequence":"control_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":30,"time":"18 ns"},
+    {"item_id":"item-b","event":"GRANT","sequence_id":"seq-b","sequence":"read_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":20,"time":"19 ns"},
+    {"item_id":"item-b","event":"REQUEST","sequence_id":"seq-b","sequence":"read_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":20,"time":"19 ns"},
+    {"item_id":"item-b","event":"ITEM_DONE","sequence_id":"seq-b","sequence":"read_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":20,"time":"23 ns"}
+  ]
+}

@@ -270,6 +270,14 @@ jobs:
           grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze contended UVM arbitration request evidence
+        run: |
+          zddv --project examples/counter uvm-item-analyze ../uvm_item_arbitration_trace.json --source example-arbitration --output .zddv/uvm/items/arbitration.json --max-bypass 2
+          grep -q '"available": true' examples/counter/.zddv/uvm/items/arbitration.json
+          grep -q '"contended_grants": 2' examples/counter/.zddv/uvm/items/arbitration.json
+          grep -q '"max_bypass": 2' examples/counter/.zddv/uvm/items/arbitration.json
+          grep -q '"pending_requests": 0' examples/counter/.zddv/uvm/items/arbitration.json
+
       - name: Analyze explicit UVM item log markers
         run: |
           zddv --project examples/counter uvm-item-log-analyze ../uvm_item_marker.log --source example-item-log

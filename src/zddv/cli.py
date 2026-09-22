@@ -788,6 +788,7 @@ def cmd_uvm_item_analyze(args) -> int:
         source=args.source,
         output=args.output,
         run_id=args.run_id,
+        max_bypass=args.max_bypass,
     )
     summary = result["summary"]
     print(
@@ -811,6 +812,20 @@ def cmd_uvm_item_analyze(args) -> int:
         f"switches={arbitration['sequence_switches']} "
         f"unscoped={arbitration['unscoped_grant_events']}"
     )
+    request_evidence = result["arbitration"]["request_evidence"]
+    if request_evidence["available"]:
+        request_summary = request_evidence["summary"]
+        print(
+            "Arbitration requests: "
+            f"requests={request_summary['requests']} "
+            f"matched-grants={request_summary['matched_grants']} "
+            f"contended-grants={request_summary['contended_grants']} "
+            f"pending={request_summary['pending_requests']} "
+            f"max-pending={request_summary['max_pending']} "
+            f"max-bypass={request_summary['max_bypass']}"
+        )
+        if args.max_bypass is not None:
+            print(f"Arbitration policy: max-bypass={args.max_bypass}")
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
@@ -1928,6 +1943,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         help="Maximum number of item-handshake violations to print",
+    )
+    p_uvm_item.add_argument(
+        "--max-bypass",
+        type=int,
+        default=None,
+        help=(
+            "Optional user policy limiting competing grants while an explicit "
+            "ARB_REQUEST waits"
+        ),
     )
     p_uvm_item.set_defaults(func=cmd_uvm_item_analyze)
 
