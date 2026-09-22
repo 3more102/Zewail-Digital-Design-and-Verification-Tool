@@ -948,6 +948,13 @@ def cmd_uvm_arbitration_analyze(args) -> int:
         f"fairness-violations={summary['fairness_violations']} "
         f"pending={summary['pending']}"
     )
+    print(
+        f"Policy: default-mode={result['mode']} "
+        f"checked={summary['policy_checked_decisions']} "
+        f"partial={summary['policy_partial_decisions']} "
+        f"observational={summary['policy_observational_decisions']} "
+        f"violations={summary['policy_violations']}"
+    )
     if result.get("run_id"):
         print(
             f"Run: {result['run_id']} "
