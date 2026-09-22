@@ -1,0 +1,5 @@
+# Explicit simulator-independent UVM sequence lifecycle markers
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_BODY","time":"10 ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_ENDED","time":"20 ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_POST_START","time":"20 ns"}
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq","sequencer":"uvm_test_top.env.sqr","state":"UVM_FINISHED","time":"20 ns"}
