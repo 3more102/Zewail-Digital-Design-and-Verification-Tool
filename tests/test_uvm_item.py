@@ -133,6 +133,84 @@ def test_detects_item_identity_changes():
     ]
 
 
+def test_reconstructs_observed_grant_order_without_inventing_policy():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                _event("item-a1", "GRANT", sequence_id="seq-a", transaction_id=1),
+                _event("item-a1", "REQUEST", sequence_id="seq-a", transaction_id=1),
+                _event("item-a2", "GRANT", sequence_id="seq-a", transaction_id=2),
+                _event("item-a2", "REQUEST", sequence_id="seq-a", transaction_id=2),
+                _event("item-b1", "GRANT", sequence_id="seq-b", transaction_id=3),
+                _event("item-b1", "REQUEST", sequence_id="seq-b", transaction_id=3),
+                _event(
+                    "item-c1",
+                    "GRANT",
+                    sequence_id="seq-c",
+                    sequence="axi_read_seq",
+                    sequencer="uvm_test_top.env.seqr_b",
+                    transaction_id=4,
+                ),
+                _event(
+                    "item-c1",
+                    "REQUEST",
+                    sequence_id="seq-c",
+                    sequence="axi_read_seq",
+                    sequencer="uvm_test_top.env.seqr_b",
+                    transaction_id=4,
+                ),
+                _event("partial-item", "REQUEST", sequence_id="seq-p", transaction_id=5),
+            ]
+        }
+    )
+
+    arbitration = result["arbitration"]
+    assert arbitration["model"] == "observed_grant_order"
+    assert arbitration["summary"] == {
+        "grant_events": 4,
+        "sequencers_observed": 2,
+        "sequence_ids_observed": 3,
+        "sequence_switches": 1,
+        "unscoped_grant_events": 0,
+        "unidentified_sequence_grant_events": 0,
+    }
+    assert [grant["item_id"] for grant in arbitration["grants"]] == [
+        "item-a1",
+        "item-a2",
+        "item-b1",
+        "item-c1",
+    ]
+    first = arbitration["sequencers"][0]
+    assert first["sequencer"] == "uvm_test_top.env.seqr"
+    assert first["grant_events"] == 3
+    assert first["sequence_ids"] == ["seq-a", "seq-b"]
+    assert first["sequence_switches"] == 1
+    assert first["known_adjacent_grant_pairs"] == 2
+    assert first["longest_known_sequence_streak"] == 2
+    assert "priority" not in arbitration
+    assert "fairness" not in arbitration
+
+
+def test_arbitration_keeps_missing_context_explicit():
+    result = parse_uvm_item_data(
+        {
+            "events": [
+                {
+                    "item_id": "unknown-context",
+                    "event": "GRANT",
+                }
+            ]
+        }
+    )
+
+    arbitration = result["arbitration"]
+    assert arbitration["summary"]["grant_events"] == 1
+    assert arbitration["summary"]["unscoped_grant_events"] == 1
+    assert arbitration["summary"]["unidentified_sequence_grant_events"] == 1
+    assert arbitration["grants"][0]["sequencer"] is None
+    assert arbitration["grants"][0]["sequence_id"] is None
+
+
 def test_rejects_unknown_item_event():
     try:
         parse_uvm_item_data({"events": [_event("item-1", "NOT_AN_EVENT")]})
@@ -212,6 +290,8 @@ def test_cli_analyzes_item_handshake_trace(tmp_path: Path):
     payload = json.loads(latest.read_text(encoding="utf-8"))
     assert payload["source"] == "cli-test"
     assert payload["summary"]["violations"] == 0
+    assert payload["arbitration"]["model"] == "observed_grant_order"
+    assert payload["arbitration"]["summary"]["grant_events"] == 1
 
 
 def _record_run(project, run_id: str) -> None:
