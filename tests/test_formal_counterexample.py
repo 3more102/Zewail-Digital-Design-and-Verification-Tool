@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.formal.counterexample import (
     COUNTEREXAMPLE_SCHEMA,
@@ -142,3 +143,27 @@ def test_ingest_writes_normalized_artifact_with_input_provenance(tmp_path: Path)
     assert saved["property"] == "p_req_ack"
     assert saved["input_path"] == str(source_path.resolve())
     assert len(saved["input_sha256"]) == 64
+
+
+def test_cli_imports_formal_counterexample(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    source_path = project.root / "cex.json"
+    source_path.write_text(json.dumps(_payload()), encoding="utf-8")
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "formal-counterexample-import",
+            "cex.json",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "FORMAL COUNTEREXAMPLE" in output
+    assert "property=p_req_ack" in output
+    assert "steps=3" in output
+    assert (
+        project.root / ".zddv" / "formal" / "counterexamples" / "latest.json"
+    ).is_file()
