@@ -158,6 +158,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
     pending_write_responses: dict[int, deque[dict[str, Any]]] = defaultdict(deque)
     pending_reads: dict[int, deque[dict[str, Any]]] = defaultdict(deque)
     exclusive_read_monitors: dict[int, dict[str, Any]] = {}
+    region_by_4kb: dict[int, int] = {}
 
     issued_write_bursts = 0
     issued_read_bursts = 0
@@ -317,6 +318,56 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             )
         return code, label
 
+    def validate_address_sidebands(
+        sample: dict[str, Any],
+        prefix: str,
+        *,
+        valid_addr: bool,
+        addr: Any,
+    ) -> dict[str, Any]:
+        widths = {
+            "CACHE": 4,
+            "PROT": 3,
+            "QOS": 4,
+            "REGION": 4,
+        }
+        values: dict[str, Any] = {}
+        for suffix, width in widths.items():
+            field = f"{prefix}{suffix}"
+            value = sample.get(field)
+            values[suffix.lower()] = value
+            if field not in sample:
+                continue
+            limit = (1 << width) - 1
+            if not isinstance(value, int) or not 0 <= value <= limit:
+                add_violation(
+                    "invalid_address_sideband",
+                    sample,
+                    f"{field} must fit in {width} bits",
+                    channel=prefix,
+                    signal=field,
+                    expected=f"0..{limit}",
+                    actual=value,
+                )
+
+        region = values["region"]
+        if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
+            page_base = addr & ~0xFFF
+            previous = region_by_4kb.get(page_base)
+            if previous is None:
+                region_by_4kb[page_base] = region
+            elif previous != region:
+                add_violation(
+                    "region_changed_within_4kb",
+                    sample,
+                    "AxREGION must remain constant within a 4KB address space",
+                    channel=prefix,
+                    signal=f"{prefix}REGION",
+                    expected=previous,
+                    actual=region,
+                )
+        return values
+
     def make_request(sample: dict[str, Any], prefix: str, index: int) -> dict[str, Any]:
         tx_id = id_value(sample, f"{prefix}ID", prefix)
         addr = sample.get(f"{prefix}ADDR")
@@ -333,6 +384,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 channel=prefix, signal=f"{prefix}ADDR",
                 expected="non-negative integer", actual=addr,
             )
+
+        sidebands = validate_address_sidebands(
+            sample,
+            prefix,
+            valid_addr=valid_addr,
+            addr=addr,
+        )
 
         valid_len = isinstance(length, int) and 0 <= length <= 255
         if not valid_len:
@@ -465,9 +523,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "sample_index": sample["sample_index"],
             "time": sample.get("time"),
-            "region": sample.get(f"{prefix}REGION"),
-            "cache": sample.get(f"{prefix}CACHE"),
-            "prot": sample.get(f"{prefix}PROT"),
+            "region": sidebands["region"],
+            "cache": sidebands["cache"],
+            "prot": sidebands["prot"],
+            "qos": sidebands["qos"],
         }
 
     def exclusive_attribute_mismatches(
@@ -610,6 +669,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         read_times = [beat.get("time") for beat in beats]
         if any(value is not None for value in read_times):
             tx["read_times"] = read_times
+        for key in ("cache", "prot", "qos", "region"):
+            if request.get(key) is not None:
+                tx[key] = request[key]
         if request.get("prot") is not None:
             tx["arprot"] = request["prot"]
         transactions.append(tx)
@@ -742,6 +804,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["w_times"] = w_times
                 if sample.get("time") is not None:
                     tx["response_time"] = sample["time"]
+                for key in ("cache", "prot", "qos", "region"):
+                    if request.get(key) is not None:
+                        tx[key] = request[key]
                 if request.get("prot") is not None:
                     tx["awprot"] = request["prot"]
                 transactions.append(tx)
@@ -884,7 +949,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sidebands",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
         "summary": {
@@ -909,6 +974,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION, and AxREGION is checked for 4KB-space consistency.",
             "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
