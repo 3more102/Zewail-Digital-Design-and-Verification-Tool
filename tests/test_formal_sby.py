@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import main
+from zddv.cli import build_parser, main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
 from zddv.formal.sby import render_sby_bmc_config
@@ -235,3 +235,12 @@ def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, 
     assert rc == 0
     assert "Formal backend: sby test" in output
     assert "FORMAL BMC PASS: depth=16 engine=smtbmc" in output
+
+
+def test_cli_build_parser_registers_formal_bmc_once():
+    parser = build_parser()
+    args = parser.parse_args(["formal-bmc", "--depth", "1"])
+
+    assert args.depth == 1
+    assert args.timeout is None
+    assert args.func.__name__ == "cmd_formal_bmc"
