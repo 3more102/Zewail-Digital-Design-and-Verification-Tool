@@ -2289,6 +2289,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     runfile_path = out_dir / "runs.txt"
     merge_log_path = out_dir / "merge.log"
     summary_path = out_dir / "summary.txt"
+    detail_path = out_dir / "detail.txt"
     script_path = out_dir / "imc-commands.tcl"
     manifest_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_dirs]
@@ -2308,11 +2309,17 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         'report -summary -inst "*..." -metrics all '
         "-cumulative on -showempty on -local off; exit"
     )
+    detail_script = (
+        'report -detail -inst "*..." -metrics all '
+        "-all -showempty on -source on; exit"
+    )
     script_path.write_text(
         merge_script
         + "\n"
         + f"# load: {merged_path}\n"
         + report_script
+        + "\n"
+        + detail_script
         + "\n",
         encoding="utf-8",
     )
@@ -2348,6 +2355,17 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             f"the generated coverage database. See {summary_path}"
         )
 
+    detail_command = [
+        tool,
+        "-load",
+        str(merged_path),
+        "-execcmd",
+        detail_script,
+    ]
+    detail_report = _run(detail_command, out_dir)
+    detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
+    detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
+
     metrics: dict | None = None
     metrics_error: str | None = None
     metrics_status = "summary-unparsed"
@@ -2379,10 +2397,14 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "runfile": str(runfile_path),
         "merge_log": str(merge_log_path),
         "summary": str(summary_path),
+        "detail": str(detail_path),
+        "detail_status": detail_status,
+        "detail_returncode": int(detail_report.returncode),
         "script": str(script_path),
         "merge_model": "union_all",
         "merge_command": merge_command,
         "report_command": report_command,
+        "detail_command": detail_command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
@@ -2416,6 +2438,10 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "inputs": inputs,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "detail": str(detail_path),
+        "detail_status": detail_status,
+        "detail_returncode": int(detail_report.returncode),
+        "detail_command": detail_command,
         "metrics_path": str(manifest_path),
         "report": report.stdout or "",
         "metrics": metrics,
