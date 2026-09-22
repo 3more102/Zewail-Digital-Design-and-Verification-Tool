@@ -16,6 +16,11 @@ from zddv.formal.base import (
 )
 from zddv.storage import record_formal_result_snapshot
 
+from .vcd_trace import ingest_formal_vcd_trace
+
+
+_AUTO_VCD_TRACE_MAX_STEPS = 100_000
+
 
 def _require_object(value: Any, *, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -257,6 +262,97 @@ def formal_design_fingerprint(project: ProjectConfig) -> str:
     return digest.hexdigest()
 
 
+def _resolved_trace_path(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    trace_path: Path,
+) -> Path:
+    if trace_path.is_absolute():
+        return trace_path.resolve()
+    run_dir = result.run_dir
+    if not run_dir.is_absolute():
+        run_dir = project.root / run_dir
+    return (run_dir / trace_path).resolve()
+
+
+def _auto_normalize_vcd_traces(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize directly evidenced counterexample/witness VCDs without changing run status."""
+
+    run_dir = result.run_dir
+    if not run_dir.is_absolute():
+        run_dir = project.root / run_dir
+    run_dir = run_dir.resolve()
+    output_dir = run_dir / "normalized-traces"
+
+    eligible = 0
+    normalized = 0
+    errors = 0
+    unsupported = 0
+
+    for index, (item, property_record) in enumerate(
+        zip(result.properties, record["properties"], strict=True),
+        start=1,
+    ):
+        trace = property_record.get("trace")
+        if item.trace_path is None or not isinstance(trace, dict):
+            continue
+        if trace.get("role") not in {"COUNTEREXAMPLE", "WITNESS"}:
+            continue
+
+        resolved = _resolved_trace_path(project, result, item.trace_path)
+        if resolved.suffix.lower() != ".vcd":
+            trace["normalization"] = {
+                "status": "UNSUPPORTED",
+                "format": resolved.suffix.lower().lstrip(".") or None,
+            }
+            unsupported += 1
+            continue
+
+        eligible += 1
+        role = "counterexample" if item.kind == "assert" else "witness"
+        destination = output_dir / f"{index:04d}-{role}.json"
+        try:
+            normalized_trace = ingest_formal_vcd_trace(
+                project,
+                resolved,
+                property_name=item.name,
+                property_kind=item.kind,
+                source=f"{result.backend}:{result.engine or 'formal'}",
+                max_steps=_AUTO_VCD_TRACE_MAX_STEPS,
+                output=destination,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            trace["normalization"] = {
+                "status": "ERROR",
+                "error": str(exc),
+                "max_steps": _AUTO_VCD_TRACE_MAX_STEPS,
+            }
+            errors += 1
+            continue
+
+        trace["normalization"] = {
+            "status": "NORMALIZED",
+            "path": normalized_trace["normalized_path"],
+            "input_sha256": normalized_trace["input_sha256"],
+            "summary": normalized_trace["summary"],
+            "max_steps": _AUTO_VCD_TRACE_MAX_STEPS,
+        }
+        normalized += 1
+
+    return {
+        "policy": "auto-vcd-v1",
+        "max_steps": _AUTO_VCD_TRACE_MAX_STEPS,
+        "eligible_vcd_traces": eligible,
+        "normalized": normalized,
+        "errors": errors,
+        "unsupported": unsupported,
+    }
+
+
 def persist_formal_result(
     project: ProjectConfig,
     result: FormalCheckResult,
@@ -274,6 +370,11 @@ def persist_formal_result(
     record = formal_result_to_record(result)
     record["top"] = project.top
     record["design_fingerprint"] = formal_design_fingerprint(project)
+    record["trace_normalization"] = _auto_normalize_vcd_traces(
+        project,
+        result,
+        record,
+    )
 
     report_path = Path(output)
     if not report_path.is_absolute():
