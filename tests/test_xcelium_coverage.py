@@ -7,7 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_coverage, merge_xcelium_coverage
+from zddv.coverage import (
+    merge_coverage,
+    merge_xcelium_coverage,
+    parse_xcelium_imc_summary,
+)
+from zddv.storage import list_coverage_score_snapshots
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -63,7 +68,12 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
         report_dir = out_dir / "xcelium-imc-report"
         (report_dir / "summary.txt").write_text(
-            "IMC summary fixture\n",
+            """IMC(64): 24.03 test fixture
+Legend: Metric* means cumulative
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+--------------------------------------------------------------------------------------------------------------------------------
+tb 100.00% 97.50% (195/200) 98.00% 96.00% (96/100) n/a n/a 91.00% 90.00% (90/100)
+""",
             encoding="utf-8",
         )
         return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
@@ -73,8 +83,16 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
     result = merge_coverage(project)
 
     assert result["inputs"] == [str(first), str(second)]
-    assert result["metrics"] is None
-    assert result["metrics_status"] == "not-normalized"
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.50)
+    assert result["metrics"]["by_metric"]["code"] == pytest.approx(96.00)
+    assert result["metrics"]["by_metric"]["functional"] == pytest.approx(90.00)
+    assert "fsm" not in result["metrics"]["by_metric"]
+    assert result["metrics"]["by_metric_counts"]["overall"] == {
+        "covered": 195,
+        "total": 200,
+        "hit_rate": pytest.approx(97.5),
+    }
     assert Path(result["merged"]).name == "xcelium-imc-merged"
     assert Path(result["summary"]).name == "summary.txt"
 
@@ -93,10 +111,17 @@ def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
     )
     assert manifest["status"] == "merged-report-captured"
-    assert manifest["metrics_status"] == "not-normalized"
+    assert manifest["metrics_status"] == "normalized"
     assert manifest["input_count"] == 2
     assert len(manifest["merged_ucd_files"]) == 1
-    assert manifest["snapshot_id"] is None
+    assert manifest["snapshot_id"] == result["snapshot_id"]
+    assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.50)
+
+    snapshots = list_coverage_score_snapshots(project, limit=5)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+    assert snapshots[0]["score"] == pytest.approx(97.50)
+    assert snapshots[0]["by_metric"]["code"] == pytest.approx(96.00)
 
 
 def test_merge_xcelium_coverage_requires_native_run_database(
@@ -142,3 +167,48 @@ def test_merge_xcelium_coverage_requires_imc(tmp_path: Path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="Cadence IMC was not found"):
         merge_xcelium_coverage(project)
+
+def test_parse_xcelium_imc_summary_matches_documented_ascii_shape():
+    text = """IMC(64): 14.21-s070
+*I,RUNLD: Successfully loaded run cov_work/scope/test.
+Starting batch mode
+Legend: Metric* means cumulative e.g. Block* means Cumulative Block Coverage
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+--------------------------------------------------------------------------------------------------------------------------------
+tb 100.00% 100.00% (2/2) n/a n/a n/a n/a 100.00% 100.00% (2/2)
+"""
+
+    metrics = parse_xcelium_imc_summary(text)
+
+    assert metrics["scope"] == "tb"
+    assert metrics["tool_total_coverage"] == pytest.approx(100.0)
+    assert metrics["by_metric"] == {"functional": pytest.approx(100.0)}
+    assert metrics["by_metric_counts"]["overall"] == {
+        "covered": 2,
+        "total": 2,
+        "hit_rate": pytest.approx(100.0),
+    }
+    assert metrics["by_metric_counts"]["functional"]["covered"] == 2
+    assert metrics["grades"]["code"] == {"average": None, "covered": None}
+    assert metrics["grades"]["fsm"] == {"average": None, "covered": None}
+
+
+def test_parse_xcelium_imc_summary_preserves_three_part_count_without_guessing():
+    text = """name Overall Average Overall Covered Code Average Code Covered Fsm Average Fsm Covered Functional Average Functional Covered
+tb 96.54% 96.08% (58216/60590/5041) 95.00% 94.00% n/a n/a 90.00% 89.00%
+"""
+
+    metrics = parse_xcelium_imc_summary(text)
+
+    assert "overall" not in metrics["by_metric_counts"]
+    assert metrics["count_evidence"]["overall"] == {
+        "raw": "(58216/60590/5041)",
+        "parts": [58216, 60590, 5041],
+    }
+    assert metrics["tool_total_coverage"] == pytest.approx(96.08)
+
+
+def test_parse_xcelium_imc_summary_rejects_unknown_shape():
+    with pytest.raises(ValueError, match="header"):
+        parse_xcelium_imc_summary("IMC summary fixture without documented columns\n")
+
