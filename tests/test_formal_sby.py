@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import main
+from zddv.cli import build_parser, main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
 from zddv.formal.sby import render_sby_bmc_config
@@ -191,6 +191,15 @@ def test_sby_backend_requires_installed_executable(tmp_path: Path, monkeypatch):
             project,
             FormalCheckRequest(mode="bmc", depth=8),
         )
+
+
+def test_formal_bmc_parser_registers_once():
+    parser = build_parser()
+    command_action = next(
+        action for action in parser._actions if action.dest == "command"
+    )
+
+    assert list(command_action.choices).count("formal-bmc") == 1
 
 
 def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, capsys):
