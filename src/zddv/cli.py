@@ -314,7 +314,7 @@ def cmd_build(args) -> int:
     print(f"Sources: {len(sources)}")
     result = backend.build(project)
     if result.passed:
-        print(f"BUILD PASS: {result.executable}")
+        print(f"BUILD PASS: {result.executable or result.artifact}")
         return 0
     print(f"BUILD FAIL: {result.log_path}")
     try:
