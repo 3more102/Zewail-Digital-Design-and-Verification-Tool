@@ -206,14 +206,17 @@ class QuestaBackend(SimulatorBackend):
         if project.waveform:
             command.append("-voptargs=+acc")
         command.append(project.top)
+        runtime_plusargs = list(plusargs or [])
         if test_name:
-            command.extend([
-                f"+ZDDV_TEST={test_name}",
-                f"+UVM_TESTNAME={test_name}",
-            ])
+            command.append(f"+ZDDV_TEST={test_name}")
+            if not any(
+                arg.startswith("+UVM_TESTNAME=")
+                for arg in runtime_plusargs
+            ):
+                command.append(f"+UVM_TESTNAME={test_name}")
         if seed is not None:
             command.append(f"+ZDDV_SEED={seed}")
-        command.extend(plusargs or [])
+        command.extend(runtime_plusargs)
         command.extend(["-do", str(do_file)])
 
         timed_out = False
@@ -254,7 +257,7 @@ class QuestaBackend(SimulatorBackend):
             "project": project.name,
             "test": test_name,
             "seed": seed,
-            "plusargs": plusargs or [],
+            "plusargs": runtime_plusargs,
             "timeout_s": timeout_s,
             "simulator": self.name,
             "simulator_version": simulator_version,
