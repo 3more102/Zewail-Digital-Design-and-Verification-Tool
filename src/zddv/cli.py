@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_xcelium_imc_detail_report_dir,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -722,6 +723,43 @@ def cmd_coverage_holes(args) -> int:
                 point_type=args.point_type,
                 limit=args.limit,
             )
+    elif simulator in {"xcelium", "xrun"}:
+        if args.point_type not in {None, "block", "expression", "toggle"}:
+            raise RuntimeError(
+                "Xcelium item-level coverage currently supports "
+                "--type block, expression, or toggle."
+            )
+        report_dir = (
+            project.root / ".zddv" / "coverage" / "xcelium" / "detail-html"
+        ).resolve()
+        if not report_dir.exists():
+            raise RuntimeError(
+                f"Xcelium IMC detail report not found at {report_dir}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_xcelium_imc_detail_report_dir(report_dir)
+        if not points:
+            raise RuntimeError(
+                f"No normalized Xcelium block/expression/toggle rows found in "
+                f"{report_dir}."
+            )
+        if (
+            args.point_type is not None
+            and not any(
+                point.get("type") == args.point_type
+                for point in points
+            )
+        ):
+            raise RuntimeError(
+                f"No normalized Xcelium {args.point_type} rows found in "
+                f"{report_dir}."
+            )
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type=args.point_type,
+            limit=args.limit,
+        )
     elif simulator == "vcs":
         if args.point_type not in {None, "condition"}:
             raise RuntimeError(
