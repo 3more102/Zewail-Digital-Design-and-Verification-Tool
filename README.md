@@ -12,6 +12,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - RTL/testbench source discovery
 - Simulator-adapter architecture
 - Formal adapter API with normalized check/property/result contracts (execution backends pending)
+- Simulator-independent formal counterexample/witness JSON normalization with deterministic artifact output
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -175,6 +176,7 @@ zddv --project my_project uvm-sequence-log-analyze simulation.log
 zddv --project my_project uvm-sequence-log-analyze --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
 zddv --project my_project fcov-import functional_coverage.json
+zddv --project my_project formal-counterexample-import counterexample.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
 zddv --project my_project apb-analyze apb_trace.json
@@ -700,8 +702,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
 - [ ] Xcelium metric normalization into ZDDV coverage history
-- [ ] Formal adapter API
-- [ ] Counterexample normalization
+- [x] Formal adapter API
+- [x] Counterexample normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
