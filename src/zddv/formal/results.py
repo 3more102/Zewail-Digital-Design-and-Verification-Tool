@@ -218,6 +218,46 @@ def formal_result_to_record(result: FormalCheckResult) -> dict[str, Any]:
     }
 
 
+
+def persist_formal_check_result(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    *,
+    output: str | Path = ".zddv/formal/latest.json",
+    input_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Persist one executed formal result directly into normalized ZDDV history."""
+
+    record = formal_result_to_record(result)
+
+    evidence_path = Path(input_path) if input_path is not None else result.log_path
+    if not evidence_path.is_absolute():
+        evidence_path = project.root / evidence_path
+    evidence_path = evidence_path.resolve()
+
+    report_path = Path(output)
+    if not report_path.is_absolute():
+        report_path = project.root / report_path
+    report_path = report_path.resolve()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    record.update(
+        {
+            "snapshot_id": uuid.uuid4().hex,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "project": project.name,
+            "input_path": str(evidence_path),
+            "report_path": str(report_path),
+        }
+    )
+
+    report_path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    record_formal_result_snapshot(project, record)
+    return record
+
 def analyze_formal_result_file(
     project: ProjectConfig,
     path: str | Path,
