@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, and documented global covergroup type/instance counts
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, and module/line-linked `modinfo.txt` line coverage holes
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch/condition source-linked `coverage-holes`; expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -104,12 +104,12 @@ functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
 evidence: XML output for machine-readable follow-up plus a `-zeros -details`
 report for zero-hit source/file-line evidence. ZDDV also normalizes documented
-statement/branch rows from `vcover report -details -code sb`, allowing
-`zddv coverage-holes` to report source-linked statement and branch misses.
-Condition/expression/toggle/FSM item normalization remains pending. Questa's
+statement/branch/condition rows from documented `vcover report` detail output, allowing
+`zddv coverage-holes` to report source-linked statement, branch, and condition misses.
+Expression/toggle/FSM item normalization remains pending. Questa's
 weighted total coverage remains a separate simulator-reported value.
 
-For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. Code-metric object-count aggregation remains pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
+For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. For text reports that contain `urg-report/modinfo.txt`, `zddv coverage-holes --type line` normalizes reported module-level line annotations such as `0/1` and partially covered ratios such as `1/2`; instance-only sections are not folded into the module-level hole list. Global code-metric object-count aggregation and detailed branch/condition/toggle/FSM hole normalization remain pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
 For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. Native Xcelium coverage collection/merge is intentionally not claimed yet; projects using this backend must keep `coverage = false` until that layer is implemented.
 
@@ -685,7 +685,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS multi-run URG merge/report evidence retention
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
+- [x] VCS module-level URG `modinfo.txt` line annotation normalization and coverage-hole reporting
 - [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
+- [ ] VCS branch/condition/toggle/FSM item-level coverage-hole normalization
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
