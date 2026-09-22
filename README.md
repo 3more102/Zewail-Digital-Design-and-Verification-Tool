@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
+> Status: **v0.6 Multi-Simulator UVM + Coverage Foundation — run-aware UVM phase/objection traces, normalized sequence state/item lifecycles, explicit sequence-item arbitration reconstruction, Questa UCDB/code/functional coverage normalization, and Verilator/Questa/VCS execution with native per-run VCS coverage capture**
 
 ## What Works Today
 
@@ -32,6 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
+- Explicit UVM sequence-item arbitration reconstruction from normalized `WAIT_FOR_GRANT` / `GRANT` / `SEND_REQUEST` / `ITEM_DONE` evidence, with observed contention windows and conservative partial-trace handling
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -158,6 +159,9 @@ zddv --project my_project uvm-history --run <run-id>
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
+zddv --project my_project uvm-item-analyze item_trace.json
+zddv --project my_project uvm-item-history --limit 20
+zddv --project my_project uvm-arbitration-analyze arbitration_trace.json
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
@@ -359,7 +363,8 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
-- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
+- [x] Explicit sequence-item arbitration reconstruction from normalized evidence
+- [ ] Automatic sequence state/arbitration instrumentation and simulator adapters
 
 ### APB Trace Analysis
 
