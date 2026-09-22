@@ -1481,6 +1481,11 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_questa_coverage(project)
     if simulator == "vcs":
         return merge_vcs_coverage(project)
+    if simulator in {"xcelium", "xrun"}:
+        raise RuntimeError(
+            "Xcelium per-run UCD capture is implemented, but IMC merge/report "
+            "normalization is not implemented yet."
+        )
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
     )
