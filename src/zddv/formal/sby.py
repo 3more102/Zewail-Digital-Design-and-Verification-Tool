@@ -276,7 +276,7 @@ def _query_sby_property_statuses(
     run_dir: Path,
     mode: str,
     timeout_s: float | None,
-) -> tuple[tuple[FormalPropertyResult, ...], Path]:
+) -> tuple[tuple[FormalPropertyResult, ...], Path, bool]:
     command = [
         executable,
         "--statusfmt",
@@ -294,10 +294,14 @@ def _query_sby_property_statuses(
         artifact = run_dir / "property-status.jsonl"
         artifact.write_text(outcome.output, encoding="utf-8")
         try:
-            return parse_sby_status_jsonl(outcome.output, mode=mode), artifact
+            return (
+                parse_sby_status_jsonl(outcome.output, mode=mode),
+                artifact,
+                True,
+            )
         except ValueError:
             # Keep malformed/unsupported native evidence, but do not promote it.
-            return (), artifact
+            return (), artifact, False
 
     artifact = run_dir / "property-status-query.log"
     output = outcome.output
@@ -306,7 +310,7 @@ def _query_sby_property_statuses(
             output += "\n"
         output += "ZDDV: SBY property-status query timed out\n"
     artifact.write_text(output, encoding="utf-8")
-    return (), artifact
+    return (), artifact, False
 
 
 class SymbiYosysBackend(FormalBackend):
@@ -385,9 +389,14 @@ class SymbiYosysBackend(FormalBackend):
 
         status = _normalized_sby_status(outcome)
         properties: tuple[FormalPropertyResult, ...] = ()
+        property_set_complete = False
         artifacts: list[Path] = [config_path]
         if status in {"PASS", "FAIL"}:
-            properties, status_artifact = _query_sby_property_statuses(
+            (
+                properties,
+                status_artifact,
+                property_set_complete,
+            ) = _query_sby_property_statuses(
                 executable,
                 project=project,
                 run_dir=run_dir,
@@ -408,4 +417,5 @@ class SymbiYosysBackend(FormalBackend):
             properties=properties,
             artifacts=tuple(artifacts),
             runtime_ms=runtime_ms,
+            property_set_complete=property_set_complete,
         )
