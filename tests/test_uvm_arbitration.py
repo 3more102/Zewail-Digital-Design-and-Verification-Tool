@@ -448,6 +448,68 @@ def test_cli_arbitration_analysis_history_and_run_correlation(tmp_path: Path, ca
     assert "2" in history
 
 
+
+def test_analyze_arbitration_log_resolves_run_and_persists(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    decision = _decision(
+        "log-d0",
+        "req-a",
+        [_contender("req-a", "seq-a", "producer_a")],
+    )
+    _record_run(
+        project,
+        "run-arb-log",
+        log_text="noise\\n" + _marker_line(decision) + "\\n",
+    )
+
+    result = analyze_uvm_arbitration_log(
+        project,
+        None,
+        run_id="run-arb-log",
+    )
+
+    assert result["status"] == "PASS"
+    assert result["run_id"] == "run-arb-log"
+    assert result["simulator"] == "questa"
+    assert result["source"] == "questa-uvm-arbitration-log"
+    assert result["marker_lines"] == [2]
+    assert Path(result["normalized_path"]).is_file()
+    snapshots = list_uvm_arbitration_snapshots(
+        project,
+        limit=10,
+        run_id="run-arb-log",
+    )
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+
+
+def test_cli_arbitration_log_analysis_from_path(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    decision = _decision(
+        "log-d0",
+        "req-a",
+        [_contender("req-a", "seq-a", "producer_a")],
+    )
+    log = project.root / "simulation.log"
+    log.write_text(
+        "noise\\n" + _marker_line(decision) + "\\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-arbitration-log-analyze",
+            str(log),
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM ARBITRATION PASS" in output
+    assert "explicit-log-marker" in output
+    assert "markers=1" in output
+
 def test_cli_fairness_bound_override_can_fail(tmp_path: Path, capsys):
     project = initialize_project(tmp_path / "demo")
     trace = project.root / "arbitration.json"
