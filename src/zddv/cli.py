@@ -23,6 +23,7 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.generated_proposals import write_reviewable_verification_proposals
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -1197,6 +1198,51 @@ def cmd_coverage_suggest(args) -> int:
         print(f"    {suggestion['intent']}")
     print(f"Report: {result['path']}")
     return 0
+
+def cmd_verification_proposals(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    emit_dir = None
+    if args.emit_dir is not None:
+        emit_dir = Path(args.emit_dir)
+        if not emit_dir.is_absolute():
+            emit_dir = project.root / emit_dir
+
+    result = write_reviewable_verification_proposals(
+        source,
+        output,
+        limit=args.limit,
+        emit_dir=emit_dir,
+        force=args.force,
+    )
+    print(
+        "VERIFICATION PROPOSALS: "
+        f"{result['proposal_count']} review-required proposal(s); "
+        f"emitted={len(result['emitted_artifacts'])}"
+    )
+    print("Automatic source modification: disabled")
+    print("Automatic execution: disabled")
+    for proposal in result["proposals"][: max(0, args.show)]:
+        print(
+            f"{proposal['proposal_id']} "
+            f"{proposal['coverage_type']:<12} {proposal['hole_name']}"
+        )
+        print(f"    {proposal['objective']}")
+    if result["emission_opt_in"]:
+        print(f"Disabled scaffolds: {emit_dir}")
+    else:
+        print("Disabled scaffolds: not emitted (use --emit-dir to opt in)")
+    print(f"Report: {result['path']}")
+    return 0
+
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
@@ -2847,6 +2893,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reviewable suggestion JSON report path",
     )
     p_coverage_suggest.set_defaults(func=cmd_coverage_suggest)
+
+    p_verification_proposals = sub.add_parser(
+        "verification-proposals",
+        help="Create review-required test/assertion proposal scaffolds",
+    )
+    p_verification_proposals.add_argument(
+        "--input",
+        default=".zddv/coverage/test-suggestions.json",
+        help="Coverage suggestion JSON report; run coverage-suggest first",
+    )
+    p_verification_proposals.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of review proposals to create",
+    )
+    p_verification_proposals.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of proposals to print in the terminal",
+    )
+    p_verification_proposals.add_argument(
+        "--emit-dir",
+        default=None,
+        help=(
+            "Explicit opt-in directory for disabled .sv.disabled scaffolds; "
+            "no files are emitted when omitted"
+        ),
+    )
+    p_verification_proposals.add_argument(
+        "--output",
+        default=".zddv/debug/verification-proposals.json",
+        help="Review proposal JSON bundle path",
+    )
+    p_verification_proposals.add_argument(
+        "--force",
+        action="store_true",
+        help="Explicitly replace existing disabled scaffold files in --emit-dir",
+    )
+    p_verification_proposals.set_defaults(func=cmd_verification_proposals)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
