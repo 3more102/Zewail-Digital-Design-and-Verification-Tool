@@ -108,7 +108,9 @@ Phase/objection lifecycle normalization and explicit sequence report-context evi
 - [x] Questa complementary zero-hit source-detail evidence export.
 - [x] Questa statement and branch item/source normalization and coverage-hole reporting.
 - [ ] Questa condition/expression/toggle/FSM item-level normalization.
-- [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).\n- [ ] VCS native coverage capture and normalized coverage ingestion.
+- [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
+- [x] VCS native per-run coverage database capture.
+- [ ] VCS normalized coverage merge/report ingestion.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
