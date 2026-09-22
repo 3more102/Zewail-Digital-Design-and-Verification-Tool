@@ -1877,7 +1877,10 @@ def parse_xcelium_imc_summary(text: str) -> dict:
             header_index = index
             break
     if header_index is None:
-        raise ValueError("IMC summary coverage header was not found")
+        raise ValueError(
+            "IMC summary header with Overall Average/Covered and "
+            "Code/FSM/Functional columns was not found"
+        )
 
     match = None
     for raw_line in lines[header_index + 1 :]:
@@ -1927,6 +1930,7 @@ def parse_xcelium_imc_summary(text: str) -> dict:
         "tool_total_coverage": score,
         "by_metric": by_metric,
         "by_metric_counts": by_metric_counts,
+        "metric_semantics": "imc-summary-cumulative",
     }
 
 
