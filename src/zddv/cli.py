@@ -25,6 +25,7 @@ from zddv.coverage import (
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
+from zddv.debug_probes import write_debug_probe_report
 from zddv.root_cause import write_root_cause_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import (
@@ -347,6 +348,40 @@ def cmd_root_cause(args) -> int:
     print(f"Report: {result['path']}")
     return 0
 
+
+
+def cmd_debug_probes(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_debug_probe_report(
+        project,
+        run_id=args.run_id,
+        candidate_limit=args.candidate_limit,
+        max_signals=args.max_signals,
+        event_limit=args.event_limit,
+        signal_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"DEBUG PROBES: run={result['run']['run_id']} "
+        f"suggestions={summary['suggestions']} "
+        f"read-only={summary['read_only']} "
+        f"new-runs={summary['manual_opt_in_new_runs']}"
+    )
+    print("Suggestions are not executed automatically.")
+    for suggestion in result["suggestions"][: args.show]:
+        print(
+            f"#{suggestion['priority']} {suggestion['kind']}: "
+            f"{suggestion['target']}"
+        )
+        if suggestion.get("command"):
+            print("  command: " + " ".join(suggestion["command"]))
+        for prerequisite in suggestion.get("prerequisites", []):
+            print(f"  prerequisite: {prerequisite}")
+    if len(result["suggestions"]) > args.show:
+        print(f"... {len(result['suggestions']) - args.show} more suggestion(s)")
+    print(f"Report: {result['path']}")
+    return 0
 
 def cmd_lint(args) -> int:
     project = load_project(_project_arg(args))
@@ -2413,6 +2448,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evidence-ranked root-cause JSON report path",
     )
     p_root_cause.set_defaults(func=cmd_root_cause)
+
+    p_debug_probes = sub.add_parser(
+        "debug-probes",
+        help="Suggest deterministic next debug probes from retained failure evidence",
+    )
+    p_debug_probes.add_argument(
+        "--run",
+        dest="run_id",
+        required=True,
+        help="Exact failing or timed-out run ID",
+    )
+    p_debug_probes.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=5,
+        help="Maximum root-cause candidates used to derive suggestions",
+    )
+    p_debug_probes.add_argument(
+        "--max-signals",
+        type=int,
+        default=8,
+        help="Maximum signals in one suggested waveform probe",
+    )
+    p_debug_probes.add_argument(
+        "--event-limit",
+        type=int,
+        default=100,
+        help="Maximum failed assertion events considered by root-cause analysis",
+    )
+    p_debug_probes.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum assertion signal hints considered per event",
+    )
+    p_debug_probes.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum probe suggestions printed to the terminal",
+    )
+    p_debug_probes.add_argument(
+        "--output",
+        default=".zddv/debug/probes.json",
+        help="Debug-probe suggestion JSON report path",
+    )
+    p_debug_probes.set_defaults(func=cmd_debug_probes)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
