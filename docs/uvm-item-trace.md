@@ -54,10 +54,16 @@ A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item
 
 Once earlier evidence is present, backward ordering is a violation. Examples include `ITEM_DONE` after an observed `GRANT` but before `REQUEST`, or a late `GRANT` after `REQUEST`.
 
+## Observed arbitration evidence
+
+For every explicit `GRANT`, ZDDV preserves the trace-order grant index and groups grants by sequencer. The report includes observed sequence IDs, adjacent sequence switches, and the longest contiguous known sequence streak. A partial trace with no `GRANT` does not create synthetic arbitration evidence.
+
+This is an observed grant-order reconstruction only. ZDDV does not infer the sequencer arbitration mode, request waiting queue, priority, lock state, or fairness from grant order alone.
+
 ## Persistence and current boundary
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, normalized per-event evidence, and every detected violation with its code, source event index, item ID, event type, and message. `uvm-item-violations` queries that failure evidence without reopening the JSON artifact. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, or compare transaction payloads.
+This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
