@@ -5,6 +5,10 @@ from pathlib import Path
 
 from zddv.cli import main
 from zddv.config import initialize_project
+from zddv.storage import (
+    list_uvm_item_handshake_events,
+    list_uvm_item_handshake_snapshots,
+)
 from zddv.uvm_item import analyze_uvm_item_file, parse_uvm_item_data
 
 
@@ -162,6 +166,17 @@ def test_analyze_writes_snapshot_and_latest_report(tmp_path: Path):
     assert payload["analysis"] == "uvm_item_handshake"
     assert payload["summary"]["completed"] == 1
 
+    snapshots = list_uvm_item_handshake_snapshots(project, limit=10)
+    assert len(snapshots) == 1
+    assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
+    assert snapshots[0]["item_count"] == 1
+    assert snapshots[0]["completed_count"] == 1
+
+    events = list_uvm_item_handshake_events(project, result["snapshot_id"])
+    assert len(events) == 3
+    assert events[1]["event_type"] == "REQUEST"
+    assert events[1]["item_id"] == "item-1"
+
 
 def test_cli_analyzes_item_handshake_trace(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
@@ -195,3 +210,41 @@ def test_cli_analyzes_item_handshake_trace(tmp_path: Path):
     payload = json.loads(latest.read_text(encoding="utf-8"))
     assert payload["source"] == "cli-test"
     assert payload["summary"]["violations"] == 0
+
+
+def test_cli_shows_persisted_item_history(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "items-history.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "source": "history-test",
+                "events": [
+                    _event("item-1", "GRANT"),
+                    _event("item-1", "REQUEST"),
+                    _event("item-1", "ITEM_DONE"),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_item_file(project, trace)
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-history",
+            "--status",
+            "PASS",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert result["snapshot_id"] in output
+    assert "PASS" in output
+    assert "1/1/1/0" in output
