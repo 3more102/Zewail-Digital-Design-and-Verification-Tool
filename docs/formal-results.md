@@ -71,8 +71,23 @@ reinterpreting vendor output.
 creation time, project name, input path, execution evidence, property summaries,
 trace roles, and retained artifact paths.
 
+## Persistence and CLI
+
+`formal-analyze` imports the normalized JSON contract, writes the reviewable
+JSON evidence record, and persists both the snapshot summary and each property/
+cover outcome in the project SQLite results database:
+
+```text
+zddv --project <project> formal-analyze formal_results.json
+zddv --project <project> formal-history --limit 20
+zddv --project <project> formal-history --status FAIL --mode bmc
+```
+
+Persisted property rows retain the original status, normalized interpretation,
+explicit/effective depth, message, and trace path/role. History filters do not
+upgrade bounded evidence into an unbounded proof claim.
+
 ## Current boundary
 
-This slice does not execute a formal engine, persist formal history in SQLite,
-parse counterexample waveforms, or claim formal coverage. Those remain separate
+This slice does not execute a formal engine, parse counterexample waveforms, provide tool-specific result ingestion, or claim formal coverage. Those remain separate
 v0.7 milestones.
