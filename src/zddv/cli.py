@@ -87,8 +87,10 @@ def cmd_config(args) -> int:
 def cmd_doctor(args) -> int:
     print(f"ZDDV {__version__}")
     print(f"Python {platform.python_version()} ({sys.executable})")
+    backend_name = getattr(args, "simulator", None) or "verilator"
     try:
-        version = VerilatorBackend().version()
+        backend = _backend(backend_name)
+        version = backend.version()
         print(f"[PASS] {version}")
         return 0
     except RuntimeError as exc:
@@ -1057,6 +1059,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_config.set_defaults(func=cmd_config)
 
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
+    p_doctor.add_argument(
+        "--simulator",
+        choices=("verilator", "questa", "questasim"),
+        default=None,
+        help="Simulator backend to check; defaults to verilator",
+    )
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_index = sub.add_parser(
