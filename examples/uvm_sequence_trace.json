@@ -1,0 +1,87 @@
+{
+  "source": "zddv-example",
+  "events": [
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_CREATED",
+      "time": "0 ns"
+    },
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_PRE_START",
+      "time": "0 ns"
+    },
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_BODY",
+      "time": "1 ns"
+    },
+    {
+      "sequence_id": "write-1",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.axi_agent.seqr",
+      "parent_sequence_id": "virtual-1",
+      "state": "UVM_PRE_START",
+      "time": "2 ns"
+    },
+    {
+      "sequence_id": "write-1",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.axi_agent.seqr",
+      "parent_sequence_id": "virtual-1",
+      "state": "UVM_BODY",
+      "time": "3 ns"
+    },
+    {
+      "sequence_id": "write-1",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.axi_agent.seqr",
+      "parent_sequence_id": "virtual-1",
+      "state": "UVM_ENDED",
+      "time": "20 ns"
+    },
+    {
+      "sequence_id": "write-1",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.axi_agent.seqr",
+      "parent_sequence_id": "virtual-1",
+      "state": "UVM_POST_START",
+      "time": "20 ns"
+    },
+    {
+      "sequence_id": "write-1",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.axi_agent.seqr",
+      "parent_sequence_id": "virtual-1",
+      "state": "UVM_FINISHED",
+      "time": "20 ns"
+    },
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_ENDED",
+      "time": "21 ns"
+    },
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_POST_START",
+      "time": "21 ns"
+    },
+    {
+      "sequence_id": "virtual-1",
+      "sequence": "soc_virtual_seq",
+      "sequencer": "uvm_test_top.env.vseqr",
+      "state": "UVM_FINISHED",
+      "time": "21 ns"
+    }
+  ]
+}
