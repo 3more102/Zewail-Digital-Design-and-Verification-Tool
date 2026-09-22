@@ -2,9 +2,9 @@
 
 [![ZDDV CI](https://github.com/3more102/Zewail-Digital-Design-and-Verification-Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/3more102/Zewail-Digital-Design-and-Verification-Tool/actions/workflows/ci.yml)
 
-ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, and future assertion, protocol, formal, UVM, and AI-assisted verification workflows.
+ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.5 Protocol Verification — APB, AXI4-Lite, burst-aware AXI4 with core exclusive-access checks, async-FIFO CDC invariants, and public UCIe FLIT/link-health analysis**
+> Status: **v0.6 UVM Ingestion Foundation — v0.5 protocol verification plus simulator-independent UVM report normalization, persistence, and history**
 
 ## What Works Today
 
@@ -26,6 +26,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
+- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
