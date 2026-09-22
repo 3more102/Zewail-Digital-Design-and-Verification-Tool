@@ -361,3 +361,35 @@ def test_vcs_version_falls_back_to_legacy_uppercase_id_option(monkeypatch):
 
     assert version == "Compiler version = VCS legacy test"
     assert commands == [["vcs", "-id"], ["vcs", "-ID"]]
+
+
+def test_vcs_run_auto_ingests_explicit_uvm_markers_without_report_snapshot(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, waveform=False)
+    backend = VcsBackend()
+    executable = (project.root / ".zddv" / "build" / "simv").resolve()
+    executable.parent.mkdir(parents=True)
+    executable.write_text("simv fixture\n", encoding="utf-8")
+
+    monkeypatch.setattr(backend, "version", lambda: "VCS test")
+    marker_log = "ZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_BODY\",\"time\":\"1 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_ENDED\",\"time\":\"2 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_POST_START\",\"time\":\"3 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_FINISHED\",\"time\":\"4 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"GRANT\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"REQUEST\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"ITEM_DONE\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"6 ns\"}\n"
+    monkeypatch.setattr(
+        "zddv.simulator.vcs.subprocess.run",
+        lambda command, **kwargs: SimpleNamespace(returncode=0, stdout=marker_log),
+    )
+
+    result = backend.run(project)
+
+    assert result.status == "PASS"
+    marker = loads(
+        (project.root / ".zddv" / "uvm" / "markers" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert marker["status"] == "PASS"
+    assert marker["source"] == "vcs-marker-run"
+    assert marker["run_id"] == result.run_id
+    assert marker["summary"]["sequence_marker_lines"] == 4
+    assert marker["summary"]["item_marker_lines"] == 3
+    assert not (project.root / ".zddv" / "uvm" / "latest.json").exists()
