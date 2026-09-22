@@ -112,6 +112,36 @@ Row 3: ***0*** valid_0 (ready && ~retry)
 Row 4: 1 valid_1 (ready && ~retry)
 """
 
+QUESTA_MULTIBIT_EXPRESSION_DETAILS = """Coverage Report by file with details
+
+=================================================================================
+=== File: ttest.sv
+=================================================================================
+Expression Coverage:
+    Enabled Coverage            Bins      Hits    Misses % Covered
+    ----------------            ----      ----    ------ ---------
+    Expressions                    12         2        10     16.66
+
+==============================Expression Details==============================
+
+Expression Coverage for file ttest.sv --
+
+Focused Expression View
+Line 28 Item 1 ((a & b) | (c & d))
+Expression totals: 2 of 12 input terms covered = 16.66%
+
+Rows: FEC Target                  Hits
+                                  i = <0> <1> <2>
+Row 1: a[i]_0                     1 ***0*** ***0*** (~(c[i] & d[i]) && b[i])
+Row 2: a[i]_1                ***0*** 1 ***0*** (~(c[i] & d[i]) && b[i])
+Row 3: b[i]_0                ***0*** 1 ***0*** (~(c[i] & d[i]) && a[i])
+Row 4: b[i]_1                ***0*** 1 ***0*** (~(c[i] & d[i]) && a[i])
+Row 5: c[i]_0                     1 ***0*** ***0*** (~(a[i] & b[i]) && d[i])
+Row 6: c[i]_1                     1 ***0*** ***0*** (~(a[i] & b[i]) && d[i])
+Row 7: d[i]_0                ***0*** 1 ***0*** (~(a[i] & b[i]) && c[i])
+Row 8: d[i]_1                     1 ***0*** ***0*** (~(a[i] & b[i]) && c[i])
+"""
+
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
 Covergroup                              Metric       Goal    Bins    Status
@@ -229,6 +259,29 @@ def test_parse_questa_code_coverage_normalizes_statement_branch_condition_expres
     assert all(point["fec_target"] != "-11" for point in expression_points)
 
 
+def test_parse_questa_multibit_expression_normalizes_input_term_bits():
+    points = parse_questa_code_coverage_report(QUESTA_MULTIBIT_EXPRESSION_DETAILS)
+
+    expression_points = [
+        point
+        for point in points
+        if point["type"] == "expression" and point.get("multibit") is True
+    ]
+    assert len(expression_points) == 12
+    assert sum(point["hit"] for point in expression_points) == 2
+
+    by_target = {point["fec_target"]: point for point in expression_points}
+    assert by_target["b[1]"]["hit"] is True
+    assert by_target["c[0]"]["hit"] is True
+    assert by_target["a[0]"]["hit"] is False
+    assert by_target["a[0]"]["fec_hits"] == {"0": 1, "1": 0}
+    assert by_target["b[1]"]["fec_hits"] == {"0": 1, "1": 1}
+    assert by_target["b[1]"]["bit"] == 1
+    assert by_target["b[1]"]["expression"] == "((a & b) | (c & d))"
+    assert by_target["b[1]"]["name"] == "ttest.sv:28:1:b[1]"
+
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -292,7 +345,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
         if command[1:4] == ["report", "-details", "-multibitverbose"]:
             output = Path(command[command.index("-output") + 1])
-            output.write_text("multibit expression fixture\n", encoding="utf-8")
+            output.write_text(
+                QUESTA_MULTIBIT_EXPRESSION_DETAILS,
+                encoding="utf-8",
+            )
             return SimpleNamespace(returncode=0, stdout="multibit report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -370,6 +426,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["code_detail_status"] == "ok"
     assert payload["code_detail_points"] == 16
     assert payload["code_detail_holes"] == 5
+    assert payload["multibit_expression_points"] == 12
+    assert payload["multibit_expression_holes"] == 10
     assert Path(result["code_report"]).read_text(encoding="utf-8") == QUESTA_CODE_DETAILS
     assert payload["functional_bins"] == 3
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
@@ -381,7 +439,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
     assert Path(evidence["multibit_expression"]["path"]).read_text(
         encoding="utf-8"
-    ) == "multibit expression fixture\n"
+    ) == QUESTA_MULTIBIT_EXPRESSION_DETAILS
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -509,6 +567,51 @@ def test_coverage_holes_cli_supports_questa_statement_branch_condition_expressio
     assert expression_report["holes"][0]["expression"] == "assign y = (a | b);"
 
 
+def test_coverage_holes_cli_combines_scalar_and_multibit_expression_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    coverage_dir = project.root / ".zddv" / "coverage"
+    coverage_dir.mkdir(parents=True)
+    (coverage_dir / "code-details.txt").write_text(
+        QUESTA_CODE_DETAILS,
+        encoding="utf-8",
+    )
+    (coverage_dir / "multibit-expression.txt").write_text(
+        QUESTA_MULTIBIT_EXPRESSION_DETAILS,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/expression-holes.json",
+            point_type="expression",
+            limit=50,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (expression): 11 unhit point(s)" in output
+    payload = json.loads(
+        (coverage_dir / "expression-holes.json").read_text(encoding="utf-8")
+    )
+    assert payload["by_type"] == {"expression": 11}
+    multibit_holes = [
+        hole for hole in payload["holes"] if hole.get("multibit") is True
+    ]
+    assert len(multibit_holes) == 10
+    a0 = next(hole for hole in multibit_holes if hole["fec_target"] == "a[0]")
+    assert a0["fec_hits"] == {"0": 1, "1": 0}
+    assert a0["bit"] == 0
+
+
+
 def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
     project = _project(tmp_path)
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
@@ -534,6 +637,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "code_detail_status": "ok",
             "code_detail_points": 16,
             "code_detail_holes": 5,
+            "multibit_expression_points": 12,
+            "multibit_expression_holes": 10,
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
@@ -559,6 +664,11 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     )
     assert (
         "Questa statement/branch/condition/expression detail: /tmp/code-details.txt"
+        in output
+    )
+    assert (
+        "Normalized Questa multibit expression coverage: "
+        "12 point(s), 10 hole(s)"
         in output
     )
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
@@ -618,6 +728,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
     assert evidence["multibit_expression"]["status"] == "failed"
     assert evidence["multibit_expression"]["diagnostic"] == "unsupported fixture"
+    assert result["multibit_expression_points"] == 0
+    assert result["multibit_expression_holes"] == 0
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
     assert not Path(evidence["multibit_expression"]["path"]).exists()
