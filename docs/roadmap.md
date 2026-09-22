@@ -192,7 +192,7 @@ uncollected verification objectives passed.
 - [x] Optional formal/UVM evidence requirements while still blocking explicit failures.
 - [x] CI-friendly signoff command exit status and JSON artifact.
 - [x] Explicit snapshot/run ID pinning for release-candidate manifests.
-- [ ] Signed release manifest and reproducible archive export.
+- [x] Signed release manifest and reproducible archive export (Ed25519, exact signoff-SHA confirmation, deterministic ZIP).
 
 ## Long-Term Direction
 

@@ -60,6 +60,7 @@ from zddv.protocols.axi4_waveform import analyze_axi4_waveform
 from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
+from zddv.release import export_verification_release, verify_verification_release
 from zddv.simulator import get_backend
 from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import (
@@ -2676,6 +2677,45 @@ def cmd_signoff(args) -> int:
     return 0 if summary["review_state"] == "READY_FOR_REVIEW" else 1
 
 
+def cmd_release_export(args) -> int:
+    project = load_project(_project_arg(args))
+    result = export_verification_release(
+        project,
+        signoff=args.signoff,
+        expected_signoff_sha256=args.expected_signoff_sha256,
+        private_key=args.private_key,
+        key_id=args.key_id,
+        output=args.output,
+    )
+    print("RELEASE EXPORTED")
+    print(f"Signoff SHA-256: {result['signoff_sha256']}")
+    print(f"Manifest SHA-256: {result['manifest_sha256']}")
+    print(f"Archive SHA-256: {result['archive_sha256']}")
+    print(f"Key ID: {result['key_id']}")
+    print(f"Public key SHA-256: {result['public_key_sha256']}")
+    print(f"Archive: {result['path']}")
+    return 0
+
+
+def cmd_release_verify(args) -> int:
+    project = load_project(_project_arg(args))
+    archive = Path(args.archive)
+    if not archive.is_absolute():
+        archive = project.root / archive
+    result = verify_verification_release(
+        archive,
+        public_key=args.public_key,
+    )
+    print("RELEASE VERIFIED")
+    print(f"Signoff SHA-256: {result['signoff_sha256']}")
+    print(f"Manifest SHA-256: {result['manifest_sha256']}")
+    print(f"Archive SHA-256: {result['archive_sha256']}")
+    print(f"Key ID: {result['key_id']}")
+    print(f"Public key SHA-256: {result['public_key_sha256']}")
+    print(f"Archive: {result['path']}")
+    return 0
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -4439,6 +4479,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verification signoff bundle JSON path",
     )
     p_signoff.set_defaults(func=cmd_signoff)
+
+    p_release_export = sub.add_parser(
+        "release-export",
+        help="Export a reproducible Ed25519-signed verification release archive",
+    )
+    p_release_export.add_argument(
+        "--signoff",
+        default=".zddv/signoff/signoff.json",
+        help="READY_FOR_REVIEW signoff bundle path inside the project",
+    )
+    p_release_export.add_argument(
+        "--expected-signoff-sha256",
+        required=True,
+        help="Exact reviewed signoff SHA-256 required before signing",
+    )
+    p_release_export.add_argument(
+        "--private-key",
+        required=True,
+        help="Ed25519 private key PEM path (not embedded in the archive)",
+    )
+    p_release_export.add_argument(
+        "--key-id",
+        required=True,
+        help="Human-readable identifier for the signing key",
+    )
+    p_release_export.add_argument(
+        "--output",
+        default=".zddv/signoff/release.zip",
+        help="Release ZIP path inside the project",
+    )
+    p_release_export.set_defaults(func=cmd_release_export)
+
+    p_release_verify = sub.add_parser(
+        "release-verify",
+        help="Verify a ZDDV Ed25519-signed verification release archive",
+    )
+    p_release_verify.add_argument(
+        "archive",
+        help="Release ZIP path; relative paths resolve from the project root",
+    )
+    p_release_verify.add_argument(
+        "--public-key",
+        required=True,
+        help="Trusted Ed25519 public key PEM path",
+    )
+    p_release_verify.set_defaults(func=cmd_release_verify)
 
     p_report = sub.add_parser(
         "report",

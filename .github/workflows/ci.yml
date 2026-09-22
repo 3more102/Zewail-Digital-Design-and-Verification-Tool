@@ -346,6 +346,39 @@ jobs:
           grep -q '"review_state": "READY_FOR_REVIEW"' examples/counter/.zddv/signoff/signoff.json
           grep -q '"evidence_sha256"' examples/counter/.zddv/signoff/signoff.json
 
+      - name: Export and verify signed release archive
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+          private = Ed25519PrivateKey.generate()
+          Path("/tmp/zddv-release-private.pem").write_bytes(
+              private.private_bytes(
+                  encoding=serialization.Encoding.PEM,
+                  format=serialization.PrivateFormat.PKCS8,
+                  encryption_algorithm=serialization.NoEncryption(),
+              )
+          )
+          Path("/tmp/zddv-release-public.pem").write_bytes(
+              private.public_key().public_bytes(
+                  encoding=serialization.Encoding.PEM,
+                  format=serialization.PublicFormat.SubjectPublicKeyInfo,
+              )
+          )
+          PY
+
+          SIGNOFF_SHA=$(python -c 'import json; print(json.load(open("examples/counter/.zddv/signoff/signoff.json"))["provenance"]["signoff_sha256"])')
+          zddv --project examples/counter release-export \
+            --expected-signoff-sha256 "$SIGNOFF_SHA" \
+            --private-key /tmp/zddv-release-private.pem \
+            --key-id ci-release-key
+          test -s examples/counter/.zddv/signoff/release.zip
+          zddv --project examples/counter release-verify \
+            .zddv/signoff/release.zip \
+            --public-key /tmp/zddv-release-public.pem
+
       - name: Report coverage holes
         run: |
           zddv --project examples/counter coverage-holes --show 10

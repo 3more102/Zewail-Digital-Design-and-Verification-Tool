@@ -169,6 +169,8 @@ zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
 zddv --project my_project signoff --run-id <release-run-id> --coverage-snapshot-id <release-coverage-id> --min-coverage 90
+zddv --project my_project release-export --expected-signoff-sha256 <reviewed-signoff-sha256> --private-key release-private.pem --key-id lab-release-2026
+zddv --project my_project release-verify .zddv/signoff/release.zip --public-key release-public.pem
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
