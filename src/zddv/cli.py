@@ -12,6 +12,7 @@ from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
+    parse_questa_code_coverage_report,
     parse_verilator_coverage,
     write_coverage_hole_report,
 )
@@ -421,20 +422,40 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
-        raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
+    simulator = project.simulator.strip().lower()
+
+    if simulator == "verilator":
+        source_path = (
+            project.root / ".zddv" / "coverage" / "coverage.dat"
+        ).resolve()
+        if not source_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {source_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_verilator_coverage(source_path)
+    elif simulator in {"questa", "questasim"}:
+        source_path = (
+            project.root / ".zddv" / "coverage" / "code-details.txt"
+        ).resolve()
+        if not source_path.exists():
+            raise RuntimeError(
+                f"Detailed Questa code coverage report not found at {source_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_questa_code_coverage_report(
+            source_path.read_text(encoding="utf-8", errors="replace")
         )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
+    else:
         raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
+            "Coverage-hole itemization is not implemented for simulator: "
+            f"{project.simulator}"
         )
 
-    points = parse_verilator_coverage(merged_path)
     if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+        raise RuntimeError(
+            f"No normalized coverage points found in {source_path}."
+        )
 
     output = Path(args.output)
     if not output.is_absolute():
