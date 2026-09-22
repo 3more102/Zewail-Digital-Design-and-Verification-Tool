@@ -658,12 +658,12 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
     assert (
-        "Normalized Questa statement/branch/condition/expression coverage: "
+        "Normalized Questa statement/branch/condition/expression/FSM coverage: "
         "ok 16 point(s), 5 hole(s)"
         in output
     )
     assert (
-        "Questa statement/branch/condition/expression detail: /tmp/code-details.txt"
+        "Questa statement/branch/condition/expression/FSM detail: /tmp/code-details.txt"
         in output
     )
     assert (
@@ -924,7 +924,7 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
 
     with pytest.raises(
         RuntimeError,
-        match=r"supports --type statement, branch, condition, or expression",
+        match=r"supports --type statement, branch, condition, expression, or fsm",
     ):
         cmd_coverage_holes(
             SimpleNamespace(
