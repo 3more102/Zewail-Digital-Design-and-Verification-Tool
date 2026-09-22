@@ -1690,6 +1690,129 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
 
 
 
+
+def _imc_braced_path(path: str | Path) -> str:
+    """Return a Tcl/IMC braced path, normalizing separators for tool scripts."""
+    value = str(Path(path).resolve()).replace("\\", "/")
+    return "{" + value.replace("}", "\\}") + "}"
+
+
+def merge_xcelium_coverage(project: ProjectConfig) -> dict:
+    """Merge native Xcelium UCD runs with IMC and retain report evidence.
+
+    Numeric metric normalization is intentionally deferred until a stable,
+    versioned IMC text fixture is available. This layer only claims artifacts
+    that IMC actually produced.
+    """
+    tool = shutil.which("imc")
+    if tool is None:
+        raise RuntimeError(
+            "Cadence IMC was not found in PATH. Install/configure the "
+            "Xcelium/IMC toolchain and retry."
+        )
+
+    run_root = (project.root / project.run_dir).resolve()
+    coverage_files = sorted(run_root.glob("*/coverage/*/*.ucd"))
+    if not coverage_files:
+        raise RuntimeError(
+            f"No Xcelium .ucd coverage files found under {run_root}. "
+            "Run coverage-enabled Xcelium simulations first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    merged_path = out_dir / "xcelium-merged"
+    report_path = out_dir / "xcelium-summary.txt"
+    runfile_path = out_dir / "xcelium-runs.txt"
+    manifest_path = out_dir / "xcelium-coverage.json"
+
+    if merged_path.exists():
+        if merged_path.is_dir():
+            shutil.rmtree(merged_path)
+        else:
+            merged_path.unlink()
+    if report_path.exists():
+        if report_path.is_dir():
+            shutil.rmtree(report_path)
+        else:
+            report_path.unlink()
+
+    inputs = [str(path) for path in coverage_files]
+    runfile_path.write_text("\n".join(inputs) + "\n", encoding="utf-8")
+
+    exec_cmd = (
+        "merge -runfile "
+        + _imc_braced_path(runfile_path)
+        + " -out "
+        + _imc_braced_path(merged_path)
+        + " -overwrite; "
+        + "load -run "
+        + _imc_braced_path(merged_path)
+        + "; "
+        + "report_metrics -out "
+        + _imc_braced_path(report_path)
+        + " -detail -metrics all; "
+        + "exit"
+    )
+    command = [tool, "-batch", "-execcmd", exec_cmd]
+    result = _run(command, project.root)
+
+    merged_ucd = (
+        sorted(merged_path.rglob("*.ucd"))
+        if merged_path.is_dir()
+        else []
+    )
+    if result.returncode != 0 or not merged_ucd:
+        raise RuntimeError(
+            "Xcelium IMC coverage merge/report failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + (result.stdout or "").strip()
+        )
+
+    report_status = "captured" if report_path.exists() else "missing"
+    created_at = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "created_at": created_at,
+        "project": project.name,
+        "simulator": project.simulator,
+        "status": (
+            "merged-report-captured"
+            if report_status == "captured"
+            else "merged-report-missing"
+        ),
+        "metrics_status": "pending-normalization",
+        "input_count": len(inputs),
+        "inputs": inputs,
+        "runfile": str(runfile_path),
+        "merged": str(merged_path),
+        "merged_ucd": [str(path) for path in merged_ucd],
+        "report": str(report_path) if report_path.exists() else None,
+        "report_status": report_status,
+        "command": command,
+        "metrics": None,
+        "snapshot_id": None,
+    }
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    summary_path = report_path if report_path.exists() else merged_path
+    return {
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+        "metrics_path": str(manifest_path),
+        "report": result.stdout or "",
+        "metrics": None,
+        "snapshot_id": None,
+        "metrics_status": "pending-normalization",
+        "report_status": report_status,
+        "report_path": str(report_path) if report_path.exists() else None,
+        "runfile": str(runfile_path),
+        "merged_ucd": [str(path) for path in merged_ucd],
+        "command": command,
+    }
+
 def merge_coverage(project: ProjectConfig) -> dict:
     simulator = project.simulator.strip().lower()
     if simulator == "verilator":
@@ -1698,6 +1821,8 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_questa_coverage(project)
     if simulator == "vcs":
         return merge_vcs_coverage(project)
+    if simulator in {"xcelium", "xrun"}:
+        return merge_xcelium_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
     )
