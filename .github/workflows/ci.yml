@@ -217,6 +217,18 @@ jobs:
           grep -q '"errors": 0' examples/counter/.zddv/uvm/latest.json
           zddv --project examples/counter uvm-history --limit 5 | grep -q 'zddv_uvm_smoke'
 
+      - name: Analyze UVM phase and objection lifecycle
+        run: |
+          zddv --project examples/counter uvm-analyze ../uvm_lifecycle.log --source uvm-standard-trace
+          test -s examples/counter/.zddv/uvm/latest.json
+          grep -q '"phase_trace_detected": true' examples/counter/.zddv/uvm/latest.json
+          grep -q '"objection_trace_detected": true' examples/counter/.zddv/uvm/latest.json
+          grep -q '"phase_event_count": 5' examples/counter/.zddv/uvm/latest.json
+          grep -q '"objection_event_count": 4' examples/counter/.zddv/uvm/latest.json
+          grep -q '"state": "READY_TO_END"' examples/counter/.zddv/uvm/latest.json
+          grep -q '"action": "raised"' examples/counter/.zddv/uvm/latest.json
+          grep -q '"action": "dropped"' examples/counter/.zddv/uvm/latest.json
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
