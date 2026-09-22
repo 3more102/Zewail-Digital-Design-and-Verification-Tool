@@ -629,7 +629,7 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
         in output
     )
     assert (
-        "Questa statement/branch/condition/expression detail: /tmp/code-details.txt"
+        "Questa statement/branch/condition/expression/FSM detail: /tmp/code-details.txt"
         in output
     )
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
