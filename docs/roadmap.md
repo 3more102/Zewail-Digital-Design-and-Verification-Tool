@@ -168,6 +168,13 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Schema-validated model-response ingestion with strict evidence-reference resolution and request/context provenance checks.
 - [x] SHA-confirmed human review gate before reviewed model proposals can enter the existing generated-artifact staging/apply workflow.
 
+## v1.0 — Reproducible AI Review Workflow
+
+- [x] Offline/manual AI response import without model invocation or external transmission.
+- [x] Imported response bytes bound to the exact model-request and context-evidence SHA-256 provenance.
+- [x] End-to-end CI trust-chain coverage from offline import through validation, SHA-bound review, proposal export, and review-isolated staging.
+- [ ] Portable audit-bundle export for the complete context/raw/validated/review/proposal provenance chain.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
