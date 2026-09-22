@@ -89,6 +89,20 @@ When a recorded run is supplied without a path, the adapter reads that run's sim
 
 An executable marker-log example is available at `examples/uvm_sequence_marker.log`.
 
+## Portable SystemVerilog Instrumentation Helper
+
+Generate an opt-in helper that emits the same `ZDDV_UVM_SEQUENCE {json}` contract:
+
+```text
+zddv --project <project> uvm-sequence-instrument
+```
+
+By default ZDDV writes `tb/zddv_uvm_sequence_trace_pkg.sv` and inserts that exact file at the front of the project's testbench source list so the package is compiled before ordinary testbench sources. Use `--no-add-source` when source ordering is managed externally, and `--force` to replace an existing generated helper.
+
+The generated package has no dependency on `uvm_pkg`. It provides a generic `zddv_uvm_sequence_emit` task plus convenience tasks for every normalized lifecycle state, including `zddv_uvm_sequence_created`, `zddv_uvm_sequence_body`, `zddv_uvm_sequence_stopped`, and `zddv_uvm_sequence_finished`. Use one stable `sequence_id` for a sequence instance and keep the sequence name, sequencer path, and optional parent sequence ID consistent across emitted states.
+
+This helper is explicit instrumentation, not a UVM-library patch or zero-touch hook. It does not infer sequence states from ordinary UVM text, inspect hidden sequencer queues, or reconstruct arbitration policy.
+
 ## Lifecycle Rules
 
 For a normally completed sequence with pre/post callbacks enabled, ZDDV accepts:
