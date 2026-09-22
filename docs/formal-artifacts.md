@@ -55,8 +55,8 @@ VCD timestamp. It does not invent clock cycles, radix, signedness, or property s
 The artifact-manifest layer itself remains a classifier/fingerprinter. VCD contents can
 now be normalized through the explicit trace importer, while ZDDV does not yet:
 
-- automatically normalize every backend-reported trace during result persistence;
 - parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
+- semantically reconstruct traces whose artifact paths are missing or ambiguous;
 - reconstruct semantic formal state transitions beyond timestamped signal values;
 - cross-probe normalized formal trace signals to RTL;
 - persist formal trace samples in SQLite;
