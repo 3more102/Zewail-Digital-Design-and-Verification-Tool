@@ -33,7 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
 - Simulator-independent UVM sequence-item handshake JSON model with GRANT/REQUEST/ITEM_DONE/RESPONSE ordering checks, partial-trace handling, run correlation, SQLite snapshot/event persistence, and history CLI
-- Explicit UVM sequencer arbitration REQUEST/GRANT evidence with FIFO/STRICT legality checks, randomized-mode observation, and optional max-bypass fairness policy
+- Explicit UVM sequencer arbitration REQUEST/GRANT evidence with FIFO/STRICT legality checks, randomized-mode observation, optional max-bypass fairness policy, run correlation, SQLite event/decision/violation persistence, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -157,6 +157,9 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-arbitration-analyze uvm_arbitration_trace.json
+zddv --project my_project uvm-arbitration-analyze uvm_arbitration_trace.json --run <run-id> --max-bypass 8
+zddv --project my_project uvm-arbitration-history --limit 20
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
