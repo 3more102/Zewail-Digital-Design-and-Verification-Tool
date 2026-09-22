@@ -728,6 +728,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
+    toggle_detail_path = out_dir / "toggle-details.txt"
+    fsm_detail_path = out_dir / "fsm-details.txt"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -827,6 +829,29 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         str(zero_detail_path),
         str(merged_path),
     ]
+    toggle_detail_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-byinstance",
+        "-code",
+        "t",
+        "-all",
+        "-output",
+        str(toggle_detail_path),
+        str(merged_path),
+    ]
+    fsm_detail_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-byinstance",
+        "-code",
+        "f",
+        "-output",
+        str(fsm_detail_path),
+        str(merged_path),
+    ]
     detailed_code_coverage_evidence = {
         "xml": _capture_questa_report_file(
             details_cmd,
@@ -837,6 +862,16 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             zero_detail_cmd,
             cwd=project.root,
             output=zero_detail_path,
+        ),
+        "toggle_detail": _capture_questa_report_file(
+            toggle_detail_cmd,
+            cwd=project.root,
+            output=toggle_detail_path,
+        ),
+        "fsm_detail": _capture_questa_report_file(
+            fsm_detail_cmd,
+            cwd=project.root,
+            output=fsm_detail_path,
         ),
     }
 
