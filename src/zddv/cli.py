@@ -560,6 +560,15 @@ def cmd_uvm_analyze(args) -> int:
         f"Counts: {result['count_source']}  "
         f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
     )
+    lifecycle = result["lifecycle"]["summary"]
+    if lifecycle["phase_events"] or lifecycle["objection_events"]:
+        print(
+            "Lifecycle: "
+            f"phases={lifecycle['phase_events']} "
+            f"objections={lifecycle['objection_events']} "
+            f"phase-names={len(lifecycle['phases_seen'])} "
+            f"max-objection-total={lifecycle['max_observed_total']}"
+        )
     for event in result["messages"]:
         if event["severity"] not in {"UVM_WARNING", "UVM_ERROR", "UVM_FATAL"}:
             continue
