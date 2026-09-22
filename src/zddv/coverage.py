@@ -67,7 +67,7 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>Statement|Branch|Condition|Expression)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
