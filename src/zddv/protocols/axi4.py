@@ -669,6 +669,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         read_times = [beat.get("time") for beat in beats]
         if any(value is not None for value in read_times):
             tx["read_times"] = read_times
+        for key in ("cache", "prot", "qos", "region"):
+            if request.get(key) is not None:
+                tx[key] = request[key]
         if request.get("prot") is not None:
             tx["arprot"] = request["prot"]
         transactions.append(tx)
@@ -801,6 +804,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["w_times"] = w_times
                 if sample.get("time") is not None:
                     tx["response_time"] = sample["time"]
+                for key in ("cache", "prot", "qos", "region"):
+                    if request.get(key) is not None:
+                        tx[key] = request[key]
                 if request.get("prot") is not None:
                     tx["awprot"] = request["prot"]
                 transactions.append(tx)
