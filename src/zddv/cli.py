@@ -633,6 +633,24 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
+            if args.point_type in {None, "expression"}:
+                multibit_source_path = (
+                    project.root
+                    / ".zddv"
+                    / "coverage"
+                    / "expression-multibit.txt"
+                ).resolve()
+                if multibit_source_path.exists():
+                    points.extend(
+                        point
+                        for point in parse_questa_code_coverage_report(
+                            multibit_source_path.read_text(
+                                encoding="utf-8",
+                                errors="replace",
+                            )
+                        )
+                        if point.get("multibit")
+                    )
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -642,8 +660,9 @@ def cmd_coverage_holes(args) -> int:
             ):
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Scalar FEC rows are supported; multibit "
-                    "FEC tables are not normalized yet."
+                    f"{source_path}. Scalar FEC rows are supported; expression "
+                    "holes also consume documented -multibitverbose evidence when "
+                    "available."
                 )
             if not points:
                 raise RuntimeError(
