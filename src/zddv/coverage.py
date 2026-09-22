@@ -907,7 +907,7 @@ _URG_DASHBOARD_METRICS = {
     "ASSERT": "assertion",
     "GROUP": "group",
 }
-_URG_MISSING_SCORE = {"-", "--", "N/A", "NA"}
+_URG_MISSING_SCORE = {"", "-", "--", "N/A", "NA"}
 
 
 def _parse_urg_score_token(token: str) -> float | None:
@@ -920,6 +920,49 @@ def _parse_urg_score_token(token: str) -> float | None:
     if not 0.0 <= parsed <= 100.0:
         raise ValueError(f"URG coverage score out of range: {parsed}")
     return parsed
+
+
+def _urg_score_cells(
+    header_line: str,
+    value_line: str,
+    header_tokens: list[str],
+) -> list[str]:
+    """Return score cells while preserving documented blank URG columns."""
+    if "|" in header_line or "|" in value_line:
+        headers = [
+            cell.strip().upper()
+            for cell in header_line.strip().strip("|").split("|")
+        ]
+        values = [
+            cell.strip()
+            for cell in value_line.strip().strip("|").split("|")
+        ]
+        if headers == header_tokens and len(values) == len(header_tokens):
+            return values
+
+    tokens = value_line.split()
+    if len(tokens) == len(header_tokens):
+        return tokens
+
+    matches = list(
+        re.finditer(
+            r"\b(?:SCORE|LINE|COND|TOGGLE|FSM|BRANCH|ASSERT|GROUP)\b",
+            header_line.upper(),
+        )
+    )
+    if [match.group() for match in matches] != header_tokens:
+        return []
+
+    cells: list[str] = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(value_line)
+        )
+        cells.append(value_line[start:end].strip())
+    return cells
 
 
 def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, int | float]], str, str | None]:
@@ -1030,39 +1073,36 @@ def parse_vcs_urg_dashboard(path: str | Path) -> dict:
 
     known_headers = set(_URG_DASHBOARD_METRICS)
     for header_index in range(section_index + 1, min(len(lines), section_index + 16)):
+        header_line = lines[header_index]
         header_tokens = [
             token
-            for token in re.findall(r"[A-Za-z]+", lines[header_index].upper())
+            for token in re.findall(r"[A-Za-z]+", header_line.upper())
             if token in known_headers
         ]
         if not header_tokens or header_tokens[0] != "SCORE":
             continue
 
         for value_index in range(header_index + 1, min(len(lines), header_index + 8)):
-            raw = lines[value_index].strip()
+            raw_line = lines[value_index]
+            raw = raw_line.strip()
             if not raw or set(raw) <= {"-", "=", "+", "|", " "}:
                 continue
 
-            raw_tokens = [
-                token.strip()
-                for token in raw.replace("|", " ").split()
-                if token.strip()
-            ]
-            score_tokens: list[str] = []
-            for token in raw_tokens:
-                cleaned = token.rstrip("%")
-                if (
-                    cleaned.upper() in _URG_MISSING_SCORE
-                    or re.fullmatch(r"\d+(?:\.\d+)?", cleaned)
-                ):
-                    score_tokens.append(token)
-
+            score_tokens = _urg_score_cells(header_line, raw_line, header_tokens)
             if len(score_tokens) != len(header_tokens):
                 continue
 
-            parsed: dict[str, float | None] = {}
-            for header, token in zip(header_tokens, score_tokens, strict=True):
-                parsed[_URG_DASHBOARD_METRICS[header]] = _parse_urg_score_token(token)
+            try:
+                parsed = {
+                    _URG_DASHBOARD_METRICS[header]: _parse_urg_score_token(token)
+                    for header, token in zip(
+                        header_tokens,
+                        score_tokens,
+                        strict=True,
+                    )
+                }
+            except ValueError:
+                continue
 
             score = parsed.pop("score", None)
             if score is None:
