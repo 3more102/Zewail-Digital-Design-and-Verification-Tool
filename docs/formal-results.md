@@ -71,8 +71,26 @@ reinterpreting vendor output.
 creation time, project name, input path, execution evidence, property summaries,
 trace roles, and retained artifact paths.
 
+## SQLite history and CLI
+
+Each imported snapshot is persisted in `.zddv/results.db` together with its
+per-property status, interpretation, effective depth, optional message, and
+trace role/path. The normalized JSON report remains the inspectable source
+artifact.
+
+- `zddv formal-analyze <result.json>` imports evidence, writes the JSON report,
+  and records the snapshot/property rows.
+- `zddv formal-history` lists snapshots and can filter by status, backend, or
+  formal mode.
+- `zddv formal-properties` queries individual property outcomes by snapshot,
+  name, status, or interpretation.
+
+Persistence keeps bounded-safe, proved, counterexample, covered-goal, and
+unreached-goal evidence distinct; it does not upgrade one proof class into
+another.
+
 ## Current boundary
 
-This slice does not execute a formal engine, persist formal history in SQLite,
-parse counterexample waveforms, or claim formal coverage. Those remain separate
-v0.7 milestones.
+This slice still does not execute a formal engine, parse counterexample
+waveforms, provide vendor-specific result ingestion, or claim formal coverage.
+Those remain separate v0.7 milestones.
