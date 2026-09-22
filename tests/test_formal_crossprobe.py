@@ -12,14 +12,17 @@ from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 
 VCD = """$timescale 1ns $end
 $scope module formal_top $end
+$var wire 1 ! clk $end
 $scope module dut $end
 $var wire 4 # count [3:0] $end
 $upscope $end
 $upscope $end
 $enddefinitions $end
 #0
+0!
 b0000 #
 #5
+1!
 b0001 #
 """
 
