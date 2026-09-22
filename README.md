@@ -369,6 +369,7 @@ separately from Verilator's annotation threshold.
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
+- [x] Machine-readable UVM sequence/item marker extraction from simulator logs
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
 
 ### APB Trace Analysis
@@ -707,6 +708,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [UVM marker log adapter](docs/uvm-marker-adapter.md)
 
 ## License
 
