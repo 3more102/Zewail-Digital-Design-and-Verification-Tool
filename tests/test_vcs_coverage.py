@@ -6,9 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage, cmd_coverage_history
+from zddv.cli import cmd_coverage, cmd_coverage_history, cmd_coverage_holes
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_vcs_coverage, parse_vcs_urg_dashboard
+from zddv.coverage import (
+    merge_vcs_coverage,
+    parse_vcs_urg_dashboard,
+    parse_vcs_urg_line_coverage,
+)
 from zddv.storage import list_coverage_score_snapshots
 
 
@@ -475,3 +479,167 @@ def test_vcs_coverage_history_uses_score_native_snapshots(
     assert "line=99.03%" in output
     assert "counts: group=491/528 (92.99%)" in output
     assert "HIT/TOTAL" not in output
+
+
+def test_parse_vcs_urg_line_coverage_module_annotations(tmp_path: Path):
+    modinfo = tmp_path / "modinfo.txt"
+    modinfo.write_text(
+        """---------------------------------------------------------Line Coverage for Module : tb
+Line No. Total Covered Percent
+TOTAL 5 4 80.00
+42 1/1 always #5 clk = !clk;
+46
+0/1
+==>
+$display("z = 1'b1");
+
+---------------------------------------------------------Branch Coverage for Module : tb
+Line No. Total Covered Percent
+Branches 2 1 50.00
+46 0/1 if (z)
+
+Line Coverage for Instance : tb.dut
+50 0/1 instance-only-line
+
+Line Coverage for Module : dut
+Line No. Total Covered Percent
+TOTAL 2 1 50.00
+12 1/2 if (enable) q <= d;
+""",
+        encoding="utf-8",
+    )
+
+    points = parse_vcs_urg_line_coverage(modinfo)
+
+    assert points == [
+        {
+            "name": "tb:line:42",
+            "count": 1,
+            "hit": True,
+            "type": "line",
+            "scope": "tb",
+            "line": 42,
+            "detail": "1/1",
+            "statement": "always #5 clk = !clk;",
+        },
+        {
+            "name": "tb:line:46",
+            "count": 0,
+            "hit": False,
+            "type": "line",
+            "scope": "tb",
+            "line": 46,
+            "detail": "0/1",
+            "statement": "$display(\"z = 1'b1\");",
+        },
+        {
+            "name": "dut:line:12",
+            "count": 1,
+            "hit": False,
+            "type": "line",
+            "scope": "dut",
+            "line": 12,
+            "detail": "1/2",
+            "statement": "if (enable) q <= d;",
+        },
+    ]
+
+
+def test_vcs_coverage_holes_uses_urg_modinfo(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    modinfo = (
+        project.root / ".zddv" / "coverage" / "urg-report" / "modinfo.txt"
+    )
+    modinfo.parent.mkdir(parents=True)
+    modinfo.write_text(
+        """Line Coverage for Module : tb_top
+Line No. Total Covered Percent
+TOTAL 3 2 66.67
+10 1/1 reset_n = 1'b0;
+14 0/1 if (enable) q <= d;
+18 1/1 $finish;
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    output = tmp_path / "vcs-holes.json"
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=str(output),
+            point_type="line",
+            limit=None,
+            show=10,
+        )
+    )
+
+    assert rc == 0
+    printed = capsys.readouterr().out
+    assert "Coverage holes (line): 1 unhit point(s); 1 written" in printed
+    assert "[line] tb_top:line:14" in printed
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["total_holes"] == 1
+    assert payload["by_type"] == {"line": 1}
+    assert payload["holes"][0]["scope"] == "tb_top"
+    assert payload["holes"][0]["line"] == 14
+    assert payload["holes"][0]["detail"] == "0/1"
+    assert payload["holes"][0]["statement"] == "if (enable) q <= d;"
+
+
+def test_vcs_coverage_holes_without_type_reports_line_holes(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    modinfo = (
+        project.root / ".zddv" / "coverage" / "urg-report" / "modinfo.txt"
+    )
+    modinfo.parent.mkdir(parents=True)
+    modinfo.write_text(
+        """Line Coverage for Module : dut
+7 0/1 assign ready = valid;
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    output = tmp_path / "all-holes.json"
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=str(output),
+            point_type=None,
+            limit=None,
+            show=0,
+        )
+    )
+
+    assert rc == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["total_holes"] == 1
+    assert payload["holes"][0]["type"] == "line"
+
+
+def test_vcs_coverage_holes_rejects_unimplemented_metric(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    with pytest.raises(RuntimeError, match="supports --type line"):
+        cmd_coverage_holes(
+            SimpleNamespace(
+                project=str(project.root),
+                output=str(tmp_path / "holes.json"),
+                point_type="branch",
+                limit=None,
+                show=10,
+            )
+        )
