@@ -10,6 +10,7 @@ from zddv.formal.results import (
     analyze_formal_result_file,
     formal_result_from_data,
     formal_result_to_record,
+    persist_formal_result,
 )
 
 
@@ -60,6 +61,29 @@ def _payload(*, mode: str = "bmc", depth: int | None = 20) -> dict[str, object]:
         ],
         "artifacts": ["artifacts/summary.json"],
     }
+
+
+
+
+def _write_vcd(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! req $end
+$var wire 1 " ack $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+0"
+#5
+1!
+#10
+1"
+""",
+        encoding="utf-8",
+    )
 
 
 def test_normalizes_bounded_results_and_trace_roles():
@@ -203,3 +227,126 @@ def test_analyze_formal_result_file_writes_evidence_record(tmp_path: Path):
     assert persisted["project"] == project.name
     assert persisted["input_path"] == str(input_path.resolve())
     assert persisted["summary"]["counterexamples"] == 1
+
+def test_persist_formal_result_auto_normalizes_backend_vcd_trace(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "sby" / "run-1"
+    trace_path = run_dir / "engine_0" / "trace.vcd"
+    _write_vcd(trace_path)
+
+    payload = _payload()
+    payload["backend"] = "sby"
+    payload["run_dir"] = str(run_dir)
+    payload["log_path"] = str(run_dir / "formal.log")
+    payload["properties"] = [
+        {
+            "name": "top.p_req_ack",
+            "kind": "assert",
+            "status": "FAIL",
+            "depth": 7,
+            "trace_path": "engine_0/trace.vcd",
+        }
+    ]
+
+    result = formal_result_from_data(payload)
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+        output=run_dir / "zddv-formal-result.json",
+    )
+
+    normalization = record["trace_normalization"]
+    assert normalization["summary"] == {
+        "reported_traces": 1,
+        "normalized": 1,
+        "missing": 0,
+        "errors": 0,
+        "skipped": 0,
+    }
+    trace = normalization["traces"][0]
+    assert trace["role"] == "COUNTEREXAMPLE"
+    assert trace["status"] == "NORMALIZED"
+    assert trace["resolved_path"] == str(trace_path.resolve())
+    assert trace["input_sha256"]
+
+    normalized_path = Path(trace["normalized_path"])
+    assert normalized_path == run_dir / "normalized-traces" / "0000-counterexample.json"
+    saved = json.loads(normalized_path.read_text(encoding="utf-8"))
+    assert saved["property"] == "top.p_req_ack"
+    assert saved["trace_kind"] == "counterexample"
+    assert saved["source"] == "sby"
+    assert saved["summary"]["steps"] == 3
+
+
+def test_persist_formal_result_retains_malformed_vcd_without_aborting(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "sby" / "run-2"
+    trace_path = run_dir / "engine_0" / "bad.vcd"
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text("$timescale 1 ns $end\n#0\n0!\n", encoding="utf-8")
+
+    payload = _payload()
+    payload["backend"] = "sby"
+    payload["run_dir"] = str(run_dir)
+    payload["log_path"] = str(run_dir / "formal.log")
+    payload["properties"] = [
+        {
+            "name": "top.p_bad",
+            "kind": "assert",
+            "status": "FAIL",
+            "depth": 3,
+            "trace_path": "engine_0/bad.vcd",
+        }
+    ]
+
+    result = formal_result_from_data(payload)
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+        output=run_dir / "zddv-formal-result.json",
+    )
+
+    normalization = record["trace_normalization"]
+    assert normalization["summary"]["normalized"] == 0
+    assert normalization["summary"]["errors"] == 1
+    trace = normalization["traces"][0]
+    assert trace["status"] == "ERROR"
+    assert "VCD header is incomplete" in trace["reason"]
+    assert Path(record["report_path"]).is_file()
+
+
+def test_persist_formal_result_skips_non_vcd_trace_semantics(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_dir = project.root / ".zddv" / "formal" / "sby" / "run-3"
+
+    payload = _payload()
+    payload["backend"] = "sby"
+    payload["run_dir"] = str(run_dir)
+    payload["log_path"] = str(run_dir / "formal.log")
+    payload["properties"] = [
+        {
+            "name": "top.c_seen",
+            "kind": "cover",
+            "status": "COVERED",
+            "depth": 5,
+            "trace_path": "engine_0/trace.fsdb",
+        }
+    ]
+
+    result = formal_result_from_data(payload)
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=result.log_path,
+        output=run_dir / "zddv-formal-result.json",
+    )
+
+    normalization = record["trace_normalization"]
+    assert normalization["summary"]["skipped"] == 1
+    trace = normalization["traces"][0]
+    assert trace["role"] == "WITNESS"
+    assert trace["status"] == "SKIPPED"
+    assert "supports VCD only" in trace["reason"]
+
