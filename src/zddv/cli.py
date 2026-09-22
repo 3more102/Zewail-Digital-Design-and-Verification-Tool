@@ -22,6 +22,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.results import analyze_formal_result_file
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
@@ -374,6 +375,39 @@ def cmd_regress(args) -> int:
     print(f"Summary: {summary['summary_path']}")
     return 0 if summary["status"] == "PASS" else 1
 
+
+
+def cmd_formal_counterexample(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_formal_counterexample(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL TRACE: {result['trace_kind']} "
+        f"property={result['property']} kind={result['property_kind']} "
+        f"source={result['source']}"
+    )
+    print(
+        f"Signals/Steps: {summary['signals']}/{summary['steps']}  "
+        f"complete/partial={summary['complete_signal_steps']}/"
+        f"{summary['partial_signal_steps']}"
+    )
+    if summary["first_cycle"] is not None or summary["last_cycle"] is not None:
+        print(
+            f"Cycles: {summary['first_cycle']}..{summary['last_cycle']}"
+        )
+    if summary["first_time"] is not None or summary["last_time"] is not None:
+        unit = result.get("time_unit") or "(unspecified)"
+        print(
+            f"Time: {summary['first_time']}..{summary['last_time']} {unit}"
+        )
+    print(f"Input SHA-256: {result['input_sha256']}")
+    print(f"Normalized trace: {result['normalized_path']}")
+    return 0
 
 
 def cmd_formal_analyze(args) -> int:
@@ -2014,6 +2048,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_formal_counterexample = sub.add_parser(
+        "formal-counterexample",
+        help="Normalize formal counterexample or witness JSON evidence",
+    )
+    p_formal_counterexample.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON file",
+    )
+    p_formal_counterexample.add_argument(
+        "--source",
+        default=None,
+        help="Optional source/adapter label overriding the JSON source",
+    )
+    p_formal_counterexample.add_argument(
+        "--output",
+        default=".zddv/formal/counterexamples/latest.json",
+        help="Normalized formal trace JSON output path",
+    )
+    p_formal_counterexample.set_defaults(func=cmd_formal_counterexample)
 
     p_formal = sub.add_parser(
         "formal-analyze",
