@@ -92,8 +92,11 @@ def test_merge_vcs_coverage_persists_module_counts_without_replacing_scores(
 
     def fake_run(command, cwd):
         out = Path(cwd)
-        (out / command[command.index("-dbname") + 1]).mkdir()
         report_dir = out / command[command.index("-report") + 1]
+        if "-show" in command:
+            report_dir.mkdir()
+            return SimpleNamespace(returncode=0, stdout="URG brief complete\n")
+        (out / command[command.index("-dbname") + 1]).mkdir()
         report_dir.mkdir()
         (report_dir / "dashboard.txt").write_text(
             """Unified Coverage Report
@@ -123,6 +126,8 @@ Branches 5 2 40.00
 
     assert result["metrics_status"] == "normalized"
     assert result["module_counts_status"] == "normalized"
+    assert result["brief_status"] == "captured"
+    assert Path(result["brief_report_dir"]).is_dir()
     assert result["metrics"]["by_metric"]["line"] == pytest.approx(80.0)
     assert result["metrics"]["by_metric_counts"]["module_line"] == {
         "covered": 8,
