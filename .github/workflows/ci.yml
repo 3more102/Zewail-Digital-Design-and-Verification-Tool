@@ -171,6 +171,19 @@ jobs:
           grep -q '"awregion": 4' examples/counter/.zddv/protocols/axi4/sidebands.json
           grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/sidebands.json
 
+      - name: Reject reserved AXI4 AxCACHE encodings
+        run: |
+          if zddv --project examples/counter axi4-analyze ../axi4_reserved_cache_trace.json --output .zddv/protocols/axi4/reserved-cache.json; then
+            echo "reserved AxCACHE trace unexpectedly passed"
+            exit 1
+          fi
+          test -s examples/counter/.zddv/protocols/axi4/reserved-cache.json
+          grep -q '"status": "FAIL"' examples/counter/.zddv/protocols/axi4/reserved-cache.json
+          grep -q '"violations": 2' examples/counter/.zddv/protocols/axi4/reserved-cache.json
+          grep -q '"code": "reserved_cache_encoding"' examples/counter/.zddv/protocols/axi4/reserved-cache.json
+          grep -q '"signal": "ARCACHE"' examples/counter/.zddv/protocols/axi4/reserved-cache.json
+          grep -q '"signal": "AWCACHE"' examples/counter/.zddv/protocols/axi4/reserved-cache.json
+
       - name: Analyze AXI4 exclusive trace
         run: |
           zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json --output .zddv/protocols/axi4/exclusive.json
