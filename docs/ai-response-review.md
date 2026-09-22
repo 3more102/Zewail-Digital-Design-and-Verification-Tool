@@ -42,9 +42,11 @@ candidate:<rank>, probe:<rank>, and limitation:<index>.
 
 ai-response-import computes the same canonical provider-neutral request SHA-256
 used by ai-provider-request, binds the imported bytes to that request and the
-context evidence SHA-256, and records an imported-content SHA-256. The content
-remains raw/untrusted and must pass the same schema/evidence validation and
-explicit human-review gate as provider output.
+context evidence SHA-256, and records an imported-content SHA-256. This is a
+local audit association, not proof that the external source actually generated
+the response from that request. The content remains raw/untrusted and must pass
+the same schema/evidence validation and explicit human-review gate as provider
+output.
 
 Validation does not make a hypothesis true. Approval records review of the exact
 validated payload; it still does not stage, apply, compile, simulate, or execute
