@@ -27,6 +27,7 @@ from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import FormalCheckRequest, SymbiYosysBackend
 from zddv.formal.counterexample import ingest_formal_counterexample
+from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.formal.sby_results import analyze_sby_log
 from zddv.lint import lint_project
@@ -465,6 +466,37 @@ def cmd_formal_counterexample(args) -> int:
     )
     if summary["first_cycle"] is not None or summary["last_cycle"] is not None:
         print(f"Cycles: {summary['first_cycle']}..{summary['last_cycle']}")
+    if summary["first_time"] is not None or summary["last_time"] is not None:
+        unit = result.get("time_unit") or "(unspecified)"
+        print(f"Time: {summary['first_time']}..{summary['last_time']} {unit}")
+    print(f"Input SHA-256: {result['input_sha256']}")
+    print(f"Normalized trace: {result['normalized_path']}")
+    return 0
+
+
+def cmd_formal_vcd_trace(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_formal_vcd_trace(
+        project,
+        args.path,
+        property_name=args.property,
+        property_kind=args.kind,
+        source=args.source,
+        signals=args.signal,
+        max_steps=args.max_steps,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL VCD TRACE: {result['trace_kind']} "
+        f"property={result['property']} kind={result['property_kind']} "
+        f"source={result['source']}"
+    )
+    print(
+        f"Signals/Steps: {summary['signals']}/{summary['steps']}  "
+        f"complete/partial={summary['complete_signal_steps']}/"
+        f"{summary['partial_signal_steps']}"
+    )
     if summary["first_time"] is not None or summary["last_time"] is not None:
         unit = result.get("time_unit") or "(unspecified)"
         print(f"Time: {summary['first_time']}..{summary['last_time']} {unit}")
@@ -2304,6 +2336,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalized formal trace JSON output path",
     )
     p_formal_counterexample.set_defaults(func=cmd_formal_counterexample)
+
+    p_formal_vcd_trace = sub.add_parser(
+        "formal-vcd-trace",
+        help="Normalize a formal VCD counterexample or witness",
+    )
+    p_formal_vcd_trace.add_argument("path", help="Formal VCD trace file")
+    p_formal_vcd_trace.add_argument(
+        "--property",
+        required=True,
+        help="Property name associated with the trace",
+    )
+    p_formal_vcd_trace.add_argument(
+        "--kind",
+        choices=("assert", "cover"),
+        required=True,
+        help="Property kind; determines counterexample versus witness semantics",
+    )
+    p_formal_vcd_trace.add_argument(
+        "--source",
+        default="formal-vcd",
+        help="Evidence source/adapter label",
+    )
+    p_formal_vcd_trace.add_argument(
+        "--signal",
+        action="append",
+        default=[],
+        help="Optional signal path or unique short name; repeat to restrict the trace",
+    )
+    p_formal_vcd_trace.add_argument(
+        "--max-steps",
+        type=int,
+        default=100_000,
+        help="Explicit maximum number of normalized VCD time steps",
+    )
+    p_formal_vcd_trace.add_argument(
+        "--output",
+        default=".zddv/formal/counterexamples/latest.json",
+        help="Normalized formal trace JSON output path",
+    )
+    p_formal_vcd_trace.set_defaults(func=cmd_formal_vcd_trace)
 
     p_formal_sby = sub.add_parser(
         "formal-sby-analyze",
