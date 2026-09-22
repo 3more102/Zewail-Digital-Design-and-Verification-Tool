@@ -135,24 +135,37 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
     out_dir = (project.root / ".zddv" / "coverage").resolve()
     stale_merged = out_dir / "coverage.vdb"
     stale_report = out_dir / "urg-report"
+    stale_brief = out_dir / "urg-brief"
     stale_merged.mkdir(parents=True)
     stale_report.mkdir()
+    stale_brief.mkdir()
     (stale_merged / "stale").write_text("old", encoding="utf-8")
     (stale_report / "stale").write_text("old", encoding="utf-8")
+    (stale_brief / "stale").write_text("old", encoding="utf-8")
 
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
         lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
     )
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"commands": []}
 
     def fake_run(command, cwd):
-        captured["command"] = list(command)
+        captured["commands"].append(list(command))
         captured["cwd"] = Path(cwd)
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        if "-show" in command:
+            assert stale_merged.exists()
+            assert command[command.index("-dir") + 1] == "coverage.vdb"
+            report_dir.mkdir()
+            (report_dir / "mod0.txt").write_text(
+                "Line Coverage for Module dut\nuncovered line 12\n",
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0, stdout="URG brief complete\n")
         assert not stale_merged.exists()
         assert not stale_report.exists()
+        assert not stale_brief.exists()
         (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
-        report_dir = Path(cwd) / command[command.index("-report") + 1]
         report_dir.mkdir()
         (report_dir / "dashboard.txt").write_text(
             """Unified Coverage Report
@@ -185,8 +198,8 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 
     result = merge_vcs_coverage(project)
 
-    command = captured["command"]
-    assert command == [
+    commands = captured["commands"]
+    assert commands[0] == [
         "/opt/synopsys/bin/urg",
         "-dir",
         *inputs,
@@ -197,9 +210,26 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "-format",
         "both",
     ]
+    assert commands[1] == [
+        "/opt/synopsys/bin/urg",
+        "-dir",
+        "coverage.vdb",
+        "-report",
+        "urg-brief",
+        "-format",
+        "text",
+        "-show",
+        "brief",
+        "-metric",
+        "line+cond+fsm+tgl+branch",
+    ]
+    command = commands[0]
     assert captured["cwd"] == out_dir
     assert Path(result["merged"]).is_dir()
     assert Path(result["report_dir"]).is_dir()
+    assert result["brief_status"] == "captured"
+    assert Path(result["brief_report_dir"]).is_dir()
+    assert result["brief_error"] is None
     assert result["metrics_status"] == "normalized"
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert result["metrics"]["by_metric"]["line"] == pytest.approx(99.03)
@@ -241,6 +271,9 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["input_count"] == 2
     assert manifest["inputs"] == inputs
     assert manifest["command"] == command
+    assert manifest["brief_status"] == "captured"
+    assert Path(manifest["brief_report_dir"]).name == "urg-brief"
+    assert manifest["brief_command"] == commands[1]
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
     assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
@@ -476,8 +509,12 @@ def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
     )
 
     def fake_run(command, cwd):
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        if "-show" in command:
+            report_dir.mkdir()
+            return SimpleNamespace(returncode=0, stdout="URG brief complete\n")
         (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
-        (Path(cwd) / command[command.index("-report") + 1]).mkdir()
+        report_dir.mkdir()
         return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -488,7 +525,49 @@ def test_merge_vcs_coverage_keeps_evidence_when_dashboard_is_missing(
     assert result["snapshot_id"] is None
     assert result["metrics_status"] == "dashboard-missing"
     assert Path(result["report_dir"]).is_dir()
+    assert result["brief_status"] == "captured"
+    assert Path(result["brief_report_dir"]).is_dir()
     assert list_coverage_score_snapshots(project, limit=5) == []
+
+
+def test_merge_vcs_coverage_keeps_dashboard_when_brief_report_fails(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage = (project.root / project.run_dir / "run-a" / "coverage.vdb").resolve()
+    coverage.mkdir(parents=True)
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
+    )
+
+    def fake_run(command, cwd):
+        report_dir = Path(cwd) / command[command.index("-report") + 1]
+        if "-show" in command:
+            return SimpleNamespace(returncode=1, stdout="brief report unavailable\n")
+        (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
+        report_dir.mkdir()
+        (report_dir / "dashboard.txt").write_text(
+            """Unified Coverage Report
+
+Total Coverage Summary
+SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
+97.74 99.03 97.75 98.53 100.00 99.01 98.63 91.19
+""",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+    result = merge_vcs_coverage(project)
+
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
+    assert result["snapshot_id"] is not None
+    assert result["brief_status"] == "failed"
+    assert result["brief_report_dir"] is None
+    assert "brief report unavailable" in result["brief_error"]
 
 
 def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
@@ -522,6 +601,9 @@ def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
             },
             "snapshot_id": "cov-score-test",
             "metrics_status": "normalized",
+            "brief_status": "captured",
+            "brief_report_dir": "/tmp/urg-brief",
+            "brief_error": None,
             "report": "",
         },
     )
@@ -535,6 +617,8 @@ def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
     assert "condition=97.75%" in output
     assert "line=99.03%" in output
     assert "Coverage object counts: group=491/528 (92.99%)" in output
+    assert "VCS uncovered-object evidence: captured" in output
+    assert "URG brief report: /tmp/urg-brief" in output
     assert "Snapshot: cov-score-test" in output
     assert "Coverage points:" not in output
 

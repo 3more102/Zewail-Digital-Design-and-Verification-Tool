@@ -437,6 +437,13 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition detail: {result['code_report']}")
+    brief_status = result.get("brief_status")
+    if brief_status is not None:
+        print(f"VCS uncovered-object evidence: {brief_status}")
+        if result.get("brief_report_dir"):
+            print(f"URG brief report: {result['brief_report_dir']}")
+        if result.get("brief_error"):
+            print(f"URG brief report note: {result['brief_error']}")
     detailed = result.get("detailed_code_coverage_evidence") or {}
     if detailed:
         xml = detailed.get("xml", {})
