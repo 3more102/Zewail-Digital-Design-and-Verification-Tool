@@ -717,6 +717,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
+- [x] Formal counterexample/witness signal cross-probing to RTL source and driver/load evidence
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
