@@ -270,6 +270,18 @@ jobs:
           grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze explicit UVM item log markers
+        run: |
+          zddv --project examples/counter uvm-item-log-analyze ../uvm_item_marker.log --source example-item-log
+          test -s examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"input_mode": "explicit-log-marker"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"marker": "ZDDV_UVM_ITEM"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"completed": 2' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"partial": 1' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"model": "observed_grant_order"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"grant_events": 1' examples/counter/.zddv/uvm/items/latest.json
+          zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
