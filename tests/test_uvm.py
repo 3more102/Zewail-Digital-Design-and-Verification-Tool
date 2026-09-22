@@ -4,6 +4,8 @@ from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.storage import (
     list_uvm_log_snapshots,
+    list_uvm_objection_events,
+    list_uvm_phase_events,
     list_uvm_report_messages,
     record_run,
 )
@@ -342,3 +344,114 @@ def test_uvm_analysis_requires_path_or_run(tmp_path: Path):
         assert "path or --run" in str(exc)
     else:
         raise AssertionError("Expected ValueError when no path or run is supplied")
+
+
+def test_parses_standard_uvm_phase_and_objection_traces():
+    result = parse_uvm_log_text(
+        """
+UVM_INFO @ 0: reporter [RNTST] Running test lifecycle_case...
+UVM_INFO @ 1 ns: reporter [PH/TRC/SCHEDULED] Phase 'common.run' (id=42) Scheduled from phase common
+UVM_INFO @ 2 ns: reporter [PH/TRC/STRT] Phase 'common.run' (id=42) Starting phase
+UVM_INFO @ 3 ns: reporter [OBJTN_TRC] Object uvm_test_top raised 1 run_objection objection(s) (starting sequence): count=1  total=1
+UVM_INFO @ 3 ns: reporter [OBJTN_TRC] Object uvm_top added 1 run_objection objection(s) to its total (raised from source object uvm_test_top, starting sequence): count=0  total=1
+UVM_INFO @ 8 ns: reporter [OBJTN_TRC] Object uvm_test_top dropped 1 run_objection objection(s) (sequence done): count=0  total=0
+UVM_INFO @ 8 ns: reporter [OBJTN_TRC] Object uvm_top subtracted 1 run_objection objection(s) from its total (dropped from source object uvm_test_top, sequence done): count=0  total=0
+UVM_INFO @ 9 ns: reporter [PH_READY_TO_END] Phase 'common.run' (id=42) PHASE READY TO END
+UVM_INFO @ 10 ns: reporter [PH_END] Phase 'common.run' (id=42) ENDING PHASE
+UVM_INFO @ 11 ns: reporter [PH/TRC/DONE] Phase 'common.run' (id=42) Completed phase
+--- UVM Report Summary ---
+** Report counts by severity
+UVM_INFO : 10
+UVM_WARNING : 0
+UVM_ERROR : 0
+UVM_FATAL : 0
+"""
+    )
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["phase_trace_detected"] is True
+    assert lifecycle["objection_trace_detected"] is True
+    assert lifecycle["phase_event_count"] == 5
+    assert lifecycle["objection_event_count"] == 4
+    assert lifecycle["objection_raise_events"] == 2
+    assert lifecycle["objection_drop_events"] == 2
+    assert lifecycle["phases"] == ["common.run"]
+    assert [event["state"] for event in lifecycle["phase_events"]] == [
+        "SCHEDULED",
+        "STARTED",
+        "READY_TO_END",
+        "ENDED",
+        "DONE",
+    ]
+
+    direct_raise = lifecycle["objection_events"][0]
+    assert direct_raise["action"] == "raised"
+    assert direct_raise["object"] == "uvm_test_top"
+    assert direct_raise["source_object"] == "uvm_test_top"
+    assert direct_raise["objection"] == "run_objection"
+    assert direct_raise["delta"] == 1
+    assert direct_raise["count"] == 1
+    assert direct_raise["total"] == 1
+    assert direct_raise["description"] == "starting sequence"
+    assert direct_raise["propagated"] is False
+
+    propagated_raise = lifecycle["objection_events"][1]
+    assert propagated_raise["action"] == "raised"
+    assert propagated_raise["object"] == "uvm_top"
+    assert propagated_raise["source_object"] == "uvm_test_top"
+    assert propagated_raise["propagated"] is True
+
+
+def test_persists_uvm_lifecycle_events(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "uvm-lifecycle.log"
+    log.write_text(
+        "UVM_INFO @ 1 ns: reporter [PH/TRC/STRT] Phase 'common.run' (id=17) Starting phase\n"
+        "UVM_INFO @ 2 ns: reporter [OBJTN_TRC] Object uvm_test_top raised 1 run_objection objection(s): count=1  total=1\n"
+        "UVM_INFO @ 3 ns: reporter [OBJTN_TRC] Object uvm_test_top dropped 1 run_objection objection(s): count=0  total=0\n"
+        "UVM_INFO @ 4 ns: reporter [PH_END] Phase 'common.run' (id=17) ENDING PHASE\n"
+        "UVM_INFO @ 5 ns: reporter [PH/TRC/DONE] Phase 'common.run' (id=17) Completed phase\n"
+        "--- UVM Report Summary ---\n"
+        "** Report counts by severity\n"
+        "UVM_INFO : 5\n"
+        "UVM_WARNING : 0\n"
+        "UVM_ERROR : 0\n"
+        "UVM_FATAL : 0\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_log(project, log, source="uvm-2020-trace")
+    phase_events = list_uvm_phase_events(project, result["snapshot_id"])
+    objection_events = list_uvm_objection_events(project, result["snapshot_id"])
+
+    assert [event["state"] for event in phase_events] == [
+        "STARTED",
+        "ENDED",
+        "DONE",
+    ]
+    assert phase_events[0]["phase"] == "common.run"
+    assert phase_events[0]["phase_id"] == 17
+    assert phase_events[0]["time_text"] == "1 ns"
+    assert phase_events[1]["premature"] is False
+
+    assert [event["action"] for event in objection_events] == [
+        "raised",
+        "dropped",
+    ]
+    assert objection_events[0]["object_name"] == "uvm_test_top"
+    assert objection_events[0]["source_object"] == "uvm_test_top"
+    assert objection_events[0]["source_count"] == 1
+    assert objection_events[0]["total_count"] == 1
+    assert objection_events[0]["propagated"] is False
+
+
+def test_marks_premature_phase_end():
+    result = parse_uvm_log_text(
+        "UVM_INFO @ 20 ns: reporter [PH_END] "
+        "Phase 'common.run' (id=8) ENDING PHASE PREMATURELY\n"
+    )
+
+    assert result["lifecycle"]["phase_event_count"] == 1
+    event = result["lifecycle"]["phase_events"][0]
+    assert event["state"] == "ENDED"
+    assert event["premature"] is True
