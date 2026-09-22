@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB coverage capture plus multi-run `vcover merge` and normalized `vcover report -summary` metrics; item-level UCDB hole normalization is still pending
+- Questa per-run UCDB coverage capture plus multi-run `vcover merge`, normalized `vcover report -summary` metrics, detailed functional covergroup-bin ingestion, and retained XML coverage evidence; code item-level hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -91,9 +91,12 @@ For a Questa project, setting `coverage = true` in `[run]` enables native
 coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 `zddv coverage` then merges run UCDBs with `vcover merge`, runs
 `vcover report -summary`, and stores normalized aggregate metrics in the same
-SQLite coverage-history model. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; item-level `coverage-holes` remains
-Verilator-only until detailed UCDB normalization is implemented.
+SQLite coverage-history model. ZDDV also ingests ordinary covergroup bins from
+`vcover report -cvg -details` into its functional-coverage database and retains
+the documented XML coverage report as raw machine-readable evidence. Questa's
+weighted total coverage remains a separate simulator-reported value; code
+item-level `coverage-holes` remains Verilator-only until XML item normalization
+is implemented.
 
 ## Current CLI
 
