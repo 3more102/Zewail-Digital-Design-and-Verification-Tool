@@ -218,6 +218,46 @@ def formal_result_to_record(result: FormalCheckResult) -> dict[str, Any]:
     }
 
 
+def persist_formal_check_result(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+    *,
+    input_path: str | Path,
+    output: str | Path = ".zddv/formal/latest.json",
+) -> dict[str, Any]:
+    """Persist an in-memory formal result through the shared evidence model."""
+
+    source_path = Path(input_path)
+    if not source_path.is_absolute():
+        source_path = project.root / source_path
+    source_path = source_path.resolve()
+
+    record = formal_result_to_record(result)
+
+    report_path = Path(output)
+    if not report_path.is_absolute():
+        report_path = project.root / report_path
+    report_path = report_path.resolve()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    record.update(
+        {
+            "snapshot_id": uuid.uuid4().hex,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "project": project.name,
+            "input_path": str(source_path),
+            "report_path": str(report_path),
+        }
+    )
+
+    report_path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    record_formal_result_snapshot(project, record)
+    return record
+
+
 def analyze_formal_result_file(
     project: ProjectConfig,
     path: str | Path,
@@ -235,27 +275,9 @@ def analyze_formal_result_file(
         payload = json.load(handle)
 
     result = formal_result_from_data(payload)
-    record = formal_result_to_record(result)
-
-    report_path = Path(output)
-    if not report_path.is_absolute():
-        report_path = project.root / report_path
-    report_path = report_path.resolve()
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
-    record.update(
-        {
-            "snapshot_id": uuid.uuid4().hex,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "project": project.name,
-            "input_path": str(input_path),
-            "report_path": str(report_path),
-        }
+    return persist_formal_check_result(
+        project,
+        result,
+        input_path=input_path,
+        output=output,
     )
-
-    report_path.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    record_formal_result_snapshot(project, record)
-    return record
