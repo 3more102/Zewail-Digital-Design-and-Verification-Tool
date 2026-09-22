@@ -339,6 +339,7 @@ def _auto_normalize_vcd_traces(
 
         trace["normalization"] = {
             "status": "NORMALIZED",
+            "trace_id": normalized["trace_id"],
             "path": normalized["normalized_path"],
             "input_sha256": normalized["input_sha256"],
             "schema": normalized["schema"],
