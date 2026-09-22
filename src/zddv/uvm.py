@@ -30,6 +30,30 @@ _RUNNING_TEST_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PHASE_MESSAGE_RE = re.compile(
+    r"\bPhase\s+['‘’\"](?P<phase>[^'‘’\"]+)['‘’\"]\s*"
+    r"(?:\(id=(?P<phase_id>\d+)\))?\s*(?P<detail>.*)$",
+    re.IGNORECASE,
+)
+_OBJECTION_MESSAGE_RE = re.compile(
+    r"\bObject\s+(?P<object>\S+)\s+"
+    r"(?P<action>raised|dropped|added|subtracted|all_dropped)\s+"
+    r"(?P<count>\d+)\s+objection\(s\)(?P<context>.*?)"
+    r":\s*count=(?P<object_count>-?\d+)\s+total=(?P<total>-?\d+)",
+    re.IGNORECASE,
+)
+_PHASE_ACTIONS = {
+    "STRT": "START",
+    "DONE": "DONE",
+}
+_OBJECTION_ACTIONS = {
+    "RAISED": "RAISE",
+    "DROPPED": "DROP",
+    "ADDED": "ADD",
+    "SUBTRACTED": "SUBTRACT",
+    "ALL_DROPPED": "ALL_DROPPED",
+}
+
 
 def _empty_counts() -> dict[str, int]:
     return {severity: 0 for severity in _SEVERITIES}
@@ -86,6 +110,103 @@ def _parse_message(
         "log_line": line_number,
         "raw": _strip_simulator_prefix(line),
     }
+
+
+
+def _extract_lifecycle_events(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+
+    for message in messages:
+        report_id = str(message.get("report_id") or "")
+        text = str(message.get("message") or "")
+        component = message.get("component")
+
+        if report_id.startswith("PH/TRC/"):
+            match = _PHASE_MESSAGE_RE.search(text)
+            if match:
+                raw_action = report_id.removeprefix("PH/TRC/")
+                metadata: dict[str, Any] = {
+                    "trace_action": raw_action,
+                }
+                if match.group("phase_id"):
+                    metadata["phase_id"] = int(match.group("phase_id"))
+                detail = match.group("detail").strip()
+                if detail:
+                    metadata["detail"] = detail
+                events.append(
+                    {
+                        "event_index": len(events),
+                        "kind": "phase",
+                        "action": _PHASE_ACTIONS.get(raw_action, raw_action),
+                        "name": match.group("phase"),
+                        "component": component,
+                        "time": message.get("time"),
+                        "report_id": report_id,
+                        "description": detail or None,
+                        "count": None,
+                        "total": None,
+                        "log_line": int(message["log_line"]),
+                        "raw": message["raw"],
+                        "metadata": metadata,
+                    }
+                )
+
+        if report_id == "OBJTN_TRC":
+            match = _OBJECTION_MESSAGE_RE.search(text)
+            if match:
+                context = match.group("context").strip()
+                description: str | None = None
+                if "(" in context and ")" in context:
+                    description = context[context.find("(") + 1 : context.rfind(")")].strip() or None
+                action = match.group("action").upper()
+                events.append(
+                    {
+                        "event_index": len(events),
+                        "kind": "objection",
+                        "action": _OBJECTION_ACTIONS.get(action, action),
+                        "name": match.group("object"),
+                        "component": component,
+                        "time": message.get("time"),
+                        "report_id": report_id,
+                        "description": description,
+                        "count": int(match.group("object_count")),
+                        "total": int(match.group("total")),
+                        "log_line": int(message["log_line"]),
+                        "raw": message["raw"],
+                        "metadata": {
+                            "delta": int(match.group("count")),
+                            "context": context or None,
+                        },
+                    }
+                )
+
+        if isinstance(component, str) and "@@" in component:
+            sequencer, sequence = component.split("@@", 1)
+            if sequence:
+                events.append(
+                    {
+                        "event_index": len(events),
+                        "kind": "sequence",
+                        "action": "REPORT",
+                        "name": sequence,
+                        "component": component,
+                        "time": message.get("time"),
+                        "report_id": report_id or None,
+                        "description": text or None,
+                        "count": None,
+                        "total": None,
+                        "log_line": int(message["log_line"]),
+                        "raw": message["raw"],
+                        "metadata": {
+                            "sequencer": sequencer or None,
+                            "evidence": "uvm_report_context",
+                        },
+                    }
+                )
+
+    return events
 
 
 def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
@@ -146,6 +267,14 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
         else "PASS"
     )
 
+    lifecycle_events = _extract_lifecycle_events(messages)
+    lifecycle_summary = {
+        "phase_events": sum(1 for item in lifecycle_events if item["kind"] == "phase"),
+        "objection_events": sum(1 for item in lifecycle_events if item["kind"] == "objection"),
+        "sequence_events": sum(1 for item in lifecycle_events if item["kind"] == "sequence"),
+    }
+    lifecycle_summary["total_events"] = sum(lifecycle_summary.values())
+
     return {
         "analysis": "uvm_log",
         "source": source,
@@ -174,10 +303,13 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
             else None
         ),
         "messages": messages,
+        "lifecycle_summary": lifecycle_summary,
+        "lifecycle_events": lifecycle_events,
         "limitations": [
             "This parser normalizes standard UVM report messages and the final severity summary without depending on a simulator vendor.",
             "The final complete UVM Report Summary is authoritative for severity counts when present; otherwise visible report messages are counted.",
-            "Phase, objection, sequence, and transaction lifecycle reconstruction are not yet modeled.",
+            "Phase events require UVM phase-trace reports such as those enabled by +UVM_PHASE_TRACE; objection events require objection-trace reports such as those enabled by +UVM_OBJECTION_TRACE.",
+            "Standard UVM has no universal sequence-trace plusarg; sequence activity is therefore recorded only when an explicit @@ sequence context is already present in a report component path, and does not claim sequence start/end semantics.",
             "When linked to a recorded ZDDV run, simulator status and return code are retained as separate evidence from the UVM severity verdict.",
         ],
     }
