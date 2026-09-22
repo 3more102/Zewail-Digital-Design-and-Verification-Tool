@@ -45,6 +45,7 @@ from zddv.storage import (
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_item import analyze_uvm_item_file
 from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
@@ -738,6 +739,46 @@ def cmd_uvm_history(args) -> int:
             f"{row['count_source']:<18} {row['snapshot_id']}"
         )
     return 0
+
+
+def cmd_uvm_item_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_item_file(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM ITEM {result['status']}: "
+        f"{summary['items']} item(s), "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Handshake: granted={summary['granted']} "
+        f"requested={summary['requested']} "
+        f"completed={summary['completed']} "
+        f"responded={summary['responded']} "
+        f"active={summary['active']} partial={summary['partial']}"
+    )
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] event={violation['event_index']} "
+            f"item={violation['item_id']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
 
 def cmd_uvm_sequence_analyze(args) -> int:
     project = load_project(_project_arg(args))
@@ -1591,6 +1632,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_uvm_history.set_defaults(func=cmd_uvm_history)
 
+
+
+    p_uvm_item = sub.add_parser(
+        "uvm-item-analyze",
+        help="Analyze normalized UVM sequence-item handshake events from JSON",
+    )
+    p_uvm_item.add_argument(
+        "path",
+        help="Normalized UVM sequence-item handshake event JSON file",
+    )
+    p_uvm_item.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID to correlate with this item snapshot",
+    )
+    p_uvm_item.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label overriding the JSON source",
+    )
+    p_uvm_item.add_argument(
+        "--output",
+        default=".zddv/uvm/items/latest.json",
+        help="Normalized UVM item JSON report path",
+    )
+    p_uvm_item.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of item-handshake violations to print",
+    )
+    p_uvm_item.set_defaults(func=cmd_uvm_item_analyze)
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",

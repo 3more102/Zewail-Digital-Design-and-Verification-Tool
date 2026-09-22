@@ -258,6 +258,15 @@ jobs:
           grep -q '"finished": 2' examples/counter/.zddv/uvm/sequences/latest.json
           zddv --project examples/counter uvm-sequence-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze UVM sequence-item handshake trace
+        run: |
+          zddv --project examples/counter uvm-item-analyze ../uvm_item_trace.json --source example-item
+          test -s examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"analysis": "uvm_item_handshake"' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"completed": 2' examples/counter/.zddv/uvm/items/latest.json
+          grep -q '"partial": 1' examples/counter/.zddv/uvm/items/latest.json
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint

@@ -1,0 +1,65 @@
+{
+  "source": "example-item-handshake",
+  "events": [
+    {
+      "item_id": "item-1",
+      "event": "GRANT",
+      "sequence_id": "seq-write",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 101,
+      "time": "10 ns"
+    },
+    {
+      "item_id": "item-1",
+      "event": "REQUEST",
+      "sequence_id": "seq-write",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 101,
+      "time": "10 ns"
+    },
+    {
+      "item_id": "item-1",
+      "event": "ITEM_DONE",
+      "sequence_id": "seq-write",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 101,
+      "time": "18 ns"
+    },
+    {
+      "item_id": "item-1",
+      "event": "RESPONSE",
+      "sequence_id": "seq-write",
+      "sequence": "axi_write_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 101,
+      "time": "19 ns"
+    },
+    {
+      "item_id": "item-2",
+      "event": "REQUEST",
+      "sequence_id": "seq-read",
+      "sequence": "axi_read_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 102,
+      "time": "25 ns"
+    },
+    {
+      "item_id": "item-2",
+      "event": "ITEM_DONE",
+      "sequence_id": "seq-read",
+      "sequence": "axi_read_seq",
+      "sequencer": "uvm_test_top.env.seqr",
+      "item": "axi_item",
+      "transaction_id": 102,
+      "time": "31 ns"
+    }
+  ]
+}
