@@ -278,6 +278,23 @@ CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_item
 CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_event
     ON uvm_item_handshake_events(event);
 
+CREATE TABLE IF NOT EXISTS uvm_item_handshake_violations (
+    snapshot_id TEXT NOT NULL,
+    violation_index INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    message TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, violation_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_violations_code
+    ON uvm_item_handshake_violations(code);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_violations_item
+    ON uvm_item_handshake_violations(snapshot_id, item_id);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -1171,6 +1188,30 @@ def record_uvm_item_handshake_snapshot(
                 for item in record["events"]
             ],
         )
+        db.execute(
+            "DELETE FROM uvm_item_handshake_violations WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_item_handshake_violations (
+                snapshot_id, violation_index, code, event_index,
+                item_id, event, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["violation_index"]),
+                    item["code"],
+                    int(item["event_index"]),
+                    item["item_id"],
+                    item["event"],
+                    item["message"],
+                )
+                for item in record["violations"]
+            ],
+        )
     return path
 
 
@@ -1240,6 +1281,38 @@ def list_uvm_item_handshake_events(
         item["metadata"] = json.loads(item.pop("metadata_json"))
         result.append(item)
     return result
+
+
+def list_uvm_item_handshake_violations(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    code: str | None = None,
+    item_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    query = """
+        SELECT snapshot_id, violation_index, code, event_index,
+               item_id, event, message
+        FROM uvm_item_handshake_violations
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if code is not None:
+        query += " AND code = ?"
+        params.append(code)
+    if item_id is not None:
+        query += " AND item_id = ?"
+        params.append(item_id)
+    query += " ORDER BY violation_index LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
 
 
 def record_functional_coverage_snapshot(
