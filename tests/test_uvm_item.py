@@ -200,6 +200,7 @@ def test_cli_analyzes_item_handshake_trace(tmp_path: Path):
     assert payload["source"] == "cli-test"
     assert payload["summary"]["violations"] == 0
 
+
 def test_analyze_persists_item_snapshot_and_events(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     trace = project.root / "items.json"
