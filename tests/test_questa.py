@@ -178,3 +178,15 @@ def test_questa_reports_missing_tool(monkeypatch):
         assert "PATH" in str(exc)
     else:
         raise AssertionError("Expected RuntimeError when vsim is unavailable")
+
+
+def test_questa_cli_backend_and_doctor(monkeypatch, capsys):
+    _install_fake_questa(monkeypatch)
+
+    from zddv.cli import _backend, main
+
+    assert isinstance(_backend("questa"), QuestaBackend)
+    rc = main(["doctor", "--simulator", "questa"])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "[PASS] QuestaSim-64 2025.1 Simulator" in output
