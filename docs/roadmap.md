@@ -64,8 +64,9 @@ implemented. Elaborated connectivity and waveform-driven protocol extraction rem
 
 Current status: normalized-trace analyzers are implemented for APB, AXI4-Lite,
 burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/link-health
-foundation. Core AXI4 exclusive-access semantics are also implemented; exhaustive
-optional AXI4 sidebands/coherency, structural CDC signoff, and specification-complete
+foundation. Core AXI4 exclusive-access semantics plus optional sideband width,
+encoding, USER-stability, and AxREGION consistency checks are implemented;
+topology-dependent coherency, structural CDC signoff, and specification-complete
 UCIe checking remain planned.
 
 - [x] APB normalized-trace reconstruction and protocol checks.
@@ -73,7 +74,8 @@ UCIe checking remain planned.
 - [x] AXI4 burst normalized-trace foundation (IDs, lengths/types, WLAST/RLAST, 4KB rule).
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checking.
-- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checking.
+- [x] AXI4 optional sideband width/encoding checks, USER stall stability, and AxREGION 4KB consistency.
+- [ ] Topology-dependent coherency / ACE / AXI5-adjacent checking.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
 - [ ] Specification-complete UCIe protocol/PHY conformance checking.
