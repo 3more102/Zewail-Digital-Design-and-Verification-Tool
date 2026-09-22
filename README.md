@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM Ingestion Foundation — v0.5 protocol verification plus simulator-independent UVM report normalization, persistence, and history**
+> Status: **v0.6 UVM Ingestion — simulator-independent UVM report normalization plus standard phase/objection trace reconstruction and persistence**
 
 ## What Works Today
 
@@ -26,7 +26,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
 - Normalized assertion result database keyed by simulation run
-- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, and history CLI
+- Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` lifecycle events, SQLite persistence, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -319,7 +319,7 @@ separately from Verilator's annotation threshold.
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
-- [ ] UVM-aware result model
+- [x] UVM-aware report/test/phase/objection result model
 
 ### APB Trace Analysis
 
@@ -489,6 +489,28 @@ zddv --project my_project async-fifo-analyze examples/async_fifo_cdc_trace.json
 
 The default report is `.zddv/cdc/async-fifo/latest.json`.
 
+
+### UVM Report and Lifecycle Ingestion
+
+`zddv uvm-analyze <log>` normalizes standard UVM report messages and the final
+severity summary. When a test is run with UVM's portable tracing switches
+`+UVM_PHASE_TRACE` and `+UVM_OBJECTION_TRACE`, the same ingestion pass also
+reconstructs phase-state evidence and objection raise/drop activity from the
+standard UVM report IDs.
+
+Normalized phase events currently cover SCHEDULED, STARTED, READY_TO_END, ENDED,
+and DONE transitions emitted by the UVM reference implementation. Objection
+events preserve the source object, objection name, delta, source/total counts,
+description, propagation flag, log line, and timestamp. Both event types are
+persisted in SQLite beside the normalized report messages.
+
+```bash
+zddv --project my_project uvm-analyze simulation.log --source uvm-standard-trace
+zddv --project my_project uvm-history --limit 20
+```
+
+Sequence/transaction lifecycle reconstruction remains separate work because ZDDV
+does not assume a non-standard portable sequence trace stream.
 
 ### Assertion Result Markers
 
