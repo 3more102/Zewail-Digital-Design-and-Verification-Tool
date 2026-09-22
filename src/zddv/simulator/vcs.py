@@ -33,7 +33,7 @@ class VcsBackend(SimulatorBackend):
 
     def version(self) -> str:
         result = subprocess.run(
-            [self._tool(), "-ID"],
+            [self._tool(), "-id"],
             check=False,
             text=True,
             capture_output=True,
