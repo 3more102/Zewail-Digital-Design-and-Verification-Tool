@@ -18,6 +18,9 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["scope"] == "tb.axi"
     assert trace["waveform"]["clock"] == "ACLK"
     assert trace["waveform"]["timescale"] == "1ns"
+    assert trace["data_width_bits"] == 16
+    assert trace["waveform"]["data_width_bits"] == 16
+    assert trace["waveform"]["wstrb_width"] == 2
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
     assert trace["samples"][0]["AWLEN"] == 1
