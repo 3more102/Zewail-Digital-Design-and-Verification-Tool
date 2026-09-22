@@ -243,12 +243,37 @@ def analyze_uvm_item_instrumentation_log_if_present(
     text = log_path.read_text(encoding="utf-8", errors="replace")
     if INSTRUMENTATION_PREFIX not in text:
         return None
-    return analyze_uvm_item_instrumentation_log(
-        project,
-        log_path,
-        run_id=run_id,
-        source=source,
-    )
+    try:
+        return analyze_uvm_item_instrumentation_log(
+            project,
+            log_path,
+            run_id=run_id,
+            source=source,
+        )
+    except ValueError as exc:
+        error_path = (
+            project.root
+            / ".zddv"
+            / "uvm"
+            / "items"
+            / "ingest-errors"
+            / f"{run_id}.json"
+        )
+        error_path.parent.mkdir(parents=True, exist_ok=True)
+        error_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "source": source,
+                    "log": str(log_path),
+                    "error": str(exc),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return None
 
 
 def write_uvm_item_instrumentation(
