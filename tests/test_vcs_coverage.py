@@ -8,7 +8,11 @@ import pytest
 
 from zddv.cli import cmd_coverage, cmd_coverage_history
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_vcs_coverage, parse_vcs_urg_dashboard
+from zddv.coverage import (
+    merge_vcs_coverage,
+    parse_vcs_urg_code_ratios,
+    parse_vcs_urg_dashboard,
+)
 from zddv.storage import list_coverage_score_snapshots
 
 
@@ -61,18 +65,19 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
         "zddv.coverage.shutil.which",
         lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
     )
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"commands": []}
 
     def fake_run(command, cwd):
-        captured["command"] = list(command)
+        captured["commands"].append(list(command))
         captured["cwd"] = Path(cwd)
-        assert not stale_merged.exists()
-        assert not stale_report.exists()
-        (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
         report_dir = Path(cwd) / command[command.index("-report") + 1]
-        report_dir.mkdir()
-        (report_dir / "dashboard.txt").write_text(
-            """Unified Coverage Report
+        if "-dbname" in command:
+            assert not stale_merged.exists()
+            assert not stale_report.exists()
+            (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
+            report_dir.mkdir()
+            (report_dir / "dashboard.txt").write_text(
+                """Unified Coverage Report
 
 Total Coverage Summary
 SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
@@ -82,15 +87,30 @@ Total Groups Coverage Summary
 COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 491  528  92.99  490  527  92.98  1
 """,
-            encoding="utf-8",
-        )
-        return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+                encoding="utf-8",
+            )
+        else:
+            assert command[command.index("-show") + 1] == "ratios"
+            report_dir.mkdir()
+            (report_dir / "dashboard.txt").write_text(
+                """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH
+97.74 | 1,980/2,000 | 978/1,000 | 3,940/4,000 | 50/50 | 990/1,000
+""",
+                encoding="utf-8",
+            )
+        return SimpleNamespace(returncode=0, stdout="URG report complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
 
     result = merge_vcs_coverage(project)
 
-    command = captured["command"]
+    commands = captured["commands"]
+    assert len(commands) == 2
+    command = commands[0]
+    ratio_command = commands[1]
     assert command == [
         "/opt/synopsys/bin/urg",
         "-dir",
@@ -101,6 +121,19 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "urg-report",
         "-format",
         "both",
+    ]
+    assert ratio_command == [
+        "/opt/synopsys/bin/urg",
+        "-dir",
+        "coverage.vdb",
+        "-report",
+        "urg-ratios",
+        "-format",
+        "text",
+        "-show",
+        "ratios",
+        "-metric",
+        "line+cond+tgl+fsm+branch",
     ]
     assert captured["cwd"] == out_dir
     assert Path(result["merged"]).is_dir()
@@ -119,7 +152,17 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "total": 527,
         "hit_rate": pytest.approx(92.98),
     }
+    assert result["metrics"]["by_metric_counts"]["line"] == {
+        "covered": 1980,
+        "total": 2000,
+        "hit_rate": pytest.approx(99.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["condition"]["covered"] == 978
+    assert result["metrics"]["by_metric_counts"]["toggle"]["total"] == 4000
+    assert result["metrics"]["by_metric_counts"]["fsm"]["covered"] == 50
+    assert result["metrics"]["by_metric_counts"]["branch"]["total"] == 1000
     assert result["metrics"]["count_status"] == "normalized"
+    assert result["metrics"]["code_count_status"] == "normalized"
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -131,6 +174,8 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert snapshots[0]["by_metric_counts"]["group"]["covered"] == 491
     assert snapshots[0]["by_metric_counts"]["group"]["total"] == 528
     assert snapshots[0]["by_metric_counts"]["group_instance"]["covered"] == 490
+    assert snapshots[0]["by_metric_counts"]["line"]["covered"] == 1980
+    assert snapshots[0]["by_metric_counts"]["condition"]["total"] == 1000
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -143,6 +188,9 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
     assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
+    assert manifest["metrics"]["by_metric_counts"]["line"]["total"] == 2000
+    assert manifest["metrics"]["code_count_status"] == "normalized"
+    assert Path(manifest["ratio_dashboard"]).name == "dashboard.txt"
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
@@ -270,6 +318,51 @@ COVERED EXPECTED SCORE COVERED EXPECTED INST SCORE WEIGHT
         "hit_rate": pytest.approx(92.06),
     }
     assert metrics["count_status"] == "normalized"
+
+
+def test_parse_vcs_urg_code_ratios_normalizes_documented_object_counts(
+    tmp_path: Path,
+):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH
+95.00 | 190/200 | 90/100 | 300/320 | 8/10 | 49/50
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_code_ratios(dashboard)
+
+    assert metrics["by_metric_counts"]["line"] == {
+        "covered": 190,
+        "total": 200,
+        "hit_rate": pytest.approx(95.0),
+    }
+    assert metrics["by_metric_counts"]["condition"]["covered"] == 90
+    assert metrics["by_metric_counts"]["toggle"]["total"] == 320
+    assert metrics["by_metric_counts"]["fsm"]["hit_rate"] == pytest.approx(80.0)
+    assert metrics["by_metric_counts"]["branch"]["covered"] == 49
+
+
+def test_parse_vcs_urg_code_ratios_preserves_blank_metric(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH
+95.00 | 190/200 | 90/100 | 300/320 |  | 49/50
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_code_ratios(dashboard)
+
+    assert "fsm" not in metrics["by_metric_counts"]
+    assert metrics["by_metric_counts"]["branch"]["total"] == 50
 
 
 def test_parse_vcs_urg_dashboard_preserves_blank_pipe_metric(tmp_path: Path):
