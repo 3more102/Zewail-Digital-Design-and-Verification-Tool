@@ -67,6 +67,18 @@ def test_generator_reuses_existing_marker_helpers_without_overwrite(tmp_path: Pa
     assert sequence_helper.read_text(encoding="utf-8") == original
 
 
+def test_generator_rejects_incompatible_existing_marker_helper(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    helper = project.root / "tb" / "zddv_uvm_sequence_trace_pkg.sv"
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("package wrong_pkg; endpackage\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="incompatible"):
+        write_uvm_auto_instrumentation(project)
+
+    assert not (project.root / "tb" / "zddv_uvm_auto_trace_pkg.sv").exists()
+
+
 def test_generator_refuses_adapter_overwrite_without_force(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     write_uvm_auto_instrumentation(project)
