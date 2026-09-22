@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 from types import SimpleNamespace
 
+from zddv.cli import main
 from zddv.config import ProjectConfig
 from zddv.simulator import QuestaBackend, get_backend
 
@@ -198,3 +199,18 @@ def test_questa_timeout_is_recorded_without_false_uvm_snapshot(tmp_path, monkeyp
     run_record = loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
     assert run_record["status"] == "TIMEOUT"
     assert run_record["returncode"] == 124
+
+
+def test_doctor_can_check_questa_backend(monkeypatch, capsys):
+    class FakeBackend:
+        def version(self):
+            return "Questa test"
+
+    monkeypatch.setattr("zddv.cli.get_backend", lambda name: FakeBackend())
+
+    rc = main(["doctor", "--simulator", "questa"])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "ZDDV 0.6.0" in output
+    assert "[PASS] Questa test" in output
