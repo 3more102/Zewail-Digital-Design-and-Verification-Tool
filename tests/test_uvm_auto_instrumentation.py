@@ -32,11 +32,14 @@ def test_generator_writes_standard_uvm_adapter_and_orders_sources(tmp_path: Path
     assert 'zddv_emit_item_event("REQUEST"' in text
     assert 'zddv_emit_item_event("ITEM_DONE"' in text
     assert '"RESPONSE"' in text
+    assert "zddv_transaction_ambiguous" in text
+    assert "!zddv_transaction_ambiguous.exists(observed_transaction_id)" in text
 
     # UVM's own source documents get_sequence_id() as internal/private-use.
     assert "get_sequence_id()" not in text
     assert "get_inst_id()" in text
     assert "inspect hidden sequencer queues" in text
+    assert any("Duplicate transaction IDs" in item for item in result["limitations"])
 
     assert Path(result["sequence_helper"]).is_file()
     assert Path(result["item_helper"]).is_file()
