@@ -14,20 +14,20 @@ _CHANNELS = {
         "ready": "AWREADY",
         "payload": (
             "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST",
-            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION",
+            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION", "AWUSER",
         ),
         "required": ("AWADDR", "AWLEN", "AWSIZE", "AWBURST"),
     },
     "W": {
         "valid": "WVALID",
         "ready": "WREADY",
-        "payload": ("WDATA", "WSTRB", "WLAST"),
+        "payload": ("WDATA", "WSTRB", "WLAST", "WUSER"),
         "required": ("WDATA", "WSTRB", "WLAST"),
     },
     "B": {
         "valid": "BVALID",
         "ready": "BREADY",
-        "payload": ("BID", "BRESP"),
+        "payload": ("BID", "BRESP", "BUSER"),
         "required": ("BRESP",),
     },
     "AR": {
@@ -35,14 +35,14 @@ _CHANNELS = {
         "ready": "ARREADY",
         "payload": (
             "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST",
-            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION",
+            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
         ),
         "required": ("ARADDR", "ARLEN", "ARSIZE", "ARBURST"),
     },
     "R": {
         "valid": "RVALID",
         "ready": "RREADY",
-        "payload": ("RID", "RDATA", "RRESP", "RLAST"),
+        "payload": ("RID", "RDATA", "RRESP", "RLAST", "RUSER"),
         "required": ("RDATA", "RRESP", "RLAST"),
     },
 }
@@ -51,6 +51,7 @@ _RESPONSE_NAMES = {0: "OKAY", 1: "EXOKAY", 2: "SLVERR", 3: "DECERR"}
 _RESPONSE_CODES = {name: code for code, name in _RESPONSE_NAMES.items()}
 _BURST_NAMES = {0: "FIXED", 1: "INCR", 2: "WRAP"}
 _BURST_CODES = {name: code for code, name in _BURST_NAMES.items()}
+_AXI4_CACHE_ENCODINGS = {0x0, 0x1, 0x2, 0x3, 0x6, 0x7, 0xA, 0xB, 0xE, 0xF}
 
 
 def _logic(value: Any, *, name: str) -> bool:
@@ -126,9 +127,10 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
     for name in (
         "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST", "AWCACHE",
-        "AWPROT", "AWQOS", "AWREGION", "WDATA", "WSTRB", "BID", "BRESP",
-        "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST", "ARCACHE",
-        "ARPROT", "ARQOS", "ARREGION", "RID", "RDATA", "RRESP",
+        "AWPROT", "AWQOS", "AWREGION", "AWUSER", "WDATA", "WSTRB", "WUSER",
+        "BID", "BRESP", "BUSER", "ARID", "ARADDR", "ARLEN", "ARSIZE",
+        "ARBURST", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
+        "RID", "RDATA", "RRESP", "RUSER",
     ):
         if name in upper:
             sample[name] = _scalar(upper[name])
@@ -166,6 +168,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
     issued_exclusive_reads = 0
     issued_exclusive_writes = 0
     matched_exclusive_writes = 0
+    region_by_4kb: dict[int, int] = {}
 
     def add_violation(
         code: str,
@@ -317,6 +320,76 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             )
         return code, label
 
+    def optional_unsigned(
+        sample: dict[str, Any],
+        prefix: str,
+        suffix: str,
+        width: int,
+    ) -> int | None:
+        field = f"{prefix}{suffix}"
+        if field not in sample:
+            return None
+        value = sample[field]
+        maximum = (1 << width) - 1
+        if not isinstance(value, int) or not 0 <= value <= maximum:
+            add_violation(
+                f"invalid_{suffix.lower()}_value",
+                sample,
+                f"{field} must be an unsigned {width}-bit value",
+                channel=prefix,
+                signal=field,
+                expected=f"0..{maximum}",
+                actual=value,
+            )
+            return None
+        return value
+
+    def validate_address_sidebands(
+        sample: dict[str, Any],
+        prefix: str,
+        addr: int | None,
+    ) -> dict[str, Any]:
+        cache = optional_unsigned(sample, prefix, "CACHE", 4)
+        prot = optional_unsigned(sample, prefix, "PROT", 3)
+        qos = optional_unsigned(sample, prefix, "QOS", 4)
+        region = optional_unsigned(sample, prefix, "REGION", 4)
+        user = sample.get(f"{prefix}USER")
+
+        if cache is not None and cache not in _AXI4_CACHE_ENCODINGS:
+            add_violation(
+                "reserved_cache_encoding",
+                sample,
+                f"{prefix}CACHE uses an AXI4-reserved memory-attribute encoding",
+                channel=prefix,
+                signal=f"{prefix}CACHE",
+                expected="one of 0x0,0x1,0x2,0x3,0x6,0x7,0xA,0xB,0xE,0xF",
+                actual=cache,
+            )
+
+        if region is not None and addr is not None:
+            page = addr // 4096
+            prior = region_by_4kb.get(page)
+            if prior is None:
+                region_by_4kb[page] = region
+            elif prior != region:
+                add_violation(
+                    "region_changes_within_4kb",
+                    sample,
+                    "AxREGION must remain constant within a 4KB address region",
+                    channel=prefix,
+                    signal=f"{prefix}REGION",
+                    expected=prior,
+                    actual=region,
+                )
+
+        return {
+            "cache": cache,
+            "prot": prot,
+            "qos": qos,
+            "region": region,
+            "user": user,
+        }
+
     def make_request(sample: dict[str, Any], prefix: str, index: int) -> dict[str, Any]:
         tx_id = id_value(sample, f"{prefix}ID", prefix)
         addr = sample.get(f"{prefix}ADDR")
@@ -333,6 +406,12 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 channel=prefix, signal=f"{prefix}ADDR",
                 expected="non-negative integer", actual=addr,
             )
+
+        sidebands = validate_address_sidebands(
+            sample,
+            prefix,
+            addr if valid_addr else None,
+        )
 
         valid_len = isinstance(length, int) and 0 <= length <= 255
         if not valid_len:
@@ -465,9 +544,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cycle": sample["cycle"],
             "sample_index": sample["sample_index"],
             "time": sample.get("time"),
-            "region": sample.get(f"{prefix}REGION"),
-            "cache": sample.get(f"{prefix}CACHE"),
-            "prot": sample.get(f"{prefix}PROT"),
+            "region": sidebands["region"],
+            "cache": sidebands["cache"],
+            "prot": sidebands["prot"],
+            "qos": sidebands["qos"],
+            "user": sidebands["user"],
         }
 
     def exclusive_attribute_mismatches(
@@ -610,8 +691,18 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         read_times = [beat.get("time") for beat in beats]
         if any(value is not None for value in read_times):
             tx["read_times"] = read_times
-        if request.get("prot") is not None:
-            tx["arprot"] = request["prot"]
+        for key, output_key in (
+            ("region", "arregion"),
+            ("cache", "arcache"),
+            ("prot", "arprot"),
+            ("qos", "arqos"),
+            ("user", "aruser"),
+        ):
+            if request.get(key) is not None:
+                tx[output_key] = request[key]
+        read_users = [beat.get("user") for beat in beats]
+        if any(value is not None for value in read_users):
+            tx["read_user"] = read_users
         transactions.append(tx)
 
     for sample in samples:
@@ -650,6 +741,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 "data": sample.get("WDATA"),
                 "strb": sample.get("WSTRB"),
                 "last": bool(sample.get("WLAST", False)),
+                "user": sample.get("WUSER"),
             }
             current_w_beats.append(beat)
             if beat["last"]:
@@ -742,8 +834,20 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["w_times"] = w_times
                 if sample.get("time") is not None:
                     tx["response_time"] = sample["time"]
-                if request.get("prot") is not None:
-                    tx["awprot"] = request["prot"]
+                for key, output_key in (
+                    ("region", "awregion"),
+                    ("cache", "awcache"),
+                    ("prot", "awprot"),
+                    ("qos", "awqos"),
+                    ("user", "awuser"),
+                ):
+                    if request.get(key) is not None:
+                        tx[output_key] = request[key]
+                write_users = [beat.get("user") for beat in beats]
+                if any(value is not None for value in write_users):
+                    tx["write_user"] = write_users
+                if sample.get("BUSER") is not None:
+                    tx["buser"] = sample["BUSER"]
                 transactions.append(tx)
 
         if r_hs:
@@ -792,6 +896,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "response": label,
                     "response_code": code,
                     "last": bool(sample.get("RLAST", False)),
+                    "user": sample.get("RUSER"),
                 }
                 request["beats"].append(beat)
                 observed = len(request["beats"])
