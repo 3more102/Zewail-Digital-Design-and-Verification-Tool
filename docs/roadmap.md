@@ -149,12 +149,12 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 
 ## v0.8 — Intelligent Debug
 
-- Log/waveform/assertion correlation.
-- Failure clustering.
-- Root-cause candidate ranking from evidence.
-- Suggested next debug probes.
-- Coverage-hole test suggestions.
-- Generated assertions/tests kept reviewable and opt-in.
+- [x] Log/waveform/assertion correlation.
+- [x] Failure clustering.
+- [x] Evidence-ranked root-cause candidates from observed failing assertions and exact waveform signal hints; support rank is not a causality claim.
+- [x] Suggested next waveform probes from directly observed signal hints.
+- [ ] Coverage-hole test suggestions.
+- [ ] Generated assertions/tests kept reviewable and opt-in.
 
 ## Long-Term Direction
 
