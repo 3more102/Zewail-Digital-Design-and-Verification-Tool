@@ -315,13 +315,13 @@ def test_doctor_can_check_vcs_backend(monkeypatch, capsys):
     assert "[PASS] VCS test" in output
 
 
-def test_vcs_version_uses_documented_id_option(monkeypatch):
+def test_vcs_version_prefers_documented_lowercase_id_option(monkeypatch):
     backend = VcsBackend()
     monkeypatch.setattr(backend, "_tool", lambda: "vcs")
-    captured: dict[str, object] = {}
+    commands: list[list[str]] = []
 
     def fake_run(command, **kwargs):
-        captured["command"] = list(command)
+        commands.append(list(command))
         return SimpleNamespace(
             returncode=0,
             stdout="Compiler version = VCS test\n",
@@ -333,4 +333,31 @@ def test_vcs_version_uses_documented_id_option(monkeypatch):
     version = backend.version()
 
     assert version == "Compiler version = VCS test"
-    assert captured["command"] == ["vcs", "-id"]
+    assert commands == [["vcs", "-id"]]
+
+
+def test_vcs_version_falls_back_to_legacy_uppercase_id_option(monkeypatch):
+    backend = VcsBackend()
+    monkeypatch.setattr(backend, "_tool", lambda: "vcs")
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(list(command))
+        if command[-1] == "-id":
+            return SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="unknown option -id\n",
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Compiler version = VCS legacy test\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("zddv.simulator.vcs.subprocess.run", fake_run)
+
+    version = backend.version()
+
+    assert version == "Compiler version = VCS legacy test"
+    assert commands == [["vcs", "-id"], ["vcs", "-ID"]]

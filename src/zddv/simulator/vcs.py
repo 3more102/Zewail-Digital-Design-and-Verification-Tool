@@ -33,16 +33,26 @@ class VcsBackend(SimulatorBackend):
         return tool
 
     def version(self) -> str:
-        result = subprocess.run(
-            [self._tool(), "-id"],
-            check=False,
-            text=True,
-            capture_output=True,
+        tool = self._tool()
+        diagnostics: list[str] = []
+        for flag in ("-id", "-ID"):
+            result = subprocess.run(
+                [tool, flag],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            detail = result.stdout.strip() or result.stderr.strip()
+            if result.returncode == 0 and detail:
+                return detail
+            if detail:
+                diagnostics.append(detail)
+
+        raise RuntimeError(
+            diagnostics[-1]
+            if diagnostics
+            else "Unable to query Synopsys VCS version."
         )
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip()
-            raise RuntimeError(detail or "Unable to query Synopsys VCS version.")
-        return result.stdout.strip() or result.stderr.strip()
 
     def _build_dir(self, project: ProjectConfig) -> Path:
         return (project.root / project.build_dir).resolve()
