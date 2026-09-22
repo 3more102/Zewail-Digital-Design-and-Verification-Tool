@@ -357,7 +357,30 @@ jobs:
             echo "verification-proposals emitted code without explicit opt-in"
             exit 1
           fi
-          zddv --project examples/counter verification-proposals --limit 1 --emit-dir .zddv/generated/review
+
+          cat > examples/counter/.zddv/coverage/ci-test-suggestions.json <<'JSON'
+          {
+            "source_total_holes": 1,
+            "source_reported_holes": 1,
+            "suggestion_count": 1,
+            "suggestions": [
+              {
+                "rank": 1,
+                "kind": "coverage_test_intent",
+                "coverage_type": "fsm",
+                "hole_name": "ci.review.gate",
+                "intent": "Review an explicit CI-only coverage objective.",
+                "evidence": {
+                  "fsm_id": "ci_fsm",
+                  "transition": "IDLE -> BUSY"
+                },
+                "review_required": true,
+                "auto_execute": false
+              }
+            ]
+          }
+          JSON
+          zddv --project examples/counter verification-proposals --input .zddv/coverage/ci-test-suggestions.json --limit 1 --emit-dir .zddv/generated/review
           test "$(find examples/counter/.zddv/generated/review -type f -name '*.sv.disabled' | wc -l)" -eq 2
 
       - name: Generate HTML dashboard
