@@ -91,6 +91,33 @@ _QUESTA_FEC_ROW = re.compile(
     r"(?:\s+(?P<detail>.*?))?\s*$",
     re.IGNORECASE,
 )
+_QUESTA_FSM_SCOPE = re.compile(
+    r"^\s*FSM\s+Coverage\s+for\s+instance\s+(?P<scope>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_ID = re.compile(
+    r"^\s*FSM_ID(?:\s*\[(?P<index>\d+)\])?\s*(?::\s*(?P<name>.+?))?\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_CURRENT_STATE = re.compile(
+    r"^\s*Current\s+State\s+Object\s*:\s*(?P<name>.+?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_STATE_MAP_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<state>\S+)\s+(?P<value>\S+)\s*$"
+)
+_QUESTA_FSM_COVERED_STATE_ROW = re.compile(
+    r"^\s*(?P<state>\S+)\s+(?P<hits>\d[\d,]*)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_STATE_ROW = re.compile(r"^\s*(?P<state>\S+)\s*$")
+_QUESTA_FSM_COVERED_TRANSITION_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<id>\d+)\s+"
+    r"(?P<hits>\d[\d,]*)\s+(?P<transition>.+?->.+?)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_TRANSITION_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<id>\d+)\s+"
+    r"(?P<transition>.+?->.+?)\s*$"
+)
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -197,6 +224,11 @@ def build_coverage_hole_report(
                         "fec_context",
                         "fec_target",
                         "evidence",
+                        "fsm_id",
+                        "fsm_kind",
+                        "state",
+                        "transition",
+                        "trans_id",
                     )
                     if key in point and point[key] is not None
                 },
@@ -474,6 +506,163 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     return points
 
 
+def parse_questa_fsm_coverage_report(text: str) -> list[dict]:
+    """Normalize explicitly labelled Questa FSM state/transition detail tables.
+
+    Only rows inside the documented State Value MapInfo, Covered States,
+    Uncovered States, Covered Transitions, and Uncovered Transitions sections
+    are accepted. Summary percentages and unlabeled numeric rows remain raw
+    simulator evidence and are not reinterpreted here.
+    """
+    points: list[dict] = []
+    scope = ""
+    fsm_id = ""
+    fsm_index: int | None = None
+    current_state_object = ""
+    section = ""
+    state_lines: dict[str, int] = {}
+
+    def identity() -> str:
+        if fsm_id:
+            return fsm_id
+        if current_state_object:
+            return current_state_object
+        if fsm_index is not None:
+            return f"index-{fsm_index}"
+        return "fsm"
+
+    def reset_fsm() -> None:
+        nonlocal fsm_id, fsm_index, current_state_object, section, state_lines
+        fsm_id = ""
+        fsm_index = None
+        current_state_object = ""
+        section = ""
+        state_lines = {}
+
+    for raw_line in text.splitlines():
+        scope_match = _QUESTA_FSM_SCOPE.match(raw_line)
+        if scope_match is not None:
+            scope = scope_match.group("scope").strip()
+            reset_fsm()
+            continue
+
+        if not scope:
+            continue
+
+        fsm_match = _QUESTA_FSM_ID.match(raw_line)
+        if fsm_match is not None:
+            raw_index = fsm_match.group("index")
+            fsm_index = int(raw_index) if raw_index is not None else None
+            fsm_id = (fsm_match.group("name") or "").strip()
+            current_state_object = ""
+            section = ""
+            state_lines = {}
+            continue
+
+        state_object_match = _QUESTA_FSM_CURRENT_STATE.match(raw_line)
+        if state_object_match is not None:
+            current_state_object = state_object_match.group("name").strip()
+            continue
+
+        normalized = " ".join(raw_line.strip().lower().split())
+        if normalized == "state value mapinfo :":
+            section = "state-map"
+            continue
+        if normalized == "covered states :":
+            section = "covered-states"
+            continue
+        if normalized == "uncovered states :":
+            section = "uncovered-states"
+            continue
+        if normalized == "covered transitions :":
+            section = "covered-transitions"
+            continue
+        if normalized == "uncovered transitions :":
+            section = "uncovered-transitions"
+            continue
+        if normalized.endswith("summary :") or normalized == "summary :":
+            section = ""
+            continue
+
+        if (
+            not normalized
+            or set(normalized) <= {"-", "=", " "}
+            or normalized.startswith("line ")
+            or normalized.startswith("state ")
+        ):
+            continue
+
+        if section == "state-map":
+            row = _QUESTA_FSM_STATE_MAP_ROW.match(raw_line)
+            if row is not None:
+                state_lines[row.group("state")] = int(row.group("line"))
+            continue
+
+        if section in {"covered-states", "uncovered-states"}:
+            covered = section == "covered-states"
+            row = (
+                _QUESTA_FSM_COVERED_STATE_ROW.match(raw_line)
+                if covered
+                else _QUESTA_FSM_UNCOVERED_STATE_ROW.match(raw_line)
+            )
+            if row is None:
+                continue
+            state = row.group("state")
+            hits = int(row.group("hits").replace(",", "")) if covered else 0
+            point = {
+                "name": f"{scope}|{identity()}|state:{state}",
+                "count": hits,
+                "hit": hits > 0,
+                "type": "fsm",
+                "scope": scope,
+                "fsm_id": identity(),
+                "fsm_kind": "state",
+                "state": state,
+                "detail": state,
+            }
+            if fsm_index is not None:
+                point["fsm_index"] = fsm_index
+            if current_state_object:
+                point["current_state_object"] = current_state_object
+            if state in state_lines:
+                point["line"] = state_lines[state]
+            points.append(point)
+            continue
+
+        if section in {"covered-transitions", "uncovered-transitions"}:
+            covered = section == "covered-transitions"
+            row = (
+                _QUESTA_FSM_COVERED_TRANSITION_ROW.match(raw_line)
+                if covered
+                else _QUESTA_FSM_UNCOVERED_TRANSITION_ROW.match(raw_line)
+            )
+            if row is None:
+                continue
+            transition = " ".join(row.group("transition").split())
+            hits = int(row.group("hits").replace(",", "")) if covered else 0
+            trans_id = int(row.group("id"))
+            point = {
+                "name": f"{scope}|{identity()}|transition:{trans_id} {transition}",
+                "count": hits,
+                "hit": hits > 0,
+                "type": "fsm",
+                "scope": scope,
+                "fsm_id": identity(),
+                "fsm_kind": "transition",
+                "transition": transition,
+                "trans_id": trans_id,
+                "line": int(row.group("line")),
+                "detail": transition,
+            }
+            if fsm_index is not None:
+                point["fsm_index"] = fsm_index
+            if current_state_object:
+                point["current_state_object"] = current_state_object
+            points.append(point)
+
+    return points
+
+
 def _xml_local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -724,6 +913,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
     code_report_path = out_dir / "code-details.txt"
+    fsm_report_path = out_dir / "fsm-details.txt"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
@@ -780,6 +970,22 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         if code_report.returncode == 0 and code_points
         else "empty"
         if code_report.returncode == 0
+        else "tool-error"
+    )
+
+    fsm_cmd = [tool, "report", "-details", "-code", "f", str(merged_path)]
+    fsm_report = _run(fsm_cmd, project.root)
+    fsm_report_path.write_text(fsm_report.stdout or "", encoding="utf-8")
+    fsm_points = (
+        parse_questa_fsm_coverage_report(fsm_report.stdout or "")
+        if fsm_report.returncode == 0
+        else []
+    )
+    fsm_detail_status = (
+        "ok"
+        if fsm_report.returncode == 0 and fsm_points
+        else "empty"
+        if fsm_report.returncode == 0
         else "tool-error"
     )
 
@@ -860,6 +1066,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "fsm_report": str(fsm_report_path),
+        "fsm_detail_status": fsm_detail_status,
+        "fsm_detail_returncode": int(fsm_report.returncode),
+        "fsm_detail_points": len(fsm_points),
+        "fsm_detail_holes": sum(not point["hit"] for point in fsm_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -888,6 +1099,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "fsm_report": str(fsm_report_path),
+        "fsm_detail_status": fsm_detail_status,
+        "fsm_detail_returncode": int(fsm_report.returncode),
+        "fsm_detail_points": len(fsm_points),
+        "fsm_detail_holes": sum(not point["hit"] for point in fsm_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
