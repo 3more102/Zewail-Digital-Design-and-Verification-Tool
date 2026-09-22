@@ -145,3 +145,27 @@ def test_write_coverage_suggestions_and_cli(tmp_path: Path, capsys):
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["summary"]["suggestions"] == 2
     assert report["semantics"].startswith("Suggestions are deterministic test intents")
+
+
+def test_block_hole_uses_source_anchor():
+    result = build_coverage_test_suggestions(
+        {
+            "total_holes": 1,
+            "reported_holes": 1,
+            "holes": [
+                {
+                    "type": "block",
+                    "name": "block-7",
+                    "count": 0,
+                    "source_file": "rtl/datapath.sv",
+                    "origin_line": 77,
+                    "source_code": "acc <= acc + data;",
+                }
+            ],
+        }
+    )
+
+    suggestion = result["suggestions"][0]
+    assert suggestion["action"] == "reach_source_location"
+    assert suggestion["specificity"] == "SOURCE_LOCATION"
+    assert "rtl/datapath.sv:77" in suggestion["test_intent"]
