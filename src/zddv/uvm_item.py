@@ -10,7 +10,7 @@ from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 
-_ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
+_ITEM_EVENTS = ("ARB_REQUEST", "GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
 _ITEM_LOG_MARKER = "ZDDV_UVM_ITEM"
 
@@ -190,10 +190,164 @@ def _reconstruct_observed_arbitration(
     }
 
 
+def _reconstruct_request_arbitration(
+    events: list[dict[str, Any]],
+    *,
+    max_bypass: int | None = None,
+) -> dict[str, Any]:
+    records: dict[str, dict[str, Any]] = {}
+    pending: dict[str, dict[str, Any]] = {}
+    seen_requests: set[str] = set()
+    seen_grants: set[str] = set()
+    matched_grants = 0
+    grants_without_request_evidence = 0
+    contended_grants = 0
+    max_pending = 0
+    max_pending_by_sequencer: dict[str, int] = {}
+
+    def sequencer_key(value: str | None) -> str:
+        return value if value is not None else "<unknown>"
+
+    for event in events:
+        item_id = event["item_id"]
+        event_type = event["event"]
+        sequencer = event.get("sequencer")
+        seq_key = sequencer_key(sequencer)
+
+        if event_type == "ARB_REQUEST":
+            if item_id in seen_requests:
+                continue
+            seen_requests.add(item_id)
+            record = {
+                "item_id": item_id,
+                "sequence_id": event.get("sequence_id"),
+                "sequence": event.get("sequence"),
+                "sequencer": sequencer,
+                "item": event.get("item"),
+                "transaction_id": event.get("transaction_id"),
+                "request_event_index": int(event["event_index"]),
+                "grant_event_index": None,
+                "bypasses": 0,
+                "granted": False,
+                "pending": True,
+            }
+            records[item_id] = record
+            pending[item_id] = record
+            seq_pending = sum(
+                sequencer_key(candidate.get("sequencer")) == seq_key
+                for candidate in pending.values()
+            )
+            max_pending = max(max_pending, seq_pending)
+            max_pending_by_sequencer[seq_key] = max(
+                max_pending_by_sequencer.get(seq_key, 0),
+                seq_pending,
+            )
+            continue
+
+        if event_type != "GRANT" or item_id in seen_grants:
+            continue
+        seen_grants.add(item_id)
+        record = pending.get(item_id)
+        if record is None:
+            grants_without_request_evidence += 1
+            continue
+
+        contenders = [
+            candidate
+            for candidate in pending.values()
+            if sequencer_key(candidate.get("sequencer")) == seq_key
+        ]
+        if len(contenders) > 1:
+            contended_grants += 1
+        for candidate in contenders:
+            if candidate["item_id"] != item_id:
+                candidate["bypasses"] += 1
+
+        record["granted"] = True
+        record["pending"] = False
+        record["grant_event_index"] = int(event["event_index"])
+        matched_grants += 1
+        pending.pop(item_id, None)
+
+    sequence_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    grants_by_sequencer: dict[str, int] = {}
+    for record in records.values():
+        seq_key = sequencer_key(record.get("sequencer"))
+        sequence_key = (
+            record.get("sequence_id")
+            or record.get("sequence")
+            or "<unknown-sequence>"
+        )
+        key = (seq_key, sequence_key)
+        row = sequence_rows.get(key)
+        if row is None:
+            row = {
+                "sequencer": record.get("sequencer"),
+                "sequence_id": record.get("sequence_id"),
+                "sequence": record.get("sequence"),
+                "requests": 0,
+                "grants": 0,
+                "pending": 0,
+                "bypasses": 0,
+                "max_bypass": 0,
+                "grant_share": 0.0,
+            }
+            sequence_rows[key] = row
+        row["requests"] += 1
+        row["grants"] += int(record["granted"])
+        row["pending"] += int(record["pending"])
+        row["bypasses"] += int(record["bypasses"])
+        row["max_bypass"] = max(row["max_bypass"], int(record["bypasses"]))
+        if record["granted"]:
+            grants_by_sequencer[seq_key] = grants_by_sequencer.get(seq_key, 0) + 1
+
+    normalized_sequences = sorted(
+        sequence_rows.values(),
+        key=lambda row: (
+            row["sequencer"] or "",
+            row["sequence_id"] or row["sequence"] or "",
+        ),
+    )
+    for row in normalized_sequences:
+        total_grants = grants_by_sequencer.get(
+            sequencer_key(row.get("sequencer")),
+            0,
+        )
+        row["grant_share"] = (
+            100.0 * row["grants"] / total_grants if total_grants else 0.0
+        )
+
+    return {
+        "available": bool(records),
+        "policy": {"max_bypass": max_bypass},
+        "summary": {
+            "requests": len(records),
+            "matched_grants": matched_grants,
+            "grants_without_request_evidence": grants_without_request_evidence,
+            "contended_grants": contended_grants,
+            "pending_requests": len(pending),
+            "max_pending": max_pending,
+            "max_bypass": max(
+                (int(record["bypasses"]) for record in records.values()),
+                default=0,
+            ),
+        },
+        "max_pending_by_sequencer": dict(sorted(max_pending_by_sequencer.items())),
+        "requests": list(records.values()),
+        "sequences": normalized_sequences,
+        "limitations": [
+            "Request-side contention is reconstructed only from explicit ARB_REQUEST events.",
+            "Bypass counts measure competing grants observed while a request remains pending on the same sequencer.",
+            "The optional max_bypass value is a user-supplied verification policy, not a universal UVM fairness rule.",
+        ],
+    }
+
+
 def parse_uvm_item_data(
     payload: Any,
     *,
     source: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("UVM item trace must be a JSON object")
@@ -201,6 +355,14 @@ def parse_uvm_item_data(
     raw_events = payload.get("events")
     if not isinstance(raw_events, list):
         raise ValueError("UVM item trace must contain an events array")
+
+    if max_bypass is not None:
+        if (
+            isinstance(max_bypass, bool)
+            or not isinstance(max_bypass, int)
+            or max_bypass < 0
+        ):
+            raise ValueError("max_bypass must be a non-negative integer or null")
 
     selected_source = source or payload.get("source") or "uvm-item-json"
     if not isinstance(selected_source, str) or not selected_source.strip():
@@ -240,7 +402,7 @@ def parse_uvm_item_data(
                 "transaction_id": event.get("transaction_id"),
                 "events": [],
                 "event_indices": [],
-                "partial": event["event"] != "GRANT",
+                "partial": event["event"] not in {"ARB_REQUEST", "GRANT"},
             }
             items[item_id] = instance
         else:
@@ -266,7 +428,15 @@ def parse_uvm_item_data(
                 f"Item {item_id} observed {event_type} more than once",
             )
 
-        if event_type == "GRANT":
+        if event_type == "ARB_REQUEST":
+            if any(name in observed for name in ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")):
+                add_violation(
+                    "LATE_ARB_REQUEST",
+                    event,
+                    f"Item {item_id} observed ARB_REQUEST after later handshake evidence",
+                )
+
+        elif event_type == "GRANT":
             if any(name in observed for name in ("REQUEST", "ITEM_DONE", "RESPONSE")):
                 add_violation(
                     "LATE_GRANT",
@@ -288,7 +458,14 @@ def parse_uvm_item_data(
                     f"Item {item_id} observed REQUEST after RESPONSE",
                 )
             if "GRANT" not in observed:
-                instance["partial"] = True
+                if "ARB_REQUEST" in observed:
+                    add_violation(
+                        "REQUEST_BEFORE_GRANT",
+                        event,
+                        f"Item {item_id} observed REQUEST before its arbitration grant",
+                    )
+                else:
+                    instance["partial"] = True
 
         elif event_type == "ITEM_DONE":
             if "REQUEST" not in observed:
@@ -331,6 +508,37 @@ def parse_uvm_item_data(
             }
         )
 
+    arbitration = _reconstruct_observed_arbitration(events)
+    request_evidence = _reconstruct_request_arbitration(
+        events,
+        max_bypass=max_bypass,
+    )
+    arbitration["request_evidence"] = request_evidence
+
+    if max_bypass is not None:
+        events_by_index = {
+            int(event["event_index"]): event
+            for event in events
+        }
+        for request in request_evidence["requests"]:
+            if int(request["bypasses"]) <= max_bypass:
+                continue
+            anchor_index = (
+                request["grant_event_index"]
+                if request["grant_event_index"] is not None
+                else request["request_event_index"]
+            )
+            anchor = events_by_index[int(anchor_index)]
+            add_violation(
+                "ARBITRATION_BYPASS_LIMIT",
+                anchor,
+                (
+                    f"Item {request['item_id']} was bypassed by "
+                    f"{request['bypasses']} competing grant(s), exceeding "
+                    f"the configured maximum of {max_bypass}"
+                ),
+            )
+
     return {
         "analysis": "uvm_item_handshake",
         "source": selected_source,
@@ -349,14 +557,17 @@ def parse_uvm_item_data(
         "event_types": list(_ITEM_EVENTS),
         "events": events,
         "items": normalized_items,
-        "arbitration": _reconstruct_observed_arbitration(events),
+        "arbitration": arbitration,
         "violations": violations,
         "limitations": [
             "Input is explicit normalized handshake evidence; vendor simulator logs are not guessed or reinterpreted.",
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
-            "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
-            "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
+            "Observed GRANT order is reconstructed per sequencer without inferring arbitration mode, priority, lock state, or fairness from grant order alone.",
+            "Waiting/contended request evidence is reconstructed only when explicit ARB_REQUEST events are present.",
+            "The optional max_bypass policy is user supplied and is not a universal UVM fairness rule.",
+            "Request/grant delta-cycle timing and automatic non-marker instrumentation remain outside this layer.",
+            "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows.",
         ],
     }
 
@@ -365,16 +576,18 @@ def parse_uvm_item_file(
     path: str | Path,
     *,
     source: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     input_path = Path(path)
     payload = json.loads(input_path.read_text(encoding="utf-8"))
-    return parse_uvm_item_data(payload, source=source)
+    return parse_uvm_item_data(payload, source=source, max_bypass=max_bypass)
 
 
 def parse_uvm_item_log_text(
     text: str,
     *,
     source: str = "uvm-item-log-marker",
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     """Parse explicit ZDDV_UVM_ITEM JSON markers from arbitrary simulator log text."""
     events: list[dict[str, Any]] = []
@@ -419,7 +632,11 @@ def parse_uvm_item_log_text(
     if not events:
         raise ValueError(f"No {_ITEM_LOG_MARKER} markers found in log")
 
-    report = parse_uvm_item_data({"source": source, "events": events}, source=source)
+    report = parse_uvm_item_data(
+        {"source": source, "events": events},
+        source=source,
+        max_bypass=max_bypass,
+    )
     report["input_mode"] = "explicit-log-marker"
     report["marker"] = _ITEM_LOG_MARKER
     report["marker_lines"] = marker_lines
@@ -437,11 +654,13 @@ def parse_uvm_item_log(
     path: str | Path,
     *,
     source: str = "uvm-item-log-marker",
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     input_path = Path(path)
     return parse_uvm_item_log_text(
         input_path.read_text(encoding="utf-8", errors="replace"),
         source=source,
+        max_bypass=max_bypass,
     )
 
 
@@ -514,6 +733,7 @@ def analyze_uvm_item_file(
     source: str | None = None,
     output: str | Path = ".zddv/uvm/items/latest.json",
     run_id: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     input_path = Path(path)
     if not input_path.is_absolute():
@@ -523,7 +743,11 @@ def analyze_uvm_item_file(
         raise FileNotFoundError(input_path)
 
     run_record = _resolve_item_run(project, run_id)
-    report = parse_uvm_item_file(input_path, source=source)
+    report = parse_uvm_item_file(
+        input_path,
+        source=source,
+        max_bypass=max_bypass,
+    )
     return _persist_uvm_item_analysis(
         project,
         report,
@@ -540,6 +764,7 @@ def analyze_uvm_item_log(
     source: str | None = None,
     output: str | Path = ".zddv/uvm/items/latest.json",
     run_id: str | None = None,
+    max_bypass: int | None = None,
 ) -> dict[str, Any]:
     """Analyze explicit item markers from a log and persist the shared item report."""
     run_record = _resolve_item_run(project, run_id)
@@ -560,7 +785,11 @@ def analyze_uvm_item_log(
         if run_record is not None
         else "uvm-item-log-marker"
     )
-    report = parse_uvm_item_log(input_path, source=selected_source)
+    report = parse_uvm_item_log(
+        input_path,
+        source=selected_source,
+        max_bypass=max_bypass,
+    )
     return _persist_uvm_item_analysis(
         project,
         report,
