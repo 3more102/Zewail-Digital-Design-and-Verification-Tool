@@ -121,6 +121,8 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
+zddv --project my_project uvm-analyze simulation.log --source questa
+zddv --project my_project uvm-history --limit 20
 zddv --project my_project apb-analyze apb_trace.json
 zddv --project my_project apb-waveform --input apb.vcd
 zddv --project my_project apb-waveform --run <run-id> --scope tb.apb
@@ -311,7 +313,8 @@ separately from Verilator's annotation threshold.
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
-- [ ] UVM-aware result model
+- [x] Simulator-independent UVM report/test metadata ingestion
+- [ ] Sequence/phase/objection-aware UVM result model
 
 ### APB Trace Analysis
 
