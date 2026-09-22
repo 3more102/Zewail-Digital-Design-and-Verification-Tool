@@ -25,12 +25,14 @@ candidate:<rank>, probe:<rank>, and limitation:<index>.
 ## Workflow
 
 1. Build deterministic evidence with ai-rca-context.
-2. Invoke a provider explicitly with ai-provider-run.
-3. Run ai-response-ingest with the raw response and the exact context file.
-4. Review the validated payload and record approval with ai-response-review,
+2. Write and review the exact local request with ai-provider-request.
+3. Invoke a provider explicitly with ai-provider-run, supplying both
+   --allow-external and the reviewed request SHA-256.
+4. Run ai-response-ingest with the raw response and the exact context file.
+5. Review the validated payload and record approval with ai-response-review,
    passing the exact validated payload SHA-256 and --approve-reviewed.
-5. Export one approved proposal with ai-proposal-export.
-6. Use generated-stage separately on the exported proposal.
+6. Export one approved proposal with ai-proposal-export.
+7. Use generated-stage separately on the exported proposal.
 
 Validation does not make a hypothesis true. Approval records review of the exact
 validated payload; it still does not stage, apply, compile, simulate, or execute
