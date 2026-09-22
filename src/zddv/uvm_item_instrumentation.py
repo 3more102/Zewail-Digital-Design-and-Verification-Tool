@@ -84,6 +84,20 @@ package zddv_uvm_item_trace_pkg;
     end
   endtask
 
+  task automatic zddv_uvm_item_arb_request(
+    input string item_id,
+    input string sequence_id = "",
+    input string sequence_name = "",
+    input string sequencer_name = "",
+    input string item_name = "",
+    input longint transaction_id = -1
+  );
+    zddv_uvm_item_emit(
+      "ARB_REQUEST", item_id, sequence_id, sequence_name,
+      sequencer_name, item_name, transaction_id
+    );
+  endtask
+
   task automatic zddv_uvm_item_grant(
     input string item_id,
     input string sequence_id = "",
