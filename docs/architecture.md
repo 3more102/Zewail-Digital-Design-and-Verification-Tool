@@ -191,6 +191,11 @@ checks as the rest of their channel and are preserved in reconstructed transacti
 evidence. Their width and meaning remain implementation-defined, so ZDDV does not
 invent semantic legality rules for their bit values.
 
+When `data_width_bits` is available, the normalized core bounds AxSIZE by the
+interface width and validates WSTRB against the legal byte lanes for every accepted
+write beat. VCD ingestion derives this metadata from WDATA/RDATA/WSTRB widths;
+generic JSON traces can provide it explicitly.
+
 These checks intentionally stop at properties observable from the normalized
 interface trace. ACE coherency, AXI5 additions, system-level QoS policy,
 topology-dependent cache reachability, and exhaustive system-ordering semantics

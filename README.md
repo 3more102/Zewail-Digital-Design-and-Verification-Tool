@@ -395,6 +395,11 @@ observed matching exclusive read before its write starts, matching observable
 read/write attributes, and OKAY/EXOKAY response consistency. An unmatched
 exclusive write returning OKAY remains a legal failed-exclusive outcome.
 
+When a normalized trace provides `data_width_bits`, ZDDV also rejects AxSIZE
+transfers wider than the interface and checks each WSTRB value against the legal
+byte lanes implied by that write beat's address and transfer size. The VCD
+extractor derives the data width automatically from WDATA/RDATA/WSTRB declarations.
+
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage. Topology-dependent cache reachability and optional coherency/domain/
 snoop/MMU attributes remain outside the current model.

@@ -186,6 +186,14 @@ jobs:
           assert payload["summary"]["violations"] == 0
           PY
 
+      - name: Analyze AXI4 write strobe lanes
+        run: |
+          zddv --project examples/counter axi4-analyze ../axi4_wstrb_trace.json --output .zddv/protocols/axi4/wstrb.json
+          test -s examples/counter/.zddv/protocols/axi4/wstrb.json
+          grep -q '"data_width_bits": 32' examples/counter/.zddv/protocols/axi4/wstrb.json
+          grep -q '"write_strobe_allowed_masks"' examples/counter/.zddv/protocols/axi4/wstrb.json
+          grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/wstrb.json
+
       - name: Analyze AXI4 exclusive trace
         run: |
           zddv --project examples/counter axi4-analyze ../axi4_exclusive_trace.json --output .zddv/protocols/axi4/exclusive.json
