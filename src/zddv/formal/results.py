@@ -14,6 +14,7 @@ from zddv.formal.base import (
     FormalCheckResult,
     FormalPropertyResult,
 )
+from zddv.formal.vcd_trace import ingest_formal_vcd_trace
 from zddv.storage import record_formal_result_snapshot
 
 
@@ -257,6 +258,107 @@ def formal_design_fingerprint(project: ProjectConfig) -> str:
     return digest.hexdigest()
 
 
+def normalize_result_vcd_traces(
+    project: ProjectConfig,
+    result: FormalCheckResult,
+) -> dict[str, Any]:
+    """Normalize backend-reported VCD counterexamples/witnesses without blocking persistence."""
+
+    run_dir = result.run_dir
+    if not run_dir.is_absolute():
+        run_dir = project.root / run_dir
+    run_dir = run_dir.resolve()
+
+    traces: list[dict[str, Any]] = []
+    for index, item in enumerate(result.properties):
+        if item.trace_path is None:
+            continue
+
+        role = _trace_role(item)
+        trace_path = Path(item.trace_path)
+        resolved_path = (
+            trace_path.resolve()
+            if trace_path.is_absolute()
+            else (run_dir / trace_path).resolve()
+        )
+        record: dict[str, Any] = {
+            "property": item.name,
+            "property_kind": item.kind,
+            "property_status": item.status,
+            "role": role,
+            "path": str(item.trace_path),
+            "resolved_path": str(resolved_path),
+            "status": "SKIPPED",
+            "reason": None,
+            "normalized_path": None,
+            "input_sha256": None,
+        }
+
+        if role not in {"COUNTEREXAMPLE", "WITNESS"}:
+            record["reason"] = (
+                "Only failed assertions and covered goals have counterexample/witness "
+                "semantics suitable for automatic normalization."
+            )
+            traces.append(record)
+            continue
+
+        if resolved_path.suffix.lower() != ".vcd":
+            record["reason"] = (
+                "Automatic formal trace normalization currently supports VCD only."
+            )
+            traces.append(record)
+            continue
+
+        if not resolved_path.is_file():
+            record["status"] = "MISSING"
+            record["reason"] = "Backend-reported VCD trace file does not exist."
+            traces.append(record)
+            continue
+
+        destination = (
+            run_dir
+            / "normalized-traces"
+            / f"{index:04d}-{role.lower()}.json"
+        )
+        try:
+            normalized = ingest_formal_vcd_trace(
+                project,
+                resolved_path,
+                property_name=item.name,
+                property_kind=item.kind,
+                source=result.backend,
+                output=destination,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            record["status"] = "ERROR"
+            record["reason"] = f"{type(exc).__name__}: {exc}"
+        else:
+            record["status"] = "NORMALIZED"
+            record["normalized_path"] = normalized["normalized_path"]
+            record["input_sha256"] = normalized["input_sha256"]
+            record["summary"] = normalized["summary"]
+
+        traces.append(record)
+
+    statuses = Counter(item["status"] for item in traces)
+    return {
+        "analysis": "formal_trace_normalization",
+        "summary": {
+            "reported_traces": len(traces),
+            "normalized": statuses.get("NORMALIZED", 0),
+            "missing": statuses.get("MISSING", 0),
+            "errors": statuses.get("ERROR", 0),
+            "skipped": statuses.get("SKIPPED", 0),
+        },
+        "traces": traces,
+        "limitations": [
+            "Automatic normalization is limited to backend-reported VCD traces.",
+            "Missing, malformed, unsupported, or evidence-only traces do not block formal result persistence.",
+            "Timestamped waveform values are evidence and do not strengthen bounded or cover claims.",
+        ],
+    }
+
+
 def persist_formal_result(
     project: ProjectConfig,
     result: FormalCheckResult,
@@ -274,6 +376,7 @@ def persist_formal_result(
     record = formal_result_to_record(result)
     record["top"] = project.top
     record["design_fingerprint"] = formal_design_fingerprint(project)
+    record["trace_normalization"] = normalize_result_vcd_traces(project, result)
 
     report_path = Path(output)
     if not report_path.is_absolute():
