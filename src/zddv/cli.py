@@ -459,6 +459,13 @@ def cmd_coverage(args) -> int:
             "Zero-hit source detail: "
             f"{zero_detail.get('status', 'unknown')} {zero_detail.get('path', '-')}"
         )
+        multibit_expression = detailed.get("multibit_expression", {})
+        if multibit_expression:
+            print(
+                "Questa multibit expression detail: "
+                f"{multibit_expression.get('status', 'unknown')} "
+                f"{multibit_expression.get('path', '-')}"
+            )
     report = result["report"].strip()
     if report:
         print(report)
