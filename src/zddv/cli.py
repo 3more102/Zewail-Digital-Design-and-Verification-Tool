@@ -25,6 +25,7 @@ from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import FormalCheckRequest, SymbiYosysBackend
 from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.formal.results import analyze_formal_result_file, persist_formal_result
+from zddv.formal.sby_results import analyze_sby_log
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -433,6 +434,30 @@ def cmd_formal_counterexample(args) -> int:
     print(f"Input SHA-256: {result['input_sha256']}")
     print(f"Normalized trace: {result['normalized_path']}")
     return 0
+
+
+def cmd_formal_sby_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_sby_log(
+        project,
+        args.path,
+        mode=args.mode,
+        depth=args.depth,
+        output=args.output,
+    )
+    summary = result["summary"]
+    request = result["request"]
+    print(
+        f"FORMAL SBY {result['status']}: mode={request['mode']} "
+        f"scope={request['scope']} properties={summary['properties']}"
+    )
+    print(
+        f"counterexamples={summary['counterexamples']}  "
+        f"covered={summary['covered_goals']}"
+    )
+    print(f"Snapshot: {result['snapshot_id']}")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
 
 
 def cmd_formal_analyze(args) -> int:
@@ -2120,6 +2145,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalized formal trace JSON output path",
     )
     p_formal_counterexample.set_defaults(func=cmd_formal_counterexample)
+
+    p_formal_sby = sub.add_parser(
+        "formal-sby-analyze",
+        help="Import a completed native SymbiYosys logfile",
+    )
+    p_formal_sby.add_argument("path", help="SymbiYosys logfile path")
+    p_formal_sby.add_argument(
+        "--mode",
+        choices=("bmc", "prove", "cover"),
+        required=True,
+        help="Formal mode associated with the native SBY run",
+    )
+    p_formal_sby.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="Optional explicit bound/depth retained as evidence",
+    )
+    p_formal_sby.add_argument(
+        "--output",
+        default=".zddv/formal/sby/latest.json",
+        help="Normalized SBY evidence JSON report path",
+    )
+    p_formal_sby.set_defaults(func=cmd_formal_sby_analyze)
 
     p_formal = sub.add_parser(
         "formal-analyze",
