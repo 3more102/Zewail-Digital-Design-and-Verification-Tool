@@ -83,11 +83,17 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 
 ## v0.6 — UVM and Commercial Simulator Adapters
 
-- Questa adapter.
-- VCS adapter.
-- Xcelium adapter.
-- UVM test metadata.
-- Sequence/phase/objection-aware result ingestion where supported.
+Current status: the simulator-independent UVM report-log ingestion foundation is implemented.
+ZDDV extracts standard UVM report messages, test names, severity summaries, report IDs,
+components, source locations, and timestamps; persists normalized snapshots/messages in SQLite;
+and exposes `uvm-analyze` plus `uvm-history`. Commercial simulator execution adapters and
+phase/objection/sequence lifecycle reconstruction remain planned.
+
+- [ ] Questa execution adapter.
+- [ ] VCS execution adapter.
+- [ ] Xcelium execution adapter.
+- [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
+- [ ] Sequence/phase/objection-aware result ingestion where supported.
 
 ## v0.7 — Formal
 
