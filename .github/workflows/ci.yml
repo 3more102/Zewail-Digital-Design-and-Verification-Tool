@@ -349,12 +349,6 @@ jobs:
           zddv --project examples/counter coverage-suggest --show 10
           test -s examples/counter/.zddv/coverage/test-suggestions.json
 
-      - name: Review verification proposals
-        run: |
-          zddv --project examples/counter verification-proposals --show 5
-          test -s examples/counter/.zddv/debug/verification-proposals.json
-          test -z "$(find examples/counter/.zddv -name '*.sv.disabled' -print -quit)"
-
       - name: Build reviewable verification proposals
         run: |
           zddv --project examples/counter verification-proposals --limit 1 --show 1
