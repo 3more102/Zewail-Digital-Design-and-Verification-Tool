@@ -672,8 +672,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         for key in ("cache", "prot", "qos", "region"):
             if request.get(key) is not None:
                 tx[key] = request[key]
-        if request.get("prot") is not None:
-            tx["arprot"] = request["prot"]
+                tx[f"ar{key}"] = request[key]
         transactions.append(tx)
 
     for sample in samples:
@@ -807,8 +806,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 for key in ("cache", "prot", "qos", "region"):
                     if request.get(key) is not None:
                         tx[key] = request[key]
-                if request.get("prot") is not None:
-                    tx["awprot"] = request["prot"]
+                        tx[f"aw{key}"] = request[key]
                 transactions.append(tx)
 
         if r_hs:
