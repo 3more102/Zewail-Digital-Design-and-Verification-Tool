@@ -2557,6 +2557,26 @@ _IMC_TOGGLE_ROW = re.compile(
     r"(?P<signal>\S.*?)\s*$"
 )
 
+_IMC_FSM_INSTANCE_SECTION = re.compile(
+    r"^\s*==\s+(?P<scope>[^=\s]\S*)\s*$"
+)
+_IMC_FSM_DETAIL_HEADER = re.compile(
+    r"^\s*Fsm\s+Detail\s+Report\b",
+    re.IGNORECASE,
+)
+_IMC_FSM_STATE_REGISTER = re.compile(
+    r"^\s*State\s+register:\s*(?P<fsm>\S+)\s*$",
+    re.IGNORECASE,
+)
+_IMC_FSM_STATE_ROW = re.compile(
+    r"^\s*(?P<state>\w+)\s+(?P<encoding>[01]+)\s+"
+    r"(?P<count>\d[\d,]*)\s*$"
+)
+_IMC_FSM_TRANSITION_ROW = re.compile(
+    r"^\s*(?:(?P<from_state>\w+)\s+)?(?P<to_state>\w+)\s+"
+    r"(?P<count>\d[\d,]*)\s*$"
+)
+
 def _imc_grade(value: str) -> float | None:
     text = value.strip().lower()
     if text == "n/a":
@@ -2867,6 +2887,135 @@ def parse_xcelium_imc_toggle_coverage_points(text: str) -> list[dict]:
         points.append(point)
 
     return points
+
+def parse_xcelium_imc_fsm_coverage(text: str) -> list[dict]:
+    """Normalize verified native IMC FSM state and transition rows.
+
+    Only explicit rows inside an Fsm Detail Report with an explicit
+    State register are normalized. Reset-state and arc-coverage sections
+    remain evidence-only; no transition graph or reset semantics are inferred.
+    """
+
+    points: list[dict] = []
+    scope = ""
+    fsm_id = ""
+    in_fsm_report = False
+    mode: str | None = None
+    previous_transition_source = ""
+
+    for raw_line in text.splitlines():
+        section = _IMC_FSM_INSTANCE_SECTION.match(raw_line)
+        if section is not None:
+            scope = section.group("scope").strip()
+            fsm_id = ""
+            in_fsm_report = False
+            mode = None
+            previous_transition_source = ""
+            continue
+
+        if _IMC_FSM_DETAIL_HEADER.match(raw_line) is not None:
+            in_fsm_report = True
+            fsm_id = ""
+            mode = None
+            previous_transition_source = ""
+            continue
+
+        if not in_fsm_report or not scope:
+            continue
+
+        register = _IMC_FSM_STATE_REGISTER.match(raw_line)
+        if register is not None:
+            fsm_id = register.group("fsm").strip()
+            mode = None
+            previous_transition_source = ""
+            continue
+
+        stripped = raw_line.strip()
+        lowered = stripped.casefold()
+        if lowered.startswith("state coverage"):
+            mode = "state"
+            previous_transition_source = ""
+            continue
+        if lowered.startswith("transition coverage"):
+            mode = "transition"
+            previous_transition_source = ""
+            continue
+        if lowered.startswith(("reset states", "arc coverage")):
+            mode = None
+            previous_transition_source = ""
+            continue
+
+        # A state-register name is required. Omitting one would force ZDDV to
+        # invent an FSM identity, which violates evidence-preserving behavior.
+        if not fsm_id or mode is None:
+            continue
+
+        if mode == "state":
+            row = _IMC_FSM_STATE_ROW.match(raw_line)
+            if row is None:
+                continue
+            state = row.group("state")
+            encoding = row.group("encoding")
+            count = int(row.group("count").replace(",", ""))
+            points.append(
+                {
+                    "name": f"{scope}|{fsm_id}:state:{state}",
+                    "count": count,
+                    "hit": count > 0,
+                    "type": "fsm",
+                    "scope": scope,
+                    "fsm_id": fsm_id,
+                    "fsm_kind": "state",
+                    "state": state,
+                    "evidence": (
+                        f"state={state} encoding={encoding} count={count}"
+                    ),
+                    "detail": f"encoding={encoding}",
+                }
+            )
+            continue
+
+        row = _IMC_FSM_TRANSITION_ROW.match(raw_line)
+        if row is None:
+            continue
+        to_state = row.group("to_state")
+        if to_state == "N-State":
+            continue
+        explicit_source = row.group("from_state")
+        if explicit_source:
+            previous_transition_source = explicit_source
+        if not previous_transition_source:
+            continue
+        count = int(row.group("count").replace(",", ""))
+        transition = f"{previous_transition_source} -> {to_state}"
+        points.append(
+            {
+                "name": f"{scope}|{fsm_id}:transition:{transition}",
+                "count": count,
+                "hit": count > 0,
+                "type": "fsm",
+                "scope": scope,
+                "fsm_id": fsm_id,
+                "fsm_kind": "transition",
+                "transition": transition,
+                "evidence": (
+                    f"from={previous_transition_source} "
+                    f"to={to_state} count={count}"
+                ),
+                "detail": "transition",
+            }
+        )
+
+    points.sort(
+        key=lambda point: (
+            str(point.get("scope") or ""),
+            str(point.get("fsm_id") or ""),
+            str(point.get("fsm_kind") or ""),
+            str(point.get("name") or ""),
+        )
+    )
+    return points
+
 
 def parse_xcelium_imc_summary(text: str) -> dict:
     """Normalize the cumulative top-level row from an IMC summary report.
