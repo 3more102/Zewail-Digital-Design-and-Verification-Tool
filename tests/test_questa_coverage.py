@@ -6,10 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
+    parse_questa_code_coverage_holes,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -50,6 +51,27 @@ TYPE /top/dut/APB_cg                    66.67%        100       -    Uncovered
     Cross APB_cg::write_x_data         100.00%        100       -    Covered
         bin legal_pair                    2          2         Covered
         illegal bin bad_pair              1          1         Covered
+"""
+
+
+QUESTA_ZERO_DETAILS = """Coverage Report by file with zero-hit details
+
+=================================================================================
+=== File: top.v
+=================================================================================
+Statement Coverage for file top.v --
+
+    9               1                    ***0***
+
+Branch Coverage for file top.v --
+
+    12                                         3  Count coming in to IF
+    12              1                    ***0***  if (i == 16)
+    20              1                    ***0***  else
+
+Condition Coverage for file top.v --
+
+    24              1                    ***0***  unsupported condition detail
 """
 
 
@@ -100,6 +122,25 @@ def test_parse_questa_summary_accepts_comma_grouped_counts():
     assert metrics["total_points"] == 82535
     assert metrics["hit_points"] == 46619
     assert metrics["by_type"]["branch"]["total"] == 3044
+
+
+def test_parse_questa_code_coverage_holes_keeps_zero_statement_and_branch_items():
+    points = parse_questa_code_coverage_holes(QUESTA_ZERO_DETAILS)
+
+    assert len(points) == 3
+    assert points[0] == {
+        "name": "top.v:9:1",
+        "count": 0,
+        "hit": False,
+        "type": "statement",
+        "source_file": "top.v",
+        "line": 9,
+        "item": 1,
+        "detail": "",
+    }
+    assert points[1]["name"] == "top.v:12:1 if (i == 16)"
+    assert points[1]["type"] == "branch"
+    assert points[2]["name"] == "top.v:20:1 else"
 
 
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
@@ -159,7 +200,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="xml report written\n")
         if command[1:4] == ["report", "-zeros", "-details"]:
             output = Path(command[command.index("-output") + 1])
-            output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
+            output.write_text(QUESTA_ZERO_DETAILS, encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -220,7 +261,13 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert evidence["xml"]["status"] == "captured"
     assert evidence["zero_detail"]["status"] == "captured"
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
-    assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
+    assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == QUESTA_ZERO_DETAILS
+    assert payload["normalized_code_holes"] == 3
+    assert payload["normalized_code_holes_by_type"] == {
+        "branch": 2,
+        "statement": 1,
+    }
+    assert result["normalized_code_holes"] == 3
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -249,6 +296,41 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert len(holes) == 1
     assert holes[0]["coverpoint"] == "APB_cg::type_cp"
     assert holes[0]["bin_name"] == "write"
+
+
+def test_coverage_holes_cli_supports_questa_zero_detail_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    zero_detail = project.root / ".zddv" / "coverage" / "zeros.txt"
+    zero_detail.parent.mkdir(parents=True)
+    zero_detail.write_text(QUESTA_ZERO_DETAILS, encoding="utf-8")
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    args = SimpleNamespace(
+        project=str(project.root),
+        output=".zddv/coverage/holes.json",
+        point_type=None,
+        limit=50,
+        show=10,
+    )
+
+    rc = cmd_coverage_holes(args)
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (all): 3 unhit point(s)" in output
+    assert "[statement] top.v:9:1" in output
+    assert "[branch] top.v:12:1 if (i == 16)" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["by_type"] == {"branch": 2, "statement": 1}
 
 
 def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
@@ -332,5 +414,7 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["xml"]["diagnostic"] == "unsupported fixture"
     assert evidence["zero_detail"]["status"] == "failed"
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
+    assert result["normalized_code_holes"] == 0
+    assert result["normalized_code_holes_by_type"] == {}
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
