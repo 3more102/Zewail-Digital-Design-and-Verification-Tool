@@ -309,6 +309,16 @@ def write_uvm_auto_instrumentation(
             destination = project.root / destination
         destination = destination.resolve()
 
+    reserved_helpers = {
+        (project.root / DEFAULT_UVM_SEQUENCE_HELPER).resolve(),
+        (project.root / DEFAULT_UVM_ITEM_HELPER).resolve(),
+    }
+    if destination in reserved_helpers:
+        raise ValueError(
+            "UVM auto-instrumentation adapter output must be distinct from "
+            "the sequence/item marker helper paths"
+        )
+
     if destination.exists() and not force:
         raise FileExistsError(
             f"{destination} already exists; pass --force to replace it"
