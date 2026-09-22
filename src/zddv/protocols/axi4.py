@@ -14,20 +14,20 @@ _CHANNELS = {
         "ready": "AWREADY",
         "payload": (
             "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST",
-            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION",
+            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION", "AWUSER",
         ),
         "required": ("AWADDR", "AWLEN", "AWSIZE", "AWBURST"),
     },
     "W": {
         "valid": "WVALID",
         "ready": "WREADY",
-        "payload": ("WDATA", "WSTRB", "WLAST"),
+        "payload": ("WDATA", "WSTRB", "WLAST", "WUSER"),
         "required": ("WDATA", "WSTRB", "WLAST"),
     },
     "B": {
         "valid": "BVALID",
         "ready": "BREADY",
-        "payload": ("BID", "BRESP"),
+        "payload": ("BID", "BRESP", "BUSER"),
         "required": ("BRESP",),
     },
     "AR": {
@@ -35,14 +35,14 @@ _CHANNELS = {
         "ready": "ARREADY",
         "payload": (
             "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST",
-            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION",
+            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
         ),
         "required": ("ARADDR", "ARLEN", "ARSIZE", "ARBURST"),
     },
     "R": {
         "valid": "RVALID",
         "ready": "RREADY",
-        "payload": ("RID", "RDATA", "RRESP", "RLAST"),
+        "payload": ("RID", "RDATA", "RRESP", "RLAST", "RUSER"),
         "required": ("RDATA", "RRESP", "RLAST"),
     },
 }
@@ -51,6 +51,7 @@ _RESPONSE_NAMES = {0: "OKAY", 1: "EXOKAY", 2: "SLVERR", 3: "DECERR"}
 _RESPONSE_CODES = {name: code for code, name in _RESPONSE_NAMES.items()}
 _BURST_NAMES = {0: "FIXED", 1: "INCR", 2: "WRAP"}
 _BURST_CODES = {name: code for code, name in _BURST_NAMES.items()}
+_AXI4_CACHE_ENCODINGS = {0x0, 0x1, 0x2, 0x3, 0x6, 0x7, 0xA, 0xB, 0xE, 0xF}
 
 
 def _logic(value: Any, *, name: str) -> bool:
@@ -126,9 +127,10 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
     for name in (
         "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST", "AWCACHE",
-        "AWPROT", "AWQOS", "AWREGION", "WDATA", "WSTRB", "BID", "BRESP",
-        "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST", "ARCACHE",
-        "ARPROT", "ARQOS", "ARREGION", "RID", "RDATA", "RRESP",
+        "AWPROT", "AWQOS", "AWREGION", "AWUSER", "WDATA", "WSTRB", "WUSER",
+        "BID", "BRESP", "BUSER", "ARID", "ARADDR", "ARLEN", "ARSIZE",
+        "ARBURST", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
+        "RID", "RDATA", "RRESP", "RUSER",
     ):
         if name in upper:
             sample[name] = _scalar(upper[name])
@@ -350,6 +352,24 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     actual=value,
                 )
 
+        cache = values["cache"]
+        if (
+            isinstance(cache, int)
+            and 0 <= cache <= 0xF
+            and cache not in _AXI4_CACHE_ENCODINGS
+        ):
+            add_violation(
+                "reserved_cache_encoding",
+                sample,
+                f"{prefix}CACHE uses an AXI4-reserved memory-attribute encoding",
+                channel=prefix,
+                signal=f"{prefix}CACHE",
+                expected="one of 0x0,0x1,0x2,0x3,0x6,0x7,0xA,0xB,0xE,0xF",
+                actual=cache,
+            )
+
+        values["user"] = sample.get(f"{prefix}USER")
+
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -527,6 +547,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cache": sidebands["cache"],
             "prot": sidebands["prot"],
             "qos": sidebands["qos"],
+            "user": sidebands["user"],
         }
 
     def exclusive_attribute_mismatches(
@@ -673,6 +694,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             if request.get(key) is not None:
                 tx[key] = request[key]
                 tx[f"ar{key}"] = request[key]
+        if request.get("user") is not None:
+            tx["aruser"] = request["user"]
+        read_users = [beat.get("user") for beat in beats]
+        if any(value is not None for value in read_users):
+            tx["read_user"] = read_users
         transactions.append(tx)
 
     for sample in samples:
@@ -711,6 +737,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 "data": sample.get("WDATA"),
                 "strb": sample.get("WSTRB"),
                 "last": bool(sample.get("WLAST", False)),
+                "user": sample.get("WUSER"),
             }
             current_w_beats.append(beat)
             if beat["last"]:
@@ -807,6 +834,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     if request.get(key) is not None:
                         tx[key] = request[key]
                         tx[f"aw{key}"] = request[key]
+                if request.get("user") is not None:
+                    tx["awuser"] = request["user"]
+                write_users = [beat.get("user") for beat in beats]
+                if any(value is not None for value in write_users):
+                    tx["write_user"] = write_users
+                if sample.get("BUSER") is not None:
+                    tx["buser"] = sample["BUSER"]
                 transactions.append(tx)
 
         if r_hs:
@@ -855,6 +889,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "response": label,
                     "response_code": code,
                     "last": bool(sample.get("RLAST", False)),
+                    "user": sample.get("RUSER"),
                 }
                 request["beats"].append(beat)
                 observed = len(request["beats"])
@@ -972,8 +1007,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION, and AxREGION is checked for 4KB-space consistency.",
-            "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AxCACHE encodings and AxREGION 4KB-space consistency are also checked.",
+            "AXI4 USER sidebands are preserved and checked for VALID/READY stall stability, but their implementation-defined widths and semantics are not interpreted.",
+            "Topology-dependent AxCACHE reachability, ACE coherency, AXI5 additions, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
