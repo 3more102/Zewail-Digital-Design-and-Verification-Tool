@@ -544,3 +544,170 @@ def test_unmatched_exclusive_write_with_okay_is_not_protocol_failure():
     write = result["transactions"][0]
     assert write["exclusive"] is True
     assert write["exclusive_pair_status"] == "no_prior_exclusive_read"
+
+def test_validates_and_preserves_axi4_request_sidebands():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0xF,
+                "ARPROT": 0x5,
+                "ARQOS": 0xA,
+                "ARREGION": 0x3,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0x1234,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 4,
+                "AWADDR": 0x200,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWCACHE": 0x7,
+                "AWPROT": 0x2,
+                "AWQOS": 0x9,
+                "AWREGION": 0x3,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x5678,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 4,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    assert read["arcache"] == 0xF
+    assert read["arprot"] == 0x5
+    assert read["arqos"] == 0xA
+    assert read["arregion"] == 0x3
+    assert write["awcache"] == 0x7
+    assert write["awprot"] == 0x2
+    assert write["awqos"] == 0x9
+    assert write["awregion"] == 0x3
+
+
+def test_reports_axi4_request_sideband_values_outside_signal_widths():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARADDR": 0,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x10,
+                "ARPROT": 0x8,
+                "ARQOS": 0x10,
+                "ARREGION": 0x10,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RDATA": 0,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+        ]}
+    )
+
+    invalid = [
+        item for item in result["violations"]
+        if item["code"] == "invalid_sideband_value"
+    ]
+    assert result["status"] == "FAIL"
+    assert {item["signal"] for item in invalid} == {
+        "ARCACHE", "ARPROT", "ARQOS", "ARREGION"
+    }
+
+
+def test_reports_axi4_region_change_within_same_4kb_address_space():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARREGION": 1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RDATA": 0,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWADDR": 0x800,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWREGION": 2,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 1,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    violations = [
+        item for item in result["violations"]
+        if item["code"] == "region_changed_within_4kb"
+    ]
+    assert result["status"] == "FAIL"
+    assert len(violations) == 1
+    assert violations[0]["signal"] == "AWREGION"
+    assert violations[0]["expected"] == 1
+    assert violations[0]["actual"] == 2
+
