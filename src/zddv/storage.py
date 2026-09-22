@@ -486,6 +486,70 @@ CREATE INDEX IF NOT EXISTS idx_formal_property_status
 
 CREATE INDEX IF NOT EXISTS idx_formal_property_interpretation
     ON formal_property_results(interpretation);
+
+CREATE TABLE IF NOT EXISTS formal_trace_snapshots (
+    trace_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    property_name TEXT NOT NULL,
+    property_kind TEXT NOT NULL,
+    trace_kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    time_unit TEXT,
+    signal_count INTEGER NOT NULL,
+    step_count INTEGER NOT NULL,
+    input_path TEXT NOT NULL,
+    input_sha256 TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    limitations_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_trace_created
+    ON formal_trace_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_formal_trace_property
+    ON formal_trace_snapshots(property_name);
+
+CREATE INDEX IF NOT EXISTS idx_formal_trace_kind
+    ON formal_trace_snapshots(trace_kind);
+
+CREATE TABLE IF NOT EXISTS formal_trace_signals (
+    trace_id TEXT NOT NULL,
+    signal_index INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    width INTEGER,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (trace_id, signal_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_trace_signal_name
+    ON formal_trace_signals(name);
+
+CREATE TABLE IF NOT EXISTS formal_trace_steps (
+    trace_id TEXT NOT NULL,
+    step_position INTEGER NOT NULL,
+    step_index INTEGER NOT NULL,
+    time_json TEXT NOT NULL,
+    cycle INTEGER,
+    values_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (trace_id, step_position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_trace_steps_index
+    ON formal_trace_steps(trace_id, step_index);
+
+CREATE TABLE IF NOT EXISTS formal_property_trace_links (
+    snapshot_id TEXT NOT NULL,
+    property_index INTEGER NOT NULL,
+    trace_id TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, property_index, trace_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_formal_property_trace_links_trace
+    ON formal_property_trace_links(trace_id);
 """
 
 
@@ -1931,6 +1995,29 @@ def record_formal_result_snapshot(
                 for index, item in enumerate(record["properties"])
             ],
         )
+        db.execute(
+            "DELETE FROM formal_property_trace_links WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        trace_links: list[tuple[str, int, str]] = []
+        for index, item in enumerate(record["properties"]):
+            trace = item.get("trace")
+            if not isinstance(trace, dict):
+                continue
+            normalization = trace.get("normalization")
+            if not isinstance(normalization, dict):
+                continue
+            trace_id = normalization.get("trace_id")
+            if normalization.get("status") == "NORMALIZED" and trace_id:
+                trace_links.append((record["snapshot_id"], index, str(trace_id)))
+        db.executemany(
+            """
+            INSERT INTO formal_property_trace_links (
+                snapshot_id, property_index, trace_id
+            ) VALUES (?, ?, ?)
+            """,
+            trace_links,
+        )
     return path
 
 
@@ -1997,22 +2084,218 @@ def list_formal_property_results(
     interpretation: str | None = None,
 ) -> list[dict[str, Any]]:
     query = """
-        SELECT snapshot_id, property_index, name, kind, status,
-               interpretation, depth, effective_depth, message,
-               trace_path, trace_role
-        FROM formal_property_results
-        WHERE snapshot_id = ?
+        SELECT p.snapshot_id, p.property_index, p.name, p.kind, p.status,
+               p.interpretation, p.depth, p.effective_depth, p.message,
+               p.trace_path, p.trace_role, l.trace_id
+        FROM formal_property_results AS p
+        LEFT JOIN formal_property_trace_links AS l
+          ON l.snapshot_id = p.snapshot_id
+         AND l.property_index = p.property_index
+        WHERE p.snapshot_id = ?
     """
     params: list[Any] = [snapshot_id]
     if status is not None:
-        query += " AND status = ?"
+        query += " AND p.status = ?"
         params.append(status.strip().upper())
     if interpretation is not None:
-        query += " AND interpretation = ?"
+        query += " AND p.interpretation = ?"
         params.append(interpretation.strip().upper())
-    query += " ORDER BY property_index"
+    query += " ORDER BY p.property_index"
 
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def record_formal_trace_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    """Persist one normalized formal trace plus its signal catalog and timed steps."""
+
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO formal_trace_snapshots (
+                trace_id, created_at, project, property_name, property_kind,
+                trace_kind, source, time_unit, signal_count, step_count,
+                input_path, input_sha256, normalized_path, summary_json,
+                metadata_json, limitations_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["trace_id"],
+                record["created_at"],
+                record["project"],
+                record["property"],
+                record["property_kind"],
+                record["trace_kind"],
+                record["source"],
+                record.get("time_unit"),
+                int(summary["signals"]),
+                int(summary["steps"]),
+                record["input_path"],
+                record["input_sha256"],
+                record["normalized_path"],
+                json.dumps(summary, sort_keys=True),
+                json.dumps(record.get("metadata", {}), sort_keys=True),
+                json.dumps(record.get("limitations", []), sort_keys=True),
+            ),
+        )
+
+        db.execute(
+            "DELETE FROM formal_trace_signals WHERE trace_id = ?",
+            (record["trace_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO formal_trace_signals (
+                trace_id, signal_index, name, width, metadata_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["trace_id"],
+                    index,
+                    signal["name"],
+                    signal.get("width"),
+                    json.dumps(signal.get("metadata", {}), sort_keys=True),
+                )
+                for index, signal in enumerate(record["signals"])
+            ],
+        )
+
+        db.execute(
+            "DELETE FROM formal_trace_steps WHERE trace_id = ?",
+            (record["trace_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO formal_trace_steps (
+                trace_id, step_position, step_index, time_json, cycle,
+                values_json, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["trace_id"],
+                    position,
+                    int(step["step"]),
+                    json.dumps(step.get("time")),
+                    step.get("cycle"),
+                    json.dumps(step["values"], sort_keys=True),
+                    json.dumps(step.get("metadata", {}), sort_keys=True),
+                )
+                for position, step in enumerate(record["steps"])
+            ],
+        )
+    return path
+
+
+def list_formal_trace_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    property_name: str | None = None,
+    trace_kind: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    if trace_kind is not None:
+        trace_kind = trace_kind.strip().lower()
+        if trace_kind not in {"counterexample", "witness"}:
+            raise ValueError(f"Unsupported formal trace kind: {trace_kind}")
+
+    query = """
+        SELECT trace_id, created_at, project, property_name, property_kind,
+               trace_kind, source, time_unit, signal_count, step_count,
+               input_path, input_sha256, normalized_path, summary_json,
+               metadata_json, limitations_json
+        FROM formal_trace_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if property_name is not None:
+        clauses.append("property_name = ?")
+        params.append(property_name)
+    if trace_kind is not None:
+        clauses.append("trace_kind = ?")
+        params.append(trace_kind)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["summary"] = json.loads(item.pop("summary_json"))
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        item["limitations"] = json.loads(item.pop("limitations_json"))
+        result.append(item)
+    return result
+
+
+def list_formal_trace_signals(
+    project: ProjectConfig,
+    trace_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT trace_id, signal_index, name, width, metadata_json
+            FROM formal_trace_signals
+            WHERE trace_id = ?
+            ORDER BY signal_index
+            """,
+            (trace_id,),
+        ).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
+
+
+def list_formal_trace_steps(
+    project: ProjectConfig,
+    trace_id: str,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT trace_id, step_position, step_index, time_json, cycle,
+                   values_json, metadata_json
+            FROM formal_trace_steps
+            WHERE trace_id = ?
+            ORDER BY step_position
+            LIMIT ? OFFSET ?
+            """,
+            (trace_id, limit, offset),
+        ).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["time"] = json.loads(item.pop("time_json"))
+        item["values"] = json.loads(item.pop("values_json"))
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
 
