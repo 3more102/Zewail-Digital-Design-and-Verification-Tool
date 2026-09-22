@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_xcelium_imc_expression_coverage,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -776,6 +777,34 @@ def cmd_coverage_holes(args) -> int:
                 point_type=args.point_type,
                 limit=args.limit,
             )
+    elif simulator in {"xcelium", "xrun"}:
+        if args.point_type not in {None, "expression"}:
+            raise RuntimeError(
+                "Xcelium item-level coverage currently supports "
+                "--type expression from documented IMC truth-table rows."
+            )
+        source_path = (
+            project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+        ).resolve()
+        if not source_path.exists():
+            raise RuntimeError(
+                f"Detailed Xcelium IMC coverage report not found at {source_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_xcelium_imc_expression_coverage(
+            source_path.read_text(encoding="utf-8", errors="replace")
+        )
+        if not points:
+            raise RuntimeError(
+                f"No normalized Xcelium expression truth-table rows found in "
+                f"{source_path}."
+            )
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type="expression",
+            limit=args.limit,
+        )
     elif simulator == "vcs":
         if args.point_type not in {None, "condition"}:
             raise RuntimeError(
