@@ -11,6 +11,7 @@ from zddv.ai_provider import (
     build_model_request,
     build_model_response_contract,
     create_provider,
+    import_provider_response,
     invoke_provider,
     load_ai_context,
     model_evidence_references,
@@ -184,6 +185,63 @@ def test_context_loader_and_writer_stay_inside_project(tmp_path: Path):
 
     with pytest.raises(ValueError, match="inside the project root"):
         load_ai_context(project, tmp_path / "outside.json")
+
+
+def test_manual_response_import_is_offline_untrusted_and_request_bound(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(_context()), encoding="utf-8")
+
+    content_path = project.root / ".zddv" / "ai" / "manual-response.json"
+    content_path.parent.mkdir(parents=True)
+    content_path.write_text(
+        '{"schema_version":1,"analysis":"zddv_ai_rca_response"}\n',
+        encoding="utf-8",
+    )
+
+    result = import_provider_response(
+        project,
+        context_path=context_path,
+        content_path=content_path,
+        provider_label="offline-review",
+    )
+
+    assert Path(result["path"]).is_file()
+    assert result["analysis"] == "ai_provider_response_raw"
+    assert result["provider"]["name"] == "offline-review"
+    assert result["provider"]["external_transmission"] is False
+    assert result["response"]["content"] == content_path.read_text(encoding="utf-8")
+    assert len(result["request_sha256"]) == 64
+    assert result["policy"]["explicit_external_opt_in"] is False
+    assert result["policy"]["untrusted_model_output"] is True
+    assert result["policy"]["response_schema_validated"] is False
+    assert result["policy"]["automatic_generated_artifact_staging"] is False
+    assert result["policy"]["automatic_command_execution"] is False
+    assert result["policy"]["human_review_required"] is True
+    assert result["provenance"]["provider_invocation_performed"] is False
+    assert (
+        result["provenance"]["imported_content_sha256"]
+        == hashlib.sha256(content_path.read_bytes()).hexdigest()
+    )
+
+
+def test_manual_response_import_rejects_external_content_path(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    context_path = project.root / ".zddv" / "debug" / "ai-rca-context.json"
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text(json.dumps(_context()), encoding="utf-8")
+    outside = tmp_path / "outside-response.json"
+    outside.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside the project root"):
+        import_provider_response(
+            project,
+            context_path=context_path,
+            content_path=outside,
+        )
 
 
 def test_context_loader_rejects_evidence_changed_after_digest(tmp_path: Path):
