@@ -21,7 +21,7 @@ def test_generator_writes_portable_helper_and_registers_first(tmp_path: Path):
     text = generated.read_text(encoding="utf-8")
     assert "package zddv_uvm_sequence_trace_pkg;" in text
     assert r'ZDDV_UVM_SEQUENCE {\"sequence_id\"' in text
-    assert r'\\\"sequence\\\":\\\"%s\\\",\\\"sequencer\\\":%s' in text
+    assert r'\\"sequence\\":\\"%s\\",\\"sequencer\\":%s' in text
     assert "function automatic string zddv_json_escape" in text
     assert "zddv_uvm_sequence_emit" in text
     assert "zddv_uvm_sequence_created" in text
