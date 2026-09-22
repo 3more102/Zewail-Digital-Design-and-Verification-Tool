@@ -21,6 +21,7 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
+from zddv.formal.counterexample import ingest_formal_counterexample
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -619,6 +620,25 @@ def cmd_coverage_holes(args) -> int:
     if report.get("xml"):
         print(f"Questa XML: {report['xml']}")
     print(f"Report: {report['path']}")
+    return 0
+
+
+def cmd_formal_counterexample_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_formal_counterexample(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL COUNTEREXAMPLE: property={result['property']} "
+        f"kind={result['property_kind']} trace={result['trace_kind']} "
+        f"steps={summary['steps']} signals={summary['signals']}"
+    )
+    print(f"Source: {result['source']}")
+    print(f"Normalized: {result['normalized_path']}")
     return 0
 
 
@@ -1869,6 +1889,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_coverage_holes.set_defaults(func=cmd_coverage_holes)
+
+    p_formal_counterexample = sub.add_parser(
+        "formal-counterexample-import",
+        help="Import a normalized formal counterexample or witness trace from JSON",
+    )
+    p_formal_counterexample.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON file",
+    )
+    p_formal_counterexample.add_argument(
+        "--source",
+        default=None,
+        help="Optional formal engine/adapter label overriding the JSON source",
+    )
+    p_formal_counterexample.add_argument(
+        "--output",
+        default=".zddv/formal/counterexamples/latest.json",
+        help="Normalized formal counterexample JSON output path",
+    )
+    p_formal_counterexample.set_defaults(func=cmd_formal_counterexample_import)
 
     p_fcov_import = sub.add_parser(
         "fcov-import",
