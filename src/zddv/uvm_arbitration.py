@@ -163,10 +163,12 @@ def parse_uvm_arbitration_data(
 
         seen_in_decision: set[str] = set()
         contender_ids: set[str] = set()
+        decision_consistent_for_fairness = True
         for contender in decision["contenders"]:
             request_id = contender["request_id"]
             contender_ids.add(request_id)
             if request_id in seen_in_decision:
+                decision_consistent_for_fairness = False
                 add_violation(
                     "DUPLICATE_CONTENDER",
                     decision,
@@ -220,6 +222,7 @@ def parse_uvm_arbitration_data(
 
         granted_id = decision["granted_request_id"]
         if granted_id not in contender_ids:
+            decision_consistent_for_fairness = False
             add_violation(
                 "GRANT_NOT_A_CONTENDER",
                 decision,
@@ -227,6 +230,9 @@ def parse_uvm_arbitration_data(
                 request_id=granted_id,
             )
             granted_id = None
+
+        if not decision_consistent_for_fairness:
+            continue
 
         for request_id in seen_in_decision:
             request = requests[request_id]
@@ -297,6 +303,7 @@ def parse_uvm_arbitration_data(
         "limitations": [
             "Input is explicit normalized arbitration evidence; vendor simulator logs are not guessed or reinterpreted.",
             "fairness_bound is a project-defined maximum observed losing-decision count, not an Accellera UVM fairness guarantee or policy default.",
+            "Structurally inconsistent decisions are reported as violations but excluded from derived grant/loss fairness accounting.",
             "This layer does not infer UVM arbitration mode, weighted/random selection probabilities, delta-cycle timing, or transaction payload semantics.",
         ],
     }

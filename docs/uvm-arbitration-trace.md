@@ -24,7 +24,7 @@ ZDDV reports violations when:
 
 `fairness_bound` is optional and may be supplied in the JSON or overridden by `--fairness-bound`. It is the maximum number of **observed arbitration decisions that a request may lose** while it is present as a contender. A request granted after two earlier losses therefore has `lost_decisions=2`.
 
-When no bound is supplied, ZDDV still reports exposure counts, losing-decision counts, grant counts by sequence, pending requests, and the maximum observed wait, but it does not invent a fairness failure threshold.
+When no bound is supplied, ZDDV still reports exposure counts, losing-decision counts, grant counts by sequence, pending requests, and the maximum observed wait, but it does not invent a fairness failure threshold. Structurally inconsistent decisions (for example, a grant outside the contender set) are reported as violations and excluded from derived grant/loss fairness accounting.
 
 This bound is deliberately project-defined. It is not presented as an Accellera UVM arbitration-policy default or as a guarantee of FIFO, random, weighted, or user arbitration behavior.
 

@@ -122,6 +122,26 @@ def test_detects_grant_not_in_contenders_and_request_identity_change():
     assert result["status"] == "FAIL"
 
 
+def test_invalid_grant_does_not_create_derived_fairness_failure():
+    req = _contender("req-a", "seq-a", "producer_a", priority=100)
+    result = parse_uvm_arbitration_data(
+        {
+            "fairness_bound": 0,
+            "decisions": [_decision("d0", "missing", [req])],
+        }
+    )
+
+    assert result["status"] == "FAIL"
+    assert [item["code"] for item in result["violations"]] == [
+        "GRANT_NOT_A_CONTENDER"
+    ]
+    request = result["requests"][0]
+    assert request["exposure_count"] == 1
+    assert request["lost_decisions"] == 0
+    assert result["summary"]["fairness_violations"] == 0
+    assert result["summary"]["max_wait_decisions"] == 0
+
+
 def _record_run(project, run_id: str) -> None:
     run_dir = project.root / ".zddv" / "runs" / run_id
     run_dir.mkdir(parents=True)
