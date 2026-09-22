@@ -16,6 +16,11 @@ _SEQUENCE_MARKER = "ZDDV_UVM_SEQUENCE"
 _ITEM_MARKER = "ZDDV_UVM_ITEM"
 
 
+def has_explicit_uvm_markers(text: str) -> bool:
+    """Return True only when a supported explicit marker contract is present."""
+    return _SEQUENCE_MARKER in text or _ITEM_MARKER in text
+
+
 def _resolve_marker_input(
     project: ProjectConfig,
     path: str | Path | None,
@@ -61,6 +66,11 @@ def analyze_uvm_marker_log(
     item_marker_lines = [
         index for index, line in enumerate(lines, start=1) if _ITEM_MARKER in line
     ]
+
+    if not sequence_marker_lines and not item_marker_lines:
+        raise ValueError(
+            "No explicit ZDDV_UVM_SEQUENCE or ZDDV_UVM_ITEM markers found in log"
+        )
 
     selected_source = source or (
         f"{run_record['simulator']}-uvm-marker"
