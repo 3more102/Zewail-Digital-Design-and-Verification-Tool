@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import platform
 import sys
@@ -394,6 +395,19 @@ def cmd_coverage(args) -> int:
             "Zero-hit source detail: "
             f"{zero_detail.get('status', 'unknown')} {zero_detail.get('path', '-')}"
         )
+    if result.get("code_items"):
+        print(
+            "Source-linked code holes: "
+            f"{result.get('source_code_hole_items', 0)}/"
+            f"{result.get('source_code_hole_expected', 0)} normalized "
+            f"({result.get('code_items_status', 'unknown')})"
+        )
+        unsupported = result.get("source_code_hole_unsupported") or {}
+        if unsupported:
+            breakdown = ", ".join(
+                f"{kind}={count}" for kind, count in sorted(unsupported.items())
+            )
+            print(f"Non-source-linked misses not itemized: {breakdown}")
     report = result["report"].strip()
     if report:
         print(report)
@@ -419,20 +433,59 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
-        raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
-        )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
-        raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
-        )
+    simulator = project.simulator.strip().lower()
+    unsupported_type_misses: dict[str, int] = {}
 
-    points = parse_verilator_coverage(merged_path)
-    if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+    if simulator == "verilator":
+        normalized_path = (
+            project.root / ".zddv" / "coverage" / "coverage.dat"
+        ).resolve()
+        if not normalized_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {normalized_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_verilator_coverage(normalized_path)
+    elif simulator in {"questa", "questasim"}:
+        normalized_path = (
+            project.root / ".zddv" / "coverage" / "code-items.json"
+        ).resolve()
+        if not normalized_path.exists():
+            raise RuntimeError(
+                f"Normalized Questa code coverage not found at {normalized_path}. "
+                "Run 'zddv coverage' first."
+            )
+        payload = json.loads(normalized_path.read_text(encoding="utf-8"))
+        status = str(payload.get("status") or "unknown")
+        if status != "ok":
+            expected = int(payload.get("expected_zero_items", 0))
+            parsed = int(payload.get("parsed_zero_items", 0))
+            raise RuntimeError(
+                "Questa source-linked code-hole normalization is unavailable "
+                f"(status={status}, parsed={parsed}, expected={expected}). "
+                f"See {payload.get('report') or normalized_path}."
+            )
+
+        supported_types = {
+            str(kind) for kind in payload.get("supported_types", [])
+        }
+        if args.point_type is not None and args.point_type not in supported_types:
+            supported = ", ".join(sorted(supported_types))
+            raise RuntimeError(
+                f"Questa source-linked coverage holes support: {supported}. "
+                f"Requested: {args.point_type}."
+            )
+        points = list(payload.get("points") or [])
+        unsupported_type_misses = {
+            str(kind): int(count)
+            for kind, count in dict(
+                payload.get("unsupported_type_misses") or {}
+            ).items()
+        }
+    else:
+        raise RuntimeError(
+            "Coverage-hole itemization is implemented for Verilator and Questa only."
+        )
 
     output = Path(args.output)
     if not output.is_absolute():
@@ -455,8 +508,23 @@ def cmd_coverage_holes(args) -> int:
         )
         print(f"By type: {breakdown}")
 
+    if simulator in {"questa", "questasim"} and unsupported_type_misses:
+        breakdown = ", ".join(
+            f"{kind}={count}"
+            for kind, count in sorted(unsupported_type_misses.items())
+        )
+        print(
+            "Not itemized by source-linked Questa holes: "
+            f"{breakdown}"
+        )
+
     for hole in report["holes"][: args.show]:
-        print(f"[{hole['type']}] {hole['name']}")
+        if hole.get("source_file") is not None and hole.get("line") is not None:
+            target = f"{hole['source_file']}:{hole['line']}"
+        else:
+            target = hole["name"]
+        detail = f" {hole['detail']}" if hole.get("detail") else ""
+        print(f"[{hole['type']}] {target}{detail}")
     if report["reported_holes"] > args.show:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
@@ -1321,7 +1389,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--type",
         dest="point_type",
         default=None,
-        help="Optional normalized coverage point type filter, e.g. line or toggle",
+        help=(
+            "Optional normalized coverage point type filter. Verilator uses its "
+            "native normalized types; Questa source-linked holes support "
+            "statement, branch, condition, and expression."
+        ),
     )
     p_coverage_holes.add_argument(
         "--limit",
