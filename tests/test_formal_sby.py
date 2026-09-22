@@ -9,6 +9,7 @@ from zddv.cli import main
 from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
 from zddv.formal.sby import render_sby_bmc_config
+from zddv.storage import list_formal_result_snapshots
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -235,3 +236,16 @@ def test_formal_bmc_cli_surfaces_normalized_result(tmp_path: Path, monkeypatch, 
     assert rc == 0
     assert "Formal backend: sby test" in output
     assert "FORMAL BMC PASS: depth=16 engine=smtbmc" in output
+    assert "Snapshot:" in output
+    assert "Report:" in output
+
+    snapshots = list_formal_result_snapshots(project, limit=10)
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot["backend"] == "sby"
+    assert snapshot["engine"] == "smtbmc"
+    assert snapshot["status"] == "PASS"
+    assert snapshot["mode"] == "bmc"
+    assert snapshot["proof_scope"] == "BOUNDED"
+    assert snapshot["request_depth"] == 16
+    assert snapshot["property_count"] == 0
