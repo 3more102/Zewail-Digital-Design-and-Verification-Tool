@@ -735,6 +735,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
                     "status": "captured",
                     "path": "/tmp/multibit-expression.txt",
                 },
+                "toggle_detail": {
+                    "status": "captured",
+                    "path": "/tmp/toggle-details.txt",
+                },
             },
         },
     )
@@ -765,6 +769,7 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
         "Questa multibit expression detail: captured /tmp/multibit-expression.txt"
         in output
     )
+    assert "Questa toggle detail: captured /tmp/toggle-details.txt" in output
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(

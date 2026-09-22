@@ -596,6 +596,13 @@ def cmd_coverage(args) -> int:
                 f"{multibit_expression.get('status', 'unknown')} "
                 f"{multibit_expression.get('path', '-')}"
             )
+        toggle_detail = detailed.get("toggle_detail", {})
+        if toggle_detail:
+            print(
+                "Questa toggle detail: "
+                f"{toggle_detail.get('status', 'unknown')} "
+                f"{toggle_detail.get('path', '-')}"
+            )
     report = result["report"].strip()
     if report:
         print(report)
