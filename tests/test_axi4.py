@@ -733,3 +733,124 @@ def test_preserves_valid_write_address_sidebands():
     assert tx["awprot"] == 0x2
     assert tx["awqos"] == 0xC
     assert tx["awregion"] == 0x7
+
+
+def test_rejects_reserved_axi4_cache_encodings():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 1,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x4,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 1,
+                "RDATA": 0x11,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 2,
+                "AWADDR": 0x200,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWCACHE": 0xC,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x22,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 2,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    violations = [
+        item for item in result["violations"]
+        if item["code"] == "reserved_cache_encoding"
+    ]
+    assert result["status"] == "FAIL"
+    assert {item["signal"] for item in violations} == {"ARCACHE", "AWCACHE"}
+    assert {item["actual"] for item in violations} == {0x4, 0xC}
+
+
+def test_accepts_all_defined_axi4_cache_encodings():
+    legal = (0x0, 0x1, 0x2, 0x3, 0x6, 0x7, 0xA, 0xB, 0xE, 0xF)
+
+    for cache in legal:
+        result = analyze_axi4_trace(
+            {"samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": cache,
+                    "ARADDR": 0x1000,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                    "ARCACHE": cache,
+                },
+                {
+                    "cycle": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": cache,
+                    "RDATA": cache,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": cache,
+                    "AWADDR": 0x2000,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                    "AWCACHE": cache,
+                },
+                {
+                    "cycle": 3,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": cache,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 4,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BID": cache,
+                    "BRESP": "OKAY",
+                },
+            ]}
+        )
+        assert not [
+            item for item in result["violations"]
+            if item["code"] == "reserved_cache_encoding"
+        ]
