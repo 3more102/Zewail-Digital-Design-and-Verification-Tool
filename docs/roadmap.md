@@ -122,6 +122,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
 - [x] Normalized sequence-item handshake analysis with run correlation, SQLite event/violation persistence, history filtering, and violation queries.
+- [x] Machine-readable UVM sequence/item marker extraction from simulator logs with automatic Questa/VCS run ingestion.
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction.
 
 ## v0.7 — Formal
