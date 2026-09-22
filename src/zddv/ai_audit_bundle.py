@@ -152,6 +152,7 @@ def _validate_reviewed_proposal(
     validated_payload_sha256: str,
     review_id: str,
     validated_file: Path | None,
+    project_root: Path | None = None,
 ) -> tuple[dict[str, Any], int]:
     proposal = normalize_generation_proposal(payload)
     if proposal["source"] != "ai-reviewed-response":
@@ -175,7 +176,11 @@ def _validate_reviewed_proposal(
             )
         candidate = Path(recorded)
         if not candidate.is_absolute():
-            candidate = validated_file.parent.parent.parent.parent / candidate
+            if project_root is None:
+                raise ValueError(
+                    "A project root is required to validate relative proposal provenance"
+                )
+            candidate = project_root / candidate
         if candidate.resolve() != validated_file.resolve():
             raise RuntimeError(
                 "AI audit proposal validated_response_path does not match the "
@@ -415,6 +420,7 @@ def export_ai_audit_bundle(
             validated_payload_sha256=validated_payload_sha,
             review_id=review_id,
             validated_file=validated_file,
+            project_root=project.root.resolve(),
         )
         if proposal_index in seen_indices:
             raise ValueError(
