@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection traces, conservative sequence report context, and normalized sequence state lifecycles; native Questa build/run orchestration plus UCDB/code/functional coverage normalization on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 Multi-Simulator UVM Foundation — run-aware UVM ingestion with phase/objection traces, conservative sequence report context, normalized sequence state lifecycles, native Questa UCDB/code/functional coverage evidence, and Verilator/Questa/VCS execution foundations on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -13,6 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization; native VCS coverage normalization remains pending
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
@@ -72,6 +73,7 @@ cd Zewail-Digital-Design-and-Verification-Tool
 python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
+zddv doctor --simulator vcs
 ```
 
 Run the included counter example:
@@ -95,9 +97,11 @@ coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
-inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
+evidence: XML output for machine-readable follow-up plus a `-zeros -details`
+report for zero-hit source/file-line evidence. These artifacts are evidence only
+and are not yet normalized into code `coverage-holes`. Questa's weighted total
+coverage remains a separate simulator-reported value.
 
 ## Current CLI
 
@@ -657,6 +661,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa native per-run UCDB coverage capture
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
+- [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
 - [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
 - [ ] VCS adapter
 - [ ] Xcelium adapter
