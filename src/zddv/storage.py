@@ -227,6 +227,57 @@ CREATE INDEX IF NOT EXISTS idx_uvm_sequence_state_events_sequence
 CREATE INDEX IF NOT EXISTS idx_uvm_sequence_state_events_state
     ON uvm_sequence_state_events(state);
 
+CREATE TABLE IF NOT EXISTS uvm_item_handshake_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    item_count INTEGER NOT NULL,
+    event_count INTEGER NOT NULL,
+    violation_count INTEGER NOT NULL,
+    granted_count INTEGER NOT NULL,
+    requested_count INTEGER NOT NULL,
+    completed_count INTEGER NOT NULL,
+    responded_count INTEGER NOT NULL,
+    active_count INTEGER NOT NULL,
+    partial_count INTEGER NOT NULL,
+    run_id TEXT,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_created
+    ON uvm_item_handshake_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_status
+    ON uvm_item_handshake_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_run
+    ON uvm_item_handshake_snapshots(run_id);
+
+CREATE TABLE IF NOT EXISTS uvm_item_handshake_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    sequence_id TEXT,
+    sequence_name TEXT,
+    sequencer TEXT,
+    item_name TEXT,
+    transaction_id TEXT,
+    time_text TEXT,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_item
+    ON uvm_item_handshake_events(snapshot_id, item_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_events_event
+    ON uvm_item_handshake_events(event);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -909,6 +960,141 @@ def list_uvm_sequence_events(
             """,
             (snapshot_id,),
         ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def record_uvm_item_handshake_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    """Persist one normalized UVM sequence-item handshake snapshot and its events."""
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_item_handshake_snapshots (
+                snapshot_id, created_at, project, source, status,
+                item_count, event_count, violation_count,
+                granted_count, requested_count, completed_count,
+                responded_count, active_count, partial_count, run_id,
+                input_path, normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record["status"],
+                int(summary["items"]),
+                int(summary["events"]),
+                int(summary["violations"]),
+                int(summary["granted"]),
+                int(summary["requested"]),
+                int(summary["completed"]),
+                int(summary["responded"]),
+                int(summary["active"]),
+                int(summary["partial"]),
+                record.get("run_id"),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_item_handshake_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_item_handshake_events (
+                snapshot_id, event_index, item_id, event,
+                sequence_id, sequence_name, sequencer, item_name,
+                transaction_id, time_text, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["item_id"],
+                    item["event"],
+                    item.get("sequence_id"),
+                    item.get("sequence"),
+                    item.get("sequencer"),
+                    item.get("item"),
+                    item.get("transaction_id"),
+                    item.get("time"),
+                    json.dumps(item.get("metadata", {}), sort_keys=True),
+                )
+                for item in record["events"]
+            ],
+        )
+    return path
+
+
+def list_uvm_item_handshake_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List persisted UVM item-handshake snapshots newest first."""
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM item status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, status,
+               item_count, event_count, violation_count,
+               granted_count, requested_count, completed_count,
+               responded_count, active_count, partial_count, run_id,
+               input_path, normalized_path, report_path
+        FROM uvm_item_handshake_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_item_handshake_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    item_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List normalized item-handshake events for one persisted snapshot."""
+    query = """
+        SELECT snapshot_id, event_index, item_id, event,
+               sequence_id, sequence_name, sequencer, item_name,
+               transaction_id, time_text, metadata_json
+        FROM uvm_item_handshake_events
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if item_id is not None:
+        query += " AND item_id = ?"
+        params.append(item_id)
+    query += " ORDER BY event_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
     return [dict(row) for row in rows]
 
 
