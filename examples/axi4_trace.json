@@ -1,5 +1,6 @@
 {
   "source": "zddv-axi4-example",
+  "data_width_bits": 32,
   "samples": [
     {
       "cycle": 0,
