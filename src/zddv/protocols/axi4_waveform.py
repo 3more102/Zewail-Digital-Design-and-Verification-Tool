@@ -99,10 +99,19 @@ def extract_axi4_trace_from_vcd(
         if item.get("scope") == resolved_scope
     }
     wdata_width = int(scoped_signals["WDATA"]["width"])
+    rdata_width = int(scoped_signals["RDATA"]["width"])
     wstrb_width = int(scoped_signals["WSTRB"]["width"])
-    if wdata_width <= 0 or wdata_width % 8:
+    legal_data_widths = {8, 16, 32, 64, 128, 256, 512, 1024}
+    if wdata_width not in legal_data_widths:
         raise RuntimeError(
-            f"WDATA width must be a positive multiple of 8, got {wdata_width}"
+            "AXI4 data width must be one of "
+            "8, 16, 32, 64, 128, 256, 512, or 1024 bits; "
+            f"got WDATA={wdata_width}"
+        )
+    if rdata_width != wdata_width:
+        raise RuntimeError(
+            "AXI4 WDATA and RDATA widths must match; "
+            f"got WDATA={wdata_width}, RDATA={rdata_width}"
         )
     expected_wstrb_width = wdata_width // 8
     if wstrb_width != expected_wstrb_width:
@@ -142,6 +151,7 @@ def extract_axi4_trace_from_vcd(
     waveform = dict(sampled["waveform"])
     waveform["clock"] = actual_clock
     waveform["data_width_bits"] = wdata_width
+    waveform["rdata_width_bits"] = rdata_width
     waveform["wstrb_width"] = wstrb_width
     return {
         "source": "vcd-waveform",
