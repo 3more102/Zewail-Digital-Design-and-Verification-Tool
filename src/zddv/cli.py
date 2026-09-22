@@ -14,6 +14,7 @@ from zddv.coverage import (
     merge_coverage,
     parse_verilator_coverage,
     write_coverage_hole_report,
+    write_questa_statement_hole_report,
 )
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
@@ -411,32 +412,52 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
-        raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
-        )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
-        raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
-        )
-
-    points = parse_verilator_coverage(merged_path)
-    if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+    simulator = project.simulator.strip().lower()
 
     output = Path(args.output)
     if not output.is_absolute():
         output = project.root / output
 
-    report = write_coverage_hole_report(
-        points,
-        output,
-        point_type=args.point_type,
-        limit=args.limit,
-    )
-    filter_label = args.point_type or "all"
+    if simulator == "verilator":
+        merged_path = (
+            project.root / ".zddv" / "coverage" / "coverage.dat"
+        ).resolve()
+        if not merged_path.exists():
+            raise RuntimeError(
+                f"Merged coverage not found at {merged_path}. "
+                "Run 'zddv coverage' first."
+            )
+
+        points = parse_verilator_coverage(merged_path)
+        if not points:
+            raise RuntimeError(
+                f"No normalized coverage points found in {merged_path}."
+            )
+
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type=args.point_type,
+            limit=args.limit,
+        )
+    elif simulator in {"questa", "questasim"}:
+        if args.point_type not in {None, "statement"}:
+            raise RuntimeError(
+                "Questa item-level coverage currently supports "
+                "--type statement only."
+            )
+        report = write_questa_statement_hole_report(
+            project,
+            output,
+            limit=args.limit,
+        )
+    else:
+        raise RuntimeError(
+            "Coverage-hole reporting is not implemented for simulator: "
+            f"{project.simulator}"
+        )
+
+    filter_label = report.get("filter_type") or args.point_type or "all"
     print(
         f"Coverage holes ({filter_label}): {report['total_holes']} "
         f"unhit point(s); {report['reported_holes']} written"
@@ -453,7 +474,6 @@ def cmd_coverage_holes(args) -> int:
         print(f"... {report['reported_holes'] - args.show} more in report")
     print(f"Report: {report['path']}")
     return 0
-
 
 def cmd_fcov_import(args) -> int:
     project = load_project(_project_arg(args))
