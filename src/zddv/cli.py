@@ -39,9 +39,11 @@ from zddv.storage import (
     list_run_records,
     list_runs,
     list_uvm_log_snapshots,
+    list_uvm_sequence_lifecycle_snapshots,
 )
 from zddv.triage import group_failure_records, write_failure_report
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_sequence import analyze_uvm_sequence_file
 from zddv.waveform import write_waveform_index
 from zddv.waveform_probe import write_waveform_probe
 
@@ -659,6 +661,78 @@ def cmd_uvm_history(args) -> int:
             f"{row['count_source']:<18} {row['snapshot_id']}"
         )
     return 0
+
+def cmd_uvm_sequence_analyze(args) -> int:
+    project = load_project(_project_arg(args))
+    result = analyze_uvm_sequence_file(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+        run_id=args.run_id,
+    )
+    summary = result["summary"]
+    print(
+        f"UVM SEQUENCE {result['status']}: "
+        f"{summary['sequences']} sequence(s), "
+        f"{summary['events']} event(s), "
+        f"{summary['violations']} violation(s)"
+    )
+    print(
+        f"Terminal: finished={summary['finished']} stopped={summary['stopped']} "
+        f"active={summary['active']} complete={summary['complete']}"
+    )
+    print(
+        f"Hierarchy: nested={summary['nested']} "
+        f"unresolved-parents={summary['unresolved_parents']}"
+    )
+    if result.get("run_id"):
+        print(
+            f"Run: {result['run_id']} "
+            f"(simulator-status={result['run_status']}, "
+            f"returncode={result['run_returncode']})"
+        )
+    for violation in result["violations"][: args.show]:
+        print(
+            f"[{violation['code']}] event={violation['event_index']} "
+            f"sequence={violation['sequence_id']} {violation['message']}"
+        )
+    if len(result["violations"]) > args.show:
+        print(f"... {len(result['violations']) - args.show} more violation(s)")
+    print(f"Report: {result['report_path']}")
+    return 0 if result["status"] == "PASS" else 1
+
+
+def cmd_uvm_sequence_history(args) -> int:
+    project = load_project(_project_arg(args))
+    rows = list_uvm_sequence_lifecycle_snapshots(
+        project,
+        limit=args.limit,
+        status=args.status,
+        run_id=args.run_id,
+    )
+    if not rows:
+        print("No UVM sequence lifecycle snapshots found.")
+        return 0
+
+    print(
+        f"{'STATUS':<6} {'SEQ':>5} {'EVENTS':>6} {'VIOL':>5} "
+        f"{'FIN/STOP/ACTIVE':<17} {'RUN':<24} SNAPSHOT"
+    )
+    for row in rows:
+        terminal = (
+            f"{row['finished_count']}/"
+            f"{row['stopped_count']}/"
+            f"{row['active_count']}"
+        )
+        run_id = row["run_id"] or "-"
+        print(
+            f"{row['status']:<6} {row['sequence_count']:>5} "
+            f"{row['event_count']:>6} {row['violation_count']:>5} "
+            f"{terminal:<17} {run_id[:24]:<24} {row['snapshot_id']}"
+        )
+    return 0
+
 
 def cmd_async_fifo_analyze(args) -> int:
     project = load_project(_project_arg(args))
@@ -1439,6 +1513,56 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter UVM snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_history.set_defaults(func=cmd_uvm_history)
+
+    p_uvm_sequence = sub.add_parser(
+        "uvm-sequence-analyze",
+        help="Analyze normalized UVM sequence state lifecycle events from JSON",
+    )
+    p_uvm_sequence.add_argument(
+        "path",
+        help="Normalized UVM sequence state lifecycle event JSON file",
+    )
+    p_uvm_sequence.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Optional recorded ZDDV run ID to correlate with this sequence snapshot",
+    )
+    p_uvm_sequence.add_argument(
+        "--source",
+        default=None,
+        help="Optional adapter/source label overriding the JSON source",
+    )
+    p_uvm_sequence.add_argument(
+        "--output",
+        default=".zddv/uvm/sequences/latest.json",
+        help="Normalized UVM sequence JSON report path",
+    )
+    p_uvm_sequence.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of lifecycle violations to print",
+    )
+    p_uvm_sequence.set_defaults(func=cmd_uvm_sequence_analyze)
+
+    p_uvm_sequence_history = sub.add_parser(
+        "uvm-sequence-history",
+        help="Show persisted UVM sequence state lifecycle snapshots",
+    )
+    p_uvm_sequence_history.add_argument("--limit", type=int, default=20)
+    p_uvm_sequence_history.add_argument(
+        "--status",
+        choices=("PASS", "FAIL"),
+        default=None,
+    )
+    p_uvm_sequence_history.add_argument(
+        "--run",
+        dest="run_id",
+        default=None,
+        help="Filter sequence lifecycle snapshots linked to a recorded ZDDV run ID",
+    )
+    p_uvm_sequence_history.set_defaults(func=cmd_uvm_sequence_history)
 
     p_async_fifo = sub.add_parser(
         "async-fifo-analyze",
