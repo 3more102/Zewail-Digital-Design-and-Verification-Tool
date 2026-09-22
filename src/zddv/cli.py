@@ -41,6 +41,7 @@ from zddv.storage import (
     list_run_records,
     list_runs,
     list_uvm_item_handshake_snapshots,
+    list_uvm_item_handshake_violations,
     list_uvm_log_snapshots,
     list_uvm_sequence_lifecycle_snapshots,
 )
@@ -811,6 +812,30 @@ def cmd_uvm_item_history(args) -> int:
             f"{row['event_count']:>6} {row['violation_count']:>5} "
             f"{handshake:<15} {activity:<12} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_uvm_item_violations(args) -> int:
+    project = load_project(_project_arg(args))
+    code = args.code.upper() if args.code else None
+    rows = list_uvm_item_handshake_violations(
+        project,
+        args.snapshot_id,
+        limit=args.limit,
+        code=code,
+        item_id=args.item_id,
+    )
+    if not rows:
+        print("No UVM item handshake violations found.")
+        return 0
+
+    print(f"{'IDX':>4} {'EVENT':>5} {'CODE':<28} {'ITEM':<20} MESSAGE")
+    for row in rows:
+        print(
+            f"{row['violation_index']:>4} {row['event_index']:>5} "
+            f"{row['code']:<28} {row['item_id'][:20]:<20} "
+            f"{row['message']}"
         )
     return 0
 
@@ -1718,6 +1743,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter item-handshake snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_item_history.set_defaults(func=cmd_uvm_item_history)
+
+    p_uvm_item_violations = sub.add_parser(
+        "uvm-item-violations",
+        help="Show persisted violations for one UVM item-handshake snapshot",
+    )
+    p_uvm_item_violations.add_argument(
+        "snapshot_id",
+        help="Persisted UVM item-handshake snapshot ID",
+    )
+    p_uvm_item_violations.add_argument("--limit", type=int, default=100)
+    p_uvm_item_violations.add_argument(
+        "--code",
+        default=None,
+        help="Filter by exact violation code, e.g. LATE_GRANT",
+    )
+    p_uvm_item_violations.add_argument(
+        "--item",
+        dest="item_id",
+        default=None,
+        help="Filter by exact normalized item ID",
+    )
+    p_uvm_item_violations.set_defaults(func=cmd_uvm_item_violations)
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",
