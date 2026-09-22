@@ -82,6 +82,7 @@ from zddv.uvm_arbitration import analyze_uvm_arbitration_file, analyze_uvm_arbit
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
 from zddv.uvm_marker import analyze_uvm_marker_log
 from zddv.uvm_item_instrumentation import write_uvm_item_instrumentation
+from zddv.uvm_auto_instrumentation import write_uvm_auto_instrumentation
 from zddv.uvm_sequence import analyze_uvm_sequence_file, analyze_uvm_sequence_log
 from zddv.uvm_sequence_instrumentation import write_uvm_sequence_instrumentation
 from zddv.waveform import write_waveform_index
@@ -2015,6 +2016,27 @@ def cmd_uvm_arbitration_history(args) -> int:
     return 0
 
 
+def cmd_uvm_auto_instrument(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_uvm_auto_instrumentation(
+        project,
+        output=args.output,
+        add_source=args.add_source,
+        force=args.force,
+    )
+    print(f"UVM automatic instrumentation adapter: {result['path']}")
+    print(f"Base class: {result['adapter_class']}")
+    print(
+        "Marker helpers: "
+        f"sequence={result['sequence_helper']} item={result['item_helper']}"
+    )
+    if result["project_path"] is not None:
+        state = "ordered" if result["added_to_project"] else "already ordered"
+        print(f"Project sources: {state}")
+    print("Automatic execution: disabled")
+    return 0
+
+
 def cmd_uvm_sequence_instrument(args) -> int:
     project = load_project(_project_arg(args))
     result = write_uvm_sequence_instrumentation(
@@ -3756,6 +3778,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter arbitration snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_arbitration_history.set_defaults(func=cmd_uvm_arbitration_history)
+
+    p_uvm_auto_instrument = sub.add_parser(
+        "uvm-auto-instrument",
+        help="Generate an opt-in UVM base-sequence adapter for automatic lifecycle/item markers",
+    )
+    p_uvm_auto_instrument.add_argument(
+        "--output",
+        default="tb/zddv_uvm_auto_trace_pkg.sv",
+        help="Generated UVM adapter SystemVerilog path",
+    )
+    p_uvm_auto_instrument.add_argument(
+        "--no-add-source",
+        dest="add_source",
+        action="store_false",
+        help="Do not register/order the generated helpers and adapter in project testbench sources",
+    )
+    p_uvm_auto_instrument.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing generated adapter; marker helpers are never overwritten implicitly",
+    )
+    p_uvm_auto_instrument.set_defaults(
+        func=cmd_uvm_auto_instrument,
+        add_source=True,
+    )
 
     p_uvm_sequence_instrument = sub.add_parser(
         "uvm-sequence-instrument",
