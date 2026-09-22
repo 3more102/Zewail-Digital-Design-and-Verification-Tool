@@ -92,6 +92,25 @@ def extract_axi4_trace_from_vcd(
         clock=clock,
     )
 
+    header = parse_vcd_header(source)
+    scoped_signals = {
+        str(item["name"]).upper(): item
+        for item in header.get("signals", [])
+        if item.get("scope") == resolved_scope
+    }
+    wdata_width = int(scoped_signals["WDATA"]["width"])
+    wstrb_width = int(scoped_signals["WSTRB"]["width"])
+    if wdata_width <= 0 or wdata_width % 8:
+        raise RuntimeError(
+            f"WDATA width must be a positive multiple of 8, got {wdata_width}"
+        )
+    expected_wstrb_width = wdata_width // 8
+    if wstrb_width != expected_wstrb_width:
+        raise RuntimeError(
+            "WSTRB width must equal WDATA width / 8; "
+            f"got WDATA={wdata_width}, WSTRB={wstrb_width}"
+        )
+
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
         available[name]: name
@@ -122,8 +141,11 @@ def extract_axi4_trace_from_vcd(
 
     waveform = dict(sampled["waveform"])
     waveform["clock"] = actual_clock
+    waveform["data_width_bits"] = wdata_width
+    waveform["wstrb_width"] = wstrb_width
     return {
         "source": "vcd-waveform",
+        "data_width_bits": wdata_width,
         "waveform": waveform,
         "samples": normalized_samples,
     }
