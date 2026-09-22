@@ -39,7 +39,12 @@ Line No. Total Covered Percent
 TOTAL 5 4 80.00
 
 Condition Coverage for Module : tb
-TOTAL 99 1 1.01
+Total Covered Percent
+Conditions 8 6 75.00
+
+Toggle Coverage for Module : tb
+Total Covered Percent
+Totals 12 9 75.00
 
 Branch Coverage for Module : tb
 Line No. Total Covered Percent
@@ -48,6 +53,14 @@ Branches 2 1 50.00
 Line Coverage for Module : dut
 Line No. Total Covered Percent
 TOTAL 10 8 80.00
+
+Cond Coverage for Module : dut
+Total Covered Percent
+Conditions 4 3 75.00
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 8 8 100.00
 
 Branch Coverage for Module : dut
 Line No. Total Covered Percent
@@ -69,11 +82,25 @@ Branches 4 3 75.00
         "total": 6,
         "hit_rate": pytest.approx(66.6666667),
     }
+    assert report["by_metric_counts"]["module_condition"] == {
+        "covered": 9,
+        "total": 12,
+        "hit_rate": pytest.approx(75.0),
+    }
+    assert report["by_metric_counts"]["module_toggle"] == {
+        "covered": 17,
+        "total": 20,
+        "hit_rate": pytest.approx(85.0),
+    }
     assert [(item["metric"], item["module"]) for item in report["modules"]] == [
         ("branch", "dut"),
         ("branch", "tb"),
+        ("condition", "dut"),
+        ("condition", "tb"),
         ("line", "dut"),
         ("line", "tb"),
+        ("toggle", "dut"),
+        ("toggle", "tb"),
     ]
 
 
@@ -112,6 +139,14 @@ TOTAL 10 8 80.00
 Branch Coverage for Module : dut
 Line No. Total Covered Percent
 Branches 5 2 40.00
+
+Condition Coverage for Module : dut
+Total Covered Percent
+Conditions 8 6 75.00
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 10 6 60.00
 """,
             encoding="utf-8",
         )
@@ -134,10 +169,22 @@ Branches 5 2 40.00
         "total": 5,
         "hit_rate": pytest.approx(40.0),
     }
+    assert result["metrics"]["by_metric_counts"]["module_condition"] == {
+        "covered": 6,
+        "total": 8,
+        "hit_rate": pytest.approx(75.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["module_toggle"] == {
+        "covered": 6,
+        "total": 10,
+        "hit_rate": pytest.approx(60.0),
+    }
 
     snapshots = list_coverage_score_snapshots(project, limit=1)
     assert snapshots[0]["by_metric_counts"]["module_line"]["covered"] == 8
     assert snapshots[0]["by_metric_counts"]["module_branch"]["total"] == 5
+    assert snapshots[0]["by_metric_counts"]["module_condition"]["covered"] == 6
+    assert snapshots[0]["by_metric_counts"]["module_toggle"]["total"] == 10
 
 
 def test_parse_vcs_urg_module_counts_rejects_conflicting_duplicate_sections(
