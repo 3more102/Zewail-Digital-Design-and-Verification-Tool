@@ -30,6 +30,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized Verilator coverage metrics stored as SQLite snapshots
 - Coverage history/trend CLI with per-type point breakdown
 - Coverage-hole analysis with type filtering and JSON export
+- Reviewable coverage-hole test objectives from explicit code/FSM/toggle/FEC or functional-bin evidence; automatic test generation remains disabled
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -720,6 +721,24 @@ When no waveform artifact or exact signal hint exists, the report emits explicit
 blockers instead of inventing a signal or time window. Probe suggestions are written
 to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 
+### Coverage-Hole Test Suggestions
+
+After producing normalized item-level holes, `zddv coverage-suggest` converts only the
+retained evidence into reviewable test objectives:
+
+```bash
+zddv --project my_project coverage-holes
+zddv --project my_project coverage-suggest
+zddv --project my_project coverage-suggest --input .zddv/functional_coverage/<snapshot>.json
+```
+
+Source locations, explicit FEC targets/truth rows, toggle transitions, FSM states or
+transitions, and functional-bin goals are preserved when present. Missing stimulus semantics
+stay missing: ZDDV does not guess register values, protocol sequences, timing, or constraints
+needed to reach a hole. The JSON report is written to
+`.zddv/coverage/test-suggestions.json` and every entry is marked review-required with
+`generated_test=false`.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
@@ -748,6 +767,7 @@ to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
 - [x] Deterministic evidence-ranked root-cause candidate triage
+- [x] Evidence-backed coverage-hole test objectives with review-required output
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
