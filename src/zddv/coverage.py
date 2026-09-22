@@ -70,7 +70,7 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch|Condition|Expression)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>Statement|Branch|Condition|Expression|FSM)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
@@ -91,7 +91,28 @@ _QUESTA_FEC_ROW = re.compile(
     r"(?:\s+(?P<detail>.*?))?\s*$",
     re.IGNORECASE,
 )
-
+_QUESTA_FSM_ID = re.compile(
+    r"^\s*FSM_ID\s*:\s*(?P<fsm_id>\S.*?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_SECTION = re.compile(
+    r"^\s*(?P<covered>Covered|Uncovered)\s+"
+    r"(?P<kind>States|Transitions)\s*:\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FSM_COVERED_STATE = re.compile(
+    r"^\s*(?P<state>\S+)\s+(?P<hits>\d[\d,]*)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_STATE = re.compile(r"^\s*(?P<state>\S+)\s*$")
+_QUESTA_FSM_COVERED_TRANSITION = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<transition_id>\d+)\s+"
+    r"(?P<hits>\d[\d,]*)\s+"
+    r"(?P<transition>.+?\s+->\s+.+?)\s*$"
+)
+_QUESTA_FSM_UNCOVERED_TRANSITION = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<transition_id>\d+)\s+"
+    r"(?P<transition>.+?\s+->\s+.+?)\s*$"
+)
 _QUESTA_MULTIBIT_FEC_ROW = re.compile(
     r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<rest>.+?)\s*$",
     re.IGNORECASE,
@@ -203,6 +224,11 @@ def build_coverage_hole_report(
                         "expression",
                         "fec_context",
                         "fec_target",
+                        "fsm_id",
+                        "fsm_kind",
+                        "state",
+                        "transition",
+                        "transition_id",
                         "evidence",
                         "bit",
                         "multibit",
@@ -375,14 +401,13 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize Questa statement/branch and documented FEC detail rows.
+    """Normalize documented Questa code-detail rows into item-level points.
 
-    Scalar condition/expression rows are accepted only after the explicit
-    Rows/Hits/FEC Target table header. Multibit expression rows follow the
-    documented multibit-verbose layout with one FEC-target row per logical
-    state and one hit-count column per bit index. Each _0/_1 pair is collapsed
-    into one input-term-bit coverage point, which is covered only when both
-    logical states have non-zero hits.
+    Statement/branch rows and scalar condition/expression FEC rows are
+    normalized conservatively. FSM state/transition rows follow the documented
+    v2024.2 text-report sections and keep covered/uncovered evidence explicit.
+    Documented multibit-expression FEC rows are normalized per input-term bit;
+    multibit condition semantics remain evidence-gated.
     """
     points: list[dict] = []
     kind = ""
@@ -394,6 +419,8 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     in_multibit_rows = False
     multibit_indices: list[int] = []
     multibit_rows: list[dict] = []
+    fsm_id = ""
+    fsm_section = ""
 
     def flush_multibit_points() -> None:
         nonlocal multibit_indices, multibit_rows
@@ -423,7 +450,10 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             one = states["1"]
             zero_hits = list(zero["hits"])
             one_hits = list(one["hits"])
-            if len(zero_hits) != len(multibit_indices) or len(one_hits) != len(multibit_indices):
+            if (
+                len(zero_hits) != len(multibit_indices)
+                or len(one_hits) != len(multibit_indices)
+            ):
                 continue
 
             for column, bit_index in enumerate(multibit_indices):
@@ -470,6 +500,8 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_context = ""
             in_fec_rows = False
             in_multibit_rows = False
+            fsm_id = ""
+            fsm_section = ""
             continue
 
         if not source_file:
@@ -479,13 +511,16 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
             if item is None:
                 continue
+
             hits = int(item.group("hits").replace("*", "").replace(",", ""))
             line_number = int(item.group("line"))
             item_number = int(item.group("item"))
             detail = (item.group("detail") or "").strip()
+
             name = f"{source_file}:{line_number}:{item_number}"
             if detail:
                 name += f" {detail}"
+
             points.append(
                 {
                     "name": name,
@@ -498,6 +533,124 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                     "detail": detail,
                 }
             )
+            continue
+
+        if kind == "fsm":
+            id_match = _QUESTA_FSM_ID.match(raw_line)
+            if id_match is not None:
+                fsm_id = id_match.group("fsm_id").strip()
+                fsm_section = ""
+                continue
+
+            section = _QUESTA_FSM_SECTION.match(raw_line)
+            if section is not None:
+                fsm_section = (
+                    f"{section.group('covered').strip().lower()}_"
+                    f"{section.group('kind').strip().lower()}"
+                )
+                continue
+
+            stripped = raw_line.strip()
+            if stripped.endswith(":"):
+                fsm_section = ""
+                continue
+            if not fsm_id or not fsm_section:
+                continue
+
+            if fsm_section == "covered_states":
+                row = _QUESTA_FSM_COVERED_STATE.match(raw_line)
+                if row is None:
+                    continue
+                state = row.group("state").strip()
+                hits = int(row.group("hits").replace(",", ""))
+                points.append(
+                    {
+                        "name": f"{source_file}:{fsm_id}:state:{state}",
+                        "count": hits,
+                        "hit": hits > 0,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "state",
+                        "state": state,
+                    }
+                )
+                continue
+
+            if fsm_section == "uncovered_states":
+                row = _QUESTA_FSM_UNCOVERED_STATE.match(raw_line)
+                if row is None:
+                    continue
+                state = row.group("state").strip()
+                if state.lower() == "state" or not state.strip("-"):
+                    continue
+                points.append(
+                    {
+                        "name": f"{source_file}:{fsm_id}:state:{state}",
+                        "count": 0,
+                        "hit": False,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "state",
+                        "state": state,
+                    }
+                )
+                continue
+
+            if fsm_section == "covered_transitions":
+                row = _QUESTA_FSM_COVERED_TRANSITION.match(raw_line)
+                if row is None:
+                    continue
+                line_number = int(row.group("line"))
+                transition_id = int(row.group("transition_id"))
+                hits = int(row.group("hits").replace(",", ""))
+                transition = row.group("transition").strip()
+                points.append(
+                    {
+                        "name": (
+                            f"{source_file}:{line_number}:{fsm_id}:"
+                            f"transition:{transition_id} {transition}"
+                        ),
+                        "count": hits,
+                        "hit": hits > 0,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "line": line_number,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "transition",
+                        "transition_id": transition_id,
+                        "transition": transition,
+                    }
+                )
+                continue
+
+            if fsm_section == "uncovered_transitions":
+                row = _QUESTA_FSM_UNCOVERED_TRANSITION.match(raw_line)
+                if row is None:
+                    continue
+                line_number = int(row.group("line"))
+                transition_id = int(row.group("transition_id"))
+                transition = row.group("transition").strip()
+                points.append(
+                    {
+                        "name": (
+                            f"{source_file}:{line_number}:{fsm_id}:"
+                            f"transition:{transition_id} {transition}"
+                        ),
+                        "count": 0,
+                        "hit": False,
+                        "type": "fsm",
+                        "source_file": source_file,
+                        "line": line_number,
+                        "fsm_id": fsm_id,
+                        "fsm_kind": "transition",
+                        "transition_id": transition_id,
+                        "transition": transition,
+                    }
+                )
+                continue
+
             continue
 
         if kind not in {"condition", "expression"}:
@@ -533,10 +686,11 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             if indices and raw_line.strip().lower().startswith("i"):
                 multibit_indices = indices
                 continue
-            row = _QUESTA_MULTIBIT_FEC_ROW.match(raw_line)
-            if row is None or not multibit_indices:
+
+            multibit_row = _QUESTA_MULTIBIT_FEC_ROW.match(raw_line)
+            if multibit_row is None or not multibit_indices:
                 continue
-            tokens = row.group("rest").split()
+            tokens = multibit_row.group("rest").split()
             width = len(multibit_indices)
             if len(tokens) < width:
                 continue
@@ -545,8 +699,8 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 continue
             multibit_rows.append(
                 {
-                    "row": int(row.group("row")),
-                    "target": row.group("target").strip(),
+                    "row": int(multibit_row.group("row")),
+                    "target": multibit_row.group("target").strip(),
                     "hits": [
                         int(token.replace("*", "").replace(",", ""))
                         for token in hit_tokens
@@ -564,6 +718,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             or fec_item is None
         ):
             continue
+
         hits = int(row.group("hits").replace("*", "").replace(",", ""))
         row_number = int(row.group("row"))
         target = row.group("target").strip()
@@ -571,6 +726,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
         name = f"{source_file}:{fec_line}:{fec_item}:row{row_number} {target}"
         if evidence:
             name += f" {evidence}"
+
         point = {
             "name": name,
             "count": hits,
@@ -847,6 +1003,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
     multibit_expression_path = out_dir / "multibit-expression.txt"
+    toggle_detail_path = out_dir / "toggle-details.txt"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -881,7 +1038,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "-details",
         "-dumptables",
         "-code",
-        "sbce",
+        "sbcef",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
@@ -971,6 +1128,22 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             ],
             cwd=project.root,
             output=multibit_expression_path,
+        ),
+        "toggle_detail": _capture_questa_report_file(
+            [
+                tool,
+                "report",
+                "-details",
+                "-byinstance",
+                "-code",
+                "t",
+                "-all",
+                "-output",
+                str(toggle_detail_path),
+                str(merged_path),
+            ],
+            cwd=project.root,
+            output=toggle_detail_path,
         ),
     }
 
@@ -2285,6 +2458,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     runfile_path = out_dir / "runs.txt"
     merge_log_path = out_dir / "merge.log"
     summary_path = out_dir / "summary.txt"
+    detail_path = out_dir / "detail.txt"
     script_path = out_dir / "imc-commands.tcl"
     manifest_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_dirs]
@@ -2304,11 +2478,17 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         'report -summary -inst "*..." -metrics all '
         "-cumulative on -showempty on -local off; exit"
     )
+    detail_script = (
+        'report -detail -inst "*..." -metrics all '
+        "-all -showempty on -source on; exit"
+    )
     script_path.write_text(
         merge_script
         + "\n"
         + f"# load: {merged_path}\n"
         + report_script
+        + "\n"
+        + detail_script
         + "\n",
         encoding="utf-8",
     )
@@ -2344,6 +2524,17 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
             f"the generated coverage database. See {summary_path}"
         )
 
+    detail_command = [
+        tool,
+        "-load",
+        str(merged_path),
+        "-execcmd",
+        detail_script,
+    ]
+    detail_report = _run(detail_command, out_dir)
+    detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
+    detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
+
     metrics: dict | None = None
     metrics_error: str | None = None
     metrics_status = "summary-unparsed"
@@ -2375,10 +2566,14 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "runfile": str(runfile_path),
         "merge_log": str(merge_log_path),
         "summary": str(summary_path),
+        "detail": str(detail_path),
+        "detail_status": detail_status,
+        "detail_returncode": int(detail_report.returncode),
         "script": str(script_path),
         "merge_model": "union_all",
         "merge_command": merge_command,
         "report_command": report_command,
+        "detail_command": detail_command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
@@ -2412,6 +2607,10 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "inputs": inputs,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "detail": str(detail_path),
+        "detail_status": detail_status,
+        "detail_returncode": int(detail_report.returncode),
+        "detail_command": detail_command,
         "metrics_path": str(manifest_path),
         "report": report.stdout or "",
         "metrics": metrics,
