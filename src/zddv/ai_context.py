@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
-from zddv.debug_probes import suggest_debug_probes
+from zddv.debug_probes import suggest_debug_probes_from_ranking
 from zddv.root_cause import rank_root_cause_candidates
 
 
@@ -39,12 +39,10 @@ def build_ai_rca_context(
         event_limit=event_limit,
         signal_limit=signal_limit,
     )
-    probes = suggest_debug_probes(
-        project,
+    probes = suggest_debug_probes_from_ranking(
+        ranking,
         run_id=run_id,
         candidate_limit=candidate_limit,
-        event_limit=event_limit,
-        signal_limit=signal_limit,
     )
 
     candidates = ranking["candidates"][:candidate_limit]
