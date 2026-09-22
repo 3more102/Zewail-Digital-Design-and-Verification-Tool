@@ -111,6 +111,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
+- [x] VCS documented `-show brief -format text` uncovered-object evidence retention.
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion.
 - [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports.
