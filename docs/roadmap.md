@@ -141,7 +141,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Normalized property/cover result persistence and history.
 - [x] Tool-specific formal result ingestion (native SymbiYosys logfile evidence).
 - [x] Normalized counterexample/witness artifact model and JSON CLI ingestion.
-- [x] Formal coverage foundation (finite-depth SymbiYosys cover reachability with per-property covered/unreached history).
+- [x] Bounded SymbiYosys cover/reachability execution with machine-readable per-property covered/unreached history.
+- [ ] Cross-run/aggregate formal coverage metrics beyond native cover reachability.
 
 ## v0.8 — Intelligent Debug
 
