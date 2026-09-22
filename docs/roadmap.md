@@ -145,6 +145,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Native VCD counterexample/witness normalization with signal selection and provenance.
 - [x] Bounded SymbiYosys cover/reachability execution with machine-readable per-property covered/unreached history.
 - [x] Cross-run formal cover coverage grouped by exact design/backend/engine/depth/property universe compatibility.
+- [x] Normalized formal counterexample/witness signal cross-probing into RTL hierarchy, declarations, and source-structural connectivity.
 
 ## v0.8 — Intelligent Debug
 
