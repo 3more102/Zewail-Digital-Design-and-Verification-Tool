@@ -91,7 +91,7 @@ can correlate snapshots with recorded ZDDV simulation runs; and exposes `uvm-ana
 `uvm-history`. Commercial simulator execution adapters and
 phase/objection/sequence lifecycle reconstruction remain planned.
 
-- [ ] Questa execution adapter.
+- [x] Questa execution adapter (classic `vlib`/`vlog`/`vsim` batch flow).
 - [ ] VCS execution adapter.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
