@@ -2540,6 +2540,17 @@ _IMC_SUMMARY_ROW = re.compile(
 )
 
 
+_IMC_DETAIL_SECTION_HEADER = re.compile(
+    r"^\\s*Coverage Report:\\s*(?P<title>.+?)\\s*$",
+    re.IGNORECASE,
+)
+_IMC_DETAIL_CONTEXT_FIELD = re.compile(
+    r"^\\s*(?P<label>Instance name|Module/Entity name|Type name|File name):"
+    r"\\s*(?P<value>.*?)\\s*$",
+    re.IGNORECASE,
+)
+
+
 _IMC_TOGGLE_INSTANCE = re.compile(
     r"^\s*Instance name:\s*(?P<scope>.+?)\s*$",
     re.IGNORECASE,
@@ -2584,6 +2595,82 @@ def _imc_counts(value: str | None, *, grade: float | None) -> dict | None:
     if grade is not None:
         result["hit_rate"] = grade
     return result
+
+
+def index_xcelium_imc_detail_sections(text: str) -> dict:
+    """Index native IMC detail-report sections without inferring row semantics.
+
+    This inventory is intentionally structural: it records section titles, exact
+    line spans, and only context labels already observed in verified IMC detail
+    reports. Unknown FSM/functional table layouts remain uninterpreted evidence.
+    """
+    lines = text.splitlines()
+    starts: list[tuple[int, str]] = []
+    for line_index, raw_line in enumerate(lines):
+        match = _IMC_DETAIL_SECTION_HEADER.match(raw_line)
+        if match is not None:
+            starts.append((line_index, match.group("title").strip()))
+
+    sections: list[dict] = []
+    for section_index, (start, title) in enumerate(starts, start=1):
+        end = starts[section_index][0] if section_index < len(starts) else len(lines)
+        context: list[dict] = []
+        pending: tuple[str, int] | None = None
+
+        for line_index in range(start + 1, end):
+            raw_line = lines[line_index]
+            match = _IMC_DETAIL_CONTEXT_FIELD.match(raw_line)
+            if match is not None:
+                label = match.group("label").strip()
+                value = match.group("value").strip()
+                if value:
+                    context.append(
+                        {
+                            "label": label,
+                            "value": value,
+                            "line": line_index + 1,
+                        }
+                    )
+                    pending = None
+                else:
+                    pending = (label, line_index + 1)
+                continue
+
+            if pending is not None:
+                value = raw_line.strip()
+                if value and not value.casefold().startswith("number of "):
+                    context.append(
+                        {
+                            "label": pending[0],
+                            "value": value,
+                            "line": pending[1],
+                            "value_line": line_index + 1,
+                        }
+                    )
+                pending = None
+
+        sections.append(
+            {
+                "index": section_index,
+                "title": title,
+                "start_line": start + 1,
+                "end_line": end,
+                "line_count": end - start,
+                "context": context,
+            }
+        )
+
+    return {
+        "schema_version": 1,
+        "analysis": "xcelium_imc_detail_section_inventory",
+        "section_count": len(sections),
+        "section_titles": [section["title"] for section in sections],
+        "sections": sections,
+        "semantics": (
+            "Structural inventory only. Section titles and line spans are retained "
+            "without inferring unknown IMC item-row schemas or coverage semantics."
+        ),
+    }
 
 
 def parse_xcelium_imc_block_coverage(text: str) -> list[dict]:
@@ -2979,6 +3066,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     merge_log_path = out_dir / "merge.log"
     summary_path = out_dir / "summary.txt"
     detail_path = out_dir / "detail.txt"
+    detail_index_path = out_dir / "detail-index.json"
     script_path = out_dir / "imc-commands.tcl"
     manifest_path = out_dir / "metrics.json"
     inputs = [str(path) for path in coverage_dirs]
@@ -3054,6 +3142,19 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     detail_report = _run(detail_command, out_dir)
     detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
     detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
+    detail_inventory = index_xcelium_imc_detail_sections(
+        detail_report.stdout or "" if detail_report.returncode == 0 else ""
+    )
+    detail_inventory.update(
+        {
+            "source_detail": str(detail_path),
+            "source_status": detail_status,
+        }
+    )
+    detail_index_path.write_text(
+        json.dumps(detail_inventory, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     toggle_points: list[dict] = []
     toggle_detail_error: str | None = None
@@ -3110,6 +3211,9 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail": str(detail_path),
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
+        "detail_index": str(detail_index_path),
+        "detail_section_count": detail_inventory["section_count"],
+        "detail_section_titles": detail_inventory["section_titles"],
         "toggle_detail_status": toggle_detail_status,
         "toggle_detail_points": len(toggle_points),
         "toggle_detail_holes": sum(
@@ -3158,6 +3262,9 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
         "detail": str(detail_path),
         "detail_status": detail_status,
         "detail_returncode": int(detail_report.returncode),
+        "detail_index": str(detail_index_path),
+        "detail_section_count": detail_inventory["section_count"],
+        "detail_section_titles": detail_inventory["section_titles"],
         "detail_command": detail_command,
         "toggle_detail_status": toggle_detail_status,
         "toggle_detail_points": len(toggle_points),
