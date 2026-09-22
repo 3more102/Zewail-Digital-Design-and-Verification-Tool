@@ -150,6 +150,7 @@ zddv --project my_project formal-bmc --depth 20
 zddv --project my_project formal-cover --depth 20
 zddv --project my_project formal-vcd-trace trace.vcd --property top.p_safe --kind assert
 zddv --project my_project formal-vcd-trace witness.vcd --property top.c_reached --kind cover --signal state
+zddv --project my_project formal-trace-crossprobe .zddv/formal/counterexamples/latest.json --signal state
 zddv --project my_project formal-history --limit 20
 
 zddv --project my_project run
@@ -733,6 +734,7 @@ not claim that the top-ranked candidate caused the failure.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
+- [x] Normalized formal trace signal cross-probing to source hierarchy, RTL declarations, and structural connectivity
 - [x] Deterministic evidence-ranked root-cause candidate triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
