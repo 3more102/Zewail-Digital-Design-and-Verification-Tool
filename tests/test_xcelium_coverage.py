@@ -9,6 +9,7 @@ import pytest
 from zddv.cli import cmd_coverage_history, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    build_xcelium_imc_item_report,
     merge_coverage,
     merge_xcelium_coverage,
     parse_xcelium_imc_block_coverage,
@@ -79,6 +80,11 @@ Hit(Full)  Hit(Rise)  Hit(Fall)   Signal
 0          1          0           data[3]
 1          1          1           ready
 """
+
+
+IMC_COMBINED_DETAIL = "\n".join(
+    (IMC_BLOCK_DETAIL, IMC_EXPRESSION_DETAIL, IMC_TOGGLE_DETAIL)
+)
 
 
 def _project(tmp_path: Path, *, simulator: str = "xcelium") -> ProjectConfig:
@@ -165,7 +171,7 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
         assert "-source on" in report_script
         return SimpleNamespace(
             returncode=0,
-            stdout=IMC_TOGGLE_DETAIL,
+            stdout=IMC_COMBINED_DETAIL,
         )
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -175,8 +181,28 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert result["inputs"] == [str(first), str(second)]
     assert Path(result["merged"]).parts[-3:] == ("cov_work", "scope", "merged")
     assert Path(result["summary"]).read_text(encoding="utf-8") == IMC_SUMMARY
-    assert Path(result["detail"]).read_text(encoding="utf-8") == IMC_TOGGLE_DETAIL
+    assert Path(result["detail"]).read_text(encoding="utf-8") == IMC_COMBINED_DETAIL
     assert result["detail_status"] == "captured"
+    assert result["item_detail_status"] == "normalized"
+    assert result["item_detail_points"] == 7
+    assert result["item_detail_holes"] == 4
+    assert result["item_detail_by_type"] == {
+        "block": {"points": 2, "holes": 1},
+        "expression": {"points": 2, "holes": 1},
+        "toggle": {"points": 3, "holes": 2},
+    }
+    assert result["item_detail_parser_status"] == {
+        "block": "normalized",
+        "expression": "normalized",
+        "toggle": "normalized",
+    }
+    items = json.loads(Path(result["items"]).read_text(encoding="utf-8"))
+    assert items["source_format"] == "xcelium-imc-detail"
+    assert items["source_detail"] == result["detail"]
+    assert items["supported_types"] == ["block", "expression", "toggle"]
+    assert items["unsupported_item_types"] == ["fsm", "functional"]
+    assert items["total_points"] == 7
+    assert items["total_holes"] == 4
     assert result["detail_returncode"] == 0
     assert result["toggle_detail_status"] == "normalized"
     assert result["toggle_detail_points"] == 3
@@ -210,6 +236,14 @@ def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     assert manifest["detail"] == result["detail"]
     assert manifest["detail_status"] == "captured"
     assert manifest["detail_returncode"] == 0
+    assert manifest["items"] == result["items"]
+    assert manifest["item_detail_status"] == "normalized"
+    assert manifest["item_detail_points"] == 7
+    assert manifest["item_detail_holes"] == 4
+    assert manifest["item_detail_by_type"]["expression"] == {
+        "points": 2,
+        "holes": 1,
+    }
     assert manifest["toggle_detail_status"] == "normalized"
     assert manifest["toggle_detail_points"] == 3
     assert manifest["toggle_detail_holes"] == 2
@@ -262,12 +296,44 @@ def test_merge_xcelium_coverage_retains_detail_tool_error_as_evidence(
     assert result["metrics_status"] == "normalized"
     assert result["detail_status"] == "tool-error"
     assert result["detail_returncode"] == 2
+    assert result["items"] is None
+    assert result["item_detail_status"] == "tool-error"
+    assert result["item_detail_points"] == 0
+    assert result["item_detail_holes"] == 0
+    assert result["item_detail_by_type"] == {}
     assert result["toggle_detail_status"] == "tool-error"
     assert result["toggle_detail_points"] == 0
     assert result["toggle_detail_holes"] == 0
     assert Path(result["detail"]).read_text(encoding="utf-8") == (
         "detail unsupported\n"
     )
+
+
+def test_build_xcelium_imc_item_report_combines_only_verified_layouts():
+    report = build_xcelium_imc_item_report(IMC_COMBINED_DETAIL)
+
+    assert report["schema_version"] == 1
+    assert report["source_format"] == "xcelium-imc-detail"
+    assert report["supported_types"] == ["block", "expression", "toggle"]
+    assert report["unsupported_item_types"] == ["fsm", "functional"]
+    assert report["total_points"] == 7
+    assert report["total_holes"] == 4
+    assert report["by_type"] == {
+        "block": {"points": 2, "holes": 1},
+        "expression": {"points": 2, "holes": 1},
+        "toggle": {"points": 3, "holes": 2},
+    }
+    assert report["parser_status"] == {
+        "block": "normalized",
+        "expression": "normalized",
+        "toggle": "normalized",
+    }
+    assert {point["type"] for point in report["points"]} == {
+        "block",
+        "expression",
+        "toggle",
+    }
+    assert "FSM and functional" in report["semantics"]
 
 
 def test_parse_xcelium_imc_block_coverage_keeps_source_evidence():
@@ -392,6 +458,46 @@ def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
     assert rc == 0
     payload = json.loads(
         (project.root / ".zddv" / "coverage" / "all-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["total_holes"] == 4
+    assert payload["by_type"] == {
+        "block": 1,
+        "expression": 1,
+        "toggle": 2,
+    }
+
+
+def test_xcelium_coverage_holes_cli_prefers_normalized_item_artifact(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    coverage_dir = project.root / ".zddv" / "coverage" / "xcelium"
+    coverage_dir.mkdir(parents=True)
+    detail_path = coverage_dir / "detail.txt"
+    detail_path.write_text("intentionally not parseable\n", encoding="utf-8")
+    item_report = build_xcelium_imc_item_report(IMC_COMBINED_DETAIL)
+    (coverage_dir / "items.json").write_text(
+        json.dumps({**item_report, "source_detail": str(detail_path.resolve())}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/from-items.json",
+            point_type=None,
+            limit=200,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "from-items.json").read_text(
             encoding="utf-8"
         )
     )
