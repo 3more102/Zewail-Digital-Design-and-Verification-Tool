@@ -362,6 +362,18 @@ CREATE TABLE IF NOT EXISTS coverage_score_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_score_created_at
     ON coverage_score_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS coverage_score_metric_counts (
+    snapshot_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    covered INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    hit_rate REAL,
+    PRIMARY KEY (snapshot_id, metric)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_score_metric_counts_snapshot
+    ON coverage_score_metric_counts(snapshot_id);
 """
 
 
@@ -1040,6 +1052,30 @@ def record_uvm_sequence_lifecycle_snapshot(
                 for item in record["events"]
             ],
         )
+        db.execute(
+            "DELETE FROM uvm_item_handshake_violations WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_item_handshake_violations (
+                snapshot_id, violation_index, code, event_index,
+                item_id, event, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["violation_index"]),
+                    item["code"],
+                    int(item["event_index"]),
+                    item["item_id"],
+                    item["event"],
+                    item["message"],
+                )
+                for item in record["violations"]
+            ],
+        )
     return path
 
 
@@ -1174,30 +1210,6 @@ def record_uvm_item_handshake_snapshot(
                     json.dumps(item.get("metadata", {}), sort_keys=True),
                 )
                 for item in record["events"]
-            ],
-        )
-        db.execute(
-            "DELETE FROM uvm_item_handshake_violations WHERE snapshot_id = ?",
-            (record["snapshot_id"],),
-        )
-        db.executemany(
-            """
-            INSERT INTO uvm_item_handshake_violations (
-                snapshot_id, violation_index, code, event_index,
-                item_id, event, message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    record["snapshot_id"],
-                    int(item["violation_index"]),
-                    item["code"],
-                    int(item["event_index"]),
-                    item["item_id"],
-                    item["event"],
-                    item["message"],
-                )
-                for item in record["violations"]
             ],
         )
     return path
@@ -1447,7 +1459,7 @@ def record_coverage_score_snapshot(
     project: ProjectConfig,
     record: dict[str, Any],
 ) -> Path:
-    """Persist percentage-native coverage scores without inventing point counts."""
+    """Persist percentage-native coverage scores plus explicitly reported counts."""
     path = database_path(project)
     with _connect(project) as db:
         db.execute(
@@ -1470,6 +1482,34 @@ def record_coverage_score_snapshot(
                 record["metrics_path"],
             ),
         )
+        db.execute(
+            "DELETE FROM coverage_score_metric_counts WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        for metric, values in sorted(
+            (record.get("by_metric_counts") or {}).items()
+        ):
+            covered = int(values["covered"])
+            total = int(values["total"])
+            if covered < 0 or total < 0 or covered > total:
+                raise ValueError(
+                    f"invalid coverage count for {metric}: {covered}/{total}"
+                )
+            hit_rate = values.get("hit_rate")
+            db.execute(
+                """
+                INSERT INTO coverage_score_metric_counts (
+                    snapshot_id, metric, covered, total, hit_rate
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    record["snapshot_id"],
+                    str(metric),
+                    covered,
+                    total,
+                    None if hit_rate is None else float(hit_rate),
+                ),
+            )
     return path
 
 
@@ -1493,10 +1533,36 @@ def list_coverage_score_snapshots(
             (limit,),
         ).fetchall()
 
+        counts_by_snapshot: dict[str, dict[str, dict[str, int | float]]] = {}
+        for row in rows:
+            snapshot_id = str(row["snapshot_id"])
+            count_rows = db.execute(
+                """
+                SELECT metric, covered, total, hit_rate
+                FROM coverage_score_metric_counts
+                WHERE snapshot_id = ?
+                ORDER BY metric
+                """,
+                (snapshot_id,),
+            ).fetchall()
+            counts: dict[str, dict[str, int | float]] = {}
+            for count_row in count_rows:
+                values: dict[str, int | float] = {
+                    "covered": int(count_row["covered"]),
+                    "total": int(count_row["total"]),
+                }
+                if count_row["hit_rate"] is not None:
+                    values["hit_rate"] = float(count_row["hit_rate"])
+                counts[str(count_row["metric"])] = values
+            counts_by_snapshot[snapshot_id] = counts
+
     result: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
         item["by_metric"] = json.loads(item.pop("by_metric_json"))
+        item["by_metric_counts"] = counts_by_snapshot.get(
+            str(item["snapshot_id"]), {}
+        )
         result.append(item)
     return result
 
