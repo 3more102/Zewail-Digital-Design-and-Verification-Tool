@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from zddv.config import ProjectConfig
 
 
-_SOURCE_TYPES = {"line", "statement"}
+_SOURCE_TYPES = {"line", "statement", "block"}
 _LOGIC_TYPES = {"branch", "condition", "expression"}
 
 
