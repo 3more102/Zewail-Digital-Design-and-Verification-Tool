@@ -77,6 +77,16 @@ _QUESTA_CODE_DETAIL_ROW = re.compile(
     r"(?:\s+(?P<detail>.*?))?\s*$"
 )
 
+_VCS_URG_KIND_ALIASES = {
+    "line": "line",
+    "cond": "condition",
+    "toggle": "toggle",
+    "fsm": "fsm",
+    "branch": "branch",
+    "assert": "assertion",
+    "group": "covergroup",
+}
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -405,6 +415,221 @@ def _capture_questa_report_file(
     }
 
 
+def _parse_vcs_urg_columns(
+    header_line: str,
+    value_line: str,
+) -> dict[str, float | None]:
+    """Parse one URG dashboard row without inventing values for blank cells."""
+    if "|" in header_line and "|" in value_line:
+        labels = [part.strip().upper() for part in header_line.split("|")]
+        values = [part.strip() for part in value_line.split("|")]
+        parsed: dict[str, float | None] = {}
+        for label, raw_value in zip(labels, values):
+            if not label:
+                continue
+            match = re.search(r"\d+(?:\.\d+)?", raw_value)
+            parsed[label] = float(match.group(0)) if match else None
+        return parsed
+
+    matches = list(re.finditer(r"\S+", header_line))
+    if not matches:
+        return {}
+
+    parsed = {}
+    for index, match in enumerate(matches):
+        label = match.group(0).strip().upper()
+        start = match.start()
+        end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(value_line)
+        )
+        cell = value_line[start:end].strip() if start < len(value_line) else ""
+        number = re.search(r"\d+(?:\.\d+)?", cell)
+        parsed[label] = float(number.group(0)) if number else None
+
+    populated = sum(value is not None for value in parsed.values())
+    if populated < 2:
+        labels = [match.group(0).strip().upper() for match in matches]
+        tokens = re.findall(r"\d+(?:\.\d+)?|--|N/?A", value_line, re.IGNORECASE)
+        if len(tokens) == len(labels):
+            parsed = {}
+            for label, token in zip(labels, tokens):
+                number = re.fullmatch(r"\d+(?:\.\d+)?", token)
+                parsed[label] = float(token) if number else None
+    return parsed
+
+
+def parse_vcs_urg_dashboard(text: str) -> dict:
+    """Normalize the Total Coverage Summary from URG dashboard.txt.
+
+    URG's dashboard reports coverage scores rather than raw coverable/hit point
+    counts. ZDDV therefore preserves these as score-only metrics and explicitly
+    marks point counts unavailable.
+    """
+    lines = text.splitlines()
+    summary_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip().lower() == "total coverage summary"
+        ),
+        None,
+    )
+    if summary_index is None:
+        return {
+            "total_points": 0,
+            "hit_points": 0,
+            "unhit_points": 0,
+            "hit_rate": 0.0,
+            "by_type": {},
+            "tool_total_coverage": None,
+            "counts_available": False,
+            "score_source": "urg-dashboard",
+        }
+
+    header_line = ""
+    value_line = ""
+    for line in lines[summary_index + 1 :]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not header_line and "SCORE" in stripped.upper():
+            header_line = line
+            continue
+        if header_line:
+            value_line = line
+            break
+
+    columns = (
+        _parse_vcs_urg_columns(header_line, value_line)
+        if header_line and value_line
+        else {}
+    )
+    score = columns.get("SCORE")
+    by_type: dict[str, dict[str, float]] = {}
+    for label, kind in _VCS_URG_KIND_ALIASES.items():
+        value = columns.get(label.upper())
+        if value is not None:
+            by_type[kind] = {"hit_rate": value}
+
+    return {
+        "total_points": 0,
+        "hit_points": 0,
+        "unhit_points": 0,
+        "hit_rate": float(score) if score is not None else 0.0,
+        "by_type": dict(sorted(by_type.items())),
+        "tool_total_coverage": float(score) if score is not None else None,
+        "counts_available": False,
+        "score_source": "urg-dashboard",
+    }
+
+
+def merge_vcs_coverage(project: ProjectConfig) -> dict:
+    """Merge per-run VCS VDBs with URG and ingest dashboard coverage scores."""
+    tool = shutil.which("urg")
+    if tool is None:
+        raise RuntimeError(
+            "Synopsys URG was not found in PATH. Install/configure VCS and retry."
+        )
+
+    run_root = (project.root / project.run_dir).resolve()
+    coverage_dirs = sorted(
+        path for path in run_root.glob("*/coverage.vdb") if path.is_dir()
+    )
+    if not coverage_dirs:
+        raise RuntimeError(
+            f"No coverage.vdb directories found under {run_root}. "
+            "Run coverage-enabled VCS simulations first."
+        )
+
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    merged_path = out_dir / "coverage.vdb"
+    report_dir = out_dir / "urg-report"
+    summary_path = report_dir / "dashboard.txt"
+    metrics_path = out_dir / "metrics.json"
+
+    if merged_path.exists():
+        shutil.rmtree(merged_path)
+    if report_dir.exists():
+        shutil.rmtree(report_dir)
+
+    inputs = [str(path) for path in coverage_dirs]
+    command = [
+        tool,
+        "-dir",
+        *inputs,
+        "-dbname",
+        str(merged_path),
+        "-report",
+        str(report_dir),
+        "-format",
+        "text",
+    ]
+    result = _run(command, project.root)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "VCS URG coverage merge/report failed:\n"
+            + "$ "
+            + " ".join(command)
+            + "\n"
+            + (result.stdout or "").strip()
+        )
+    if not merged_path.exists():
+        raise RuntimeError(
+            f"URG completed without creating merged VDB at {merged_path}."
+        )
+    if not summary_path.exists():
+        raise RuntimeError(
+            f"URG completed without creating dashboard report at {summary_path}."
+        )
+
+    summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
+    metrics = parse_vcs_urg_dashboard(summary_text)
+    if metrics["tool_total_coverage"] is None or not metrics["by_type"]:
+        raise RuntimeError(
+            f"No Total Coverage Summary could be parsed from {summary_path}."
+        )
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    snapshot_id = (
+        datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
+    payload = {
+        "snapshot_id": snapshot_id,
+        "created_at": created_at,
+        "project": project.name,
+        "simulator": project.simulator,
+        "input_count": len(inputs),
+        **metrics,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+        "report_dir": str(report_dir),
+        "urg_command": command,
+    }
+    metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    record_coverage_snapshot(
+        project,
+        {
+            **payload,
+            "metrics_path": str(metrics_path),
+        },
+    )
+    return {
+        "inputs": inputs,
+        "merged": str(merged_path),
+        "summary": str(summary_path),
+        "metrics_path": str(metrics_path),
+        "report": result.stdout or "",
+        "metrics": metrics,
+        "snapshot_id": snapshot_id,
+        "report_dir": str(report_dir),
+    }
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -698,6 +923,8 @@ def merge_coverage(project: ProjectConfig) -> dict:
         return merge_verilator_coverage(project)
     if simulator in {"questa", "questasim"}:
         return merge_questa_coverage(project)
+    if simulator == "vcs":
+        return merge_vcs_coverage(project)
     raise RuntimeError(
         f"Coverage merge/report is not implemented for simulator: {project.simulator}"
     )
