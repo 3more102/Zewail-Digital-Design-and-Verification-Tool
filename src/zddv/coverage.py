@@ -218,6 +218,10 @@ def build_coverage_hole_report(
                         "expression",
                         "fec_context",
                         "fec_target",
+                        "fec_target_hits",
+                        "fec_rows",
+                        "multibit_index",
+                        "coverage_unit",
                         "fsm_id",
                         "fsm_kind",
                         "state",
@@ -396,8 +400,10 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     Statement/branch rows and scalar condition/expression FEC rows are
     normalized conservatively. FSM state/transition rows follow the documented
     v2024.2 text-report sections and keep covered/uncovered evidence explicit.
-    Multibit FEC layouts remain unnormalized until their exact row semantics
-    are verified.
+    Documented multibit expression matrices emitted by
+    `-details -multibitverbose -code e` are normalized per operand bit while
+    retaining both raw FEC polarities. Multibit condition matrices remain
+    intentionally unnormalized.
     """
     points: list[dict] = []
     kind = ""
@@ -408,6 +414,22 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     in_fec_rows = False
     fsm_id = ""
     fsm_section = ""
+    multibit_indices: list[int] = []
+    multibit_terms: dict[tuple[str, int, int, str, int], dict] = {}
+
+    hit_token = re.compile(r"^(?:\*{3})?\d[\d,]*(?:\*{3})?$")
+    multibit_index_header = re.compile(
+        r"\bi\s*=\s*(?P<indices>(?:<\s*\d+\s*>\s*)+)",
+        re.IGNORECASE,
+    )
+    multibit_row = re.compile(
+        r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<body>.*?)\s*$",
+        re.IGNORECASE,
+    )
+    target_polarity = re.compile(
+        r"^(?P<term>.+)_(?P<polarity>[01])$",
+        re.IGNORECASE,
+    )
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
@@ -420,6 +442,7 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             in_fec_rows = False
             fsm_id = ""
             fsm_section = ""
+            multibit_indices = []
             continue
 
         if not source_file:
@@ -580,12 +603,69 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_item = int(item.group("item"))
             fec_context = (item.group("detail") or "").strip()
             in_fec_rows = False
+            multibit_indices = []
             continue
 
         normalized_line = raw_line.strip().lower()
         if normalized_line.startswith("rows:") and "fec target" in normalized_line:
             in_fec_rows = True
+            multibit_indices = []
             continue
+
+        if in_fec_rows and kind == "expression":
+            index_header = multibit_index_header.search(raw_line)
+            if index_header is not None:
+                multibit_indices = [
+                    int(value)
+                    for value in re.findall(
+                        r"<\s*(\d+)\s*>",
+                        index_header.group("indices"),
+                    )
+                ]
+                continue
+
+            if multibit_indices and fec_line is not None and fec_item is not None:
+                item_row = multibit_row.match(raw_line)
+                if item_row is not None:
+                    polarity_match = target_polarity.match(
+                        item_row.group("target").strip()
+                    )
+                    tokens = item_row.group("body").split()
+                    hit_tokens = tokens[: len(multibit_indices)]
+                    if (
+                        polarity_match is not None
+                        and len(hit_tokens) == len(multibit_indices)
+                        and all(hit_token.fullmatch(token) for token in hit_tokens)
+                    ):
+                        evidence = " ".join(tokens[len(multibit_indices) :]).strip()
+                        term = polarity_match.group("term")
+                        polarity = polarity_match.group("polarity")
+                        row_number = int(item_row.group("row"))
+                        for index, token in zip(multibit_indices, hit_tokens):
+                            hits = int(
+                                token.replace("*", "").replace(",", "")
+                            )
+                            key = (
+                                source_file,
+                                fec_line,
+                                fec_item,
+                                term,
+                                index,
+                            )
+                            state = multibit_terms.setdefault(
+                                key,
+                                {
+                                    "context": fec_context,
+                                    "hits": {},
+                                    "rows": {},
+                                    "evidence": {},
+                                },
+                            )
+                            state["hits"][polarity] = hits
+                            state["rows"][polarity] = row_number
+                            if evidence:
+                                state["evidence"][polarity] = evidence
+                        continue
 
         row = _QUESTA_FEC_ROW.match(raw_line)
         if (
@@ -615,13 +695,69 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             "row": row_number,
             "fec_context": fec_context,
             "fec_target": target,
+            "coverage_unit": "fec_row",
             "evidence": evidence,
             "detail": evidence,
         }
         point[kind] = fec_context
         points.append(point)
 
-    return points
+    for (
+        multibit_source,
+        multibit_line,
+        multibit_item,
+        term,
+        index,
+    ), state in multibit_terms.items():
+        hits = state["hits"]
+        rows = state["rows"]
+        if "0" not in hits or "1" not in hits:
+            continue
+
+        zero_hits = int(hits["0"])
+        one_hits = int(hits["1"])
+        term_label = term.replace("[i]", f"[{index}]").replace(
+            "(i)",
+            f"({index})",
+        )
+        context = str(state.get("context") or "")
+        evidence = {
+            str(key): str(value)
+            for key, value in dict(state.get("evidence") or {}).items()
+        }
+        points.append(
+            {
+                "name": (
+                    f"{multibit_source}:{multibit_line}:{multibit_item} "
+                    f"{term_label}"
+                ),
+                "count": min(zero_hits, one_hits),
+                "hit": zero_hits > 0 and one_hits > 0,
+                "type": "expression",
+                "source_file": multibit_source,
+                "line": multibit_line,
+                "item": multibit_item,
+                "expression": context,
+                "fec_context": context,
+                "fec_target": term_label,
+                "fec_target_hits": {"0": zero_hits, "1": one_hits},
+                "fec_rows": {"0": int(rows["0"]), "1": int(rows["1"])},
+                "multibit_index": index,
+                "coverage_unit": "multibit_expression_term",
+                "evidence": evidence,
+                "detail": f"FEC _0={zero_hits}, _1={one_hits}",
+            }
+        )
+
+    deduplicated: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for point in points:
+        key = (str(point.get("type") or ""), str(point.get("name") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(point)
+    return deduplicated
 
 
 def _xml_local_name(tag: str) -> str:
@@ -1006,6 +1142,25 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         ),
     }
 
+    multibit_expression_points: list[dict] = []
+    multibit_capture = detailed_code_coverage_evidence["multibit_expression"]
+    if multibit_capture["status"] == "captured":
+        multibit_expression_points = [
+            point
+            for point in parse_questa_code_coverage_report(
+                multibit_expression_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            )
+            if point.get("coverage_unit") == "multibit_expression_term"
+        ]
+        multibit_expression_status = (
+            "ok" if multibit_expression_points else "empty"
+        )
+    else:
+        multibit_expression_status = str(multibit_capture["status"])
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -1026,6 +1181,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_points": len(multibit_expression_points),
+        "multibit_expression_holes": sum(
+            not point["hit"] for point in multibit_expression_points
+        ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -1054,6 +1214,11 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "multibit_expression_status": multibit_expression_status,
+        "multibit_expression_points": len(multibit_expression_points),
+        "multibit_expression_holes": sum(
+            not point["hit"] for point in multibit_expression_points
+        ),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
