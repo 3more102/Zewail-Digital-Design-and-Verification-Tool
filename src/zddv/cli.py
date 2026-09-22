@@ -8,6 +8,7 @@ import sys
 
 from zddv import __version__
 from zddv.ai_context import write_ai_rca_context
+from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
@@ -410,6 +411,68 @@ def cmd_ai_rca_context(args) -> int:
     print("External transmission: disabled")
     print("Automatic model invocation: disabled")
     print(f"Evidence SHA-256: {result['provenance']['evidence_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_providers(args) -> int:
+    providers = provider_metadata()
+    print(f"AI PROVIDERS: {len(providers)} registered")
+    for item in providers:
+        transmission = (
+            "external" if item["external_transmission"] else "local"
+        )
+        validation = (
+            "schema-validated"
+            if item["response_schema_validated"]
+            else "raw-response"
+        )
+        print(
+            f"- {item['name']}: transmission={transmission} "
+            f"response={validation}"
+        )
+        print(f"  {item['description']}")
+    return 0
+
+
+def cmd_ai_provider_run(args) -> int:
+    project = load_project(_project_arg(args))
+    provider_kwargs = {}
+    if args.provider == "openai-compatible":
+        if not args.endpoint:
+            raise RuntimeError(
+                "openai-compatible provider requires --endpoint"
+            )
+        if not args.model:
+            raise RuntimeError(
+                "openai-compatible provider requires --model"
+            )
+        provider_kwargs = {
+            "endpoint": args.endpoint,
+            "model": args.model,
+            "api_key_env": args.api_key_env,
+            "timeout_s": args.timeout,
+        }
+
+    provider = create_provider(args.provider, **provider_kwargs)
+    result = write_provider_response(
+        project,
+        provider,
+        context_path=args.context,
+        allow_external=args.allow_external,
+        output=args.output,
+    )
+    policy = result["policy"]
+    print(f"AI PROVIDER RESPONSE: {result['provider']['name']}")
+    print(
+        "External opt-in: "
+        + ("yes" if policy["explicit_external_opt_in"] else "not-required")
+    )
+    print("Response trust: raw/untrusted")
+    print("Schema validation: disabled")
+    print("Automatic staging: disabled")
+    print("Automatic command execution: disabled")
+    print(f"Request SHA-256: {result['request_sha256']}")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2744,6 +2807,65 @@ def build_parser() -> argparse.ArgumentParser:
         help="Provider-neutral evidence bundle JSON path",
     )
     p_ai_context.set_defaults(func=cmd_ai_rca_context)
+
+    p_ai_providers = sub.add_parser(
+        "ai-providers",
+        help="List registered AI model-provider adapters and trust properties",
+    )
+    p_ai_providers.set_defaults(func=cmd_ai_providers)
+
+    p_ai_provider_run = sub.add_parser(
+        "ai-provider-run",
+        help=(
+            "Explicitly invoke a registered model-provider adapter and retain "
+            "raw untrusted output"
+        ),
+    )
+    p_ai_provider_run.add_argument(
+        "--context",
+        required=True,
+        help="Reviewed ai-rca-context JSON path inside the project",
+    )
+    p_ai_provider_run.add_argument(
+        "--provider",
+        default="openai-compatible",
+        help="Registered provider adapter name",
+    )
+    p_ai_provider_run.add_argument(
+        "--endpoint",
+        default=None,
+        help="Provider endpoint URL (required by openai-compatible)",
+    )
+    p_ai_provider_run.add_argument(
+        "--model",
+        default=None,
+        help="Provider model identifier (required by openai-compatible)",
+    )
+    p_ai_provider_run.add_argument(
+        "--api-key-env",
+        default=None,
+        help="Environment variable containing the provider API key",
+    )
+    p_ai_provider_run.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Provider request timeout in seconds",
+    )
+    p_ai_provider_run.add_argument(
+        "--allow-external",
+        action="store_true",
+        help=(
+            "Explicitly allow provider transmission after reviewing the "
+            "context bundle"
+        ),
+    )
+    p_ai_provider_run.add_argument(
+        "--output",
+        default=".zddv/ai/provider-response.json",
+        help="Raw untrusted provider-response JSON path",
+    )
+    p_ai_provider_run.set_defaults(func=cmd_ai_provider_run)
 
     p_generated_stage = sub.add_parser(
         "generated-stage",
