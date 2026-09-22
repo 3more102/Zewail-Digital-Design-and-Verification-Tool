@@ -1,0 +1,16 @@
+[project]
+name = "async_fifo"
+
+[simulator]
+backend = "verilator"
+top = "tb_async_fifo"
+
+[sources]
+rtl = ["rtl/*.sv"]
+tb = ["tb/*.sv"]
+
+[run]
+build_dir = ".zddv/build"
+run_dir = ".zddv/runs"
+waveform = true
+coverage = true
