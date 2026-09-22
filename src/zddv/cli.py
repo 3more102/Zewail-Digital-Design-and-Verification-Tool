@@ -60,7 +60,11 @@ from zddv.storage import (
     list_uvm_log_snapshots,
     list_uvm_sequence_lifecycle_snapshots,
 )
-from zddv.triage import group_failure_records, write_failure_report
+from zddv.triage import (
+    group_failure_records,
+    write_failure_report,
+    write_failure_triage_report,
+)
 from zddv.uvm import analyze_uvm_log
 from zddv.uvm_arbitration import analyze_uvm_arbitration_file, analyze_uvm_arbitration_log
 from zddv.uvm_item import analyze_uvm_item_file, analyze_uvm_item_log
@@ -2087,6 +2091,46 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_triage(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_failure_triage_report(
+        project,
+        limit=args.limit,
+        candidate_limit=args.candidate_limit,
+        signal_hint_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"TRIAGE: {summary['failure_groups']} failure group(s), "
+        f"{summary['failed_runs']} failed run(s), "
+        f"{summary['candidates']} evidence candidate(s), "
+        f"{summary['suggested_probes']} suggested probe(s)"
+    )
+    for group in result["groups"][: args.show]:
+        print(
+            f"[{group['count']} run(s)] {group['signature']} "
+            f"assertions={group['evidence_summary']['assertion_names']} "
+            f"signals={group['evidence_summary']['waveform_signal_hints']}"
+        )
+        for candidate in group["candidates"][: args.show_candidates]:
+            print(
+                f"  #{candidate['rank']} {candidate['kind']} "
+                f"{candidate['name']} "
+                f"support={candidate['supporting_runs']} run(s)/"
+                f"{candidate['event_count']} event(s)"
+            )
+        for probe in group["suggested_probes"][: args.show_probes]:
+            print(
+                f"  probe run={probe['run_id']} signal={probe['signal']}"
+            )
+    if len(result["groups"]) > args.show:
+        print(f"... {len(result['groups']) - args.show} more group(s)")
+    print("Ranking: direct evidence support only; not a claim of causality.")
+    print(f"Report: {result['path']}")
+    return 0
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -3311,6 +3355,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON report path",
     )
     p_failures.set_defaults(func=cmd_failures)
+
+    p_triage = sub.add_parser(
+        "triage",
+        help="Correlate failure groups with assertion and waveform evidence",
+    )
+    p_triage.add_argument("--limit", type=int, default=200)
+    p_triage.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=20,
+        help="Maximum evidence candidates retained per failure group",
+    )
+    p_triage.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum exact waveform signal hints considered per assertion event",
+    )
+    p_triage.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum failure groups printed to the terminal",
+    )
+    p_triage.add_argument(
+        "--show-candidates",
+        type=int,
+        default=5,
+        help="Maximum evidence candidates printed per displayed group",
+    )
+    p_triage.add_argument(
+        "--show-probes",
+        type=int,
+        default=3,
+        help="Maximum suggested waveform probes printed per displayed group",
+    )
+    p_triage.add_argument(
+        "--output",
+        default=".zddv/debug/failure-triage.json",
+        help="JSON evidence-triage report path",
+    )
+    p_triage.set_defaults(func=cmd_triage)
 
     p_report = sub.add_parser(
         "report",
