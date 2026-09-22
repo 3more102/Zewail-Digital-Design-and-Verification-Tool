@@ -10,7 +10,11 @@ from zddv.storage import (
     list_uvm_item_handshake_snapshots,
     record_run,
 )
-from zddv.uvm_item import analyze_uvm_item_file, parse_uvm_item_data
+from zddv.uvm_item import (
+    analyze_uvm_item_file,
+    parse_uvm_item_data,
+    parse_uvm_item_log_text,
+)
 
 
 def _event(
@@ -379,3 +383,82 @@ def test_cli_item_analysis_history_and_run_correlation(tmp_path: Path, capsys):
     assert "PASS" in history
     assert "1/1/1/0" in history
 
+
+
+def test_parses_explicit_uvm_item_report_messages():
+    result = parse_uvm_item_log_text(
+        "\n".join(
+            [
+                "UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=GRANT item_id=item-1 sequence_id=seq-1 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=7 lane=3",
+                "UVM_INFO @ 10 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=REQUEST item_id=item-1 sequence_id=seq-1 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=7",
+                "UVM_INFO @ 20 ns: uvm_test_top.env.driver [ZDDV_ITEM] event=ITEM_DONE item_id=item-1 sequence_id=seq-1 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=7",
+                "UVM_INFO @ 21 ns: uvm_test_top.env.seqr@@axi_write_seq [ZDDV_ITEM] event=RESPONSE item_id=item-1 sequence_id=seq-1 sequence=axi_write_seq sequencer=uvm_test_top.env.seqr item=axi_item transaction_id=7",
+            ]
+        ),
+        source="unit-log",
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["items"] == 1
+    assert result["summary"]["events"] == 4
+    assert result["adapter"]["report_id"] == "ZDDV_ITEM"
+    assert result["adapter"]["matched_messages"] == 4
+    assert result["events"][0]["time"] == "10 ns"
+    assert result["events"][0]["metadata"]["lane"] == "3"
+    assert result["events"][0]["metadata"]["log_line"] == 1
+    assert result["events"][2]["metadata"]["uvm_component"] == "uvm_test_top.env.driver"
+    assert result["arbitration"]["summary"]["grant_events"] == 1
+
+
+def test_uvm_item_report_adapter_rejects_missing_required_fields():
+    try:
+        parse_uvm_item_log_text(
+            "UVM_INFO @ 1 ns: uvm_test_top.env.seqr [ZDDV_ITEM] event=GRANT"
+        )
+    except ValueError as exc:
+        assert "event=<...> and item_id=<...>" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for incomplete ZDDV_ITEM report")
+
+
+def test_cli_uvm_item_log_uses_recorded_run_log(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    _record_run(project, "run-item-log")
+    log = project.root / ".zddv" / "runs" / "run-item-log" / "simulation.log"
+    log.write_text(
+        "\n".join(
+            [
+                "UVM_INFO @ 2 ns: uvm_test_top.env.seqr@@smoke_seq [ZDDV_ITEM] event=GRANT item_id=req-1 sequence_id=seq-9 sequence=smoke_seq sequencer=uvm_test_top.env.seqr item=req transaction_id=19",
+                "UVM_INFO @ 2 ns: uvm_test_top.env.seqr@@smoke_seq [ZDDV_ITEM] event=REQUEST item_id=req-1 sequence_id=seq-9 sequence=smoke_seq sequencer=uvm_test_top.env.seqr item=req transaction_id=19",
+                "UVM_INFO @ 8 ns: uvm_test_top.env.driver [ZDDV_ITEM] event=ITEM_DONE item_id=req-1 sequence_id=seq-9 sequence=smoke_seq sequencer=uvm_test_top.env.seqr item=req transaction_id=19",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-log",
+            "--run",
+            "run-item-log",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM ITEM PASS" in output
+    assert "Adapter: uvm_report_id report-id=ZDDV_ITEM matched=3" in output
+    assert "Arbitration evidence: grants=1" in output
+    assert "Run: run-item-log" in output
+
+    rows = list_uvm_item_handshake_snapshots(
+        project,
+        limit=10,
+        run_id="run-item-log",
+    )
+    assert len(rows) == 1
+    assert rows[0]["item_count"] == 1
+    assert rows[0]["completed_count"] == 1
