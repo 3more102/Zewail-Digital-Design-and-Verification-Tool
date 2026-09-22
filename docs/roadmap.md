@@ -152,7 +152,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Log/waveform/assertion correlation.
 - [x] Failure clustering.
 - [x] Deterministic root-cause candidate ranking from explicit run/assertion/waveform/RTL evidence.
-- [ ] Suggested next debug probes.
+- [x] Suggested next debug probes derived only from explicit ranked failure evidence.
 - [ ] Coverage-hole test suggestions.
 - [ ] Generated assertions/tests kept reviewable and opt-in.
 
