@@ -157,8 +157,8 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
-zddv --project my_project uvm-arbitration-analyze uvm_arbitration_trace.json
-zddv --project my_project uvm-arbitration-analyze uvm_arbitration_trace.json --run <run-id> --max-bypass 8
+zddv --project my_project uvm-arb-analyze uvm_arbitration_trace.json
+zddv --project my_project uvm-arb-analyze uvm_arbitration_trace.json --run <run-id> --max-bypass 8
 zddv --project my_project uvm-arbitration-history --limit 20
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
