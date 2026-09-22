@@ -14,7 +14,9 @@ from zddv.coverage import (
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
     parse_questa_statement_coverage_xml,
+    parse_questa_toggle_coverage_report,
     write_questa_statement_hole_report,
+    write_questa_toggle_hole_report,
 )
 from zddv.storage import (
     list_coverage_snapshots,
@@ -110,6 +112,17 @@ Row 1: 4 ready_0 (valid || retry)
 Row 2: 2 ready_1 (valid || retry)
 Row 3: ***0*** valid_0 (ready && ~retry)
 Row 4: 1 valid_1 (ready && ~retry)
+"""
+
+QUESTA_TOGGLE_REPORT = """Toggle Report
+Node                         1H->0L  0L->1H  0L->Z  Z->0L  1H->Z  Z->1H
+/top/dut/clk                     12      12      0      0      0      0
+/top/dut/reset_n                  1       0      0      0      0      0
+/top/dut/data(0)                  0       3      0      0      0      0
+Total Node Count = 3
+Toggled Node Count = 1
+Untoggled Node Count = 2
+Toggle Coverage = 33.33 %
 """
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
@@ -227,6 +240,23 @@ def test_parse_questa_code_coverage_normalizes_statement_branch_condition_expres
     assert expression_points[3]["fec_target"] == "b_1"
     assert expression_points[3]["evidence"] == "{ 01 }"
     assert all(point["fec_target"] != "-11" for point in expression_points)
+
+
+def test_parse_questa_toggle_report_normalizes_standard_direction_items():
+    points = parse_questa_toggle_coverage_report(QUESTA_TOGGLE_REPORT)
+
+    assert len(points) == 6
+    by_name = {point["name"]: point for point in points}
+    assert by_name["/top/dut/clk 1H->0L"]["count"] == 12
+    assert by_name["/top/dut/clk 0L->1H"]["hit"] is True
+    assert by_name["/top/dut/reset_n 0L->1H"]["hit"] is False
+    assert by_name["/top/dut/data(0) 1H->0L"]["hit"] is False
+
+    holes = [point for point in points if not point["hit"]]
+    assert {(point["node"], point["transition"]) for point in holes} == {
+        ("/top/dut/reset_n", "0L->1H"),
+        ("/top/dut/data(0)", "1H->0L"),
+    }
 
 
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
@@ -625,6 +655,53 @@ def test_parse_questa_statement_xml_keeps_file_maps_scoped_per_instance(
     assert points[2]["file"] == "rtl/b.sv"
 
 
+def test_write_questa_toggle_holes_requests_native_toggle_report(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    merged = project.root / ".zddv" / "coverage" / "coverage.ucdb"
+    merged.parent.mkdir(parents=True)
+    merged.write_text("ucdb fixture\n", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/questa/bin/vcover" if name == "vcover" else None,
+    )
+
+    def fake_run(command, cwd):
+        captured["command"] = list(command)
+        return SimpleNamespace(returncode=0, stdout=QUESTA_TOGGLE_REPORT)
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    output = project.root / ".zddv" / "coverage" / "toggle-holes.json"
+    report = write_questa_toggle_hole_report(project, output, limit=20)
+
+    command = captured["command"]
+    assert command[:5] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-details",
+        "-toggles",
+        "-all",
+    ]
+    assert command[-1] == str(merged.resolve())
+    assert report["source"] == "questa-vcover-toggle-report"
+    assert report["standard_transitions"] == ["1H->0L", "0L->1H"]
+    assert report["extended_z_transitions"] == "evidence-only"
+    assert report["total_holes"] == 2
+    assert Path(report["toggle_report"]).read_text(encoding="utf-8") == QUESTA_TOGGLE_REPORT
+    assert {
+        (hole["node"], hole["transition"])
+        for hole in report["holes"]
+    } == {
+        ("/top/dut/reset_n", "0L->1H"),
+        ("/top/dut/data(0)", "1H->0L"),
+    }
+
+
 def test_write_questa_statement_holes_requests_by_instance_xml(
     tmp_path: Path,
     monkeypatch,
@@ -770,6 +847,68 @@ Bit 1: 2 ***0***
         )
 
 
+def test_coverage_holes_cli_routes_toggle_to_native_report(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    captured: dict[str, object] = {}
+
+    def fake_toggle_report(project_arg, output, *, limit):
+        captured["project"] = project_arg
+        captured["output"] = Path(output)
+        captured["limit"] = limit
+        return {
+            "filter_type": "toggle",
+            "total_holes": 2,
+            "reported_holes": 2,
+            "by_type": {"toggle": 2},
+            "holes": [
+                {
+                    "type": "toggle",
+                    "name": "/tb/dut/data(0) 1H->0L",
+                    "count": 0,
+                    "node": "/tb/dut/data(0)",
+                    "transition": "1H->0L",
+                },
+                {
+                    "type": "toggle",
+                    "name": "/tb/dut/reset_n 0L->1H",
+                    "count": 0,
+                    "node": "/tb/dut/reset_n",
+                    "transition": "0L->1H",
+                },
+            ],
+            "toggle_report": "/tmp/toggle-report.txt",
+            "path": str(project.root / ".zddv/coverage/toggle-holes.json"),
+        }
+
+    monkeypatch.setattr(
+        "zddv.cli.write_questa_toggle_hole_report",
+        fake_toggle_report,
+    )
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/toggle-holes.json",
+            point_type="toggle",
+            limit=9,
+            show=2,
+        )
+    )
+
+    assert rc == 0
+    assert captured["project"] is project
+    assert captured["limit"] == 9
+    output = capsys.readouterr().out
+    assert "Coverage holes (toggle): 2 unhit point(s)" in output
+    assert "[toggle] /tb/dut/data(0) 1H->0L" in output
+    assert "Questa toggle detail: /tmp/toggle-report.txt" in output
+
+
 def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
     tmp_path: Path,
     monkeypatch,
@@ -779,13 +918,13 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
 
     with pytest.raises(
         RuntimeError,
-        match=r"supports --type statement, branch, condition, or expression",
+        match=r"supports --type statement, branch, condition, expression, or toggle",
     ):
         cmd_coverage_holes(
             SimpleNamespace(
                 project=str(project.root),
                 output=".zddv/coverage/holes.json",
-                point_type="toggle",
+                point_type="fsm",
                 limit=10,
                 show=2,
             )
