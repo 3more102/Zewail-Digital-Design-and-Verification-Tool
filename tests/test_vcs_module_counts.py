@@ -77,6 +77,104 @@ Branches 4 3 75.00
     ]
 
 
+def test_parse_vcs_urg_code_counts_normalizes_remaining_metrics_and_instances(
+    tmp_path: Path,
+):
+    modinfo = tmp_path / "modinfo.txt"
+    modinfo.write_text(
+        """Cond Coverage for Module : dut
+Total Covered Percent
+Conditions 18 17 94.44
+Logical 18 17 94.44
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 20 17 85.00
+Total Bits 230 172 74.78
+Total Bits 0->1 115 86 74.78
+Total Bits 1->0 115 86 74.78
+
+FSM Coverage for Module : dut
+Summary for FSM :: state_q
+Total Covered Percent
+States 5 4 80.00
+Transitions 7 4 57.14
+Sequences 0 0 0.00
+Summary for FSM :: aux_q
+Total Covered Percent
+States 3 3 100.00
+Transitions 2 2 100.00
+
+Line Coverage for Instance : tb.dut
+Line No. Total Covered Percent
+TOTAL 45 45 100.00
+
+Cond Coverage for Instance : tb.dut
+Total Covered Percent
+Conditions 18 18 100.00
+
+Toggle Coverage for Instance : tb.dut
+Total Covered Percent
+Totals 20 20 100.00
+Total Bits 230 230 100.00
+
+FSM Coverage for Instance : tb.dut
+Summary for FSM :: state_q
+Total Covered Percent
+States 4 4 100.00
+Transitions 4 4 100.00
+
+Branch Coverage for Instance : tb.dut
+Line No. Total Covered Percent
+Branches 20 19 95.00
+""",
+        encoding="utf-8",
+    )
+
+    report = parse_vcs_urg_module_counts(modinfo)
+
+    assert report["by_metric_counts"]["module_condition"] == {
+        "covered": 17,
+        "total": 18,
+        "hit_rate": pytest.approx(94.4444444),
+    }
+    assert report["by_metric_counts"]["module_toggle"] == {
+        "covered": 172,
+        "total": 230,
+        "hit_rate": pytest.approx(74.7826087),
+    }
+    assert report["by_metric_counts"]["module_fsm"] == {
+        "covered": 6,
+        "total": 9,
+        "hit_rate": pytest.approx(66.6666667),
+    }
+    assert report["by_metric_counts"]["instance_line"]["covered"] == 45
+    assert report["by_metric_counts"]["instance_condition"]["total"] == 18
+    assert report["by_metric_counts"]["instance_toggle"]["covered"] == 230
+    assert report["by_metric_counts"]["instance_fsm"] == {
+        "covered": 4,
+        "total": 4,
+        "hit_rate": pytest.approx(100.0),
+    }
+    assert report["by_metric_counts"]["instance_branch"] == {
+        "covered": 19,
+        "total": 20,
+        "hit_rate": pytest.approx(95.0),
+    }
+    assert {(item["metric"], item["module"]) for item in report["modules"]} == {
+        ("condition", "dut"),
+        ("toggle", "dut"),
+        ("fsm", "dut"),
+    }
+    assert {(item["metric"], item["instance"]) for item in report["instances"]} == {
+        ("line", "tb.dut"),
+        ("condition", "tb.dut"),
+        ("toggle", "tb.dut"),
+        ("fsm", "tb.dut"),
+        ("branch", "tb.dut"),
+    }
+
+
 def test_merge_vcs_coverage_persists_module_counts_without_replacing_scores(
     tmp_path: Path,
     monkeypatch,
@@ -109,9 +207,47 @@ SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
 Line No. Total Covered Percent
 TOTAL 10 8 80.00
 
+Cond Coverage for Module : dut
+Total Covered Percent
+Conditions 10 7 70.00
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 4 3 75.00
+Total Bits 20 12 60.00
+
+FSM Coverage for Module : dut
+Summary for FSM :: state_q
+Total Covered Percent
+States 4 3 75.00
+Transitions 4 2 50.00
+
 Branch Coverage for Module : dut
 Line No. Total Covered Percent
 Branches 5 2 40.00
+
+Line Coverage for Instance : tb.dut
+Line No. Total Covered Percent
+TOTAL 9 9 100.00
+
+Cond Coverage for Instance : tb.dut
+Total Covered Percent
+Conditions 8 8 100.00
+
+Toggle Coverage for Instance : tb.dut
+Total Covered Percent
+Totals 4 4 100.00
+Total Bits 18 18 100.00
+
+FSM Coverage for Instance : tb.dut
+Summary for FSM :: state_q
+Total Covered Percent
+States 4 4 100.00
+Transitions 4 4 100.00
+
+Branch Coverage for Instance : tb.dut
+Line No. Total Covered Percent
+Branches 4 4 100.00
 """,
             encoding="utf-8",
         )
@@ -134,10 +270,20 @@ Branches 5 2 40.00
         "total": 5,
         "hit_rate": pytest.approx(40.0),
     }
+    assert result["metrics"]["by_metric_counts"]["module_condition"]["covered"] == 7
+    assert result["metrics"]["by_metric_counts"]["module_toggle"]["total"] == 20
+    assert result["metrics"]["by_metric_counts"]["module_fsm"]["covered"] == 2
+    assert result["metrics"]["by_metric_counts"]["instance_line"]["covered"] == 9
+    assert result["metrics"]["by_metric_counts"]["instance_condition"]["total"] == 8
+    assert result["metrics"]["by_metric_counts"]["instance_toggle"]["covered"] == 18
+    assert result["metrics"]["by_metric_counts"]["instance_fsm"]["total"] == 4
+    assert result["metrics"]["by_metric_counts"]["instance_branch"]["covered"] == 4
 
     snapshots = list_coverage_score_snapshots(project, limit=1)
     assert snapshots[0]["by_metric_counts"]["module_line"]["covered"] == 8
     assert snapshots[0]["by_metric_counts"]["module_branch"]["total"] == 5
+    assert snapshots[0]["by_metric_counts"]["module_condition"]["covered"] == 7
+    assert snapshots[0]["by_metric_counts"]["instance_toggle"]["total"] == 18
 
 
 def test_parse_vcs_urg_module_counts_rejects_conflicting_duplicate_sections(
