@@ -9,7 +9,12 @@ import sys
 from zddv import __version__
 from zddv.ai_audit import audit_ai_chain
 from zddv.ai_context import write_ai_rca_context
-from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
+from zddv.ai_provider import (
+    create_provider,
+    provider_metadata,
+    write_model_request_preview,
+    write_provider_response,
+)
 from zddv.ai_response import export_reviewed_generation_proposal, ingest_ai_provider_response, review_validated_ai_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
@@ -438,6 +443,21 @@ def cmd_ai_providers(args) -> int:
     return 0
 
 
+def cmd_ai_provider_request(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_model_request_preview(
+        project,
+        context_path=args.context,
+        output=args.output,
+    )
+    print("AI PROVIDER REQUEST PREVIEW: LOCAL ONLY")
+    print(f"Request SHA-256: {result['request_sha256']}")
+    print(f"Context evidence SHA-256: {result['context_evidence_sha256']}")
+    print("External transmission: disabled")
+    print(f"Preview: {result['path']}")
+    return 0
+
+
 def cmd_ai_provider_run(args) -> int:
     project = load_project(_project_arg(args))
     provider_kwargs = {}
@@ -463,6 +483,7 @@ def cmd_ai_provider_run(args) -> int:
         provider,
         context_path=args.context,
         allow_external=args.allow_external,
+        expected_request_sha256=args.expected_request_sha256,
         output=args.output,
     )
     policy = result["policy"]
@@ -470,6 +491,10 @@ def cmd_ai_provider_run(args) -> int:
     print(
         "External opt-in: "
         + ("yes" if policy["explicit_external_opt_in"] else "not-required")
+    )
+    print(
+        "Request SHA confirmed: "
+        + ("yes" if policy["request_sha_confirmed"] else "not-required")
     )
     print("Response trust: raw/untrusted")
     print("Schema validation: disabled")
@@ -2933,6 +2958,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ai_providers.set_defaults(func=cmd_ai_providers)
 
+    p_ai_provider_request = sub.add_parser(
+        "ai-provider-request",
+        help="Write the exact provider-neutral AI request locally for SHA review",
+    )
+    p_ai_provider_request.add_argument(
+        "--context",
+        required=True,
+        help="Reviewed ai-rca-context JSON path inside the project",
+    )
+    p_ai_provider_request.add_argument(
+        "--output",
+        default=".zddv/ai/provider-request.json",
+        help="Local provider-request preview JSON path",
+    )
+    p_ai_provider_request.set_defaults(func=cmd_ai_provider_request)
+
     p_ai_provider_run = sub.add_parser(
         "ai-provider-run",
         help=(
@@ -2977,6 +3018,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Explicitly allow provider transmission after reviewing the "
             "context bundle"
+        ),
+    )
+    p_ai_provider_run.add_argument(
+        "--expected-request-sha256",
+        default=None,
+        help=(
+            "Exact SHA-256 from ai-provider-request; required for external "
+            "providers"
         ),
     )
     p_ai_provider_run.add_argument(
