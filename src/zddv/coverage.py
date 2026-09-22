@@ -1120,6 +1120,118 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
     )
 
 
+_VCS_URG_MODULE_HEADER = re.compile(
+    r"^\\s*(?P<kind>Line|Branch)\\s+Coverage\\s+for\\s+Module\\s*:\\s*"
+    r"(?P<module>.+?)\\s*$",
+    re.IGNORECASE,
+)
+_VCS_URG_ANY_COVERAGE_SECTION = re.compile(
+    r"^\\s*.+?\\s+Coverage\\s+for\\s+(?:Module|Instance)\\s*:\\s*.+?\\s*$",
+    re.IGNORECASE,
+)
+_VCS_URG_MODULE_TOTAL_ROWS = {
+    "line": re.compile(
+        r"^\\s*TOTAL\\s+(?P<total>\\d[\\d,]*)\\s+"
+        r"(?P<covered>\\d[\\d,]*)\\s+"
+        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        re.IGNORECASE,
+    ),
+    "branch": re.compile(
+        r"^\\s*Branches\\s+(?P<total>\\d[\\d,]*)\\s+"
+        r"(?P<covered>\\d[\\d,]*)\\s+"
+        r"(?P<score>\\d+(?:\\.\\d+)?)%?\\s*$",
+        re.IGNORECASE,
+    ),
+}
+
+
+def parse_vcs_urg_module_counts(path: str | Path) -> dict:
+    """Parse documented module-level line/branch totals from URG modinfo.txt.
+
+    Count names are intentionally module_line/module_branch: they describe
+    module-definition report totals and do not replace design-wide dashboard
+    percentage metrics.
+    """
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+    records: dict[tuple[str, str], dict[str, int | float | str]] = {}
+
+    for index, raw_line in enumerate(lines):
+        header = _VCS_URG_MODULE_HEADER.match(raw_line)
+        if header is None:
+            continue
+
+        kind = header.group("kind").lower()
+        module = header.group("module").strip()
+        row_pattern = _VCS_URG_MODULE_TOTAL_ROWS[kind]
+
+        end = len(lines)
+        for candidate in range(index + 1, len(lines)):
+            if _VCS_URG_ANY_COVERAGE_SECTION.match(lines[candidate]):
+                end = candidate
+                break
+
+        parsed_row = None
+        for candidate in lines[index + 1 : end]:
+            row = row_pattern.match(candidate)
+            if row is not None:
+                parsed_row = row
+                break
+        if parsed_row is None:
+            continue
+
+        total = int(parsed_row.group("total").replace(",", ""))
+        covered = int(parsed_row.group("covered").replace(",", ""))
+        score = float(parsed_row.group("score"))
+        if total < 0 or covered < 0 or covered > total or not 0.0 <= score <= 100.0:
+            raise ValueError(
+                f"Invalid URG {kind} module total for {module}: "
+                f"{covered}/{total} ({score}%)"
+            )
+
+        key = (kind, module)
+        record = {
+            "metric": kind,
+            "module": module,
+            "covered": covered,
+            "total": total,
+            "hit_rate": score,
+        }
+        previous = records.get(key)
+        if previous is not None and previous != record:
+            raise ValueError(
+                f"Conflicting URG {kind} module totals for {module}"
+            )
+        records[key] = record
+
+    aggregates: dict[str, dict[str, int | float]] = {}
+    for kind in ("line", "branch"):
+        selected = [
+            record
+            for (record_kind, _), record in records.items()
+            if record_kind == kind
+        ]
+        if not selected:
+            continue
+        total = sum(int(record["total"]) for record in selected)
+        covered = sum(int(record["covered"]) for record in selected)
+        aggregates[f"module_{kind}"] = {
+            "covered": covered,
+            "total": total,
+            "hit_rate": 100.0 * covered / total if total else 0.0,
+        }
+
+    return {
+        "source": "urg-modinfo",
+        "path": str(source.resolve()),
+        "by_metric_counts": aggregates,
+        "modules": [
+            records[key]
+            for key in sorted(records, key=lambda item: (item[0], item[1]))
+        ],
+    }
+
+
 def parse_vcs_urg_dashboard(path: str | Path) -> dict:
     """Parse documented URG dashboard coverage scores and global group counts."""
     source = Path(path)
@@ -1261,6 +1373,9 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
     metrics: dict | None = None
     metrics_status = "dashboard-missing"
     metrics_error: str | None = None
+    module_counts_status = "modinfo-missing"
+    module_counts_error: str | None = None
+    module_report: dict | None = None
     snapshot_id: str | None = None
 
     if dashboard_path.exists():
@@ -1270,6 +1385,25 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         except (OSError, ValueError) as exc:
             metrics_status = "dashboard-unparsed"
             metrics_error = str(exc)
+
+    modinfo_path = report_dir / "modinfo.txt"
+    if modinfo_path.exists():
+        try:
+            module_report = parse_vcs_urg_module_counts(modinfo_path)
+            module_counts = module_report["by_metric_counts"]
+            if module_counts:
+                module_counts_status = "normalized"
+                if metrics is not None:
+                    metrics.setdefault("by_metric_counts", {}).update(module_counts)
+                    metrics["module_report"] = module_report
+            else:
+                module_counts_status = "modinfo-unparsed"
+                module_counts_error = (
+                    "No documented module line/branch total rows were found"
+                )
+        except (OSError, ValueError) as exc:
+            module_counts_status = "modinfo-unparsed"
+            module_counts_error = str(exc)
 
     if metrics is not None:
         snapshot_id = (
@@ -1289,12 +1423,16 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "merged": str(merged_path),
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
+        "module_counts_status": module_counts_status,
         "command": command,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+    if module_counts_error is not None:
+        payload["module_counts_error"] = module_counts_error
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     summary_path = dashboard_path if dashboard_path.exists() else report_dir
@@ -1326,8 +1464,11 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "snapshot_id": snapshot_id,
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "metrics_status": metrics_status,
         "metrics_error": metrics_error,
+        "module_counts_status": module_counts_status,
+        "module_counts_error": module_counts_error,
     }
 
 
