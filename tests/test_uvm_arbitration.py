@@ -12,7 +12,9 @@ from zddv.storage import (
 )
 from zddv.uvm_arbitration import (
     analyze_uvm_arbitration_file,
+    analyze_uvm_arbitration_log,
     parse_uvm_arbitration_data,
+    parse_uvm_arbitration_log_text,
 )
 
 
@@ -295,11 +297,17 @@ def test_rejects_unknown_explicit_arbitration_mode():
         raise AssertionError("Expected ValueError for invalid arbitration mode")
 
 
-def _record_run(project, run_id: str) -> None:
+def _record_run(
+    project,
+    run_id: str,
+    *,
+    log_text: str = "simulation complete\
+",
+) -> None:
     run_dir = project.root / ".zddv" / "runs" / run_id
     run_dir.mkdir(parents=True)
     log = run_dir / "simulation.log"
-    log.write_text("simulation complete\n", encoding="utf-8")
+    log.write_text(log_text, encoding="utf-8")
     record_run(
         project,
         {
