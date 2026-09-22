@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, retained detailed XML evidence, and item/source coverage-hole normalization when recognized code items are present in that XML
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -94,9 +94,10 @@ coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 SQLite coverage-history model. It also runs `vcover report -cvg -details` and,
 when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
-inspect those normalized bins. Questa's weighted total coverage is preserved as
-a separate simulator-reported value; detailed code-item/source `coverage-holes`
-remains pending.
+inspect those normalized bins. When detailed XML contains recognized code items,
+ZDDV also writes simulator-neutral item evidence to `.zddv/coverage/points.json`,
+and `zddv coverage-holes` reports uncovered code items together with ordinary
+functional bins. Questa's weighted total coverage remains preserved separately.
 
 ## Current CLI
 
