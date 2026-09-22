@@ -2112,24 +2112,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
 
-    p_formal_bmc = sub.add_parser(
-        "formal-bmc",
-        help="Run a finite-depth SymbiYosys bounded model check",
-    )
-    p_formal_bmc.add_argument(
-        "--depth",
-        type=int,
-        required=True,
-        help="Maximum BMC depth in cycles (must be >= 1)",
-    )
-    p_formal_bmc.add_argument(
-        "--timeout",
-        type=float,
-        default=None,
-        help="Optional timeout in seconds",
-    )
-    p_formal_bmc.set_defaults(func=cmd_formal_bmc)
-
     p_formal_counterexample = sub.add_parser(
         "formal-counterexample",
         help="Normalize formal counterexample or witness JSON evidence",
