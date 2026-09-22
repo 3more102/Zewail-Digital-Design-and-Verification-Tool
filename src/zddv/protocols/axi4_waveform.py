@@ -37,6 +37,17 @@ def _scope_signal_names(header: dict[str, Any], scope: str) -> dict[str, str]:
     }
 
 
+def _scope_signal_metadata(
+    header: dict[str, Any],
+    scope: str,
+) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["name"]).upper(): item
+        for item in header.get("signals", [])
+        if item.get("scope") == scope
+    }
+
+
 def _resolve_axi4_scope(
     path: str | Path,
     *,
@@ -92,6 +103,26 @@ def extract_axi4_trace_from_vcd(
         clock=clock,
     )
 
+    header = parse_vcd_header(source)
+    metadata = _scope_signal_metadata(header, resolved_scope)
+    wdata_width = int(metadata["WDATA"]["width"])
+    rdata_width = int(metadata["RDATA"]["width"])
+    wstrb_width = int(metadata["WSTRB"]["width"])
+
+    if wdata_width != rdata_width:
+        raise RuntimeError(
+            "AXI4 WDATA and RDATA widths must match for normalized bus-width analysis"
+        )
+    if wdata_width <= 0 or wdata_width % 8:
+        raise RuntimeError("AXI4 data width must be a positive multiple of 8 bits")
+
+    expected_wstrb_width = wdata_width // 8
+    if wstrb_width != expected_wstrb_width:
+        raise RuntimeError(
+            f"AXI4 WSTRB width {wstrb_width} does not match "
+            f"{wdata_width}-bit WDATA (expected {expected_wstrb_width})"
+        )
+
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
         available[name]: name
@@ -124,6 +155,7 @@ def extract_axi4_trace_from_vcd(
     waveform["clock"] = actual_clock
     return {
         "source": "vcd-waveform",
+        "data_width_bits": wdata_width,
         "waveform": waveform,
         "samples": normalized_samples,
     }
