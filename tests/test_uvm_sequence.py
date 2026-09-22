@@ -10,7 +10,12 @@ from zddv.storage import (
     list_uvm_sequence_lifecycle_snapshots,
     record_run,
 )
-from zddv.uvm_sequence import analyze_uvm_sequence_file, parse_uvm_sequence_data
+from zddv.uvm_sequence import (
+    analyze_uvm_sequence_file,
+    analyze_uvm_sequence_log,
+    parse_uvm_sequence_data,
+    parse_uvm_sequence_log_text,
+)
 
 
 def _event(
@@ -272,3 +277,73 @@ def test_cli_sequence_analysis_history_and_run_correlation(tmp_path: Path, capsy
     history = capsys.readouterr().out
     assert "run-seq" in history
     assert "PASS" in history
+
+
+
+def _sequence_marker(event: dict[str, object]) -> str:
+    return "ZDDV_UVM_SEQUENCE " + json.dumps(event, separators=(",", ":"))
+
+
+def test_parse_uvm_sequence_log_markers_preserves_line_provenance():
+    text = "\n".join(
+        [
+            "# simulator banner",
+            "# UVM_INFO @ 1: seq [TRACE] "
+            + _sequence_marker(_event("seq-1", "write_seq", "UVM_BODY")),
+            _sequence_marker(_event("seq-1", "write_seq", "UVM_ENDED")),
+            _sequence_marker(_event("seq-1", "write_seq", "UVM_POST_START")),
+            _sequence_marker(_event("seq-1", "write_seq", "UVM_FINISHED")),
+        ]
+    )
+
+    result = parse_uvm_sequence_log_text(text, source="marker-test")
+
+    assert result["status"] == "PASS"
+    assert result["input_mode"] == "explicit-log-marker"
+    assert result["marker"] == "ZDDV_UVM_SEQUENCE"
+    assert result["marker_lines"] == [2, 3, 4, 5]
+    assert result["summary"]["finished"] == 1
+    assert result["events"][0]["metadata"]["log_line"] == 2
+
+
+def test_parse_uvm_sequence_log_rejects_malformed_marker():
+    try:
+        parse_uvm_sequence_log_text('ZDDV_UVM_SEQUENCE {"sequence_id":')
+    except ValueError as exc:
+        assert "line 1" in str(exc)
+        assert "invalid JSON" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for malformed UVM sequence marker")
+
+
+def test_uvm_sequence_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    _record_run(project, "run-sequence-marker")
+    log = project.root / ".zddv" / "runs" / "run-sequence-marker" / "simulation.log"
+    log.write_text(
+        "\n".join(
+            [
+                _sequence_marker(_event("seq-1", "write_seq", "UVM_BODY")),
+                _sequence_marker(_event("seq-1", "write_seq", "UVM_ENDED")),
+                _sequence_marker(_event("seq-1", "write_seq", "UVM_POST_START")),
+                _sequence_marker(_event("seq-1", "write_seq", "UVM_FINISHED")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_sequence_log(
+        project,
+        None,
+        run_id="run-sequence-marker",
+    )
+
+    assert result["status"] == "PASS"
+    assert result["run_id"] == "run-sequence-marker"
+    assert result["simulator"] == "questa"
+    assert result["input_path"] == str(log.resolve())
+    assert result["source"] == "questa-uvm-sequence-log"
+    assert result["input_mode"] == "explicit-log-marker"
+    events = list_uvm_sequence_state_events(project, result["snapshot_id"])
+    assert events[0]["metadata"]["log_line"] == 1
