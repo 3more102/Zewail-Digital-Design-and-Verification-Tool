@@ -18,6 +18,8 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["scope"] == "tb.axi"
     assert trace["waveform"]["clock"] == "ACLK"
     assert trace["waveform"]["timescale"] == "1ns"
+    assert trace["write_data_bus_bytes"] == 2
+    assert trace["waveform"]["write_data_bus_bytes"] == 2
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
     assert trace["samples"][0]["AWLEN"] == 1
@@ -36,6 +38,7 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert result["summary"]["completed_writes"] == 1
     assert result["summary"]["completed_reads"] == 1
     assert result["waveform"]["scope"] == "tb.axi"
+    assert result["write_data_bus_bytes"] == 2
 
     write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
     read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
