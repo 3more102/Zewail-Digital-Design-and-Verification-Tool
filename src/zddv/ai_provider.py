@@ -410,7 +410,8 @@ def import_provider_response(
     output: str | Path = ".zddv/ai/provider-response.json",
 ) -> dict[str, Any]:
     """Wrap an already-obtained model response without invoking a provider."""
-    context = load_ai_context(project, context_path)
+    context_source = _project_path(project, context_path)
+    context = load_ai_context(project, context_source)
     source = _project_path(project, content_path)
     if not source.is_file():
         raise FileNotFoundError(source)
@@ -476,6 +477,10 @@ def import_provider_response(
     }
 
     destination = _project_path(project, output)
+    if destination in {context_source, source}:
+        raise ValueError(
+            "Imported response output must not overwrite its context or source content"
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
