@@ -7,6 +7,7 @@ import platform
 import sys
 
 from zddv import __version__
+from zddv.ai_audit import audit_ai_chain
 from zddv.ai_context import write_ai_rca_context
 from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
 from zddv.ai_response import export_reviewed_generation_proposal, ingest_ai_provider_response, review_validated_ai_response
@@ -476,6 +477,37 @@ def cmd_ai_provider_run(args) -> int:
     print("Automatic command execution: disabled")
     print(f"Request SHA-256: {result['request_sha256']}")
     print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_chain_audit(args) -> int:
+    project = load_project(_project_arg(args))
+    result = audit_ai_chain(
+        project,
+        context_path=args.context,
+        response_path=args.response,
+        validated_path=args.validated,
+        review_path=args.review,
+        output=args.output,
+    )
+    print(
+        f"AI CHAIN AUDIT: {result['status']} "
+        f"through={result['last_verified_stage']}"
+    )
+    print(
+        f"Context evidence SHA-256: "
+        f"{result['chain']['context_evidence_sha256']}"
+    )
+    print(
+        f"Validated payload SHA-256: "
+        f"{result['chain']['validated_payload_sha256']}"
+    )
+    if result["chain"]["review_id"] is not None:
+        print(f"Review ID: {result['chain']['review_id']}")
+    print("Model invocation: disabled")
+    print("External transmission: disabled")
+    print("Command execution: disabled")
+    print(f"Audit report: {result['path']}")
     return 0
 
 
@@ -2953,6 +2985,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Raw untrusted provider-response JSON path",
     )
     p_ai_provider_run.set_defaults(func=cmd_ai_provider_run)
+
+    p_ai_chain_audit = sub.add_parser(
+        "ai-chain-audit",
+        help=(
+            "Verify the persisted AI RCA provenance chain without invoking "
+            "a model or executing generated artifacts"
+        ),
+    )
+    p_ai_chain_audit.add_argument(
+        "--context",
+        default=".zddv/debug/ai-rca-context.json",
+        help="AI RCA context JSON path",
+    )
+    p_ai_chain_audit.add_argument(
+        "--response",
+        default=".zddv/ai/provider-response.json",
+        help="Raw provider-response JSON path",
+    )
+    p_ai_chain_audit.add_argument(
+        "--validated",
+        default=".zddv/ai/validated-response.json",
+        help="Schema-validated AI response JSON path",
+    )
+    p_ai_chain_audit.add_argument(
+        "--review",
+        default=None,
+        help="Optional approved AI response review record",
+    )
+    p_ai_chain_audit.add_argument(
+        "--output",
+        default=".zddv/ai/audits/latest.json",
+        help="Audit JSON path under .zddv/ai/audits",
+    )
+    p_ai_chain_audit.set_defaults(func=cmd_ai_chain_audit)
 
     p_ai_response_ingest = sub.add_parser(
         "ai-response-ingest",
