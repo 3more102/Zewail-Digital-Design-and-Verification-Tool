@@ -1320,8 +1320,8 @@ def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, 
 
 
 _VCS_URG_MODULE_HEADER = re.compile(
-    r"^\s*(?P<kind>Line|Branch)\s+Coverage\s+for\s+Module\s*:\s*"
-    r"(?P<module>.+?)\s*$",
+    r"^\s*(?P<kind>Line|Branch|Cond(?:ition)?|Toggle|FSM)\s+Coverage\s+"
+    r"for\s+Module\s*:\s*(?P<module>.+?)\s*$",
     re.IGNORECASE,
 )
 _VCS_URG_ANY_COVERAGE_SECTION = re.compile(
@@ -1331,6 +1331,24 @@ _VCS_URG_ANY_COVERAGE_SECTION = re.compile(
 _VCS_URG_MODULE_TOTAL_ROWS = {
     "line": re.compile(
         r"^\s*TOTAL\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
+        re.IGNORECASE,
+    ),
+    "condition": re.compile(
+        r"^\s*Conditions\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
+        re.IGNORECASE,
+    ),
+    "toggle": re.compile(
+        r"^\s*Total\s+Bits\s+(?P<total>\d[\d,]*)\s+"
+        r"(?P<covered>\d[\d,]*)\s+"
+        r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
+        re.IGNORECASE,
+    ),
+    "fsm": re.compile(
+        r"^\s*Transitions\s+(?P<total>\d[\d,]*)\s+"
         r"(?P<covered>\d[\d,]*)\s+"
         r"(?P<score>\d+(?:\.\d+)?)%?\s*$",
         re.IGNORECASE,
@@ -1345,11 +1363,11 @@ _VCS_URG_MODULE_TOTAL_ROWS = {
 
 
 def parse_vcs_urg_module_counts(path: str | Path) -> dict:
-    """Parse documented module-level line/branch totals from URG modinfo.txt.
+    """Parse documented module-level code-metric totals from URG modinfo.txt.
 
-    Count names are intentionally module_line/module_branch: they describe
-    module-definition report totals and do not replace design-wide dashboard
-    percentage metrics.
+    Count names are intentionally module-scoped. Condition uses the Conditions
+    row, toggle uses Total Bits, and FSM uses scored Transitions (states are not
+    part of the URG FSM score).
     """
     source = Path(path)
     lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -1361,6 +1379,8 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
             continue
 
         kind = header.group("kind").lower()
+        if kind in {"cond", "condition"}:
+            kind = "condition"
         module = header.group("module").strip()
         row_pattern = _VCS_URG_MODULE_TOTAL_ROWS[kind]
 
@@ -1370,23 +1390,37 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
                 end = candidate
                 break
 
-        parsed_row = None
-        for candidate in lines[index + 1 : end]:
-            row = row_pattern.match(candidate)
-            if row is not None:
-                parsed_row = row
-                break
-        if parsed_row is None:
+        parsed_rows = [
+            row_pattern.match(candidate)
+            for candidate in lines[index + 1 : end]
+        ]
+        parsed_rows = [row for row in parsed_rows if row is not None]
+        if not parsed_rows:
             continue
 
-        total = int(parsed_row.group("total").replace(",", ""))
-        covered = int(parsed_row.group("covered").replace(",", ""))
-        score = float(parsed_row.group("score"))
-        if total < 0 or covered < 0 or covered > total or not 0.0 <= score <= 100.0:
-            raise ValueError(
-                f"Invalid URG {kind} module total for {module}: "
-                f"{covered}/{total} ({score}%)"
-            )
+        parsed_counts: list[tuple[int, int, float]] = []
+        for parsed_row in parsed_rows:
+            total = int(parsed_row.group("total").replace(",", ""))
+            covered = int(parsed_row.group("covered").replace(",", ""))
+            score = float(parsed_row.group("score"))
+            if (
+                total < 0
+                or covered < 0
+                or covered > total
+                or not 0.0 <= score <= 100.0
+            ):
+                raise ValueError(
+                    f"Invalid URG {kind} module total for {module}: "
+                    f"{covered}/{total} ({score}%)"
+                )
+            parsed_counts.append((total, covered, score))
+
+        if kind == "fsm":
+            total = sum(item[0] for item in parsed_counts)
+            covered = sum(item[1] for item in parsed_counts)
+            score = 100.0 * covered / total if total else 0.0
+        else:
+            total, covered, score = parsed_counts[0]
 
         key = (kind, module)
         record = {
@@ -1404,7 +1438,7 @@ def parse_vcs_urg_module_counts(path: str | Path) -> dict:
         records[key] = record
 
     aggregates: dict[str, dict[str, int | float]] = {}
-    for kind in ("line", "branch"):
+    for kind in ("line", "condition", "toggle", "fsm", "branch"):
         selected = [
             record
             for (record_kind, _), record in records.items()
@@ -1616,7 +1650,7 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             else:
                 module_counts_status = "modinfo-unparsed"
                 module_counts_error = (
-                    "No documented module line/branch total rows were found"
+                    "No documented module code-metric total rows were found"
                 )
         except (OSError, ValueError) as exc:
             module_counts_status = "modinfo-unparsed"
