@@ -396,6 +396,20 @@ def cmd_coverage(args) -> int:
                     for name, value in sorted(by_metric.items())
                 )
                 print(f"Coverage metric scores: {detail}")
+            by_metric_counts = metrics.get("by_metric_counts") or {}
+            if by_metric_counts:
+                count_detail = ", ".join(
+                    (
+                        f"{name}={values['covered']}/{values['total']}"
+                        + (
+                            f" ({values['hit_rate']:.2f}%)"
+                            if values.get("hit_rate") is not None
+                            else ""
+                        )
+                    )
+                    for name, values in sorted(by_metric_counts.items())
+                )
+                print(f"Coverage object counts: {count_detail}")
         print(f"Metrics: {result['metrics_path']}")
         if result.get("snapshot_id"):
             print(f"Snapshot: {result['snapshot_id']}")
@@ -459,6 +473,20 @@ def cmd_coverage_history(args) -> int:
                     for name, value in sorted(by_metric.items())
                 )
                 print(f"         {detail}")
+            by_metric_counts = row.get("by_metric_counts") or {}
+            if by_metric_counts:
+                count_detail = ", ".join(
+                    (
+                        f"{name}={values['covered']}/{values['total']}"
+                        + (
+                            f" ({values['hit_rate']:.2f}%)"
+                            if values.get("hit_rate") is not None
+                            else ""
+                        )
+                    )
+                    for name, values in sorted(by_metric_counts.items())
+                )
+                print(f"         counts: {count_detail}")
         return 0
 
     rows = list_coverage_snapshots(project, limit=args.limit)

@@ -77,6 +77,10 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
 Total Coverage Summary
 SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
 97.74  99.03  97.75  98.53  100.00  99.01  98.63  91.19
+
+Total Groups Coverage Summary
+COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
+491  528  92.99  490  527  92.98  1
 """,
             encoding="utf-8",
         )
@@ -105,6 +109,17 @@ SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert result["metrics"]["by_metric"]["line"] == pytest.approx(99.03)
     assert result["metrics"]["by_metric"]["group"] == pytest.approx(91.19)
+    assert result["metrics"]["by_metric_counts"]["group"] == {
+        "covered": 491,
+        "total": 528,
+        "hit_rate": pytest.approx(92.99),
+    }
+    assert result["metrics"]["by_metric_counts"]["group_instance"] == {
+        "covered": 490,
+        "total": 527,
+        "hit_rate": pytest.approx(92.98),
+    }
+    assert result["metrics"]["count_status"] == "normalized"
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -113,6 +128,9 @@ SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
     assert snapshots[0]["snapshot_id"] == result["snapshot_id"]
     assert snapshots[0]["score"] == pytest.approx(97.74)
     assert snapshots[0]["by_metric"]["branch"] == pytest.approx(99.01)
+    assert snapshots[0]["by_metric_counts"]["group"]["covered"] == 491
+    assert snapshots[0]["by_metric_counts"]["group"]["total"] == 528
+    assert snapshots[0]["by_metric_counts"]["group_instance"]["covered"] == 490
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -123,6 +141,8 @@ SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
     assert manifest["inputs"] == inputs
     assert manifest["command"] == command
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
+    assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
+    assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
@@ -221,6 +241,37 @@ SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
     assert metrics["by_metric"]["group"] == pytest.approx(47.58)
 
 
+def test_parse_vcs_urg_dashboard_parses_documented_group_counts(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
+95.90 98.23 93.91 97.02 93.02 96.33 99.77 92.99
+
+Total Groups Coverage Summary
+COVERED EXPECTED SCORE COVERED EXPECTED INST SCORE WEIGHT
+491 528 92.99 487 529 92.06 1
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["by_metric_counts"]["group"] == {
+        "covered": 491,
+        "total": 528,
+        "hit_rate": pytest.approx(92.99),
+    }
+    assert metrics["by_metric_counts"]["group_instance"] == {
+        "covered": 487,
+        "total": 529,
+        "hit_rate": pytest.approx(92.06),
+    }
+    assert metrics["count_status"] == "normalized"
+
+
 def test_parse_vcs_urg_dashboard_rejects_ambiguous_summary(tmp_path: Path):
     dashboard = tmp_path / "dashboard.txt"
     dashboard.write_text(
@@ -285,6 +336,13 @@ def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
                     "condition": 97.75,
                     "branch": 99.01,
                 },
+                "by_metric_counts": {
+                    "group": {
+                        "covered": 491,
+                        "total": 528,
+                        "hit_rate": 92.99,
+                    }
+                },
             },
             "snapshot_id": "cov-score-test",
             "metrics_status": "normalized",
@@ -300,6 +358,7 @@ def test_vcs_coverage_cli_surfaces_normalized_urg_scores(
     assert "branch=99.01%" in output
     assert "condition=97.75%" in output
     assert "line=99.03%" in output
+    assert "Coverage object counts: group=491/528 (92.99%)" in output
     assert "Snapshot: cov-score-test" in output
     assert "Coverage points:" not in output
 
@@ -319,6 +378,13 @@ def test_vcs_coverage_history_uses_score_native_snapshots(
                 "score": 97.74,
                 "input_count": 2,
                 "by_metric": {"line": 99.03, "branch": 99.01},
+                "by_metric_counts": {
+                    "group": {
+                        "covered": 491,
+                        "total": 528,
+                        "hit_rate": 92.99,
+                    }
+                },
             }
         ],
     )
@@ -333,4 +399,5 @@ def test_vcs_coverage_history_uses_score_native_snapshots(
     assert "cov-score-test" in output
     assert "branch=99.01%" in output
     assert "line=99.03%" in output
+    assert "counts: group=491/528 (92.99%)" in output
     assert "HIT/TOTAL" not in output
