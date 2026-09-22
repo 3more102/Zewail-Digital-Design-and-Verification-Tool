@@ -323,25 +323,6 @@ def cmd_lint(args) -> int:
     return 0 if result["status"] == "PASS" else 1
 
 
-def cmd_formal_bmc(args) -> int:
-    project = load_project(_project_arg(args))
-    request = FormalCheckRequest(
-        mode="bmc",
-        depth=args.depth,
-        timeout_s=args.timeout,
-    )
-    backend = SymbiYosysBackend()
-    print(f"Formal backend: {backend.version()}")
-    result = backend.check(project, request)
-    print(
-        f"FORMAL BMC {result.status}: depth={request.depth} "
-        f"engine={result.engine or '-'}"
-    )
-    print(f"Run directory: {result.run_dir}")
-    print(f"Log: {result.log_path}")
-    return 0 if result.status == "PASS" else 1
-
-
 def cmd_build(args) -> int:
     project = load_project(_project_arg(args))
     backend = _backend(project.simulator)
@@ -2077,24 +2058,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_build = sub.add_parser("build", help="Compile/elaborate the configured project")
     p_build.set_defaults(func=cmd_build)
-
-    p_formal_bmc = sub.add_parser(
-        "formal-bmc",
-        help="Run a finite-depth SymbiYosys bounded model check",
-    )
-    p_formal_bmc.add_argument(
-        "--depth",
-        type=int,
-        required=True,
-        help="Maximum bounded-model-check depth (must be >= 1)",
-    )
-    p_formal_bmc.add_argument(
-        "--timeout",
-        type=float,
-        default=None,
-        help="Optional timeout in seconds",
-    )
-    p_formal_bmc.set_defaults(func=cmd_formal_bmc)
 
     p_run = sub.add_parser("run", help="Run the configured simulation")
     p_run.add_argument("--test", default=None, help="Logical test name")
