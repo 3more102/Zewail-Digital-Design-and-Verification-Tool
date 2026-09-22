@@ -48,7 +48,7 @@ A build produces:
 
 - simulator command
 - combined build log
-- executable, when successful
+- simulator build artifact when successful (for example, a Verilator executable or a compiled Questa work library)
 - `build.json` manifest
 
 ### Run
@@ -237,6 +237,28 @@ Public references:
 
 - https://www.uciexpress.org/specifications
 - https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
+
+## v0.6 Questa Adapter Foundation
+
+The simulator abstraction no longer assumes that every successful compile produces a
+standalone executable. `BuildResult` can carry either an executable or a generic build
+artifact. Verilator continues to expose its generated executable; Questa exposes its
+compiled `work` library.
+
+The Questa adapter keeps vendor commands inside `src/zddv/simulator/questa.py` and uses:
+
+- `vlib work` to create a clean compiled library in the configured build directory;
+- `vlog -sv -work work ...` to compile project SystemVerilog sources;
+- `vsim -c -lib <work-library> ...` for non-interactive execution;
+- `-sv_seed <seed>` for reproducible SystemVerilog randomization;
+- ZDDV and UVM test plusargs when a named test is requested;
+- an isolated Tcl run script with optional VCD capture;
+- the same run JSON/SQLite and assertion ingestion contracts used by other adapters;
+- automatic normalized UVM-log ingestion when UVM report records are observed.
+
+Native Questa UCDB/code/functional coverage normalization is intentionally not claimed
+by this foundation. When coverage is requested, the build/run metadata records that
+Questa coverage capture is not yet implemented.
 
 ## Simulator Adapter Rule
 
