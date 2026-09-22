@@ -10,7 +10,7 @@ from zddv.config import ProjectConfig
 from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 
-_ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
+_ITEM_EVENTS = ("ARB_REQUEST", "GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
 _ITEM_LOG_MARKER = "ZDDV_UVM_ITEM"
 
@@ -240,7 +240,7 @@ def parse_uvm_item_data(
                 "transaction_id": event.get("transaction_id"),
                 "events": [],
                 "event_indices": [],
-                "partial": event["event"] != "GRANT",
+                "partial": event["event"] not in {"ARB_REQUEST", "GRANT"},
             }
             items[item_id] = instance
         else:
@@ -266,7 +266,18 @@ def parse_uvm_item_data(
                 f"Item {item_id} observed {event_type} more than once",
             )
 
-        if event_type == "GRANT":
+        if event_type == "ARB_REQUEST":
+            if any(
+                name in observed
+                for name in ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
+            ):
+                add_violation(
+                    "LATE_ARB_REQUEST",
+                    event,
+                    f"Item {item_id} observed ARB_REQUEST after later handshake evidence",
+                )
+
+        elif event_type == "GRANT":
             if any(name in observed for name in ("REQUEST", "ITEM_DONE", "RESPONSE")):
                 add_violation(
                     "LATE_GRANT",
@@ -288,7 +299,14 @@ def parse_uvm_item_data(
                     f"Item {item_id} observed REQUEST after RESPONSE",
                 )
             if "GRANT" not in observed:
-                instance["partial"] = True
+                if "ARB_REQUEST" in observed:
+                    add_violation(
+                        "REQUEST_BEFORE_GRANT",
+                        event,
+                        f"Item {item_id} observed REQUEST before its arbitration grant",
+                    )
+                else:
+                    instance["partial"] = True
 
         elif event_type == "ITEM_DONE":
             if "REQUEST" not in observed:
@@ -353,10 +371,152 @@ def parse_uvm_item_data(
         "violations": violations,
         "limitations": [
             "Input is explicit normalized handshake evidence; vendor simulator logs are not guessed or reinterpreted.",
-            "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
+            "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events; ARB_REQUEST is explicit start-of-wait evidence.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
-            "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
+            "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, hidden waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
             "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
+        ],
+    }
+
+
+def derive_uvm_arbitration_trace(
+    report: dict[str, Any],
+    *,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Derive explicit arbitration decisions from ARB_REQUEST/GRANT item evidence."""
+    events = report.get("events")
+    if not isinstance(events, list):
+        raise ValueError("UVM item report must contain normalized events")
+
+    pending: dict[str, dict[str, dict[str, Any]]] = {}
+    incomplete_pending: dict[str, dict[str, dict[str, Any]]] = {}
+    seen_request_ids: set[str] = set()
+    decisions: list[dict[str, Any]] = []
+
+    requests_seen = 0
+    grants_seen = 0
+    grants_without_request = 0
+    unscoped_requests = 0
+    unscoped_grants = 0
+    incomplete_requests = 0
+    skipped_incomplete_decisions = 0
+
+    def _priority(event: dict[str, Any]) -> int | None:
+        metadata = event.get("metadata") or {}
+        value = metadata.get("priority") if isinstance(metadata, dict) else None
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        return int(value)
+
+    def _contender(event: dict[str, Any]) -> dict[str, Any]:
+        metadata = {
+            "source_event_index": int(event["event_index"]),
+            "transaction_id": event.get("transaction_id"),
+            "item_type": event.get("item"),
+        }
+        event_metadata = event.get("metadata")
+        if isinstance(event_metadata, dict) and "log_line" in event_metadata:
+            metadata["log_line"] = event_metadata["log_line"]
+        return {
+            "request_id": event["item_id"],
+            "sequence_id": event["sequence_id"],
+            "sequence": event["sequence"],
+            "item_id": event["item_id"],
+            "priority": _priority(event),
+            "metadata": metadata,
+        }
+
+    for event in events:
+        event_type = event.get("event")
+        item_id = event.get("item_id")
+        if not isinstance(item_id, str) or not item_id:
+            continue
+
+        if event_type == "ARB_REQUEST":
+            requests_seen += 1
+            if item_id in seen_request_ids:
+                continue
+            seen_request_ids.add(item_id)
+
+            sequencer = event.get("sequencer")
+            if not isinstance(sequencer, str) or not sequencer:
+                unscoped_requests += 1
+                continue
+
+            complete = bool(event.get("sequence_id") and event.get("sequence"))
+            target = pending if complete else incomplete_pending
+            target.setdefault(sequencer, {})[item_id] = event
+            if not complete:
+                incomplete_requests += 1
+            continue
+
+        if event_type != "GRANT":
+            continue
+
+        grants_seen += 1
+        sequencer = event.get("sequencer")
+        if not isinstance(sequencer, str) or not sequencer:
+            unscoped_grants += 1
+            continue
+
+        complete_group = pending.setdefault(sequencer, {})
+        incomplete_group = incomplete_pending.setdefault(sequencer, {})
+        has_request = item_id in complete_group or item_id in incomplete_group
+        if not has_request:
+            grants_without_request += 1
+            continue
+
+        if incomplete_group:
+            skipped_incomplete_decisions += 1
+        elif item_id in complete_group:
+            contender_events = list(complete_group.values())
+            decisions.append(
+                {
+                    "decision_id": f"item-grant-{int(event['event_index'])}",
+                    "sequencer": sequencer,
+                    "granted_request_id": item_id,
+                    "time": event.get("time"),
+                    "contenders": [_contender(item) for item in contender_events],
+                    "metadata": {
+                        "derived_from": "uvm-item-events",
+                        "grant_event_index": int(event["event_index"]),
+                        "grant_log_line": (
+                            event.get("metadata", {}).get("log_line")
+                            if isinstance(event.get("metadata"), dict)
+                            else None
+                        ),
+                    },
+                }
+            )
+
+        complete_group.pop(item_id, None)
+        incomplete_group.pop(item_id, None)
+
+    pending_requests = sum(len(items) for items in pending.values()) + sum(
+        len(items) for items in incomplete_pending.values()
+    )
+    selected_source = source or report.get("source") or "uvm-item"
+    return {
+        "source": f"{selected_source}-arbitration-adapter",
+        "decisions": decisions,
+        "adapter": {
+            "kind": "uvm-item-arb-request",
+            "requests_seen": requests_seen,
+            "grants_seen": grants_seen,
+            "decisions_emitted": len(decisions),
+            "grants_without_request": grants_without_request,
+            "unscoped_requests": unscoped_requests,
+            "unscoped_grants": unscoped_grants,
+            "incomplete_requests": incomplete_requests,
+            "skipped_incomplete_decisions": skipped_incomplete_decisions,
+            "pending_requests": pending_requests,
+        },
+        "limitations": [
+            "Arbitration decisions are derived only from explicit ARB_REQUEST and GRANT evidence.",
+            "A decision is skipped when any pending contender on that sequencer lacks sequence identity, so incomplete evidence is never silently dropped from a contender set.",
+            "Priority is carried only when an integer metadata.priority is explicitly present on ARB_REQUEST.",
+            "The adapter does not infer vendor arbitration mode, hidden requests, locks, or delta-cycle timing.",
         ],
     }
 
