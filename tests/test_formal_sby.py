@@ -62,7 +62,7 @@ def test_render_sby_bmc_config_uses_explicit_bound_and_project_sources(tmp_path:
 
 
 @pytest.mark.parametrize(
-    ("request", "message"),
+    ("formal_request", "message"),
     [
         (FormalCheckRequest(mode="bmc"), "explicit depth"),
         (FormalCheckRequest(mode="prove", depth=10), "bmc mode only"),
@@ -74,11 +74,11 @@ def test_render_sby_bmc_config_uses_explicit_bound_and_project_sources(tmp_path:
 )
 def test_render_sby_bmc_config_rejects_unsupported_or_unbounded_requests(
     tmp_path: Path,
-    request: FormalCheckRequest,
+    formal_request: FormalCheckRequest,
     message: str,
 ):
     with pytest.raises(ValueError, match=message):
-        render_sby_bmc_config(_project(tmp_path), request)
+        render_sby_bmc_config(_project(tmp_path), formal_request)
 
 
 def test_sby_backend_version_uses_documented_version_flag(tmp_path: Path, monkeypatch):
