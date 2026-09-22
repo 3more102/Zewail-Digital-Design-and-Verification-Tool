@@ -354,5 +354,5 @@ def analyze_uvm_sequence_file(
     serialized = json.dumps(record, indent=2) + "\n"
     normalized_path.write_text(serialized, encoding="utf-8")
     destination.write_text(serialized, encoding="utf-8")
-    record_uvm_sequence_snapshot(project, record)
+    record_uvm_sequence_lifecycle_snapshot(project, record)
     return record
