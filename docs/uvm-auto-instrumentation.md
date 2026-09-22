@@ -100,8 +100,7 @@ get_response(rsp)
 
 `finish_item()` in UVM contains the standard send/wait-for-done path, so ZDDV
 does not claim a more precise internal timestamp than those public API
-boundaries. Response markers reuse the request item ID when an explicit
-transaction ID matches a previously completed request.
+boundaries. Response markers reuse the request item ID only when an explicit transaction ID maps unambiguously to one previously completed request. If the same transaction ID is observed for multiple request objects, ZDDV treats the mapping as ambiguous and does not force a request/response identity match.
 
 ## Source ordering and overwrite rules
 
