@@ -91,9 +91,16 @@ _QUESTA_FEC_ROW = re.compile(
     r"(?:\s+(?P<detail>.*?))?\s*$",
     re.IGNORECASE,
 )
+_QUESTA_FSM_SCOPE = re.compile(
+    r"^\s*FSM\s+Coverage\s+for\s+instance\s+(?P<scope>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
 _QUESTA_FSM_ID = re.compile(
     r"^\s*FSM_ID\s*:\s*(?P<fsm_id>\S.*?)\s*$",
     re.IGNORECASE,
+)
+_QUESTA_FSM_STATE_MAP_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<state>\S+)\s+(?P<value>\S+)\s*$"
 )
 _QUESTA_FSM_SECTION = re.compile(
     r"^\s*(?P<covered>Covered|Uncovered)\s+"
@@ -407,9 +414,21 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
     fec_context = ""
     in_fec_rows = False
     fsm_id = ""
+    fsm_scope = ""
     fsm_section = ""
+    fsm_state_lines: dict[str, int] = {}
 
     for raw_line in text.splitlines():
+        fsm_scope_match = _QUESTA_FSM_SCOPE.match(raw_line)
+        if fsm_scope_match is not None:
+            kind = "fsm"
+            source_file = ""
+            fsm_scope = fsm_scope_match.group("scope").strip()
+            fsm_id = ""
+            fsm_section = ""
+            fsm_state_lines = {}
+            continue
+
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
             kind = header.group("kind").strip().lower()
@@ -419,10 +438,12 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             fec_context = ""
             in_fec_rows = False
             fsm_id = ""
+            fsm_scope = ""
             fsm_section = ""
+            fsm_state_lines = {}
             continue
 
-        if not source_file:
+        if not source_file and kind != "fsm":
             continue
 
         if kind in {"statement", "branch"}:
@@ -458,7 +479,21 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
             if id_match is not None:
                 fsm_id = id_match.group("fsm_id").strip()
                 fsm_section = ""
+                fsm_state_lines = {}
                 continue
+
+            normalized_fsm_line = raw_line.strip().lower()
+            if normalized_fsm_line.startswith("state value mapinfo"):
+                fsm_section = "state_map"
+                continue
+
+            if fsm_section == "state_map":
+                map_row = _QUESTA_FSM_STATE_MAP_ROW.match(raw_line)
+                if map_row is not None:
+                    fsm_state_lines[map_row.group("state").strip()] = int(
+                        map_row.group("line")
+                    )
+                    continue
 
             section = _QUESTA_FSM_SECTION.match(raw_line)
             if section is not None:
@@ -474,6 +509,10 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 continue
             if not fsm_id or not fsm_section:
                 continue
+            if fsm_section == "state_map":
+                continue
+
+            fsm_location = source_file or fsm_scope or "fsm"
 
             if fsm_section == "covered_states":
                 row = _QUESTA_FSM_COVERED_STATE.match(raw_line)
@@ -481,18 +520,22 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                     continue
                 state = row.group("state").strip()
                 hits = int(row.group("hits").replace(",", ""))
-                points.append(
-                    {
-                        "name": f"{source_file}:{fsm_id}:state:{state}",
-                        "count": hits,
-                        "hit": hits > 0,
-                        "type": "fsm",
-                        "source_file": source_file,
-                        "fsm_id": fsm_id,
-                        "fsm_kind": "state",
-                        "state": state,
-                    }
-                )
+                point = {
+                    "name": f"{fsm_location}:{fsm_id}:state:{state}",
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": "fsm",
+                    "fsm_id": fsm_id,
+                    "fsm_kind": "state",
+                    "state": state,
+                }
+                if source_file:
+                    point["source_file"] = source_file
+                if fsm_scope:
+                    point["scope"] = fsm_scope
+                if state in fsm_state_lines:
+                    point["line"] = fsm_state_lines[state]
+                points.append(point)
                 continue
 
             if fsm_section == "uncovered_states":
@@ -502,18 +545,22 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 state = row.group("state").strip()
                 if state.lower() == "state" or not state.strip("-"):
                     continue
-                points.append(
-                    {
-                        "name": f"{source_file}:{fsm_id}:state:{state}",
-                        "count": 0,
-                        "hit": False,
-                        "type": "fsm",
-                        "source_file": source_file,
-                        "fsm_id": fsm_id,
-                        "fsm_kind": "state",
-                        "state": state,
-                    }
-                )
+                point = {
+                    "name": f"{fsm_location}:{fsm_id}:state:{state}",
+                    "count": 0,
+                    "hit": False,
+                    "type": "fsm",
+                    "fsm_id": fsm_id,
+                    "fsm_kind": "state",
+                    "state": state,
+                }
+                if source_file:
+                    point["source_file"] = source_file
+                if fsm_scope:
+                    point["scope"] = fsm_scope
+                if state in fsm_state_lines:
+                    point["line"] = fsm_state_lines[state]
+                points.append(point)
                 continue
 
             if fsm_section == "covered_transitions":
@@ -524,23 +571,25 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 transition_id = int(row.group("transition_id"))
                 hits = int(row.group("hits").replace(",", ""))
                 transition = row.group("transition").strip()
-                points.append(
-                    {
-                        "name": (
-                            f"{source_file}:{line_number}:{fsm_id}:"
-                            f"transition:{transition_id} {transition}"
-                        ),
-                        "count": hits,
-                        "hit": hits > 0,
-                        "type": "fsm",
-                        "source_file": source_file,
-                        "line": line_number,
-                        "fsm_id": fsm_id,
-                        "fsm_kind": "transition",
-                        "transition_id": transition_id,
-                        "transition": transition,
-                    }
-                )
+                point = {
+                    "name": (
+                        f"{fsm_location}:{line_number}:{fsm_id}:"
+                        f"transition:{transition_id} {transition}"
+                    ),
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": "fsm",
+                    "line": line_number,
+                    "fsm_id": fsm_id,
+                    "fsm_kind": "transition",
+                    "transition_id": transition_id,
+                    "transition": transition,
+                }
+                if source_file:
+                    point["source_file"] = source_file
+                if fsm_scope:
+                    point["scope"] = fsm_scope
+                points.append(point)
                 continue
 
             if fsm_section == "uncovered_transitions":
@@ -550,23 +599,25 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 line_number = int(row.group("line"))
                 transition_id = int(row.group("transition_id"))
                 transition = row.group("transition").strip()
-                points.append(
-                    {
-                        "name": (
-                            f"{source_file}:{line_number}:{fsm_id}:"
-                            f"transition:{transition_id} {transition}"
-                        ),
-                        "count": 0,
-                        "hit": False,
-                        "type": "fsm",
-                        "source_file": source_file,
-                        "line": line_number,
-                        "fsm_id": fsm_id,
-                        "fsm_kind": "transition",
-                        "transition_id": transition_id,
-                        "transition": transition,
-                    }
-                )
+                point = {
+                    "name": (
+                        f"{fsm_location}:{line_number}:{fsm_id}:"
+                        f"transition:{transition_id} {transition}"
+                    ),
+                    "count": 0,
+                    "hit": False,
+                    "type": "fsm",
+                    "line": line_number,
+                    "fsm_id": fsm_id,
+                    "fsm_kind": "transition",
+                    "transition_id": transition_id,
+                    "transition": transition,
+                }
+                if source_file:
+                    point["source_file"] = source_file
+                if fsm_scope:
+                    point["scope"] = fsm_scope
+                points.append(point)
                 continue
 
             continue
