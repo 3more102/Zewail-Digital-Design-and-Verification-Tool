@@ -24,6 +24,7 @@ from zddv.coverage import (
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
+from zddv.debug_triage import write_debug_triage_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import (
     FormalCheckRequest,
@@ -314,6 +315,53 @@ def cmd_assertion_waveform(args) -> int:
     if len(result["events"]) > args.show:
         print(f"... {len(result['events']) - args.show} more event(s)")
     print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_debug_triage(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_debug_triage_report(
+        project,
+        run_id=args.run_id,
+        assertion_limit=args.assertion_limit,
+        signal_hint_limit=args.signal_limit,
+        candidate_limit=args.candidate_limit,
+        history_limit=args.history_limit,
+        formal_snapshot_limit=args.formal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"DEBUG TRIAGE: run={result['run']['run_id']} "
+        f"status={result['run']['status']} "
+        f"candidates={summary['signal_candidates']}"
+    )
+    print(f"Failure signature: {result['failure']['signature']}")
+    print(
+        f"Assertions: {summary['failed_assertion_events']} failed event(s); "
+        f"waveform={'yes' if summary['waveform_available'] else 'no'}; "
+        f"formal exact-name matches={summary['formal_exact_name_matches']}"
+    )
+    for candidate in result["candidates"][: args.show]:
+        basis = candidate["rank_basis"]
+        crossprobe = candidate.get("crossprobe") or {}
+        source = crossprobe.get("source") or {}
+        declaration = source.get("declaration") or {}
+        location = "-"
+        if declaration:
+            location = f"{declaration['file']}:{declaration['line']}"
+        elif source:
+            location = f"{source.get('file', '-')}:{source.get('unit_line', '-')}"
+        print(
+            f"#{candidate['priority_rank']} {candidate['signal']['path']} -> {location} "
+            f"assertions={basis['failed_assertion_events']} "
+            f"drivers={basis['structural_driver_count']} "
+            f"loads={basis['structural_load_count']}"
+        )
+    if len(result["candidates"]) > args.show:
+        print(f"... {len(result['candidates']) - args.show} more candidate(s)")
+    print("Ranking is deterministic localization priority, not causal probability.")
+    print(f"Report: {result['report_path']}")
     return 0
 
 
@@ -2308,6 +2356,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON correlation report path",
     )
     p_assertion_waveform.set_defaults(func=cmd_assertion_waveform)
+
+    p_debug_triage = sub.add_parser(
+        "debug-triage",
+        help="Rank evidence-backed debug candidates for one failed or timed-out run",
+    )
+    p_debug_triage.add_argument(
+        "--run",
+        dest="run_id",
+        required=True,
+        help="Exact failed or timed-out run ID",
+    )
+    p_debug_triage.add_argument(
+        "--assertion-limit",
+        type=int,
+        default=100,
+        help="Maximum failed assertion events to correlate",
+    )
+    p_debug_triage.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum lexical waveform signal hints per failed assertion",
+    )
+    p_debug_triage.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=20,
+        help="Maximum ranked signal candidates retained in the report",
+    )
+    p_debug_triage.add_argument(
+        "--history-limit",
+        type=int,
+        default=500,
+        help="Maximum historical failed/timeout runs considered for recurrence context",
+    )
+    p_debug_triage.add_argument(
+        "--formal-limit",
+        type=int,
+        default=50,
+        help="Maximum formal snapshots scanned for exact property-name context",
+    )
+    p_debug_triage.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum ranked candidates printed to the terminal",
+    )
+    p_debug_triage.add_argument(
+        "--output",
+        default=".zddv/debug/triage.json",
+        help="JSON triage report path",
+    )
+    p_debug_triage.set_defaults(func=cmd_debug_triage)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)
