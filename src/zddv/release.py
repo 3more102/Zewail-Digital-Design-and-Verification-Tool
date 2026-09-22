@@ -303,7 +303,7 @@ def export_verification_release(
 
 def _validate_archive_member_name(name: str) -> None:
     path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts or "\" in name:
+    if path.is_absolute() or ".." in path.parts or "\\" in name:
         raise ValueError(f"Unsafe release archive member path: {name}")
 
 
