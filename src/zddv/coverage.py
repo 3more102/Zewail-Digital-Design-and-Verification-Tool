@@ -1313,9 +1313,13 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
 
     created_at = datetime.now(timezone.utc).isoformat()
     dashboard_path = report_dir / "dashboard.txt"
+    modinfo_path = report_dir / "modinfo.txt"
     metrics: dict | None = None
     metrics_status = "dashboard-missing"
     metrics_error: str | None = None
+    code_counts: dict | None = None
+    code_count_status = "modinfo-missing"
+    code_count_error: str | None = None
     snapshot_id: str | None = None
 
     if dashboard_path.exists():
@@ -1326,7 +1330,25 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
             metrics_status = "dashboard-unparsed"
             metrics_error = str(exc)
 
+    if modinfo_path.exists():
+        try:
+            code_counts = parse_vcs_urg_modinfo(modinfo_path)
+            code_count_status = "normalized"
+        except (OSError, ValueError) as exc:
+            code_count_status = "modinfo-unparsed"
+            code_count_error = str(exc)
+
     if metrics is not None:
+        metrics["code_count_status"] = code_count_status
+        if code_counts is not None:
+            metrics.setdefault("by_metric_counts", {}).update(
+                code_counts["by_metric_counts"]
+            )
+            metrics["code_counts_source"] = code_counts["source"]
+            metrics["modinfo"] = code_counts["modinfo"]
+        if code_count_error is not None:
+            metrics["code_count_error"] = code_count_error
+
         snapshot_id = (
             datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
             + "-"
@@ -1344,12 +1366,17 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "merged": str(merged_path),
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "command": command,
         "metrics": metrics,
+        "code_counts": code_counts,
+        "code_count_status": code_count_status,
         "snapshot_id": snapshot_id,
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+    if code_count_error is not None:
+        payload["code_count_error"] = code_count_error
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     summary_path = dashboard_path if dashboard_path.exists() else report_dir
@@ -1381,8 +1408,11 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
         "snapshot_id": snapshot_id,
         "report_dir": str(report_dir),
         "dashboard": str(dashboard_path) if dashboard_path.exists() else None,
+        "modinfo": str(modinfo_path) if modinfo_path.exists() else None,
         "metrics_status": metrics_status,
         "metrics_error": metrics_error,
+        "code_count_status": code_count_status,
+        "code_count_error": code_count_error,
     }
 
 
