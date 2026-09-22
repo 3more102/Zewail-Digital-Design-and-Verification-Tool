@@ -89,20 +89,21 @@ Each pack should support reusable checks, assertions, transaction extraction, co
 ## v0.6 — UVM and Commercial Simulator Adapters
 
 Current status: the simulator-independent UVM report-log ingestion foundation and the
-first commercial-simulator adapter foundation are implemented. ZDDV extracts standard UVM
+commercial-simulator adapter foundations are implemented for Questa and Synopsys VCS. ZDDV extracts standard UVM
 report messages, test names, severity summaries, report IDs, components, source locations, and
 timestamps; persists normalized snapshots/messages in SQLite; correlates snapshots with recorded
 simulation runs; and exposes `uvm-analyze` plus `uvm-history`. The Questa foundation supports
 native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD capture, assertion
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented;
-item-level UCDB normalization/holes remain planned; phase/objection lifecycle normalization and explicit sequence report-context evidence are implemented, while sequence start/end semantics remain planned.
+item-level UCDB normalization/holes remain planned; the VCS foundation covers native compile/run, deterministic seeds, VCD capture, assertion/UVM ingestion, and explicit unsupported coverage metadata; phase/objection lifecycle normalization and explicit sequence report-context evidence are implemented, while sequence start/end semantics remain planned.
 
 - [x] Questa execution adapter foundation.
 - [x] Questa native per-run UCDB coverage capture.
 - [x] Questa UCDB merge and summary-level ZDDV coverage reporting.
 - [ ] Questa item-level UCDB normalization and coverage-hole reporting.
-- [ ] VCS execution adapter.
+- [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
+- [ ] VCS native coverage capture and normalized coverage ingestion.
 - [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
