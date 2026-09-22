@@ -198,6 +198,55 @@ UVM_FATAL : 0
     assert uvm["simulator"] == "xcelium"
 
 
+def test_xcelium_run_auto_ingests_explicit_uvm_markers_without_false_report_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    project = _project(tmp_path, waveform=False)
+    backend = XceliumBackend()
+    (project.root / ".zddv" / "build" / "xcelium.d").mkdir(parents=True)
+
+    monkeypatch.setattr(backend, "version", lambda: "TOOL: xrun test")
+    monkeypatch.setattr(backend, "_tool", lambda: "xrun")
+
+    marker_output = (
+        'ZDDV_UVM_ITEM {"item_id":"item-1","event":"REQUEST",'
+        '"sequence_id":"seq-1","sequence":"smoke_seq",'
+        '"sequencer":"uvm_test_top.env.sqr"}\n'
+        'ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq",'
+        '"sequencer":"uvm_test_top.env.sqr","state":"UVM_BODY"}\n'
+    )
+
+    monkeypatch.setattr(
+        "zddv.simulator.xcelium.subprocess.run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=marker_output,
+        ),
+    )
+
+    result = backend.run(project)
+
+    assert result.status == "PASS"
+    item = loads(
+        (project.root / ".zddv" / "uvm" / "items" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sequence = loads(
+        (project.root / ".zddv" / "uvm" / "sequences" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert item["source"] == "xcelium-uvm-item-log"
+    assert item["run_id"] == result.run_id
+    assert item["input_mode"] == "explicit-log-marker"
+    assert sequence["source"] == "xcelium-uvm-sequence-log"
+    assert sequence["run_id"] == result.run_id
+    assert sequence["input_mode"] == "explicit-log-marker"
+    assert not (project.root / ".zddv" / "uvm" / "latest.json").exists()
+
+
 def test_xcelium_run_without_waveform_has_no_input_script(tmp_path, monkeypatch):
     project = _project(tmp_path, waveform=False)
     backend = XceliumBackend()
