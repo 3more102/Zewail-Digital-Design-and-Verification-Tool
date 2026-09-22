@@ -590,6 +590,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     out_dir.mkdir(parents=True)
     (out_dir / "details.xml").write_text("stale\n", encoding="utf-8")
     (out_dir / "zeros.txt").write_text("stale\n", encoding="utf-8")
+    (out_dir / "toggle-details.txt").write_text("stale\n", encoding="utf-8")
+    (out_dir / "fsm-details.txt").write_text("stale\n", encoding="utf-8")
 
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
@@ -607,7 +609,7 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
-        if "-xml" in command or "-zeros" in command:
+        if "-xml" in command or "-zeros" in command or "-byinstance" in command:
             return SimpleNamespace(returncode=2, stdout="unsupported fixture\n")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -621,8 +623,14 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["xml"]["diagnostic"] == "unsupported fixture"
     assert evidence["zero_detail"]["status"] == "failed"
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
+    assert evidence["toggle_detail"]["status"] == "failed"
+    assert evidence["toggle_detail"]["diagnostic"] == "unsupported fixture"
+    assert evidence["fsm_detail"]["status"] == "failed"
+    assert evidence["fsm_detail"]["diagnostic"] == "unsupported fixture"
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
+    assert not Path(evidence["toggle_detail"]["path"]).exists()
+    assert not Path(evidence["fsm_detail"]["path"]).exists()
 
 
 def test_parse_questa_statement_xml_keeps_file_maps_scoped_per_instance(
