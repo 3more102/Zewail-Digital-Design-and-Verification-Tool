@@ -159,6 +159,26 @@ CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_action
 CREATE INDEX IF NOT EXISTS idx_uvm_objection_events_source
     ON uvm_objection_events(source_object);
 
+CREATE TABLE IF NOT EXISTS uvm_sequence_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    sequencer_name TEXT NOT NULL,
+    sequence_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    time_text TEXT,
+    report_id TEXT,
+    message_event_index INTEGER NOT NULL,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequence
+    ON uvm_sequence_events(sequence_name);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_sequence_events_sequencer
+    ON uvm_sequence_events(sequencer_name);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -593,6 +613,7 @@ def record_uvm_log_snapshot(
         lifecycle = record.get("lifecycle", {})
         phase_events = lifecycle.get("phase_events", [])
         objection_events = lifecycle.get("objection_events", [])
+        sequence_events = lifecycle.get("sequence_events", [])
 
         db.execute(
             "DELETE FROM uvm_phase_events WHERE snapshot_id = ?",
@@ -653,6 +674,34 @@ def record_uvm_log_snapshot(
                     item["raw"],
                 )
                 for item in objection_events
+            ],
+        )
+
+        db.execute(
+            "DELETE FROM uvm_sequence_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_sequence_events (
+                snapshot_id, event_index, sequencer_name, sequence_name,
+                action, time_text, report_id, message_event_index, log_line, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["sequencer"],
+                    item["sequence"],
+                    item["action"],
+                    item.get("time"),
+                    item.get("report_id"),
+                    int(item["message_event_index"]),
+                    int(item["log_line"]),
+                    item["raw"],
+                )
+                for item in sequence_events
             ],
         )
     return path
@@ -757,6 +806,25 @@ def list_uvm_objection_events(
                    source_object, action, delta, object_count, total_count,
                    time_text, message_event_index, log_line, raw
             FROM uvm_objection_events
+            WHERE snapshot_id = ?
+            ORDER BY event_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_sequence_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, event_index, sequencer_name, sequence_name,
+                   action, time_text, report_id, message_event_index,
+                   log_line, raw
+            FROM uvm_sequence_events
             WHERE snapshot_id = ?
             ORDER BY event_index
             """,
