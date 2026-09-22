@@ -169,6 +169,24 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] SHA-confirmed human review gate before reviewed model proposals can enter the existing generated-artifact staging/apply workflow.
 - [x] Read-only provenance-chain audit that re-verifies context evidence, provider-request, raw-response, validated-payload, and optional human-review hashes without model invocation.
 
+## v1.0 — Verification Signoff
+
+Current status: the first deterministic signoff-review bundle is implemented. It
+aggregates selected persisted simulation evidence plus the latest normalized coverage,
+formal, and UVM snapshots; records canonical evidence/policy/signoff SHA-256 provenance;
+and exposes conservative blocking rules for known failures, required missing evidence,
+and optional coverage thresholds. READY_FOR_REVIEW is explicitly not a claim that
+uncollected verification objectives passed.
+
+- [x] Deterministic signoff review bundle over persisted verification evidence.
+- [x] Canonical evidence, policy, and signoff SHA-256 provenance.
+- [x] Conservative simulation failure/missing-evidence blocking.
+- [x] Optional coverage-presence and minimum-percentage gate.
+- [x] Optional formal/UVM evidence requirements while still blocking explicit failures.
+- [x] CI-friendly signoff command exit status and JSON artifact.
+- [ ] Explicit snapshot/run ID pinning for release-candidate manifests.
+- [ ] Signed release manifest and reproducible archive export.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.

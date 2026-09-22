@@ -168,6 +168,7 @@ zddv --project my_project runs --limit 20
 zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
+zddv --project my_project signoff --require-coverage --min-coverage 90
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
