@@ -65,21 +65,20 @@ def normalize_functional_coverage(payload: dict) -> dict:
     }
 
 
-def ingest_functional_coverage(
+def ingest_functional_coverage_payload(
     project: ProjectConfig,
-    path: str | Path,
+    payload: dict,
     *,
+    input_path: str | Path,
     source: str | None = None,
 ) -> dict:
-    input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = (project.root / input_path).resolve()
-    if not input_path.exists():
-        raise FileNotFoundError(input_path)
-
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    """Normalize and persist an already-decoded functional coverage payload."""
     if not isinstance(payload, dict):
         raise ValueError("Functional coverage input root must be a JSON object.")
+
+    source_path = Path(input_path)
+    if not source_path.is_absolute():
+        source_path = (project.root / source_path).resolve()
 
     normalized = normalize_functional_coverage(payload)
     if source is not None:
@@ -101,10 +100,31 @@ def ingest_functional_coverage(
         "created_at": created_at,
         "project": project.name,
         "source": normalized["source"],
-        "input_path": str(input_path),
+        "input_path": str(source_path),
         **normalized,
     }
     normalized_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     record["normalized_path"] = str(normalized_path)
     record_functional_coverage_snapshot(project, record)
     return record
+
+
+def ingest_functional_coverage(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+) -> dict:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = (project.root / input_path).resolve()
+    if not input_path.exists():
+        raise FileNotFoundError(input_path)
+
+    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    return ingest_functional_coverage_payload(
+        project,
+        payload,
+        input_path=input_path,
+        source=source,
+    )
