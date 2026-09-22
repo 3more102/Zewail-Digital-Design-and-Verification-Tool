@@ -1105,13 +1105,13 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
 
     with pytest.raises(
         RuntimeError,
-        match=r"supports --type statement, branch, condition, expression, or fsm",
+        match=r"supports --type statement, branch, condition, expression, fsm, or toggle",
     ):
         cmd_coverage_holes(
             SimpleNamespace(
                 project=str(project.root),
                 output=".zddv/coverage/holes.json",
-                point_type="toggle",
+                point_type="assertion",
                 limit=10,
                 show=2,
             )
