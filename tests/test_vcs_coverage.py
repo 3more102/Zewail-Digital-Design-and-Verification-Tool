@@ -61,18 +61,20 @@ def test_merge_vcs_coverage_uses_urg_and_retains_report_evidence(
         "zddv.coverage.shutil.which",
         lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
     )
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"commands": []}
 
     def fake_run(command, cwd):
-        captured["command"] = list(command)
+        captured["commands"].append(list(command))
         captured["cwd"] = Path(cwd)
-        assert not stale_merged.exists()
-        assert not stale_report.exists()
-        (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
         report_dir = Path(cwd) / command[command.index("-report") + 1]
-        report_dir.mkdir()
-        (report_dir / "dashboard.txt").write_text(
-            """Unified Coverage Report
+
+        if "-dbname" in command:
+            assert not stale_merged.exists()
+            assert not stale_report.exists()
+            (Path(cwd) / command[command.index("-dbname") + 1]).mkdir()
+            report_dir.mkdir()
+            (report_dir / "dashboard.txt").write_text(
+                """Unified Coverage Report
 
 Total Coverage Summary
 SCORE  LINE  COND  TOGGLE  FSM  BRANCH  ASSERT  GROUP
@@ -82,15 +84,29 @@ Total Groups Coverage Summary
 COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
 491  528  92.99  490  527  92.98  1
 """,
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+
+        assert command[-2:] == ["-show", "ratios"]
+        report_dir.mkdir()
+        (report_dir / "dashboard.txt").write_text(
+            """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH | ASSERT | GROUP
+40.00 | 99.03 1020/1030 | 97.75 391/400 | 98.53 670/680 | 100.00 50/50 | 99.01 1000/1010 | 98.63 719/729 | 92.99 491/528
+""",
             encoding="utf-8",
         )
-        return SimpleNamespace(returncode=0, stdout="URG merge complete\n")
+        return SimpleNamespace(returncode=0, stdout="URG ratio report complete\n")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
 
     result = merge_vcs_coverage(project)
 
-    command = captured["command"]
+    commands = captured["commands"]
+    command = commands[0]
     assert command == [
         "/opt/synopsys/bin/urg",
         "-dir",
@@ -101,6 +117,17 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "urg-report",
         "-format",
         "both",
+    ]
+    assert commands[1] == [
+        "/opt/synopsys/bin/urg",
+        "-dir",
+        "coverage.vdb",
+        "-report",
+        "urg-ratio-report",
+        "-format",
+        "text",
+        "-show",
+        "ratios",
     ]
     assert captured["cwd"] == out_dir
     assert Path(result["merged"]).is_dir()
@@ -119,7 +146,19 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
         "total": 527,
         "hit_rate": pytest.approx(92.98),
     }
+    assert result["metrics"]["by_metric_counts"]["line"] == {
+        "covered": 1020,
+        "total": 1030,
+        "hit_rate": pytest.approx((1020 / 1030) * 100.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["branch"] == {
+        "covered": 1000,
+        "total": 1010,
+        "hit_rate": pytest.approx((1000 / 1010) * 100.0),
+    }
     assert result["metrics"]["count_status"] == "normalized"
+    assert result["ratio_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert result["snapshot_id"] is not None
     assert Path(result["summary"]).name == "dashboard.txt"
 
@@ -140,9 +179,13 @@ COVERED  EXPECTED  SCORE  COVERED  EXPECTED  INST SCORE  WEIGHT
     assert manifest["input_count"] == 2
     assert manifest["inputs"] == inputs
     assert manifest["command"] == command
+    assert manifest["ratio_command"] == commands[1]
+    assert manifest["ratio_status"] == "normalized"
     assert manifest["metrics"]["tool_total_coverage"] == pytest.approx(97.74)
     assert manifest["metrics"]["by_metric_counts"]["group"]["covered"] == 491
     assert manifest["metrics"]["by_metric_counts"]["group_instance"]["total"] == 527
+    assert manifest["metrics"]["by_metric_counts"]["line"]["covered"] == 1020
+    assert manifest["metrics"]["by_metric_counts"]["condition"]["total"] == 400
 
 
 def test_merge_vcs_coverage_requires_per_run_vdb(tmp_path: Path, monkeypatch):
@@ -344,6 +387,37 @@ def test_parse_vcs_urg_dashboard_preserves_blank_fixed_width_metric(tmp_path: Pa
     assert "fsm" not in metrics["by_metric"]
     assert metrics["by_metric"]["branch"] == pytest.approx(94.22)
     assert metrics["by_metric"]["group"] == pytest.approx(99.60)
+
+
+def test_parse_vcs_urg_dashboard_parses_show_ratios_code_counts(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH | PATH | ASSERT | GROUP
+42.11 | 72.66 513/706 | 33.98 157/462 | 50.61 989/1954 | 34.83 31/89 | 57.77 171/296 | 50.00 111/222 | 20.00 2/10 | 16.98 2015/11865
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(42.11)
+    assert metrics["by_metric"]["path"] == pytest.approx(50.00)
+    assert metrics["by_metric_counts"]["line"] == {
+        "covered": 513,
+        "total": 706,
+        "hit_rate": pytest.approx((513 / 706) * 100.0),
+    }
+    assert metrics["by_metric_counts"]["condition"]["covered"] == 157
+    assert metrics["by_metric_counts"]["toggle"]["total"] == 1954
+    assert metrics["by_metric_counts"]["fsm"]["covered"] == 31
+    assert metrics["by_metric_counts"]["branch"]["total"] == 296
+    assert metrics["by_metric_counts"]["path"]["covered"] == 111
+    assert metrics["by_metric_counts"]["assertion"]["total"] == 10
+    assert metrics["by_metric_counts"]["group"]["covered"] == 2015
+    assert metrics["count_status"] == "normalized"
 
 
 def test_parse_vcs_urg_dashboard_rejects_ambiguous_summary(tmp_path: Path):
