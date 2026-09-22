@@ -278,6 +278,22 @@ CREATE TABLE IF NOT EXISTS coverage_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_coverage_created_at
     ON coverage_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS coverage_score_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    simulator TEXT NOT NULL,
+    input_count INTEGER NOT NULL,
+    score REAL NOT NULL,
+    by_metric_json TEXT NOT NULL,
+    merged_path TEXT NOT NULL,
+    summary_path TEXT NOT NULL,
+    metrics_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_score_created_at
+    ON coverage_score_snapshots(created_at DESC);
 """
 
 
@@ -1163,6 +1179,64 @@ def record_coverage_snapshot(
             ),
         )
     return path
+
+
+def record_coverage_score_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    """Persist percentage-native coverage scores without inventing point counts."""
+    path = database_path(project)
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO coverage_score_snapshots (
+                snapshot_id, created_at, project, simulator, input_count,
+                score, by_metric_json, merged_path, summary_path, metrics_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["simulator"],
+                int(record["input_count"]),
+                float(record["score"]),
+                json.dumps(record.get("by_metric", {}), sort_keys=True),
+                record["merged"],
+                record["summary"],
+                record["metrics_path"],
+            ),
+        )
+    return path
+
+
+def list_coverage_score_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, created_at, project, simulator, input_count,
+                   score, by_metric_json, merged_path, summary_path, metrics_path
+            FROM coverage_score_snapshots
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["by_metric"] = json.loads(item.pop("by_metric_json"))
+        result.append(item)
+    return result
 
 
 def list_coverage_snapshots(
