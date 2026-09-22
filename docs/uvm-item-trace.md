@@ -6,6 +6,14 @@ ZDDV can analyze explicit, simulator-independent sequence-item handshake evidenc
 zddv --project <project> uvm-item-analyze <trace.json>
 ```
 
+Each analysis is also persisted in the project SQLite database. Query recent snapshots with:
+
+```text
+zddv --project <project> uvm-item-history
+zddv --project <project> uvm-item-history --status FAIL
+zddv --project <project> uvm-item-history --run <run-id>
+```
+
 The normalized event vocabulary is:
 
 - `GRANT` — sequencer arbitration granted the sequence/item path.
@@ -44,8 +52,10 @@ A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item
 
 Once earlier evidence is present, backward ordering is a violation. Examples include `ITEM_DONE` after an observed `GRANT` but before `REQUEST`, or a late `GRANT` after `REQUEST`.
 
-## Current boundary
+## Persistence and current boundary
 
-This foundation validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, compare transaction payloads, or persist item snapshots in SQLite.
+ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
+
+This layer validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, or compare transaction payloads.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
