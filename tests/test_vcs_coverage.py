@@ -146,3 +146,34 @@ def test_vcs_coverage_cli_reports_pending_normalization(
     assert "Coverage metrics: pending-normalization" in output
     assert "Coverage evidence: /tmp/vcs-coverage.json" in output
     assert "Snapshot: None" not in output
+
+
+def test_merge_vcs_coverage_requires_urg(tmp_path: Path, monkeypatch):
+    project = _project(tmp_path)
+    coverage = (project.root / project.run_dir / "run-a" / "coverage.vdb").resolve()
+    coverage.mkdir(parents=True)
+    monkeypatch.setattr("zddv.coverage.shutil.which", lambda name: None)
+
+    with pytest.raises(RuntimeError, match="Synopsys URG was not found"):
+        merge_vcs_coverage(project)
+
+
+def test_merge_vcs_coverage_requires_expected_outputs(tmp_path: Path, monkeypatch):
+    project = _project(tmp_path)
+    coverage = (project.root / project.run_dir / "run-a" / "coverage.vdb").resolve()
+    coverage.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/synopsys/bin/urg" if name == "urg" else None,
+    )
+    monkeypatch.setattr(
+        "zddv.coverage._run",
+        lambda command, cwd: SimpleNamespace(
+            returncode=0,
+            stdout="URG returned success without artifacts\n",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="VCS coverage merge/report failed"):
+        merge_vcs_coverage(project)
