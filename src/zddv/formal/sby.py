@@ -72,13 +72,13 @@ def _staged_source_name(project: ProjectConfig, source: Path, index: int) -> str
     return Path(*parts).as_posix()
 
 
-def render_sby_bmc_config(
+def _render_sby_bounded_config(
     project: ProjectConfig,
     request: FormalCheckRequest,
 ) -> str:
-    """Render one bounded SymbiYosys job without inferring proof semantics."""
-    if request.mode != "bmc":
-        raise ValueError("SymbiYosys bounded execution currently supports bmc mode only")
+    """Render one bounded SymbiYosys BMC/cover job without strengthening semantics."""
+    if request.mode not in {"bmc", "cover"}:
+        raise ValueError("SymbiYosys bounded execution supports bmc and cover modes only")
     if request.depth is None:
         raise ValueError("SymbiYosys bounded checks require an explicit depth")
     if request.properties:
@@ -124,7 +124,7 @@ def render_sby_bmc_config(
     return "\n".join(
         [
             "[options]",
-            "mode bmc",
+            f"mode {request.mode}",
             f"depth {request.depth}",
             *(
                 [f"timeout {max(1, math.ceil(request.timeout_s))}"]
@@ -144,6 +144,26 @@ def render_sby_bmc_config(
         ]
     )
 
+
+
+def render_sby_bmc_config(
+    project: ProjectConfig,
+    request: FormalCheckRequest,
+) -> str:
+    """Render an explicit finite-depth SymbiYosys BMC job."""
+    if request.mode != "bmc":
+        raise ValueError("SymbiYosys bounded execution currently supports bmc mode only")
+    return _render_sby_bounded_config(project, request)
+
+
+def render_sby_cover_config(
+    project: ProjectConfig,
+    request: FormalCheckRequest,
+) -> str:
+    """Render an explicit finite-depth SymbiYosys cover/reachability job."""
+    if request.mode != "cover":
+        raise ValueError("SymbiYosys cover execution requires cover mode")
+    return _render_sby_bounded_config(project, request)
 
 def _normalized_sby_status(outcome: _ProcessOutcome) -> str:
     if outcome.timed_out:
@@ -265,7 +285,7 @@ def _query_sby_property_statuses(
 
 
 class SymbiYosysBackend(FormalBackend):
-    """First concrete ZDDV formal backend: finite-depth SymbiYosys BMC."""
+    """ZDDV formal backend for finite-depth SymbiYosys BMC and cover runs."""
 
     name = "sby"
 
@@ -297,12 +317,19 @@ class SymbiYosysBackend(FormalBackend):
         request: FormalCheckRequest,
     ) -> FormalCheckResult:
         executable = self._executable()
-        config_text = render_sby_bmc_config(project, request)
+        if request.mode == "bmc":
+            config_text = render_sby_bmc_config(project, request)
+        elif request.mode == "cover":
+            config_text = render_sby_cover_config(project, request)
+        else:
+            raise ValueError(
+                "SymbiYosys execution currently supports bmc and cover modes only"
+            )
 
         root = (project.root / ".zddv" / "formal" / "sby").resolve()
         root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        run_id = f"bmc-{stamp}"
+        run_id = f"{request.mode}-{stamp}"
         config_path = root / f"{run_id}.sby"
         run_dir = root / run_id
         config_path.write_text(config_text, encoding="utf-8")
