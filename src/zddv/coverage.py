@@ -2638,7 +2638,9 @@ def index_xcelium_imc_detail_sections(text: str) -> dict:
 
             if pending is not None:
                 value = raw_line.strip()
-                if value and not value.casefold().startswith("number of "):
+                if not value:
+                    continue
+                if not value.casefold().startswith("number of "):
                     context.append(
                         {
                             "label": pending[0],
@@ -3143,7 +3145,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     detail_path.write_text(detail_report.stdout or "", encoding="utf-8")
     detail_status = "captured" if detail_report.returncode == 0 else "tool-error"
     detail_inventory = index_xcelium_imc_detail_sections(
-        detail_report.stdout or "" if detail_report.returncode == 0 else ""
+        (detail_report.stdout or "") if detail_report.returncode == 0 else ""
     )
     detail_inventory.update(
         {
