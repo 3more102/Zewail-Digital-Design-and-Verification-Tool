@@ -30,6 +30,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
+- Conservative UVM sequence report-context evidence from explicit `sequencer@@sequence` components, persisted separately without inferring start/end lifecycle
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -94,6 +95,11 @@ coverage instrumentation and writes `coverage.ucdb` inside each run directory.
 SQLite coverage-history model. Questa's weighted total coverage is preserved as
 a separate simulator-reported value; item-level `coverage-holes` remains
 Verilator-only until detailed UCDB normalization is implemented.
+
+UVM sequence evidence is also simulator-independent, but intentionally conservative:
+when a report component explicitly contains `sequencer@@sequence`, ZDDV records that
+report context in the lifecycle model and SQLite history. It does not infer sequence
+start/end semantics or claim a portable universal sequence-trace switch.
 
 ## Current CLI
 
