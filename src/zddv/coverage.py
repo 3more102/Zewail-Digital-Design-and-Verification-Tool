@@ -68,7 +68,7 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 _QUESTA_CODE_DETAIL_HEADER = re.compile(
-    r"^\s*(?P<kind>Statement|Branch)\s+Coverage\s+for\s+file\s+"
+    r"^\s*(?P<kind>Statement|Branch|Condition)\s+Coverage\s+for\s+file\s+"
     r"(?P<file>.+?)\s*--\s*$",
     re.IGNORECASE,
 )
@@ -76,6 +76,17 @@ _QUESTA_CODE_DETAIL_ROW = re.compile(
     r"^\s*(?P<line>\d+)\s+(?P<item>\d+)\s+"
     r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
     r"(?:\s+(?P<detail>.*?))?\s*$"
+)
+_QUESTA_FEC_ITEM = re.compile(
+    r"^\s*Line\s+(?P<line>\d+)\s+Item\s+(?P<item>\d+)"
+    r"(?:\s+(?P<detail>.*?))?\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FEC_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
+    r"(?:\s+(?P<detail>.*?))?\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -174,7 +185,7 @@ def build_coverage_hole_report(
                 "count": int(point.get("count", 0)),
                 **{
                     key: point[key]
-                    for key in ("scope", "file", "statement")
+                    for key in ("scope", "file", "statement", "condition")
                     if key in point and point[key] is not None
                 },
                 **(
@@ -190,6 +201,11 @@ def build_coverage_hole_report(
                 **(
                     {"item": int(point["item"])}
                     if point.get("item") is not None
+                    else {}
+                ),
+                **(
+                    {"row": int(point["row"])}
+                    if point.get("row") is not None
                     else {}
                 ),
                 **(
@@ -336,33 +352,82 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
 
 
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize statement and branch items from documented vcover detail text."""
+    """Normalize statement, branch, and condition items from vcover detail text.
+
+    Condition coverage uses Questa's documented focused-expression-coverage
+    rows. Each FEC row is preserved as a source-linked point under its
+    enclosing Line/Item condition record.
+    """
     points: list[dict] = []
     kind = ""
     source_file = ""
+    condition_line: int | None = None
+    condition_item: int | None = None
+    condition_text = ""
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
             kind = header.group("kind").strip().lower()
             source_file = header.group("file").strip()
+            condition_line = None
+            condition_item = None
+            condition_text = ""
             continue
 
-        if kind not in {"statement", "branch"} or not source_file:
+        if not source_file:
             continue
 
-        item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
-        if item is None:
+        if kind in {"statement", "branch"}:
+            item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
+            if item is None:
+                continue
+
+            hits = int(
+                item.group("hits").replace("*", "").replace(",", "")
+            )
+            line_number = int(item.group("line"))
+            item_number = int(item.group("item"))
+            detail = (item.group("detail") or "").strip()
+
+            name = f"{source_file}:{line_number}:{item_number}"
+            if detail:
+                name += f" {detail}"
+
+            points.append(
+                {
+                    "name": name,
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": kind,
+                    "source_file": source_file,
+                    "line": line_number,
+                    "item": item_number,
+                    "detail": detail,
+                }
+            )
+            continue
+
+        if kind != "condition":
+            continue
+
+        condition = _QUESTA_FEC_ITEM.match(raw_line)
+        if condition is not None:
+            condition_line = int(condition.group("line"))
+            condition_item = int(condition.group("item"))
+            condition_text = (condition.group("detail") or "").strip()
+            continue
+
+        row = _QUESTA_FEC_ROW.match(raw_line)
+        if row is None or condition_line is None or condition_item is None:
             continue
 
         hits = int(
-            item.group("hits").replace("*", "").replace(",", "")
+            row.group("hits").replace("*", "").replace(",", "")
         )
-        line_number = int(item.group("line"))
-        item_number = int(item.group("item"))
-        detail = (item.group("detail") or "").strip()
-
-        name = f"{source_file}:{line_number}:{item_number}"
+        row_number = int(row.group("row"))
+        detail = (row.group("detail") or "").strip()
+        name = f"{source_file}:{condition_line}:{condition_item}:row{row_number}"
         if detail:
             name += f" {detail}"
 
@@ -371,10 +436,12 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 "name": name,
                 "count": hits,
                 "hit": hits > 0,
-                "type": kind,
+                "type": "condition",
                 "source_file": source_file,
-                "line": line_number,
-                "item": item_number,
+                "line": condition_line,
+                "item": condition_item,
+                "row": row_number,
+                "condition": condition_text,
                 "detail": detail,
             }
         )
@@ -669,7 +736,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report",
         "-details",
         "-code",
-        "sb",
+        "sbc",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
