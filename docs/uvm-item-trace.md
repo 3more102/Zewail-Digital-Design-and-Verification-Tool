@@ -44,8 +44,18 @@ A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item
 
 Once earlier evidence is present, backward ordering is a violation. Examples include `ITEM_DONE` after an observed `GRANT` but before `REQUEST`, or a late `GRANT` after `REQUEST`.
 
+## Persistence and history
+
+Every analyzed trace is written to the JSON snapshot directory and persisted in the project SQLite database. The snapshot stores summary counts and optional run correlation, while normalized event rows retain item identity, transaction ID, time text, and metadata.
+
+```text
+zddv --project <project> uvm-item-history --limit 20
+zddv --project <project> uvm-item-history --status FAIL
+zddv --project <project> uvm-item-history --run <run-id>
+```
+
 ## Current boundary
 
-This foundation validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, compare transaction payloads, or persist item snapshots in SQLite.
+This foundation validates event ordering, duplicate events, stable item identity, and persisted history. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, or compare transaction payloads.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
