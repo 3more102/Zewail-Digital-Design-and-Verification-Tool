@@ -159,7 +159,7 @@ zddv --project my_project regress regression.toml
 zddv --project my_project runs --limit 20
 zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
-zddv --project my_project failures --limit 200
+zddv --project my_project failures --limit 200\nzddv --project my_project triage --limit 200
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
@@ -690,6 +690,20 @@ waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
 remain visible as uncorrelated events rather than being silently dropped.
 
+### Evidence-Based Failure Triage
+
+`zddv triage` starts from the existing normalized failure-signature groups, joins
+failing assertion events to their recorded runs and waveforms, then ranks observed
+assertion names and exact signal hints by the number of failed runs that support
+them and by event count. Signal candidates also produce a targeted
+`waveform-probe` command for the latest failed run that supplied that evidence.
+
+The rank is intentionally an evidence-support ordering, not a probability or a
+claim that the assertion or signal is the root cause. Groups without assertion or
+waveform evidence remain in the report with empty candidates rather than receiving
+invented explanations. The default JSON output is
+`.zddv/debug/failure-triage.json`.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
@@ -717,7 +731,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
-- [ ] Automated failure triage
+- [x] Deterministic evidence-based failure triage with assertion/signal candidates and suggested waveform probes
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
