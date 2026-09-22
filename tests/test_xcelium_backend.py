@@ -432,3 +432,34 @@ def test_doctor_can_check_xcelium_backend(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ZDDV 0.6.0" in output
     assert "[PASS] TOOL: xrun test" in output
+
+
+def test_xcelium_run_auto_ingests_explicit_uvm_markers_without_report_snapshot(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, waveform=False)
+    backend = XceliumBackend()
+    (project.root / ".zddv" / "build" / "xcelium.d").mkdir(parents=True)
+
+    monkeypatch.setattr(backend, "version", lambda: "TOOL: xrun test")
+    monkeypatch.setattr(backend, "_tool", lambda: "xrun")
+    marker_log = "ZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_BODY\",\"time\":\"1 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_ENDED\",\"time\":\"2 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_POST_START\",\"time\":\"3 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_FINISHED\",\"time\":\"4 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"GRANT\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"REQUEST\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"ITEM_DONE\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"6 ns\"}\n"
+    monkeypatch.setattr(
+        "zddv.simulator.xcelium.subprocess.run",
+        lambda command, **kwargs: SimpleNamespace(returncode=0, stdout=marker_log),
+    )
+
+    result = backend.run(project)
+
+    assert result.status == "PASS"
+    marker = loads(
+        (project.root / ".zddv" / "uvm" / "markers" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert marker["status"] == "PASS"
+    assert marker["source"] == "xcelium-marker-run"
+    assert marker["run_id"] == result.run_id
+    assert marker["summary"]["sequence_marker_lines"] == 4
+    assert marker["summary"]["item_marker_lines"] == 3
+    assert not (project.root / ".zddv" / "uvm" / "latest.json").exists()
