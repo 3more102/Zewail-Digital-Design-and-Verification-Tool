@@ -122,9 +122,29 @@ trace paths. It does not synthesize PASS rows for properties that the logfile
 never enumerates, and it does not convert a bounded PASS into an unbounded
 proof.
 
+## Bounded SymbiYosys cover execution
+
+ZDDV can execute finite-depth SymbiYosys cover/reachability runs directly:
+
+```text
+zddv --project <project> formal-cover --depth 20
+zddv --project <project> formal-cover --depth 50 --timeout 30
+```
+
+The generated SBY job uses `mode cover` with the explicit requested `depth`.
+The resulting native logfile is re-read only for explicit reached-cover and trace
+evidence before the run is persisted. ZDDV does not invent rows for cover goals
+that SymbiYosys did not enumerate, and it does not convert the observed goals
+into an aggregate coverage percentage.
+
+For SymbiYosys cover mode, a PASS means all internal `cover()` statements were
+reached within the configured depth. A FAIL is retained as the native tool result;
+ZDDV does not infer which unenumerated goal was unreachable.
+
 ## Current boundary
 
 This slice does not parse vendor-native counterexample waveform contents or
-claim formal coverage. SymbiYosys native logfile result ingestion is supported;
-additional formal-tool native formats and formal coverage remain separate v0.7
-milestones.
+provide cross-run/aggregate formal-coverage percentages. SymbiYosys native
+logfile ingestion and bounded cover/reachability execution are supported;
+additional formal-tool native formats and richer formal coverage remain separate
+v0.7 milestones.
