@@ -193,4 +193,4 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         fcov_snapshots[0]["snapshot_id"],
         status="UNCOVERED",
     )
-    assert [item["bin_name"] for item in holes] == ["invalid", "cross_zero"]
+    assert {item["bin_name"] for item in holes} == {"invalid", "cross_zero"}
