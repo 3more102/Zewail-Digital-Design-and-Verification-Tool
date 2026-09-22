@@ -544,3 +544,138 @@ def test_unmatched_exclusive_write_with_okay_is_not_protocol_failure():
     write = result["transactions"][0]
     assert write["exclusive"] is True
     assert write["exclusive_pair_status"] == "no_prior_exclusive_read"
+
+
+def test_accepts_legal_axi4_sidebands_and_preserves_user_fields():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x120,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0xF,
+                "ARPROT": 0x7,
+                "ARQOS": 0xF,
+                "ARREGION": 0x3,
+                "ARUSER": 0xA5,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0x1234,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+                "RUSER": 0x5A,
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    read = result["transactions"][0]
+    assert read["arcache"] == 0xF
+    assert read["arprot"] == 0x7
+    assert read["arqos"] == 0xF
+    assert read["arregion"] == 0x3
+    assert read["aruser"] == 0xA5
+    assert read["read_user"] == [0x5A]
+
+
+def test_reports_reserved_and_out_of_range_axi4_sidebands():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x4,
+                "ARPROT": 0x8,
+                "ARQOS": 0x10,
+                "ARREGION": 0x10,
+            },
+        ]}
+    )
+
+    codes = {item["code"] for item in result["violations"]}
+    assert "reserved_cache_encoding" in codes
+    assert "invalid_prot_value" in codes
+    assert "invalid_qos_value" in codes
+    assert "invalid_region_value" in codes
+
+
+def test_reports_region_change_within_same_4kb_address_region():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 1,
+                "ARADDR": 0x1000,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARREGION": 1,
+            },
+            {
+                "cycle": 1,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 2,
+                "AWADDR": 0x1F00,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWREGION": 2,
+            },
+        ]}
+    )
+
+    assert "region_changes_within_4kb" in {
+        item["code"] for item in result["violations"]
+    }
+
+
+def test_user_sideband_must_remain_stable_while_stalled():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 0,
+                "AWID": 1,
+                "AWADDR": 0x80,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 1,
+            },
+            {
+                "cycle": 1,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x80,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWUSER": 2,
+            },
+        ]}
+    )
+
+    changes = [
+        item for item in result["violations"]
+        if item["code"] == "payload_changed_while_stalled"
+    ]
+    assert any(item.get("signal") == "AWUSER" for item in changes)
