@@ -329,6 +329,7 @@ def inspect_questa_coverage_xml(path: str | Path) -> dict:
         element_count += 1
         tag = _xml_local_name(str(element.tag))
         tag_counts[tag] += 1
+        attributes_by_tag[tag]
         for attribute in element.attrib:
             attributes_by_tag[tag].add(_xml_local_name(str(attribute)))
 
