@@ -104,6 +104,20 @@ coordinates, source label, and the SHA-256 of the input file. Signal values stay
 as textual logic tokens; ZDDV does not invent radix, signedness, or vendor trace
 semantics.
 
+Native VCD formal traces can be normalized without an intermediate JSON translation:
+
+```text
+zddv --project <project> formal-vcd-trace trace.vcd \
+  --property top.p_safe --kind assert
+zddv --project <project> formal-vcd-trace witness.vcd \
+  --property top.c_reached --kind cover --signal state
+```
+
+The VCD importer preserves hierarchical paths, declaration widths/types/ranges,
+four-state textual values, timestamps and timescale metadata. Repeated `--signal`
+arguments accept exact paths or unambiguous short names. `--max-steps` is an explicit
+memory/evidence bound; exceeding it is an error rather than silent truncation.
+
 ## Direct SymbiYosys bounded execution
 
 ZDDV can execute finite-depth safety and cover-reachability jobs directly:
@@ -175,8 +189,12 @@ snapshot ID used in the calculation.
 
 ## Current boundary
 
-This slice does not parse vendor-native counterexample waveform contents or claim
-unbounded reachability/proof coverage. Direct finite-depth SymbiYosys cover-property
-reachability and conservative cross-run aggregation are supported. Incomplete property
-universes, snapshots without a design fingerprint, different source revisions, different
-engines, different depths, or different property sets are never silently merged.
+Native VCD counterexample/witness contents are supported through the explicit
+`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
+during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
+finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
+conservative cross-run aggregation are supported. Incomplete property universes,
+snapshots without a design fingerprint, different source revisions, different engines,
+different depths, or different property sets are never silently merged. Additional
+vendor-native waveform formats, automatic trace cross-probing, and broader proof-coverage
+metrics remain separate future work.
