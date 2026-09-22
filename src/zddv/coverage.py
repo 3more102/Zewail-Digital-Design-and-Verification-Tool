@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import uuid
 import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -243,6 +244,124 @@ def parse_questa_coverage_summary(text: str) -> dict:
         "by_type": dict(sorted(by_type.items())),
         "tool_total_coverage": tool_total_coverage,
     }
+
+
+def _xml_local_tag(element: ET.Element) -> str:
+    return element.tag.rsplit("}", 1)[-1].lower()
+
+
+def parse_questa_statement_coverage_xml(path: str | Path) -> list[dict]:
+    """Parse documented Questa XML statement records into normalized points."""
+    source = Path(path)
+    root = ET.parse(source).getroot()
+    points: list[dict] = []
+
+    instances = [
+        element
+        for element in root.iter()
+        if _xml_local_tag(element) == "instancedata"
+    ]
+    for instance_index, instance in enumerate(instances):
+        scope = str(
+            instance.attrib.get("path")
+            or instance.attrib.get("du")
+            or f"instance-{instance_index}"
+        )
+        files: dict[str, str] = {}
+        for element in instance.iter():
+            if _xml_local_tag(element) != "filemap":
+                continue
+            file_id = element.attrib.get("fn")
+            file_path = element.attrib.get("path")
+            if file_id is not None and file_path:
+                files[str(file_id)] = str(file_path)
+
+        for statement_index, element in enumerate(instance.iter()):
+            if _xml_local_tag(element) != "stmt":
+                continue
+            raw_hits = element.attrib.get("hits")
+            if raw_hits is None:
+                continue
+            try:
+                hits = int(str(raw_hits).replace(",", ""))
+            except ValueError:
+                continue
+
+            file_id = element.attrib.get("fn")
+            file_path = files.get(str(file_id)) if file_id is not None else None
+            raw_line = element.attrib.get("ln")
+            raw_statement = element.attrib.get("st")
+            try:
+                line_number = int(raw_line) if raw_line is not None else None
+            except ValueError:
+                line_number = None
+            try:
+                statement_number = (
+                    int(raw_statement) if raw_statement is not None else None
+                )
+            except ValueError:
+                statement_number = None
+
+            location = file_path or f"fn={file_id or '?'}"
+            line_label = str(line_number) if line_number is not None else "?"
+            statement_label = (
+                str(statement_number) if statement_number is not None else str(statement_index)
+            )
+            points.append(
+                {
+                    "name": (
+                        f"{scope}:{location}:{line_label}:statement:{statement_label}"
+                    ),
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": "statement",
+                    "metadata": {
+                        "scope": scope,
+                        "file": file_path,
+                        "file_id": str(file_id) if file_id is not None else None,
+                        "line": line_number,
+                        "statement": statement_number,
+                    },
+                }
+            )
+
+    return points
+
+
+def _write_normalized_coverage_points(
+    project: ProjectConfig,
+    points: list[dict],
+) -> Path:
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    destination = out_dir / "points.json"
+    destination.write_text(json.dumps(points, indent=2), encoding="utf-8")
+    return destination
+
+
+def load_normalized_coverage_points(project: ProjectConfig) -> list[dict]:
+    """Load point-level coverage evidence produced by the active backend."""
+    out_dir = (project.root / ".zddv" / "coverage").resolve()
+    points_path = out_dir / "points.json"
+    if points_path.exists():
+        payload = json.loads(points_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list) or not all(
+            isinstance(item, dict) for item in payload
+        ):
+            raise RuntimeError(
+                f"Normalized coverage points are invalid: {points_path}"
+            )
+        return payload
+
+    if project.simulator.strip().lower() == "verilator":
+        legacy_path = out_dir / "coverage.dat"
+        if legacy_path.exists():
+            return parse_verilator_coverage(legacy_path)
+
+    raise RuntimeError(
+        f"Normalized coverage points not found under {out_dir}. "
+        "Run 'zddv coverage' first."
+    )
 
 
 def parse_questa_functional_coverage_report(text: str) -> dict:
@@ -504,6 +623,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     metrics_path = out_dir / "metrics.json"
     functional_report_path = out_dir / "functional.txt"
     functional_json_path = out_dir / "functional.json"
+    statement_report_path = out_dir / "statements.xml"
+    points_path = out_dir / "points.json"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -557,6 +678,42 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             )
             functional_snapshot_id = functional_record["snapshot_id"]
 
+    if points_path.exists():
+        points_path.unlink()
+    if statement_report_path.exists():
+        statement_report_path.unlink()
+
+    statement_command = [
+        tool,
+        "report",
+        "-setdefault",
+        "byinstance",
+        "-xml",
+        "-code",
+        "s",
+        "-output",
+        str(statement_report_path),
+        str(merged_path),
+    ]
+    statement_report = _run(statement_command, project.root)
+    statement_points: list[dict] = []
+    statement_status = "unavailable"
+    statement_error = ""
+    if statement_report.returncode == 0 and statement_report_path.exists():
+        try:
+            statement_points = parse_questa_statement_coverage_xml(
+                statement_report_path
+            )
+        except ET.ParseError as exc:
+            statement_status = "invalid-xml"
+            statement_error = str(exc)
+        else:
+            statement_status = "normalized" if statement_points else "empty"
+            if statement_points:
+                _write_normalized_coverage_points(project, statement_points)
+    else:
+        statement_error = (statement_report.stdout or "").strip()
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -575,7 +732,18 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "statement_report": (
+            str(statement_report_path) if statement_report_path.exists() else None
+        ),
+        "statement_points": len(statement_points),
+        "statement_points_path": (
+            str(points_path) if points_path.exists() else None
+        ),
+        "statement_capture": statement_status,
+        "statement_command": statement_command,
     }
+    if statement_error:
+        payload["statement_error"] = statement_error
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     record_coverage_snapshot(
@@ -597,6 +765,15 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
+        "statement_report": (
+            str(statement_report_path) if statement_report_path.exists() else None
+        ),
+        "statement_points": len(statement_points),
+        "statement_points_path": (
+            str(points_path) if points_path.exists() else None
+        ),
+        "statement_capture": statement_status,
+        "statement_error": statement_error or None,
     }
 
 
