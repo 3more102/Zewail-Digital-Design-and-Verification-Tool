@@ -70,6 +70,33 @@ Branch Coverage for file top.v --
 Branch totals: 3 hits of 5 branches = 60.0%
 """
 
+QUESTA_FEC_DETAILS = """Condition Coverage for file top.sv --
+
+Focused Expression View
+
+Line 16 Item 1 if (a || b)
+Condition totals: 3 hits of 4 rows = 75.0%
+    Rows:     hits        Fec Targets    Matching input patterns
+    -------- --------    -------------- ----------------------
+    Row 1:       2       a_0            { 00 }
+    Row 2:       1       a_1            { 10 }
+    Row 3:       2       b_0            { 00 }
+    Row 4:    ***0***    b_1            { 01 }
+
+Expression Coverage for file top.sv --
+
+Focused Expression View
+
+Line 28 Item 1 ((a & b) | (c & d))
+Expression totals: 2 of 12 input terms covered = 16.66%
+    Rows: FEC Target
+    Hits:
+    i = <0> <1> <2>
+    Row 1: a[i]_0 1 ***0*** ***0*** (~(c[i] & d[i]) && b[i])
+    Row 2: a[i]_1 ***0*** 1 ***0*** (~(c[i] & d[i]) && b[i])
+"""
+
+
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
 Covergroup                              Metric       Goal    Bins    Status
@@ -164,6 +191,36 @@ def test_parse_questa_code_coverage_normalizes_statement_and_branch_items():
     assert all("Count coming in to IF" not in point["detail"] for point in branch_points)
 
 
+def test_parse_questa_code_coverage_normalizes_scalar_and_multibit_fec_rows():
+    points = parse_questa_code_coverage_report(QUESTA_FEC_DETAILS)
+
+    conditions = [point for point in points if point["type"] == "condition"]
+    expressions = [point for point in points if point["type"] == "expression"]
+
+    assert len(conditions) == 4
+    assert conditions[3] == {
+        "name": "top.sv:16:1:row4:b_1",
+        "count": 0,
+        "hit": False,
+        "type": "condition",
+        "source_file": "top.sv",
+        "line": 16,
+        "item": 1,
+        "detail": "if (a || b) | { 01 }",
+        "row": 4,
+        "target": "b_1",
+    }
+
+    assert len(expressions) == 6
+    assert expressions[0]["name"] == "top.sv:28:1:row1:a[i]_0:i=0"
+    assert expressions[0]["count"] == 1
+    assert expressions[0]["index"] == "0"
+    assert expressions[1]["hit"] is False
+    assert expressions[1]["index"] == "1"
+    assert expressions[-1]["name"] == "top.sv:28:1:row2:a[i]_1:i=2"
+    assert expressions[-1]["hit"] is False
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -213,7 +270,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
-        if command[1:5] == ["report", "-details", "-code", "sb"]:
+        if command[1:5] == ["report", "-details", "-code", "sbce"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_CODE_DETAILS)
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
@@ -248,7 +305,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "report",
         "-details",
         "-code",
-        "sb",
+        "sbce",
         result["merged"],
     ]
     assert commands[3] == [
@@ -335,7 +392,7 @@ def test_coverage_holes_cli_supports_questa_statement_and_branch_items(
     project = _project(tmp_path)
     report_path = project.root / ".zddv" / "coverage" / "code-details.txt"
     report_path.parent.mkdir(parents=True)
-    report_path.write_text(QUESTA_CODE_DETAILS, encoding="utf-8")
+    report_path.write_text(QUESTA_CODE_DETAILS + "\n" + QUESTA_FEC_DETAILS, encoding="utf-8")
 
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
     args = SimpleNamespace(
@@ -350,22 +407,30 @@ def test_coverage_holes_cli_supports_questa_statement_and_branch_items(
 
     assert rc == 0
     output = capsys.readouterr().out
-    assert "Coverage holes (all): 3 unhit point(s)" in output
+    assert "Coverage holes (all): 8 unhit point(s)" in output
     assert "[statement] top.v:9:1" in output
-    assert "[branch] top.v:12:1 if (i == 16)" in output
+    assert "[branch] top.v:12:1 if (i == 16)" in output\n    assert "[condition] top.sv:16:1:row4:b_1" in output
 
     payload = json.loads(
         (project.root / ".zddv" / "coverage" / "holes.json").read_text(
             encoding="utf-8"
         )
     )
-    assert payload["by_type"] == {"branch": 2, "statement": 1}
+    assert payload["by_type"] == {"branch": 2, "condition": 1, "expression": 4, "statement": 1}
     statement = next(
         hole for hole in payload["holes"] if hole["type"] == "statement"
     )
     assert statement["source_file"] == "top.v"
     assert statement["line"] == 9
     assert statement["item"] == 1
+
+    expression = next(
+        hole for hole in payload["holes"]
+        if hole["type"] == "expression" and hole.get("index") == "1"
+    )
+    assert expression["row"] == 1
+    assert expression["target"] == "a[i]_0"
+    assert expression["line"] == 28
 
 
 def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkeypatch, capsys):
@@ -433,7 +498,7 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
-        if command[1:5] == ["report", "-details", "-code", "sb"]:
+        if command[1:5] == ["report", "-details", "-code", "sbce"]:
             return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
