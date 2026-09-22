@@ -275,9 +275,15 @@ and objection-trace reports tagged `OBJTN_TRC` by `+UVM_OBJECTION_TRACE`. Normal
 phase and objection events retain log-line/time evidence and are persisted in dedicated
 SQLite tables alongside the source report messages. When a report component explicitly
 contains a `sequencer@@sequence` context, ZDDV records that as conservative sequence
-report evidence linked to the original message. Sequence start/end lifecycle reconstruction
-remains a separate future layer because there is no equivalent single portable sequence
-trace switch with one stable report contract.
+report evidence linked to the original message.
+
+There is no equivalent single portable sequence-state trace switch with one stable report
+contract. ZDDV therefore keeps sequence **state** lifecycle evidence in a separate explicit
+normalized JSON model instead of inferring start/end semantics from report text. That layer
+validates the UVM state order, preserves sequence IDs, sequencer paths and parent IDs, permits
+partial traces, correlates snapshots with recorded runs, and persists state events in separate
+SQLite tables. Automatic instrumentation/adapters plus sequence-item arbitration remain future
+layers. See `docs/uvm-sequence-trace.md`.
 
 ## Next Architectural Steps
 
