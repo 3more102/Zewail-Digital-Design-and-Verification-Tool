@@ -32,7 +32,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
-- Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering
+- Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering\n- Explicit UVM sequencer REQUEST/GRANT arbitration evidence for all six UVM modes, deterministic FIFO/strict checks, optional project-defined max-bypass policy, run correlation, SQLite event/decision/violation persistence, and history filtering
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -162,7 +162,7 @@ zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
 zddv --project my_project uvm-item-analyze item_trace.json
 zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
-zddv --project my_project uvm-item-history --limit 20
+zddv --project my_project uvm-item-history --limit 20\nzddv --project my_project uvm-arbitration-analyze arbitration_trace.json\nzddv --project my_project uvm-arbitration-history --limit 20
 zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
