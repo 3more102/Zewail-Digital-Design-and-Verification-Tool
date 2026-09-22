@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection lifecycle traces, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
+> Status: **v0.6 UVM + Questa Adapter Foundation — run-aware UVM ingestion with phase/objection and normalized sequence lifecycle models, native Questa build/run orchestration, UCDB capture, and summary-level UCDB merge/report normalization on top of the v0.5 protocol-verification foundation**
 
 ## What Works Today
 
@@ -30,6 +30,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, persisted in SQLite
+- Simulator-independent UVM sequence lifecycle JSON model with state-transition validation, nested-sequence evidence, run correlation, SQLite snapshots, and history CLI
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -141,6 +142,9 @@ zddv --project my_project assertions --status FAIL
 zddv --project my_project uvm-analyze uvm.log --source questa
 zddv --project my_project uvm-analyze --run <run-id>
 zddv --project my_project uvm-history --run <run-id>
+zddv --project my_project uvm-sequence-analyze sequence_trace.json
+zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
+zddv --project my_project uvm-sequence-history --limit 20
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
@@ -340,7 +344,8 @@ separately from Verilator's annotation threshold.
 - [x] Simulator-independent UVM report/test metadata ingestion
 - [x] UVM snapshot-to-run correlation
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
-- [ ] Sequence-aware UVM result model
+- [x] Sequence-aware UVM lifecycle result model using an explicit normalized event contract
+- [ ] UVM sequence-item/arbitration lifecycle reconstruction
 
 ### APB Trace Analysis
 
