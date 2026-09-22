@@ -13,6 +13,8 @@ from zddv.assertions import ingest_assertion_log
 from zddv.config import ProjectConfig
 from zddv.storage import record_run
 from zddv.uvm import analyze_uvm_log
+from zddv.uvm_item import analyze_uvm_item_log
+from zddv.uvm_sequence import analyze_uvm_sequence_log
 from .base import BuildResult, RunResult, SimulatorBackend
 
 
@@ -260,11 +262,28 @@ class VcsBackend(SimulatorBackend):
             log_path=log_path,
             created_at=now.isoformat(),
         )
-        if "UVM_" in output:
+        if any(
+            token in (output or "")
+            for token in ("UVM_INFO", "UVM_WARNING", "UVM_ERROR", "UVM_FATAL")
+        ):
             analyze_uvm_log(
                 project,
                 None,
                 source="vcs-run",
+                run_id=run_id,
+            )
+        if "ZDDV_UVM_ITEM" in (output or ""):
+            analyze_uvm_item_log(
+                project,
+                None,
+                source="vcs-uvm-item-log",
+                run_id=run_id,
+            )
+        if "ZDDV_UVM_SEQUENCE" in (output or ""):
+            analyze_uvm_sequence_log(
+                project,
+                None,
+                source="vcs-uvm-sequence-log",
                 run_id=run_id,
             )
 
