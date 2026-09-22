@@ -14,7 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, and per-run native `.vdb` coverage capture; normalized VCS coverage merge/reporting remains pending
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized summary metrics, ordinary covergroup-bin ingestion, retained detailed evidence, by-file statement/branch holes, and by-instance statement hole reporting; other code-item types remain pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -99,9 +99,12 @@ when ordinary covergroup bins are present, ingests them into ZDDV's existing
 functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
 evidence: XML output for machine-readable follow-up plus a `-zeros -details`
-report for zero-hit source/file-line evidence. These artifacts are evidence only
-and are not yet normalized into code `coverage-holes`. Questa's weighted total
-coverage remains a separate simulator-reported value.
+report for zero-hit source/file-line evidence. ZDDV normalizes documented
+statement/branch detail rows for code `coverage-holes`; when
+`--type statement` is requested, it generates a dedicated by-instance XML report
+so misses remain instance-specific. Condition/expression/toggle/FSM item-level
+normalization remains pending. Questa's weighted total coverage remains a
+separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. VCS coverage merge/report normalization is still pending.
 
@@ -661,8 +664,12 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
-- [ ] Questa detailed code-coverage item/source normalization and coverage-hole reporting
-- [ ] VCS adapter
+- [x] Questa statement/branch coverage-hole reporting
+- [x] Questa by-instance statement coverage-hole reporting
+- [ ] Questa condition/expression/toggle/FSM item-level normalization
+- [x] VCS adapter foundation
+- [x] VCS native per-run coverage database capture
+- [ ] VCS normalized coverage merge/report ingestion
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
