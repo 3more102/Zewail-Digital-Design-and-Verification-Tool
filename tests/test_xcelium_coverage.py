@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from zddv.config import ProjectConfig
-from zddv.coverage import merge_coverage, merge_xcelium_coverage
+from zddv.storage import list_coverage_score_snapshots
+from zddv.coverage import merge_coverage, merge_xcelium_coverage, parse_xcelium_imc_summary
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -142,3 +143,74 @@ def test_merge_xcelium_coverage_requires_imc(tmp_path: Path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="Cadence IMC was not found"):
         merge_xcelium_coverage(project)
+
+def test_parse_xcelium_imc_summary_normalizes_explicit_overall_scores():
+    report = """
+name     Overall* Average   Overall* Covered   Block   Expr
+tb_top   87.50%             91.25%             88.00%  90.00%
+"""
+
+    metrics = parse_xcelium_imc_summary(report)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(91.25)
+    assert metrics["by_metric"] == {
+        "overall_average": pytest.approx(87.50),
+        "overall_covered": pytest.approx(91.25),
+    }
+    assert metrics["scope"] == "tb_top"
+    assert metrics["metric_semantics"] == "imc-summary-overall"
+
+
+def test_parse_xcelium_imc_summary_rejects_unlabelled_or_out_of_range_scores():
+    with pytest.raises(ValueError, match="Overall Average/Covered"):
+        parse_xcelium_imc_summary("tb_top 87.50% 91.25%\n")
+
+    with pytest.raises(ValueError, match="outside 0..100"):
+        parse_xcelium_imc_summary(
+            "name Overall Average Overall Covered\n"
+            "tb_top 87.50% 101.00%\n"
+        )
+
+
+def test_merge_xcelium_coverage_persists_explicit_overall_score(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    _coverage_run(project, "run-a")
+    _coverage_run(project, "run-b")
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/cadence/bin/imc" if name == "imc" else None,
+    )
+
+    def fake_run(command, cwd):
+        out_dir = project.root / ".zddv" / "coverage"
+        merged = out_dir / "xcelium-imc-merged"
+        merged.mkdir(parents=True)
+        (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
+        report_dir = out_dir / "xcelium-imc-report"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "summary.txt").write_text(
+            "name Overall* Average Overall* Covered Block\n"
+            "tb_top 84.50% 89.75% 88.00%\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_xcelium_coverage(project)
+
+    assert result["metrics_status"] == "normalized"
+    assert result["metrics"]["tool_total_coverage"] == pytest.approx(89.75)
+    assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(84.50)
+    assert result["snapshot_id"]
+
+    rows = list_coverage_score_snapshots(project, limit=1)
+    assert len(rows) == 1
+    assert rows[0]["simulator"] == "xcelium"
+    assert rows[0]["score"] == pytest.approx(89.75)
+    assert rows[0]["by_metric"]["overall_covered"] == pytest.approx(89.75)
+
