@@ -10,6 +10,7 @@ import subprocess
 import uuid
 
 from zddv.config import ProjectConfig
+from zddv.functional_coverage import ingest_functional_coverage
 from zddv.storage import record_coverage_snapshot
 
 
@@ -18,7 +19,7 @@ _POINT_TYPE = re.compile(r"pagev_(?P<kind>[A-Za-z0-9_]+)")
 
 _QUESTA_SUMMARY_ROW = re.compile(
     r"^\s*(?P<kind>[A-Za-z][A-Za-z0-9 _/-]*?)\s+"
-    r"(?P<bins>\d+)\s+(?P<hits>\d+)\s+(?P<misses>\d+)\s+"
+    r"(?P<bins>\d[\d,]*)\s+(?P<hits>\d[\d,]*)\s+(?P<misses>\d[\d,]*)\s+"
     r"(?P<weight>\d+(?:\.\d+)?)\s+(?P<coverage>\d+(?:\.\d+)?)%\s*$"
 )
 _QUESTA_TOTAL_COVERAGE = re.compile(
@@ -44,6 +45,27 @@ _QUESTA_KIND_ALIASES = {
     "directives": "directive",
     "directive": "directive",
 }
+
+_QUESTA_CVG_SCOPE = re.compile(
+    r"^\s*(?!Coverpoint\b|Cross\b|bin\b|ignore_bins?\b|illegal_bins?\b)"
+    r"(?P<name>\S.*?)\s+(?P<metric>\d+(?:\.\d+)?)%\s+"
+    r"(?P<goal>\d+(?:\.\d+)?)%?\s+"
+    r"(?:\S+\s+)?(?P<status>\S+)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CVG_POINT = re.compile(
+    r"^\s*(?P<kind>Coverpoint|Cross)\s+(?P<name>.+?)\s+"
+    r"(?P<metric>\d+(?:\.\d+)?)%\s+"
+    r"(?P<goal>\d+(?:\.\d+)?)%?\s+"
+    r"(?:\S+\s+)?(?P<status>\S+)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_CVG_BIN = re.compile(
+    r"^\s*bin\s+(?P<name>.+?)\s+"
+    r"(?P<hits>\d[\d,]*)\s+(?P<goal>\d[\d,]*)\s+"
+    r"(?P<status>\S+)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -181,9 +203,11 @@ def parse_questa_coverage_summary(text: str) -> dict:
         if match is None:
             continue
         kind = _normalize_questa_coverage_kind(match.group("kind"))
-        total = int(match.group("bins"))
-        hit = int(match.group("hits"))
-        misses = int(match.group("misses"))
+        total = int(match.group("bins").replace(",", ""))
+        hit = int(match.group("hits").replace(",", ""))
+        misses = int(match.group("misses").replace(",", ""))
+        if hit + misses != total:
+            continue
         reported_rate = float(match.group("coverage"))
         by_type[kind] = {
             "total": total,
@@ -215,6 +239,66 @@ def parse_questa_coverage_summary(text: str) -> dict:
     }
 
 
+def parse_questa_functional_coverage_report(text: str) -> dict:
+    """Normalize ordinary covergroup bins from a detailed vcover text report.
+
+    Ignore and illegal bins have different verification semantics, so this
+    adapter deliberately does not rewrite them as ordinary coverage goals.
+    """
+    bins: list[dict] = []
+    scope = ""
+    coverpoint = ""
+    coverage_kind = ""
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip().lower()
+        if stripped.startswith(
+            ("covered/total bins:", "missing/total bins:", "% hit:")
+        ):
+            continue
+
+        point = _QUESTA_CVG_POINT.match(line)
+        if point is not None:
+            coverpoint = point.group("name").strip()
+            coverage_kind = point.group("kind").lower()
+            continue
+
+        item = _QUESTA_CVG_BIN.match(line)
+        if item is not None and coverpoint:
+            hits = int(item.group("hits").replace(",", ""))
+            goal = int(item.group("goal").replace(",", ""))
+            if goal < 1:
+                continue
+            bins.append(
+                {
+                    "scope": scope,
+                    "coverpoint": coverpoint,
+                    "bin": item.group("name").strip(),
+                    "hits": hits,
+                    "goal": goal,
+                    "metadata": {
+                        "questa_status": item.group("status"),
+                        "coverage_kind": coverage_kind,
+                    },
+                }
+            )
+            continue
+
+        group = _QUESTA_CVG_SCOPE.match(line)
+        if group is not None:
+            name = group.group("name").strip()
+            for prefix in ("TYPE ", "INSTANCE ", "Covergroup "):
+                if name.upper().startswith(prefix.upper()):
+                    name = name[len(prefix):].strip()
+                    break
+            scope = name
+            coverpoint = ""
+            coverage_kind = ""
+
+    return {"source": "questa-vcover", "bins": bins}
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -236,6 +320,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     merged_path = out_dir / "coverage.ucdb"
     summary_path = out_dir / "summary.txt"
     metrics_path = out_dir / "metrics.json"
+    functional_report_path = out_dir / "functional.txt"
+    functional_json_path = out_dir / "functional.json"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -264,6 +350,31 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             f"No numeric coverage summary rows could be parsed from {summary_path}."
         )
 
+    functional_cmd = [tool, "report", "-cvg", "-details", str(merged_path)]
+    functional_report = _run(functional_cmd, project.root)
+    functional_report_path.write_text(
+        functional_report.stdout or "",
+        encoding="utf-8",
+    )
+    functional_snapshot_id = None
+    functional_bins = 0
+    if functional_report.returncode == 0:
+        functional_payload = parse_questa_functional_coverage_report(
+            functional_report.stdout or ""
+        )
+        functional_bins = len(functional_payload["bins"])
+        if functional_bins:
+            functional_json_path.write_text(
+                json.dumps(functional_payload, indent=2),
+                encoding="utf-8",
+            )
+            functional_record = ingest_functional_coverage(
+                project,
+                functional_json_path,
+                source="questa-vcover",
+            )
+            functional_snapshot_id = functional_record["snapshot_id"]
+
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("cov-%Y%m%dT%H%M%S")
@@ -279,6 +390,9 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         **metrics,
         "merged": str(merged_path),
         "summary": str(summary_path),
+        "functional_report": str(functional_report_path),
+        "functional_snapshot_id": functional_snapshot_id,
+        "functional_bins": functional_bins,
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -298,6 +412,9 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report": report.stdout,
         "metrics": metrics,
         "snapshot_id": snapshot_id,
+        "functional_report": str(functional_report_path),
+        "functional_snapshot_id": functional_snapshot_id,
+        "functional_bins": functional_bins,
     }
 
 
