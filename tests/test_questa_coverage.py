@@ -33,14 +33,20 @@ Total coverage (filtered view): 79.53%
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
-Covergroup                              Metric       Goal    Status
-APB_seq_item_pkg::APB_cg               95.00%      100.00%   Uncovered
+Covergroup                              Metric       Goal    Bins    Status
+TYPE /top/dut/APB_cg                    66.67%        100       -    Uncovered
+    covered/total bins:                     2          3
+    missing/total bins:                     1          3
+    % Hit:                              66.67%        100
 
-    Coverpoint APB_cg::type_cp          50.00%      100.00%   Uncovered
+    Coverpoint APB_cg::type_cp          50.00%        100       -    Uncovered
+        covered/total bins:                 1          2
+        missing/total bins:                 1          2
+        % Hit:                          50.00%        100
         bin write                         0          1         ZERO
         bin read                        154          1         Covered
 
-    Cross APB_cg::write_x_data          40.00%      100.00%   Uncovered
+    Cross APB_cg::write_x_data         100.00%        100       -    Covered
         bin legal_pair                    2          2         Covered
         illegal bin bad_pair              1          1         Covered
 """
@@ -101,7 +107,7 @@ def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     assert payload["source"] == "questa-vcover"
     assert len(payload["bins"]) == 3
     assert payload["bins"][0] == {
-        "scope": "APB_seq_item_pkg::APB_cg",
+        "scope": "/top/dut/APB_cg",
         "coverpoint": "APB_cg::type_cp",
         "bin": "write",
         "hits": 0,
