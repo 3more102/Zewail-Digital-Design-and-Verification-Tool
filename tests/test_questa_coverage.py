@@ -9,6 +9,7 @@ import pytest
 from zddv.cli import cmd_coverage
 from zddv.config import ProjectConfig
 from zddv.coverage import (
+    inspect_questa_coverage_xml,
     merge_questa_coverage,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
@@ -50,6 +51,17 @@ TYPE /top/dut/APB_cg                    66.67%        100       -    Uncovered
     Cross APB_cg::write_x_data         100.00%        100       -    Covered
         bin legal_pair                    2          2         Covered
         illegal bin bad_pair              1          1         Covered
+"""
+
+
+QUESTA_DETAILS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<q:coverage xmlns:q="urn:zddv:synthetic">
+  <q:file path="rtl/dut.sv">
+    <q:statement line="12" hits="0"/>
+    <q:statement line="13" hits="4"/>
+  </q:file>
+  <q:toggle signal="ready" hits="1"/>
+</q:coverage>
 """
 
 
@@ -122,6 +134,43 @@ def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     assert payload["bins"][2]["metadata"]["coverage_kind"] == "cross"
 
 
+def test_inspect_questa_xml_inventory_is_namespace_insensitive(tmp_path: Path):
+    source = tmp_path / "details.xml"
+    source.write_text(QUESTA_DETAILS_XML, encoding="utf-8")
+
+    inventory = inspect_questa_coverage_xml(source)
+
+    assert inventory["root_tag"] == "coverage"
+    assert inventory["element_count"] == 5
+    assert inventory["tag_counts"] == {
+        "coverage": 1,
+        "file": 1,
+        "statement": 2,
+        "toggle": 1,
+    }
+    assert inventory["attributes_by_tag"]["coverage"] == []
+    assert inventory["attributes_by_tag"]["file"] == ["path"]
+    assert inventory["attributes_by_tag"]["statement"] == ["hits", "line"]
+    assert inventory["attributes_by_tag"]["toggle"] == ["hits", "signal"]
+    assert len(inventory["schema_fingerprint"]) == 64
+
+
+def test_questa_xml_schema_fingerprint_ignores_element_counts(tmp_path: Path):
+    first = tmp_path / "first.xml"
+    second = tmp_path / "second.xml"
+    first.write_text(QUESTA_DETAILS_XML, encoding="utf-8")
+    second.write_text(
+        """<coverage><file path="other.sv"><statement line="99" hits="7"/></file><toggle signal="valid" hits="0"/></coverage>""",
+        encoding="utf-8",
+    )
+
+    first_inventory = inspect_questa_coverage_xml(first)
+    second_inventory = inspect_questa_coverage_xml(second)
+
+    assert first_inventory["schema_fingerprint"] == second_inventory["schema_fingerprint"]
+    assert first_inventory["tag_counts"] != second_inventory["tag_counts"]
+
+
 def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     tmp_path: Path,
     monkeypatch,
@@ -155,7 +204,7 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
         if command[1:3] == ["report", "-xml"]:
             out_path = Path(command[command.index("-output") + 1])
-            out_path.write_text("<coverage/>\n", encoding="utf-8")
+            out_path.write_text(QUESTA_DETAILS_XML, encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -194,7 +243,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
     assert result["details_capture"] == "xml"
-    assert Path(result["details"]).read_text(encoding="utf-8") == "<coverage/>\n"
+    assert Path(result["details"]).read_text(encoding="utf-8") == QUESTA_DETAILS_XML
+    assert result["details_schema_status"] == "parsed"
+    assert Path(result["details_schema"]).exists()
+    assert len(result["details_schema_fingerprint"]) == 64
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["simulator"] == "questa"
@@ -205,6 +257,11 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert payload["functional_snapshot_id"] == result["functional_snapshot_id"]
     assert payload["details_capture"] == "xml"
     assert payload["details"] == result["details"]
+    assert payload["details_schema_status"] == "parsed"
+    assert payload["details_schema"] == result["details_schema"]
+    assert payload["details_schema_fingerprint"] == result["details_schema_fingerprint"]
+    schema = json.loads(Path(result["details_schema"]).read_text(encoding="utf-8"))
+    assert schema["tag_counts"]["statement"] == 2
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -256,6 +313,10 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "functional_bins": 3,
             "functional_snapshot_id": "fcov-test",
             "functional_report": "/tmp/functional.txt",
+            "details": "/tmp/details.xml",
+            "details_capture": "xml",
+            "details_schema": "/tmp/details-schema.json",
+            "details_schema_status": "parsed",
         },
     )
 
@@ -263,6 +324,8 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
 
     assert rc == 0
     output = capsys.readouterr().out
+    assert "Detailed coverage XML: /tmp/details.xml" in output
+    assert "Detailed XML schema: /tmp/details-schema.json" in output
     assert "Functional coverage bins: 3" in output
     assert "Functional snapshot: fcov-test" in output
     assert "Functional report: /tmp/functional.txt" in output
@@ -302,6 +365,9 @@ def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
     assert result["details"] is None
     assert result["details_capture"] == "unavailable"
     assert result["details_error"] == "XML export unavailable"
+    assert result["details_schema"] is None
+    assert result["details_schema_status"] == "unavailable"
+    assert result["details_schema_fingerprint"] is None
 
     payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
     assert payload["details"] is None
@@ -311,3 +377,48 @@ def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_unavailable(
     snapshots = list_coverage_snapshots(project, limit=5)
     assert len(snapshots) == 1
     assert snapshots[0]["total_points"] == 82535
+
+
+def test_merge_questa_coverage_keeps_summary_when_detailed_xml_is_invalid(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    run_dir = (project.root / project.run_dir / "run-a").resolve()
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.ucdb").write_text("run fixture\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "zddv.coverage.shutil.which",
+        lambda name: "/opt/questa/bin/vcover" if name == "vcover" else None,
+    )
+
+    def fake_run(command, cwd):
+        if command[1] == "merge":
+            out_path = Path(command[command.index("-out") + 1])
+            out_path.write_text("merged fixture\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge complete\n")
+        if command[1:3] == ["report", "-summary"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1:4] == ["report", "-cvg", "-details"]:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_FUNCTIONAL)
+        if command[1:3] == ["report", "-xml"]:
+            out_path = Path(command[command.index("-output") + 1])
+            out_path.write_text("<coverage>", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    result = merge_questa_coverage(project)
+
+    assert result["details_capture"] == "xml"
+    assert result["details_schema"] is None
+    assert result["details_schema_status"] == "invalid_xml"
+    assert result["details_schema_error"]
+    assert result["metrics"]["total_points"] == 82535
+
+    payload = json.loads(Path(result["metrics_path"]).read_text(encoding="utf-8"))
+    assert payload["details_schema_status"] == "invalid_xml"
+    assert payload["details_schema_error"]
+
