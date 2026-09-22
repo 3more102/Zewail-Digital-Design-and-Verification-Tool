@@ -689,6 +689,14 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
         if command[1:6] == ["report", "-details", "-dumptables", "-code", "sbce"]:
             return SimpleNamespace(returncode=0, stdout="")
+        if command[1:6] == [
+            "report",
+            "-details",
+            "-multibitverbose",
+            "-code",
+            "e",
+        ]:
+            return SimpleNamespace(returncode=0, stdout="")
         if command[1:4] == ["report", "-cvg", "-details"]:
             return SimpleNamespace(returncode=0, stdout="")
         if "-xml" in command or "-zeros" in command:
