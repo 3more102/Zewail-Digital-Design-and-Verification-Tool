@@ -7,7 +7,7 @@ from typing import Any
 import uuid
 
 from zddv.config import ProjectConfig
-from zddv.storage import get_run_record
+from zddv.storage import get_run_record, record_uvm_arbitration_snapshot
 
 
 _ARBITRATION_MODES = (
@@ -344,8 +344,8 @@ def parse_uvm_arbitration_data(
             "max_bypass is an optional ZDDV fairness policy threshold, not a UVM-standard starvation guarantee.",
             "Pending requests at the end of a finite trace are retained as partial evidence and do not fail analysis by themselves.",
             (
-                "This arbitration foundation writes JSON evidence only; SQLite "
-                "persistence and automatic vendor/instrumentation adapters are deferred."
+                "Arbitration snapshots, events, decisions, and violations are persisted "
+                "in SQLite; automatic vendor/instrumentation adapters are deferred."
             ),
         ],
         "selection_policy": (
@@ -439,4 +439,5 @@ def analyze_uvm_arbitration_file(
     serialized = json.dumps(record, indent=2) + "\n"
     normalized_path.write_text(serialized, encoding="utf-8")
     destination.write_text(serialized, encoding="utf-8")
+    record_uvm_arbitration_snapshot(project, record)
     return record
