@@ -358,3 +358,37 @@ def test_questa_explicit_uvm_test_plusarg_is_not_duplicated(tmp_path, monkeypatc
         "+UVM_TESTNAME=explicit_uvm_test",
         "+MODE=stress",
     ]
+
+
+def test_questa_run_auto_ingests_explicit_uvm_markers_without_report_snapshot(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, waveform=False)
+    backend = QuestaBackend()
+    (project.root / ".zddv" / "build" / "work").mkdir(parents=True)
+
+    monkeypatch.setattr(backend, "version", lambda: "Questa test")
+    monkeypatch.setattr(backend, "_tool", lambda name: name)
+    marker_log = "ZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_BODY\",\"time\":\"1 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_ENDED\",\"time\":\"2 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_POST_START\",\"time\":\"3 ns\"}\nZDDV_UVM_SEQUENCE {\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"state\":\"UVM_FINISHED\",\"time\":\"4 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"GRANT\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"REQUEST\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"5 ns\"}\nZDDV_UVM_ITEM {\"item_id\":\"item-auto\",\"event\":\"ITEM_DONE\",\"sequence_id\":\"seq-auto\",\"sequence\":\"auto_seq\",\"sequencer\":\"uvm_test_top.env.sqr\",\"item\":\"req\",\"transaction_id\":1,\"time\":\"6 ns\"}\n"
+
+    monkeypatch.setattr(
+        "zddv.simulator.questa.subprocess.run",
+        lambda command, **kwargs: SimpleNamespace(returncode=0, stdout=marker_log),
+    )
+
+    result = backend.run(project)
+
+    assert result.status == "PASS"
+    marker = loads(
+        (project.root / ".zddv" / "uvm" / "markers" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert marker["status"] == "PASS"
+    assert marker["source"] == "questa-marker-run"
+    assert marker["run_id"] == result.run_id
+    assert marker["summary"]["sequence_marker_lines"] == 4
+    assert marker["summary"]["item_marker_lines"] == 3
+    assert not (project.root / ".zddv" / "uvm" / "latest.json").exists()
+    assert (project.root / ".zddv" / "uvm" / "sequences" / "latest.json").exists()
+    assert (project.root / ".zddv" / "uvm" / "items" / "latest.json").exists()
