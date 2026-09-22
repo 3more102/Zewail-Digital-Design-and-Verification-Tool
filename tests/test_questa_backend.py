@@ -10,7 +10,12 @@ from zddv.config import ProjectConfig
 from zddv.simulator import QuestaBackend, get_backend
 
 
-def _project(tmp_path: Path, *, waveform: bool = True) -> ProjectConfig:
+def _project(
+    tmp_path: Path,
+    *,
+    waveform: bool = True,
+    coverage: bool = False,
+) -> ProjectConfig:
     root = tmp_path / "demo"
     (root / "rtl").mkdir(parents=True)
     (root / "tb").mkdir()
@@ -30,7 +35,7 @@ def _project(tmp_path: Path, *, waveform: bool = True) -> ProjectConfig:
         rtl=["rtl/*.sv"],
         tb=["tb/*.sv"],
         waveform=waveform,
-        coverage=False,
+        coverage=coverage,
     )
 
 
@@ -72,7 +77,7 @@ def test_questa_build_uses_native_library_and_compile_flow(tmp_path, monkeypatch
     )
     assert manifest["simulator"] == "questa"
     assert manifest["build_artifact"].endswith("work")
-    assert manifest["coverage_capture"] == "not_implemented"
+    assert manifest["coverage_capture"] == "disabled"
 
 
 def test_questa_run_preserves_seed_plusargs_waveform_and_uvm(tmp_path, monkeypatch):
@@ -135,7 +140,7 @@ def test_questa_run_preserves_seed_plusargs_waveform_and_uvm(tmp_path, monkeypat
     assert run_record["simulator"] == "questa"
     assert run_record["seed"] == 42
     assert run_record["coverage"] is None
-    assert run_record["coverage_capture"] == "not_implemented"
+    assert run_record["coverage_capture"] == "disabled"
 
     uvm = loads(
         (project.root / ".zddv" / "uvm" / "latest.json").read_text(
@@ -252,3 +257,42 @@ def test_questa_explicit_uvm_test_plusarg_is_not_duplicated(tmp_path, monkeypatc
         "+UVM_TESTNAME=explicit_uvm_test",
         "+MODE=stress",
     ]
+
+
+
+def test_questa_coverage_build_and_run_capture_ucdb(tmp_path, monkeypatch):
+    project = _project(tmp_path, waveform=False, coverage=True)
+    backend = QuestaBackend()
+
+    monkeypatch.setattr(backend, "version", lambda: "Questa test")
+    monkeypatch.setattr(backend, "_tool", lambda name: name)
+
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(list(command))
+        cwd = Path(kwargs["cwd"])
+        if command[0] == "vlib":
+            (cwd / "work").mkdir(parents=True)
+        if command[0] == "vsim":
+            (cwd / "coverage.ucdb").write_text("fake ucdb", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="ok\n")
+
+    monkeypatch.setattr("zddv.simulator.questa.subprocess.run", fake_run)
+
+    build = backend.build(project)
+    result = backend.run(project, test_name="coverage_smoke", seed=7)
+
+    assert build.passed is True
+    vlog_command = next(command for command in commands if command[0] == "vlog")
+    vsim_command = next(command for command in commands if command[0] == "vsim")
+    assert "+cover=bcesft" in vlog_command
+    assert "-coverage" in vsim_command
+
+    do_text = (result.run_dir / "zddv_questa.do").read_text(encoding="utf-8")
+    assert "coverage save -onexit coverage.ucdb" in do_text
+    assert result.coverage_path == result.run_dir / "coverage.ucdb"
+
+    run_record = loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
+    assert run_record["coverage"] == str(result.coverage_path)
+    assert run_record["coverage_capture"] == "questa_ucdb"
