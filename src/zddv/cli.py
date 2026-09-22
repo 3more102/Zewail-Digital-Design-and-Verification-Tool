@@ -22,7 +22,9 @@ from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.functional_coverage import ingest_functional_coverage
-from zddv.formal.results import analyze_formal_result_file
+from zddv.formal import FormalCheckRequest, SymbiYosysBackend
+from zddv.formal.counterexample import ingest_formal_counterexample
+from zddv.formal.results import analyze_formal_result_file, persist_formal_result
 from zddv.lint import lint_project
 from zddv.protocols.apb import analyze_apb_file, analyze_apb_waveform
 from zddv.protocols.axi4lite import analyze_axi4lite_file, analyze_axi4lite_waveform
@@ -376,6 +378,63 @@ def cmd_regress(args) -> int:
 
 
 
+
+def cmd_formal_bmc(args) -> int:
+    project = load_project(_project_arg(args))
+    request = FormalCheckRequest(
+        mode="bmc",
+        depth=args.depth,
+        timeout_s=args.timeout,
+    )
+    backend = SymbiYosysBackend()
+    print(f"Formal backend: {backend.version()}")
+    result = backend.check(project, request)
+    source_path = result.artifacts[0] if result.artifacts else result.log_path
+    record = persist_formal_result(
+        project,
+        result,
+        input_path=source_path,
+    )
+    print(
+        f"FORMAL BMC {result.status}: depth={request.depth} "
+        f"engine={result.engine or '-'}"
+    )
+    print("Scope: BOUNDED (finite-depth evidence; not an unbounded proof)")
+    print(f"Run directory: {result.run_dir}")
+    print(f"Log: {result.log_path}")
+    print(f"Snapshot: {record['snapshot_id']}")
+    print(f"Report: {record['report_path']}")
+    return 0 if result.status == "PASS" else 1
+
+def cmd_formal_counterexample(args) -> int:
+    project = load_project(_project_arg(args))
+    result = ingest_formal_counterexample(
+        project,
+        args.path,
+        source=args.source,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"FORMAL TRACE: {result['trace_kind']} "
+        f"property={result['property']} kind={result['property_kind']} "
+        f"source={result['source']}"
+    )
+    print(
+        f"Signals/Steps: {summary['signals']}/{summary['steps']}  "
+        f"complete/partial={summary['complete_signal_steps']}/"
+        f"{summary['partial_signal_steps']}"
+    )
+    if summary["first_cycle"] is not None or summary["last_cycle"] is not None:
+        print(f"Cycles: {summary['first_cycle']}..{summary['last_cycle']}")
+    if summary["first_time"] is not None or summary["last_time"] is not None:
+        unit = result.get("time_unit") or "(unspecified)"
+        print(f"Time: {summary['first_time']}..{summary['last_time']} {unit}")
+    print(f"Input SHA-256: {result['input_sha256']}")
+    print(f"Normalized trace: {result['normalized_path']}")
+    return 0
+
+
 def cmd_formal_analyze(args) -> int:
     project = load_project(_project_arg(args))
     result = analyze_formal_result_file(
@@ -491,21 +550,13 @@ def cmd_coverage(args) -> int:
     code_detail_status = result.get("code_detail_status")
     if code_detail_status is not None:
         print(
-            "Normalized Questa statement/branch/condition/expression coverage: "
+            "Normalized Questa statement/branch/condition/expression/FSM coverage: "
             f"{code_detail_status} "
             f"{result.get('code_detail_points', 0)} point(s), "
             f"{result.get('code_detail_holes', 0)} hole(s)"
         )
         if result.get("code_report"):
-            print(f"Questa statement/branch/condition/expression detail: {result['code_report']}")
-    multibit_status = result.get("multibit_expression_status")
-    if multibit_status is not None:
-        print(
-            "Normalized Questa multibit expression terms: "
-            f"{multibit_status} "
-            f"{result.get('multibit_expression_points', 0)} term(s), "
-            f"{result.get('multibit_expression_holes', 0)} hole(s)"
-        )
+            print(f"Questa statement/branch/condition/expression/FSM detail: {result['code_report']}")
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -625,10 +676,11 @@ def cmd_coverage_holes(args) -> int:
             "branch",
             "condition",
             "expression",
+            "fsm",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, or expression."
+                "--type statement, branch, condition, expression, or fsm."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
@@ -648,33 +700,6 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
-            if args.point_type in {None, "expression"}:
-                multibit_path = (
-                    project.root
-                    / ".zddv"
-                    / "coverage"
-                    / "multibit-expression.txt"
-                ).resolve()
-                if multibit_path.exists():
-                    points.extend(
-                        point
-                        for point in parse_questa_code_coverage_report(
-                            multibit_path.read_text(
-                                encoding="utf-8",
-                                errors="replace",
-                            )
-                        )
-                        if point.get("coverage_unit")
-                        == "multibit_expression_term"
-                    )
-                    deduplicated: dict[tuple[str, str], dict] = {}
-                    for point in points:
-                        key = (
-                            str(point.get("type") or ""),
-                            str(point.get("name") or ""),
-                        )
-                        deduplicated[key] = point
-                    points = list(deduplicated.values())
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -684,8 +709,16 @@ def cmd_coverage_holes(args) -> int:
             ):
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Expression holes also consume documented "
-                    "multibit evidence when multibit-expression.txt is available."
+                    f"{source_path}. Scalar FEC rows are supported; multibit "
+                    "FEC tables are not normalized yet."
+                )
+            if (
+                args.point_type == "fsm"
+                and not any(point.get("type") == "fsm" for point in points)
+            ):
+                raise RuntimeError(
+                    f"No normalized Questa FSM state/transition rows found in "
+                    f"{source_path}."
                 )
             if not points:
                 raise RuntimeError(
@@ -2049,6 +2082,44 @@ def build_parser() -> argparse.ArgumentParser:
     p_regress = sub.add_parser("regress", help="Run a regression definition")
     p_regress.add_argument("regression_file", help="Regression TOML file")
     p_regress.set_defaults(func=cmd_regress)
+
+    p_formal_bmc = sub.add_parser(
+        "formal-bmc",
+        help="Run a finite-depth SymbiYosys bounded model check",
+    )
+    p_formal_bmc.add_argument(
+        "--depth",
+        type=int,
+        required=True,
+        help="Maximum BMC depth in cycles (must be >= 1)",
+    )
+    p_formal_bmc.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Optional timeout in seconds",
+    )
+    p_formal_bmc.set_defaults(func=cmd_formal_bmc)
+
+    p_formal_counterexample = sub.add_parser(
+        "formal-counterexample",
+        help="Normalize formal counterexample or witness JSON evidence",
+    )
+    p_formal_counterexample.add_argument(
+        "path",
+        help="Normalized formal counterexample/witness JSON file",
+    )
+    p_formal_counterexample.add_argument(
+        "--source",
+        default=None,
+        help="Optional source/adapter label overriding the JSON source",
+    )
+    p_formal_counterexample.add_argument(
+        "--output",
+        default=".zddv/formal/counterexamples/latest.json",
+        help="Normalized formal trace JSON output path",
+    )
+    p_formal_counterexample.set_defaults(func=cmd_formal_counterexample)
 
     p_formal = sub.add_parser(
         "formal-analyze",
