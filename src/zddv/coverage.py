@@ -1804,61 +1804,138 @@ def _imc_quote_path(path: Path) -> str:
     return f'"{value}"'
 
 
-_XCELIUM_IMC_SUMMARY_HEADER = re.compile(
-    r"^\s*name\s+Overall\*?\s+Average\s+Overall\*?\s+Covered(?:\s|$)",
+_IMC_GRADE_TOKEN = r"(?:\d+(?:\.\d+)?%|n/a)"
+_IMC_COUNT_TOKEN = r"\d[\d,]*/\d[\d,]*"
+_IMC_SUMMARY_ROW = re.compile(
+    rf"^\s*(?P<name>\S+)\s+"
+    rf"(?P<overall_average>{_IMC_GRADE_TOKEN})\s+"
+    rf"(?P<overall_covered>{_IMC_GRADE_TOKEN})"
+    rf"(?:\s+\((?P<overall_counts>{_IMC_COUNT_TOKEN})\))?\s+"
+    rf"(?P<code_average>{_IMC_GRADE_TOKEN})\s+"
+    rf"(?P<code_covered>{_IMC_GRADE_TOKEN})"
+    rf"(?:\s+\((?P<code_counts>{_IMC_COUNT_TOKEN})\))?\s+"
+    rf"(?P<fsm_average>{_IMC_GRADE_TOKEN})\s+"
+    rf"(?P<fsm_covered>{_IMC_GRADE_TOKEN})"
+    rf"(?:\s+\((?P<fsm_counts>{_IMC_COUNT_TOKEN})\))?\s+"
+    rf"(?P<functional_average>{_IMC_GRADE_TOKEN})\s+"
+    rf"(?P<functional_covered>{_IMC_GRADE_TOKEN})"
+    rf"(?:\s+\((?P<functional_counts>{_IMC_COUNT_TOKEN})\))?\s*$",
     re.IGNORECASE,
 )
-_XCELIUM_IMC_SUMMARY_ROW = re.compile(
-    r"^\s*(?P<scope>\S+)\s+"
-    r"(?P<average>\d+(?:\.\d+)?)%\s+"
-    r"(?P<covered>\d+(?:\.\d+)?)%(?:\s|$)",
-)
+
+
+def _imc_grade(value: str) -> float | None:
+    text = value.strip().lower()
+    if text == "n/a":
+        return None
+    if not text.endswith("%"):
+        raise ValueError(f"Invalid IMC coverage grade: {value}")
+    grade = float(text[:-1])
+    if not 0.0 <= grade <= 100.0:
+        raise ValueError(f"IMC coverage grade is outside 0..100: {value}")
+    return grade
+
+
+def _imc_counts(value: str | None, *, grade: float | None) -> dict | None:
+    if value is None:
+        return None
+    covered_text, total_text = value.split("/", 1)
+    covered = int(covered_text.replace(",", ""))
+    total = int(total_text.replace(",", ""))
+    if covered < 0 or total < 0 or covered > total:
+        raise ValueError(f"Invalid IMC coverage counts: {value}")
+    result: dict[str, int | float] = {
+        "covered": covered,
+        "total": total,
+    }
+    if grade is not None:
+        result["hit_rate"] = grade
+    return result
 
 
 def parse_xcelium_imc_summary(text: str) -> dict:
-    """Normalize explicitly labelled Overall scores from an IMC summary."""
+    """Normalize the cumulative top-level row from an IMC summary report.
+
+    IMC reports Average and Covered as distinct grades. ZDDV retains both and
+    uses Overall Covered as the percentage-native history score because that
+    grade represents the covered/total-bin ratio rather than the hierarchy
+    average grade.
+    """
     lines = text.splitlines()
-    header_index = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if _XCELIUM_IMC_SUMMARY_HEADER.match(line)
-        ),
-        None,
+    header_index: int | None = None
+    required_header = (
+        "name overall average overall covered code average code covered "
+        "fsm average fsm covered functional average functional covered"
     )
+    for index, raw_line in enumerate(lines):
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            raw_line.replace("*", "").strip().lower(),
+        )
+        if normalized == required_header:
+            header_index = index
+            break
     if header_index is None:
         raise ValueError(
-            "IMC summary header with Overall Average/Covered was not found"
+            "IMC summary header with Overall Average/Covered and "
+            "Code/FSM/Functional columns was not found"
         )
 
+    match = None
     for raw_line in lines[header_index + 1 :]:
-        match = _XCELIUM_IMC_SUMMARY_ROW.match(raw_line)
-        if match is None:
+        candidate = raw_line.strip()
+        if not candidate or set(candidate) <= {"-", "=", "+", "|", " "}:
             continue
+        match = _IMC_SUMMARY_ROW.match(raw_line)
+        if match is not None:
+            break
+    if match is None:
+        raise ValueError("IMC summary coverage data row was not found")
 
-        average = float(match.group("average"))
-        covered = float(match.group("covered"))
-        if not 0.0 <= average <= 100.0 or not 0.0 <= covered <= 100.0:
-            raise ValueError("IMC overall coverage score is outside 0..100")
-        return {
-            "tool_total_coverage": covered,
-            "by_metric": {
-                "overall_average": average,
-                "overall_covered": covered,
-            },
-            "scope": match.group("scope"),
-            "metric_semantics": "imc-summary-overall",
-        }
+    metric_names = (
+        "overall_average",
+        "overall_covered",
+        "code_average",
+        "code_covered",
+        "fsm_average",
+        "fsm_covered",
+        "functional_average",
+        "functional_covered",
+    )
+    by_metric: dict[str, float] = {}
+    grades: dict[str, float | None] = {}
+    for name in metric_names:
+        grade = _imc_grade(match.group(name))
+        grades[name] = grade
+        if grade is not None:
+            by_metric[name] = grade
 
-    raise ValueError("IMC summary data row could not be parsed")
+    score = grades["overall_covered"]
+    if score is None:
+        raise ValueError("IMC summary has no numeric Overall Covered grade")
+
+    by_metric_counts: dict[str, dict[str, int | float]] = {}
+    for prefix in ("overall", "code", "fsm", "functional"):
+        values = _imc_counts(
+            match.group(f"{prefix}_counts"),
+            grade=grades[f"{prefix}_covered"],
+        )
+        if values is not None:
+            by_metric_counts[f"{prefix}_covered"] = values
+
+    return {
+        "source": "imc-summary",
+        "scope": match.group("name"),
+        "tool_total_coverage": score,
+        "by_metric": by_metric,
+        "by_metric_counts": by_metric_counts,
+        "metric_semantics": "imc-summary-cumulative",
+    }
 
 
 def merge_xcelium_coverage(project: ProjectConfig) -> dict:
-    """Merge captured Xcelium run databases with Cadence IMC.
-
-    This milestone deliberately retains merge/report evidence without parsing
-    simulator-specific numeric report text into ZDDV metrics yet.
-    """
+    """Merge Xcelium coverage with IMC and normalize its cumulative summary."""
     tool = shutil.which("imc")
     if tool is None:
         raise RuntimeError(
@@ -1904,7 +1981,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 ),
                 f"load -run {_imc_quote_path(merged_path)}",
                 (
-                    "report -summary -inst \"*...\" "
+                    'report -summary -inst "*..." -metrics all '
+                    "-cumulative on -showempty on -local off "
                     f"-out {_imc_quote_path(summary_path)}"
                 ),
                 "exit",
@@ -1933,8 +2011,8 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     created_at = datetime.now(timezone.utc).isoformat()
     summary_exists = summary_path.is_file()
     metrics: dict | None = None
-    metrics_status = "summary-missing"
     metrics_error: str | None = None
+    metrics_status = "summary-missing"
     snapshot_id: str | None = None
 
     if summary_exists:
@@ -1943,16 +2021,14 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 summary_path.read_text(encoding="utf-8", errors="replace")
             )
             metrics_status = "normalized"
+            snapshot_id = (
+                datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
+                + "-"
+                + uuid.uuid4().hex[:8]
+            )
         except (OSError, ValueError) as exc:
             metrics_status = "summary-unparsed"
             metrics_error = str(exc)
-
-    if metrics is not None:
-        snapshot_id = (
-            datetime.now(timezone.utc).strftime("cov-score-%Y%m%dT%H%M%S")
-            + "-"
-            + uuid.uuid4().hex[:8]
-        )
 
     payload = {
         "created_at": created_at,
@@ -1977,6 +2053,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
     }
     if metrics_error is not None:
         payload["metrics_error"] = metrics_error
+
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",
@@ -1993,7 +2070,7 @@ def merge_xcelium_coverage(project: ProjectConfig) -> dict:
                 "input_count": len(coverage_dirs),
                 "score": metrics["tool_total_coverage"],
                 "by_metric": metrics["by_metric"],
-                "by_metric_counts": {},
+                "by_metric_counts": metrics.get("by_metric_counts", {}),
                 "merged": str(merged_path),
                 "summary": str(summary_path),
                 "metrics_path": str(manifest_path),
