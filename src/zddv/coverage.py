@@ -67,6 +67,16 @@ _QUESTA_CVG_BIN = re.compile(
     re.IGNORECASE,
 )
 
+_QUESTA_BRANCH_DETAIL_HEADER = re.compile(
+    r"^\s*Branch\s+Coverage\s+for\s+file\s+(?P<file>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_BRANCH_DETAIL_ROW = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<item>\d+)\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
+    r"(?:\s+(?P<detail>.*?))?\s*$"
+)
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -299,6 +309,46 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def parse_questa_branch_coverage_report(text: str) -> list[dict]:
+    """Normalize branch items from Questa's documented detailed text report."""
+    points: list[dict] = []
+    source_file = ""
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_BRANCH_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            source_file = header.group("file").strip()
+            continue
+        if not source_file:
+            continue
+
+        item = _QUESTA_BRANCH_DETAIL_ROW.match(raw_line)
+        if item is None:
+            continue
+
+        hits = int(item.group("hits").replace("*", "").replace(",", ""))
+        line_number = int(item.group("line"))
+        item_number = int(item.group("item"))
+        detail = (item.group("detail") or "").strip()
+        name = f"{source_file}:{line_number}:{item_number}"
+        if detail:
+            name += f" {detail}"
+        points.append(
+            {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": "branch",
+                "source_file": source_file,
+                "line": line_number,
+                "item": item_number,
+                "detail": detail,
+            }
+        )
+
+    return points
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -353,6 +403,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
     functional_json_path = out_dir / "functional.json"
     details_xml_path = out_dir / "details.xml"
     zero_detail_path = out_dir / "zeros.txt"
+    branch_detail_path = out_dir / "branch-details.txt"
     inputs = [str(path) for path in coverage_files]
 
     if merged_path.exists():
@@ -437,6 +488,29 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             output=zero_detail_path,
         ),
     }
+    branch_detail_cmd = [
+        tool,
+        "report",
+        "-details",
+        "-code",
+        "b",
+        "-output",
+        str(branch_detail_path),
+        str(merged_path),
+    ]
+    branch_detail = _capture_questa_report_file(
+        branch_detail_cmd,
+        cwd=project.root,
+        output=branch_detail_path,
+    )
+    detailed_code_coverage_evidence["branch_detail"] = branch_detail
+    branch_points = (
+        parse_questa_branch_coverage_report(
+            branch_detail_path.read_text(encoding="utf-8", errors="replace")
+        )
+        if branch_detail["status"] == "captured"
+        else []
+    )
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -457,6 +531,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "branch_detail_points": len(branch_points),
+        "branch_detail_holes": sum(not point["hit"] for point in branch_points),
     }
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -480,6 +556,8 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
         "detailed_code_coverage_evidence": detailed_code_coverage_evidence,
+        "branch_detail_points": len(branch_points),
+        "branch_detail_holes": sum(not point["hit"] for point in branch_points),
     }
 
 
