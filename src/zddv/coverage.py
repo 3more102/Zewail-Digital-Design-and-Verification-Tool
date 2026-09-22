@@ -77,6 +77,23 @@ _QUESTA_CODE_DETAIL_ROW = re.compile(
     r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)"
     r"(?:\s+(?P<detail>.*?))?\s*$"
 )
+_QUESTA_FEC_DETAIL_HEADER = re.compile(
+    r"^\s*(?P<kind>Condition|Expression)\s+Coverage\s+for\s+file\s+"
+    r"(?P<file>.+?)\s*--\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FEC_ITEM = re.compile(
+    r"^\s*Line\s+(?P<line>\d+)\s+Item\s+(?P<item>\d+)\s*"
+    r"(?P<detail>.*?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FEC_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)\s+"
+    r"(?P<target>\S+)"
+    r"(?:\s+(?P<evidence>.*?))?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -190,6 +207,21 @@ def build_coverage_hole_report(
                 **(
                     {"item": int(point["item"])}
                     if point.get("item") is not None
+                    else {}
+                ),
+                **(
+                    {"row": int(point["row"])}
+                    if point.get("row") is not None
+                    else {}
+                ),
+                **(
+                    {"fec_target": str(point["fec_target"])}
+                    if point.get("fec_target") is not None
+                    else {}
+                ),
+                **(
+                    {"evidence": str(point["evidence"])}
+                    if point.get("evidence") is not None
                     else {}
                 ),
                 **(
@@ -376,6 +408,88 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
                 "line": line_number,
                 "item": item_number,
                 "detail": detail,
+            }
+        )
+
+    return points
+
+
+def parse_questa_fec_coverage_report(text: str) -> list[dict]:
+    """Normalize documented scalar FEC condition/expression rows.
+
+    Questa reports scalar FEC rows as Row N: <hits> <FEC target> ...
+    for condition/expression terms. Multibit tables use a different column
+    layout; those rows are intentionally skipped until their per-bit layout is
+    normalized from verified evidence.
+    """
+    points: list[dict] = []
+    kind = ""
+    source_file = ""
+    line_number: int | None = None
+    item_number: int | None = None
+    item_detail = ""
+    in_fec_rows = False
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_FEC_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            kind = header.group("kind").strip().lower()
+            source_file = header.group("file").strip()
+            line_number = None
+            item_number = None
+            item_detail = ""
+            in_fec_rows = False
+            continue
+
+        if kind not in {"condition", "expression"} or not source_file:
+            continue
+
+        item = _QUESTA_FEC_ITEM.match(raw_line)
+        if item is not None:
+            line_number = int(item.group("line"))
+            item_number = int(item.group("item"))
+            item_detail = (item.group("detail") or "").strip()
+            in_fec_rows = False
+            continue
+
+        normalized_line = raw_line.strip().lower()
+        if normalized_line.startswith("rows:") and "fec target" in normalized_line:
+            in_fec_rows = True
+            continue
+
+        row = _QUESTA_FEC_ROW.match(raw_line)
+        if (
+            not in_fec_rows
+            or row is None
+            or line_number is None
+            or item_number is None
+        ):
+            continue
+
+        hits = int(
+            row.group("hits").replace("*", "").replace(",", "")
+        )
+        row_number = int(row.group("row"))
+        target = row.group("target").strip()
+        evidence = (row.group("evidence") or "").strip()
+        name = (
+            f"{source_file}:{line_number}:{item_number}:"
+            f"row{row_number}:{target}"
+        )
+
+        points.append(
+            {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": kind,
+                "source_file": source_file,
+                "line": line_number,
+                "item": item_number,
+                "row": row_number,
+                "fec_target": target,
+                "detail": item_detail,
+                "evidence": evidence,
             }
         )
 
@@ -669,7 +783,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report",
         "-details",
         "-code",
-        "sb",
+        "sbce",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
@@ -682,9 +796,21 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         if code_report.returncode == 0
         else []
     )
+    fec_points = (
+        parse_questa_fec_coverage_report(code_report.stdout or "")
+        if code_report.returncode == 0
+        else []
+    )
     code_detail_status = (
         "ok"
         if code_report.returncode == 0 and code_points
+        else "empty"
+        if code_report.returncode == 0
+        else "tool-error"
+    )
+    fec_detail_status = (
+        "ok"
+        if code_report.returncode == 0 and fec_points
         else "empty"
         if code_report.returncode == 0
         else "tool-error"
@@ -767,6 +893,9 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "fec_detail_status": fec_detail_status,
+        "fec_detail_points": len(fec_points),
+        "fec_detail_holes": sum(not point["hit"] for point in fec_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
@@ -795,6 +924,9 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "code_detail_returncode": int(code_report.returncode),
         "code_detail_points": len(code_points),
         "code_detail_holes": sum(not point["hit"] for point in code_points),
+        "fec_detail_status": fec_detail_status,
+        "fec_detail_points": len(fec_points),
+        "fec_detail_holes": sum(not point["hit"] for point in fec_points),
         "functional_report": str(functional_report_path),
         "functional_snapshot_id": functional_snapshot_id,
         "functional_bins": functional_bins,
