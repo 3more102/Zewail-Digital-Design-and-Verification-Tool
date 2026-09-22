@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_questa_multibit_expression_report,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -692,6 +693,22 @@ def cmd_coverage_holes(args) -> int:
             points = parse_questa_code_coverage_report(
                 source_path.read_text(encoding="utf-8", errors="replace")
             )
+            if args.point_type in {None, "expression"}:
+                multibit_source = (
+                    project.root
+                    / ".zddv"
+                    / "coverage"
+                    / "multibit-expression.txt"
+                ).resolve()
+                if multibit_source.exists():
+                    points.extend(
+                        parse_questa_multibit_expression_report(
+                            multibit_source.read_text(
+                                encoding="utf-8",
+                                errors="replace",
+                            )
+                        )
+                    )
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
@@ -699,10 +716,15 @@ def cmd_coverage_holes(args) -> int:
                     for point in points
                 )
             ):
+                if args.point_type == "expression":
+                    raise RuntimeError(
+                        "No normalized Questa expression FEC rows found. "
+                        "Scalar FEC rows and documented multibit expression "
+                        "rows are supported."
+                    )
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
-                    f"{source_path}. Scalar FEC rows are supported; multibit "
-                    "FEC tables are not normalized yet."
+                    f"{source_path}. Scalar condition FEC rows are supported."
                 )
             if (
                 args.point_type == "fsm"
