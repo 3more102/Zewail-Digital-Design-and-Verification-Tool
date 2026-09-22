@@ -354,6 +354,7 @@ CREATE TABLE IF NOT EXISTS uvm_arbitration_decisions (
     decision_index INTEGER NOT NULL,
     event_index INTEGER NOT NULL,
     request_id TEXT NOT NULL,
+    sequencer TEXT,
     mode TEXT NOT NULL,
     pending_request_ids_json TEXT NOT NULL,
     eligible_request_ids_json TEXT NOT NULL,
@@ -1480,10 +1481,10 @@ def record_uvm_arbitration_snapshot(
         db.executemany(
             """
             INSERT INTO uvm_arbitration_decisions (
-                snapshot_id, decision_index, event_index, request_id, mode,
-                pending_request_ids_json, eligible_request_ids_json,
+                snapshot_id, decision_index, event_index, request_id, sequencer,
+                mode, pending_request_ids_json, eligible_request_ids_json,
                 expected_request_id, highest_priority
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -1491,6 +1492,7 @@ def record_uvm_arbitration_snapshot(
                     decision_index,
                     int(item["event_index"]),
                     item["request_id"],
+                    item.get("sequencer"),
                     item["mode"],
                     json.dumps(item.get("pending_request_ids", [])),
                     json.dumps(item.get("eligible_request_ids", [])),
@@ -1608,8 +1610,8 @@ def list_uvm_arbitration_decisions(
     with _connect(project) as db:
         rows = db.execute(
             """
-            SELECT snapshot_id, decision_index, event_index, request_id, mode,
-                   pending_request_ids_json, eligible_request_ids_json,
+            SELECT snapshot_id, decision_index, event_index, request_id, sequencer,
+                   mode, pending_request_ids_json, eligible_request_ids_json,
                    expected_request_id, highest_priority
             FROM uvm_arbitration_decisions
             WHERE snapshot_id = ?
