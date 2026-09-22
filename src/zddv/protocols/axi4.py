@@ -163,6 +163,21 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_samples, list):
         raise ValueError("AXI4 trace must contain a 'samples' list")
 
+    raw_data_width_bits = payload.get("data_width_bits")
+    if raw_data_width_bits is None:
+        data_width_bits: int | None = None
+        data_bus_bytes: int | None = None
+    else:
+        if (
+            isinstance(raw_data_width_bits, bool)
+            or not isinstance(raw_data_width_bits, int)
+            or raw_data_width_bits <= 0
+            or raw_data_width_bits % 8
+        ):
+            raise ValueError("data_width_bits must be a positive multiple of 8")
+        data_width_bits = raw_data_width_bits
+        data_bus_bytes = data_width_bits // 8
+
     samples = [_normalize_sample(sample, index) for index, sample in enumerate(raw_samples)]
     violations: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
@@ -452,6 +467,21 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         beats = length + 1 if valid_len else 1
         beat_bytes = 1 << size if valid_size else None
 
+        if (
+            data_bus_bytes is not None
+            and beat_bytes is not None
+            and beat_bytes > data_bus_bytes
+        ):
+            add_violation(
+                "transfer_size_exceeds_data_bus",
+                sample,
+                f"{prefix}SIZE selects {beat_bytes} bytes on a {data_bus_bytes}-byte data bus",
+                channel=prefix,
+                signal=f"{prefix}SIZE",
+                expected=f"transfer size <= {data_bus_bytes} bytes",
+                actual=beat_bytes,
+            )
+
         if burst in {"FIXED", "WRAP"} and beats > 16:
             add_violation(
                 "burst_length_not_supported_for_type", sample,
@@ -643,10 +673,70 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 current = wrap_base
         return result
 
+    def validate_write_strobes(
+        request: dict[str, Any],
+        beats: list[dict[str, Any]],
+    ) -> None:
+        if data_bus_bytes is None:
+            return
+
+        beat_bytes = request.get("beat_bytes")
+        if (
+            not isinstance(beat_bytes, int)
+            or beat_bytes <= 0
+            or beat_bytes > data_bus_bytes
+        ):
+            return
+
+        addresses = burst_addresses(request, len(beats))
+        if addresses is None:
+            return
+
+        bus_mask = (1 << data_bus_bytes) - 1
+        for beat_index, (beat, beat_addr) in enumerate(zip(beats, addresses)):
+            strobe = beat.get("strb")
+            if not isinstance(strobe, int) or strobe < 0 or strobe > bus_mask:
+                add_violation(
+                    "invalid_write_strobe",
+                    beat["sample"],
+                    f"WSTRB on write beat {beat_index} must fit the {data_bus_bytes}-byte data bus",
+                    channel="W",
+                    transaction_index=request["index"],
+                    signal="WSTRB",
+                    expected=f"0x0..0x{bus_mask:X}",
+                    actual=strobe,
+                )
+                beat["allowed_strb_mask"] = None
+                continue
+
+            aligned_addr = beat_addr - (beat_addr % beat_bytes)
+            lower_lane = beat_addr % data_bus_bytes
+            upper_lane = (aligned_addr + beat_bytes - 1) % data_bus_bytes
+            if upper_lane < lower_lane:
+                beat["allowed_strb_mask"] = None
+                continue
+
+            allowed_mask = (
+                ((1 << (upper_lane - lower_lane + 1)) - 1) << lower_lane
+            )
+            beat["allowed_strb_mask"] = allowed_mask
+            if strobe & ~allowed_mask:
+                add_violation(
+                    "write_strobe_outside_transfer",
+                    beat["sample"],
+                    f"WSTRB asserts byte lanes outside write beat {beat_index}'s address/size window",
+                    channel="W",
+                    transaction_index=request["index"],
+                    signal="WSTRB",
+                    expected=f"subset of 0x{allowed_mask:X}",
+                    actual=f"0x{strobe:X}",
+                )
+
     def pair_write_bursts() -> None:
         while aw_queue and completed_w_bursts:
             request = aw_queue.popleft()
             beats = completed_w_bursts.popleft()
+            validate_write_strobes(request, beats)
             expected = request["beats_expected"]
             observed = len(beats)
             if observed < expected:
@@ -815,6 +905,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "beat_addresses": burst_addresses(request, len(beats)),
                     "write_data": [beat["data"] for beat in beats],
                     "write_strobes": [beat["strb"] for beat in beats],
+                    "write_strobe_allowed_masks": (
+                        [beat.get("allowed_strb_mask") for beat in beats]
+                        if data_bus_bytes is not None
+                        else None
+                    ),
                     "response": label,
                     "response_code": code,
                     "aw_cycle": request["cycle"],
@@ -983,7 +1078,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_semantics",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_semantics_wstrb",
         "source": str(payload.get("source", "normalized-trace")),
         "status": "PASS" if not violations else "FAIL",
         "summary": {
@@ -1009,10 +1104,14 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected and B/M/RA/WA semantics are decoded; AxREGION is checked for 4KB-space consistency.",
+            "When data_width_bits is known, AxSIZE is bounded by the interface data width and WSTRB is checked against the legal byte lanes for every accepted write beat.",
+            "Normalized traces without data_width_bits cannot prove data-bus-width or WSTRB byte-lane legality.",
             "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
+    if data_width_bits is not None:
+        result["data_width_bits"] = data_width_bits
     if isinstance(payload.get("waveform"), dict):
         result["waveform"] = payload["waveform"]
     return result
