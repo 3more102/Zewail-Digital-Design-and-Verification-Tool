@@ -687,7 +687,7 @@ def test_coverage_holes_cli_rejects_unimplemented_questa_item_type(
 
     with pytest.raises(
         RuntimeError,
-        match="supports --type statement or --type branch",
+        match=r"supports --type statement, --type branch, or --type condition",
     ):
         cmd_coverage_holes(
             SimpleNamespace(
