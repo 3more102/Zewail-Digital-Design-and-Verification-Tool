@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM Ingestion Foundation — v0.5 protocol verification plus simulator-independent UVM report normalization, persistence, and history**
+> Status: **v0.6 UVM & Simulator Adapters — run-linked UVM result ingestion plus a Questa compile/run foundation, with the v0.5 protocol verification stack retained**
 
 ## What Works Today
 
@@ -12,6 +12,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - RTL/testbench source discovery
 - Simulator-adapter architecture
 - Verilator detection and version reporting
+- Questa compile/run adapter foundation using native `vlib`, `vlog`, and `vsim`
+- Reproducible Questa seeds, runtime plusargs, timeouts, optional VCD capture, assertion ingestion, and run-linked UVM-log normalization
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -57,7 +59,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 Requirements:
 
 - Python 3.11+
-- Verilator available in `PATH`
+- At least one supported simulator in `PATH`:
+  - Verilator, or
+  - Questa with `vlib`, `vlog`, and `vsim`
 
 Install ZDDV for development:
 
@@ -81,6 +85,18 @@ zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 zddv --project examples/async_fifo coverage
 ```
+
+Use the Questa foundation on a compatible project:
+
+```bash
+zddv --project my_project config simulator questa
+zddv --project my_project build
+zddv --project my_project run --test smoke --seed 42
+```
+
+The adapter records normal ZDDV run metadata and optional VCD output. Native Questa
+coverage normalization is not implemented yet; `zddv coverage` remains
+Verilator-specific.
 
 ## Current CLI
 
@@ -243,7 +259,7 @@ CLI / future GUI
  Simulator Adapter API
        │
        ├── Verilator  ← implemented
-       ├── Questa     ← planned
+       ├── Questa     ← compile/run foundation
        ├── VCS        ← planned
        └── Xcelium    ← planned
 ```
@@ -322,7 +338,8 @@ separately from Verilator's annotation threshold.
 - [x] Source/hierarchy index
 - [x] Waveform-to-source cross-probing
 - [x] Targeted VCD value-change probing
-- [ ] UVM-aware result model
+- [x] Run-linked UVM report-log severity/test metadata ingestion
+- [ ] Phase/objection/sequence-aware UVM result model
 
 ### APB Trace Analysis
 
@@ -611,7 +628,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 ### Phase 4 — Advanced Verification
 
-- [ ] Questa adapter
+- [x] Questa compile/run adapter foundation
+- [ ] Questa native coverage normalization
 - [ ] VCS adapter
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
