@@ -13,6 +13,7 @@ from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
     merge_coverage,
     parse_questa_code_coverage_report,
+    parse_xcelium_imc_toggle_coverage_points,
     parse_vcs_urg_condition_coverage_points,
     parse_verilator_coverage,
     write_coverage_hole_report,
@@ -557,6 +558,18 @@ def cmd_coverage(args) -> int:
         )
         if result.get("code_report"):
             print(f"Questa statement/branch/condition/expression/FSM detail: {result['code_report']}")
+    toggle_detail_status = result.get("toggle_detail_status")
+    if toggle_detail_status is not None:
+        print(
+            "Xcelium toggle detail: "
+            f"{toggle_detail_status} "
+            f"{result.get('toggle_detail_points', 0)} point(s), "
+            f"{result.get('toggle_detail_holes', 0)} hole(s)"
+        )
+        if result.get("toggle_detail"):
+            print(f"Xcelium toggle evidence: {result['toggle_detail']}")
+        if result.get("toggle_detail_error"):
+            print(f"Xcelium toggle note: {result['toggle_detail_error']}")
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -730,6 +743,38 @@ def cmd_coverage_holes(args) -> int:
                 point_type=args.point_type,
                 limit=args.limit,
             )
+    elif simulator in {"xcelium", "xrun"}:
+        if args.point_type not in {None, "toggle"}:
+            raise RuntimeError(
+                "Xcelium item-level coverage currently supports --type toggle."
+            )
+        source_path = (
+            project.root
+            / ".zddv"
+            / "coverage"
+            / "xcelium"
+            / "toggle-details.txt"
+        ).resolve()
+        if not source_path.exists():
+            raise RuntimeError(
+                f"Xcelium IMC toggle detail report not found at {source_path}. "
+                "Run 'zddv coverage' first."
+            )
+        points = parse_xcelium_imc_toggle_coverage_points(
+            source_path.read_text(encoding="utf-8", errors="replace")
+        )
+        if not points:
+            raise RuntimeError(
+                "No normalized Xcelium toggle rows found in "
+                f"{source_path}. ZDDV only normalizes the documented "
+                "Hit(Full)/Hit(Rise)/Hit(Fall)/Signal table."
+            )
+        report = write_coverage_hole_report(
+            points,
+            output,
+            point_type="toggle",
+            limit=args.limit,
+        )
     elif simulator == "vcs":
         if args.point_type not in {None, "condition"}:
             raise RuntimeError(
