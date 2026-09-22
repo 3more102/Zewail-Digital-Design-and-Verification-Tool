@@ -265,7 +265,7 @@ No CLI or GUI feature should contain simulator-specific command construction. Al
 
 Current executable backends:
 - **Verilator**: executable binary flow with optional waveform/code-coverage artifacts.
-- **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, assertion-log ingestion, and run-linked UVM log ingestion. Questa code/functional coverage capture is not yet implemented.
+- **Questa/QuestaSim foundation**: `vlib` + `vlog` compile into a simulator library, then `vsim -c` execution with deterministic seed/test/plusarg transport, timeout classification, optional VCD capture, per-run UCDB coverage capture, assertion-log ingestion, and run-linked UVM log ingestion. Offline `vcover` merge/report normalization feeds ZDDV's code-coverage snapshots and functional-covergroup database while preserving the native UCDB.
 
 ## Next Architectural Steps
 
