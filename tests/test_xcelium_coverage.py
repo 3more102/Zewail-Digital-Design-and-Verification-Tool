@@ -16,14 +16,23 @@ from zddv.coverage import (
 from zddv.storage import list_coverage_score_snapshots
 
 
-def _project(tmp_path: Path) -> ProjectConfig:
+IMC_SUMMARY = """IMC(64): test build
+Starting batch mode
+Legend: Metric* means cumulative
+name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
+--------------------------------------------------------------------------------------------------------------------------------
+tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
+"""
+
+
+def _project(tmp_path: Path, *, simulator: str = "xcelium") -> ProjectConfig:
     root = tmp_path / "demo"
     root.mkdir()
     return ProjectConfig(
         root=root,
         name="demo",
         top="tb_top",
-        simulator="xcelium",
+        simulator=simulator,
         coverage=True,
         waveform=False,
     )
@@ -42,49 +51,60 @@ def _coverage_run(project: ProjectConfig, run_id: str) -> Path:
     return path
 
 
-def test_merge_xcelium_coverage_uses_imc_and_retains_evidence(
+def test_merge_xcelium_coverage_uses_native_union_imc_flow(
     tmp_path: Path,
     monkeypatch,
 ):
     project = _project(tmp_path)
     first = _coverage_run(project, "run-a")
     second = _coverage_run(project, "run-b")
-
     monkeypatch.setattr(
         "zddv.coverage.shutil.which",
         lambda name: "/opt/cadence/bin/imc" if name == "imc" else None,
     )
 
-    captured: dict[str, object] = {}
+    commands: list[list[str]] = []
 
     def fake_run(command, cwd):
-        captured["command"] = list(command)
-        captured["cwd"] = Path(cwd)
-        script_path = Path(command[command.index("-exec") + 1])
-        captured["script"] = script_path.read_text(encoding="utf-8")
+        commands.append(list(command))
+        cwd = Path(cwd)
+        if "-load" not in command:
+            assert command[:2] == ["/opt/cadence/bin/imc", "-execcmd"]
+            script = command[2]
+            assert "merge -overwrite -runfile" in script
+            assert "-out merged -metrics all" in script
+            assert "-initial_model union_all" in script
+            assert "-message 1" in script
 
-        out_dir = project.root / ".zddv" / "coverage"
-        merged = out_dir / "xcelium-imc-merged"
-        merged.mkdir(parents=True)
-        (merged / "merged.ucd").write_text("merged\n", encoding="utf-8")
-        report_dir = out_dir / "xcelium-imc-report"
-        (report_dir / "summary.txt").write_text(
-            """IMC(64): test build
-Starting batch mode
-Legend: Metric* means cumulative
-name Overall* Average Overall* Covered Code* Average Code* Covered Fsm* Average Fsm* Covered Functional* Average Functional* Covered
---------------------------------------------------------------------------------------------------------------------------------
-tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
-""",
-            encoding="utf-8",
+            merged = cwd / "cov_work" / "scope" / "merged"
+            merged.mkdir(parents=True)
+            (merged / "icc_merged.ucm").write_text("model\n", encoding="utf-8")
+            (merged / "icc_merged.ucd").write_text("data\n", encoding="utf-8")
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "Doing model union\n"
+                    "Total conflicts during target model creation: 0\n"
+                    "Total items not merged : 0\n"
+                ),
+            )
+
+        assert command[command.index("-load") + 1].endswith(
+            "cov_work/scope/merged"
         )
-        return SimpleNamespace(returncode=0, stdout="IMC merge complete\n")
+        assert command[command.index("-execcmd") + 1] == (
+            'report -summary -inst "*..." -metrics all '
+            "-cumulative on -showempty on -local off; exit"
+        )
+        return SimpleNamespace(returncode=0, stdout=IMC_SUMMARY)
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
 
     result = merge_coverage(project)
 
     assert result["inputs"] == [str(first), str(second)]
+    assert Path(result["merged"]).parts[-3:] == ("cov_work", "scope", "merged")
+    assert Path(result["summary"]).read_text(encoding="utf-8") == IMC_SUMMARY
     assert result["metrics_status"] == "normalized"
     assert result["metrics"]["tool_total_coverage"] == pytest.approx(82.50)
     assert result["metrics"]["by_metric"]["overall_average"] == pytest.approx(86.25)
@@ -94,25 +114,23 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert result["metrics"]["by_metric"]["functional_average"] == pytest.approx(92.50)
     assert result["metrics"]["by_metric"]["functional_covered"] == pytest.approx(90.00)
     assert "fsm_average" not in result["metrics"]["by_metric"]
-    assert result["metrics"]["by_metric_counts"]["overall_covered"]["covered"] == 33
+    assert result["metrics"]["by_metric_counts"]["overall_covered"] == {
+        "covered": 33,
+        "total": 40,
+        "hit_rate": pytest.approx(82.50),
+    }
     assert result["metrics"]["by_metric_counts"]["code_covered"]["total"] == 24
-    assert Path(result["merged"]).name == "xcelium-imc-merged"
-    assert Path(result["summary"]).name == "summary.txt"
+    assert result["snapshot_id"] is not None
+    assert len(commands) == 2
 
-    command = captured["command"]
-    assert command[:3] == ["/opt/cadence/bin/imc", "-batch", "-exec"]
-    script = str(captured["script"])
-    assert "merge -out" in script
-    assert "-overwrite" in script
-    assert first.as_posix() in script
-    assert second.as_posix() in script
-    assert "load -run" in script
-    assert 'report -summary -inst "*..."' in script
-    assert "-metrics all" in script
-    assert "-cumulative on" in script
-    assert "-showempty on" in script
-    assert "-local off" in script
-    assert script.rstrip().endswith("exit")
+    runfile = Path(result["runfile"]).read_text(encoding="utf-8").splitlines()
+    assert runfile == [
+        str((first / "run-a.ucd").resolve()),
+        str((second / "run-b.ucd").resolve()),
+    ]
+    merge_log = Path(result["merge_log"]).read_text(encoding="utf-8")
+    assert "Doing model union" in merge_log
+    assert "Total items not merged : 0" in merge_log
 
     manifest = json.loads(
         Path(result["metrics_path"]).read_text(encoding="utf-8")
@@ -120,8 +138,11 @@ tb_top 86.25% 82.50% (33/40) 80.00% 75.00% (18/24) n/a n/a 92.50% 90.00% (9/10)
     assert manifest["status"] == "merged-report-captured"
     assert manifest["metrics_status"] == "normalized"
     assert manifest["input_count"] == 2
+    assert manifest["merge_model"] == "union_all"
+    assert manifest["runfile"] == result["runfile"]
+    assert manifest["merge_log"] == result["merge_log"]
     assert len(manifest["merged_ucd_files"]) == 1
-    assert manifest["snapshot_id"] == result["snapshot_id"]
+    assert len(manifest["merged_ucm_files"]) == 1
     assert manifest["metrics"]["scope"] == "tb_top"
 
     snapshots = list_coverage_score_snapshots(project, limit=5)
@@ -147,7 +168,7 @@ def test_merge_xcelium_coverage_requires_native_run_database(
         merge_xcelium_coverage(project)
 
 
-def test_merge_xcelium_coverage_rejects_missing_merged_ucd(
+def test_merge_xcelium_coverage_rejects_incomplete_native_merged_database(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -157,15 +178,18 @@ def test_merge_xcelium_coverage_rejects_missing_merged_ucd(
         "zddv.coverage.shutil.which",
         lambda name: "/opt/cadence/bin/imc" if name == "imc" else None,
     )
-    monkeypatch.setattr(
-        "zddv.coverage._run",
-        lambda command, cwd: SimpleNamespace(
-            returncode=0,
-            stdout="IMC returned success without a merged database\n",
-        ),
-    )
 
-    with pytest.raises(RuntimeError, match="IMC coverage merge/report failed"):
+    def fake_run(command, cwd):
+        if "-load" not in command:
+            merged = Path(cwd) / "cov_work" / "scope" / "merged"
+            merged.mkdir(parents=True)
+            (merged / "icc_merged.ucd").write_text("data\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="merge returned success\n")
+        pytest.fail("report must not run when the merged model is incomplete")
+
+    monkeypatch.setattr("zddv.coverage._run", fake_run)
+
+    with pytest.raises(RuntimeError, match="IMC coverage merge failed"):
         merge_xcelium_coverage(project)
 
 
@@ -178,10 +202,25 @@ def test_merge_xcelium_coverage_requires_imc(tmp_path: Path, monkeypatch):
         merge_xcelium_coverage(project)
 
 
-
 def test_parse_xcelium_imc_summary_requires_documented_header():
     with pytest.raises(ValueError, match="Overall Average/Covered"):
         parse_xcelium_imc_summary("name Other Columns\ntb_top 90.0%\n")
+
+
+@pytest.mark.parametrize("simulator", ["xcelium", "xrun"])
+def test_merge_coverage_dispatches_xcelium_aliases(
+    tmp_path: Path,
+    monkeypatch,
+    simulator: str,
+):
+    project = _project(tmp_path, simulator=simulator)
+    expected = {"inputs": [], "merged": "merged"}
+    monkeypatch.setattr(
+        "zddv.coverage.merge_xcelium_coverage",
+        lambda loaded: expected if loaded is project else None,
+    )
+
+    assert merge_coverage(project) is expected
 
 
 def test_xcelium_coverage_history_uses_score_snapshots(
