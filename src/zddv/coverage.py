@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -239,6 +240,74 @@ def parse_questa_coverage_summary(text: str) -> dict:
     }
 
 
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def parse_questa_statement_coverage_xml(text: str) -> list[dict]:
+    """Normalize the documented by-instance Questa XML statement records."""
+    root = ET.fromstring(text)
+    points_by_name: dict[str, dict] = {}
+
+    for instance in root.iter():
+        if _xml_local_name(instance.tag) != "instancedata":
+            continue
+
+        scope = str(
+            instance.attrib.get("path")
+            or instance.attrib.get("du")
+            or "<unknown-instance>"
+        )
+        design_unit = instance.attrib.get("du")
+        files: dict[str, str] = {}
+        for element in instance.iter():
+            if _xml_local_name(element.tag) != "filemap":
+                continue
+            file_id = element.attrib.get("fn")
+            file_path = element.attrib.get("path")
+            if file_id is not None and file_path:
+                files[str(file_id)] = str(file_path)
+
+        for element in instance.iter():
+            if _xml_local_name(element.tag) != "stmt":
+                continue
+            raw_hits = element.attrib.get("hits")
+            raw_line = element.attrib.get("ln")
+            if raw_hits is None or raw_line is None:
+                continue
+            try:
+                hits = int(raw_hits)
+                line = int(raw_line)
+            except ValueError:
+                continue
+
+            file_id = str(element.attrib.get("fn") or "")
+            source = files.get(
+                file_id,
+                f"fn:{file_id}" if file_id else "<unknown-file>",
+            )
+            statement_id = str(element.attrib.get("st") or "1")
+            name = f"{scope}::{source}:{line}:stmt:{statement_id}"
+            point = {
+                "name": name,
+                "count": hits,
+                "hit": hits > 0,
+                "type": "statement",
+                "metadata": {
+                    "scope": scope,
+                    "design_unit": design_unit,
+                    "source": source,
+                    "line": line,
+                    "statement": statement_id,
+                },
+            }
+            previous = points_by_name.get(name)
+            if previous is None or hits > int(previous["count"]):
+                points_by_name[name] = point
+
+    return [points_by_name[name] for name in sorted(points_by_name)]
+
+
 def parse_questa_functional_coverage_report(text: str) -> dict:
     """Normalize ordinary covergroup bins from a detailed vcover text report.
 
@@ -328,6 +397,70 @@ def _capture_questa_details_xml(
         "path": str(details_path) if captured else None,
         "command": command,
         "output": result.stdout or "",
+    }
+
+
+def _capture_questa_statement_points(
+    tool: str,
+    merged_path: Path,
+    out_dir: Path,
+    cwd: Path,
+) -> dict:
+    """Capture a deterministic by-instance statement XML report and normalize it."""
+    report_path = out_dir / "statements.xml"
+    points_path = out_dir / "statement-points.json"
+    for artifact in (report_path, points_path):
+        if artifact.exists():
+            artifact.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-xml",
+        "-code",
+        "s",
+        "-setdefault",
+        "byinstance",
+        "-output",
+        str(report_path),
+        str(merged_path),
+    ]
+    result = _run(command, cwd)
+    if result.returncode != 0 or not report_path.exists():
+        if report_path.exists():
+            report_path.unlink()
+        return {
+            "status": "unavailable",
+            "report": None,
+            "points_path": None,
+            "points": [],
+            "command": command,
+            "error": (result.stdout or "").strip()
+            or "XML statement report was not produced.",
+        }
+
+    try:
+        points = parse_questa_statement_coverage_xml(
+            report_path.read_text(encoding="utf-8", errors="replace")
+        )
+    except ET.ParseError as exc:
+        return {
+            "status": "invalid_xml",
+            "report": str(report_path),
+            "points_path": None,
+            "points": [],
+            "command": command,
+            "error": str(exc),
+        }
+
+    points_path.write_text(json.dumps(points, indent=2), encoding="utf-8")
+    return {
+        "status": "normalized" if points else "empty",
+        "report": str(report_path),
+        "points_path": str(points_path),
+        "points": points,
+        "command": command,
+        "error": None,
     }
 
 
