@@ -38,12 +38,26 @@ A property artifact records the property depth when supplied. Otherwise it inher
 the request depth as the effective evidence bound. This does not upgrade BMC evidence
 into an unbounded proof.
 
+## Native VCD trace normalization
+
+VCD counterexamples and witnesses can be translated explicitly into the normalized
+formal trace contract with `zddv formal-vcd-trace`. The importer preserves hierarchical
+signal names, declaration widths and VCD metadata, textual four-state logic values,
+ordered timestamps, the original file SHA-256, and the property role supplied by the
+caller. Optional repeated `--signal` selectors limit ingestion to exact hierarchical
+paths or unambiguous short names.
+
+The importer snapshots the known selected-signal state after all value changes at each
+VCD timestamp. It does not invent clock cycles, radix, signedness, or property semantics.
+
 ## Current boundary
 
-This layer fingerprints and classifies artifacts only. It does not yet:
+The artifact-manifest layer itself remains a classifier/fingerprinter. VCD contents can
+now be normalized through the explicit trace importer, while ZDDV does not yet:
 
-- parse counterexample or witness waveforms;
-- reconstruct formal state transitions;
-- cross-probe trace signals to RTL;
-- persist formal artifacts in SQLite;
+- automatically normalize every backend-reported trace during result persistence;
+- parse non-VCD vendor-native waveform formats such as FST/WLF/VPD/FSDB;
+- reconstruct semantic formal state transitions beyond timestamped signal values;
+- cross-probe normalized formal trace signals to RTL;
+- persist formal trace samples in SQLite;
 - calculate proof or formal-coverage metrics from a waveform.
