@@ -561,12 +561,18 @@ def cmd_uvm_analyze(args) -> int:
         f"summary={'complete' if result['report_summary_complete'] else 'fallback'}"
     )
     lifecycle = result["lifecycle"]["summary"]
-    if lifecycle["phase_events"] or lifecycle["objection_events"]:
+    if (
+        lifecycle["phase_events"]
+        or lifecycle["objection_events"]
+        or lifecycle["sequence_events"]
+    ):
         print(
             "Lifecycle: "
             f"phases={lifecycle['phase_events']} "
             f"objections={lifecycle['objection_events']} "
+            f"sequences={lifecycle['sequence_events']} "
             f"phase-names={len(lifecycle['phases_seen'])} "
+            f"sequence-names={len(lifecycle['sequences_seen'])} "
             f"max-objection-total={lifecycle['max_observed_total']}"
         )
     for event in result["messages"]:
