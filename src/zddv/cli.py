@@ -365,10 +365,6 @@ def cmd_coverage(args) -> int:
     print(f"Coverage inputs: {len(result['inputs'])}")
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
-    if result.get("details"):
-        print(f"Detailed coverage XML: {result['details']}")
-    elif result.get("details_capture") == "unavailable":
-        print("Detailed coverage XML: unavailable")
     metrics = result["metrics"]
     print(
         f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
@@ -386,6 +382,18 @@ def cmd_coverage(args) -> int:
         print(f"Functional snapshot: {result['functional_snapshot_id']}")
         if result.get("functional_report"):
             print(f"Functional report: {result['functional_report']}")
+    detailed = result.get("detailed_code_coverage_evidence") or {}
+    if detailed:
+        xml = detailed.get("xml", {})
+        zero_detail = detailed.get("zero_detail", {})
+        print(
+            "Detailed code coverage XML: "
+            f"{xml.get('status', 'unknown')} {xml.get('path', '-')}"
+        )
+        print(
+            "Zero-hit source detail: "
+            f"{zero_detail.get('status', 'unknown')} {zero_detail.get('path', '-')}"
+        )
     report = result["report"].strip()
     if report:
         print(report)
