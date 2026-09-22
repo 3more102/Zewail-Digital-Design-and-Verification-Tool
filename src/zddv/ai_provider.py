@@ -469,7 +469,9 @@ def import_provider_response(
         "semantics": (
             "This artifact contains manually imported, untrusted model output. "
             "ZDDV did not invoke a provider or transmit project data. The response "
-            "is bound to the exact canonical request and context evidence, but it "
+            "is locally associated with the exact canonical request and context "
+            "evidence for audit integrity. That association is not proof that an "
+            "external source produced the response from that request. The response "
             "must still pass ai-response-ingest and explicit SHA-bound human review "
             "before any generated proposal can enter the staging workflow."
         ),
