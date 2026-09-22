@@ -8,7 +8,12 @@ import sys
 
 from zddv import __version__
 from zddv.ai_context import write_ai_rca_context
-from zddv.ai_provider import create_provider, provider_metadata, write_provider_response
+from zddv.ai_provider import (
+    create_provider,
+    import_provider_response,
+    provider_metadata,
+    write_provider_response,
+)
 from zddv.ai_response import export_reviewed_generation_proposal, ingest_ai_provider_response, review_validated_ai_response
 from zddv.cdc import analyze_async_fifo_file
 from zddv.config import initialize_project, load_project, save_project
@@ -475,6 +480,31 @@ def cmd_ai_provider_run(args) -> int:
     print("Automatic staging: disabled")
     print("Automatic command execution: disabled")
     print(f"Request SHA-256: {result['request_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_ai_response_import(args) -> int:
+    project = load_project(_project_arg(args))
+    result = import_provider_response(
+        project,
+        context_path=args.context,
+        content_path=args.content,
+        provider_label=args.provider_label,
+        output=args.output,
+    )
+    print(f"AI RESPONSE IMPORTED: provider={result['provider']['name']}")
+    print("Provider invocation: not performed")
+    print("External transmission: not performed")
+    print("Response trust: raw/untrusted")
+    print("Schema validation: disabled")
+    print("Automatic staging: disabled")
+    print("Automatic command execution: disabled")
+    print(f"Request SHA-256: {result['request_sha256']}")
+    print(
+        "Imported content SHA-256: "
+        f"{result['provenance']['imported_content_sha256']}"
+    )
     print(f"Report: {result['path']}")
     return 0
 
@@ -2953,6 +2983,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Raw untrusted provider-response JSON path",
     )
     p_ai_provider_run.set_defaults(func=cmd_ai_provider_run)
+
+    p_ai_response_import = sub.add_parser(
+        "ai-response-import",
+        help=(
+            "Wrap an already-obtained model response as raw untrusted output "
+            "without invoking a provider"
+        ),
+    )
+    p_ai_response_import.add_argument(
+        "--context",
+        required=True,
+        help="Reviewed ai-rca-context JSON path inside the project",
+    )
+    p_ai_response_import.add_argument(
+        "--content",
+        required=True,
+        help=(
+            "UTF-8 model-response file inside the project; remains untrusted "
+            "until ai-response-ingest succeeds"
+        ),
+    )
+    p_ai_response_import.add_argument(
+        "--provider-label",
+        default="manual-import",
+        help="Audit label for the source of the imported response",
+    )
+    p_ai_response_import.add_argument(
+        "--output",
+        default=".zddv/ai/provider-response.json",
+        help="Raw untrusted imported-response JSON path",
+    )
+    p_ai_response_import.set_defaults(func=cmd_ai_response_import)
 
     p_ai_response_ingest = sub.add_parser(
         "ai-response-ingest",
