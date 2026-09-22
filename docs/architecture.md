@@ -247,8 +247,7 @@ The normalized public profile therefore records:
 Trace-contract violations are kept separate from link-health observations. A malformed
 direction, unsupported public-profile size, non-monotonic ordering, header mismatch, or
 missing normalized ACK/NAK/CRC field makes the trace FAIL. A NAK or CRC failure marks
-link health as DEGRADED but is not independently called a UCIe protocol violation,
-because public sources do not provide enough information to infer retry correctness.
+link health as DEGRADED but is not independently called a UCIe protocol violation,because public sources do not provide enough information to infer retry correctness.
 
 This is not a UCIe conformance checker. It does not encode evaluation-copy-only rules
 for PHY electrical behavior, training-state timing, retry sequencing, protocol mappings,
@@ -284,8 +283,12 @@ contract. ZDDV therefore keeps sequence **state** lifecycle evidence in a separa
 normalized JSON model instead of inferring start/end semantics from report text. That layer
 validates the UVM state order, preserves sequence IDs, sequencer paths and parent IDs, permits
 partial traces, correlates snapshots with recorded runs, and persists state events in separate
-SQLite tables. Automatic instrumentation/adapters plus sequence-item arbitration remain future
-layers. See `docs/uvm-sequence-trace.md`.
+SQLite tables. ZDDV also accepts explicit normalized sequence-item handshake evidence (`GRANT`,
+`REQUEST`, `ITEM_DONE`, and optional `RESPONSE`), validates ordering and stable identity, correlates
+item snapshots with recorded runs, and persists both snapshot summaries and per-event evidence in
+SQLite with `uvm-item-history` filtering. Automatic instrumentation/adapters plus arbitration
+priority/fairness reconstruction remain future layers. See `docs/uvm-sequence-trace.md` and
+`docs/uvm-item-trace.md`.
 
 ## Next Architectural Steps
 
