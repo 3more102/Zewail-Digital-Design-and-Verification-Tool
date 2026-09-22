@@ -119,6 +119,8 @@ transitions, consecutive duplicate states, events after `UVM_FINISHED` or
 ```bash
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
+zddv --project my_project uvm-sequence-log-analyze simulation.log
+zddv --project my_project uvm-sequence-log-analyze --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
 ```
 
