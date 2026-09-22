@@ -272,6 +272,83 @@ COVERED EXPECTED SCORE COVERED EXPECTED INST SCORE WEIGHT
     assert metrics["count_status"] == "normalized"
 
 
+def test_parse_vcs_urg_dashboard_preserves_blank_pipe_metric_and_group_counts(
+    tmp_path: Path,
+):
+    dashboard = tmp_path / "dashboard.txt"
+    dashboard.write_text(
+        """Unified Coverage Report
+
+Total Coverage Summary
+SCORE | LINE | COND | TOGGLE | FSM | BRANCH | ASSERT | GROUP
+95.96 | 95.39 | 93.47 | 95.36 |  | 94.22 | 97.71 | 99.60
+
+Total Groups Coverage Summary
+COVERED | EXPECTED | SCORE | COVERED | EXPECTED | INST SCORE | WEIGHT
+8477 | 8511 | 99.60 | 8477 | 8511 | 99.60 | 1
+""",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(95.96)
+    assert metrics["by_metric"]["toggle"] == pytest.approx(95.36)
+    assert "fsm" not in metrics["by_metric"]
+    assert metrics["by_metric"]["branch"] == pytest.approx(94.22)
+    assert metrics["by_metric_counts"]["group"] == {
+        "covered": 8477,
+        "total": 8511,
+        "hit_rate": pytest.approx(99.60),
+    }
+    assert metrics["by_metric_counts"]["group_instance"] == {
+        "covered": 8477,
+        "total": 8511,
+        "hit_rate": pytest.approx(99.60),
+    }
+    assert metrics["count_status"] == "normalized"
+
+
+def test_parse_vcs_urg_dashboard_preserves_blank_fixed_width_metric(tmp_path: Path):
+    dashboard = tmp_path / "dashboard.txt"
+    header = "SCORE   LINE    COND    TOGGLE   FSM     BRANCH   ASSERT   GROUP"
+    starts = [
+        header.index(name)
+        for name in (
+            "SCORE",
+            "LINE",
+            "COND",
+            "TOGGLE",
+            "FSM",
+            "BRANCH",
+            "ASSERT",
+            "GROUP",
+        )
+    ]
+    values = ["95.96", "95.39", "93.47", "95.36", "", "94.22", "97.71", "99.60"]
+    row = [" "] * 72
+    for start, value in zip(starts, values, strict=True):
+        row[start : start + len(value)] = value
+    dashboard.write_text(
+        "Unified Coverage Report\n\n"
+        "Total Coverage Summary\n"
+        + header
+        + "\n"
+        + "".join(row).rstrip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    metrics = parse_vcs_urg_dashboard(dashboard)
+
+    assert metrics["tool_total_coverage"] == pytest.approx(95.96)
+    assert metrics["by_metric"]["toggle"] == pytest.approx(95.36)
+    assert "fsm" not in metrics["by_metric"]
+    assert metrics["by_metric"]["branch"] == pytest.approx(94.22)
+    assert metrics["by_metric_counts"] == {}
+    assert metrics["count_status"] == "group-summary-missing"
+
+
 def test_parse_vcs_urg_dashboard_rejects_ambiguous_summary(tmp_path: Path):
     dashboard = tmp_path / "dashboard.txt"
     dashboard.write_text(
