@@ -10,8 +10,13 @@ from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
     parse_questa_coverage_summary,
+    parse_questa_functional_coverage,
 )
-from zddv.storage import list_coverage_snapshots
+from zddv.storage import (
+    list_coverage_snapshots,
+    list_functional_coverage_bins,
+    list_functional_coverage_snapshots,
+)
 
 
 QUESTA_SUMMARY = """QuestaSim-64 vcover 2024.2 Coverage Utility 2024.05 May 20 2024
@@ -25,6 +30,44 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
 """
+
+QUESTA_CVG_DETAILS = r"""COVERGROUP COVERAGE:
+Covergroup instance \top/dut/fifo/ram_cvg1 50.00% 100 - Uncovered
+    covered/total bins: 2 4
+    missing/total bins: 2 4
+    % Hit: 50.00% 100
+    Coverpoint we_cp 50.00% 10 - Uncovered
+        covered/total bins: 1 2
+        missing/total bins: 1 2
+        bin invalid 0 1 - ZERO
+        bin valid 4 1 - Covered
+        ignore_bin inval 0 - ZERO
+    Cross waddrXpush 0.00% 100 - ZERO
+        bin cross_zero 0 1 - ZERO
+"""
+
+
+def test_parse_questa_functional_coverage_bins():
+    payload = parse_questa_functional_coverage(QUESTA_CVG_DETAILS)
+
+    assert payload["source"] == "questa-vcover"
+    assert len(payload["bins"]) == 3
+    assert payload["bins"][0] == {
+        "scope": r"\top/dut/fifo/ram_cvg1",
+        "coverpoint": "we_cp",
+        "bin": "invalid",
+        "hits": 0,
+        "goal": 1,
+        "metadata": {
+            "simulator": "questa",
+            "point_kind": "coverpoint",
+            "reported_status": "ZERO",
+        },
+    }
+    assert payload["bins"][1]["bin"] == "valid"
+    assert payload["bins"][1]["hits"] == 4
+    assert payload["bins"][2]["coverpoint"] == "waddrXpush"
+    assert payload["bins"][2]["metadata"]["point_kind"] == "cross"
 
 
 def _project(tmp_path: Path) -> ProjectConfig:
@@ -88,6 +131,8 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             return SimpleNamespace(returncode=0, stdout="merge complete\n")
         if command[1:3] == ["report", "-summary"]:
             return SimpleNamespace(returncode=0, stdout=QUESTA_SUMMARY)
+        if command[1] == "report" and "-cvg" in command:
+            return SimpleNamespace(returncode=0, stdout=QUESTA_CVG_DETAILS)
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -106,6 +151,15 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         "-summary",
         result["merged"],
     ]
+    assert commands[2] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-cvg",
+        "-details",
+        "-noignorebin",
+        "-nozeroweights",
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -121,3 +175,22 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     assert snapshots[0]["simulator"] == "questa"
     assert snapshots[0]["total_points"] == 82535
     assert snapshots[0]["hit_points"] == 46619
+
+    assert result["functional_bin_count"] == 3
+    assert result["functional_snapshot_id"] is not None
+    assert Path(result["functional_report"]).read_text(
+        encoding="utf-8"
+    ) == QUESTA_CVG_DETAILS
+
+    fcov_snapshots = list_functional_coverage_snapshots(project, limit=5)
+    assert len(fcov_snapshots) == 1
+    assert fcov_snapshots[0]["source"] == "questa-vcover"
+    assert fcov_snapshots[0]["total_bins"] == 3
+    assert fcov_snapshots[0]["covered_bins"] == 1
+
+    holes = list_functional_coverage_bins(
+        project,
+        fcov_snapshots[0]["snapshot_id"],
+        status="UNCOVERED",
+    )
+    assert [item["bin_name"] for item in holes] == ["invalid", "cross_zero"]
