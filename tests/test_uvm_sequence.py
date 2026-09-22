@@ -316,6 +316,46 @@ def test_parse_uvm_sequence_log_rejects_malformed_marker():
         raise AssertionError("Expected ValueError for malformed UVM sequence marker")
 
 
+def test_cli_analyzes_explicit_sequence_markers_from_log(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "sequence-marker.log"
+    log.write_text(
+        "\n".join(
+            [
+                _sequence_marker(_event("seq-cli", "cli_seq", "UVM_BODY")),
+                _sequence_marker(_event("seq-cli", "cli_seq", "UVM_ENDED")),
+                _sequence_marker(_event("seq-cli", "cli_seq", "UVM_POST_START")),
+                _sequence_marker(_event("seq-cli", "cli_seq", "UVM_FINISHED")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-sequence-log-analyze",
+            str(log),
+            "--source",
+            "sequence-marker-cli",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "UVM SEQUENCE PASS" in output
+    assert "Markers: 4 explicit marker(s)" in output
+
+    latest = project.root / ".zddv" / "uvm" / "sequences" / "latest.json"
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["source"] == "sequence-marker-cli"
+    assert payload["input_mode"] == "explicit-log-marker"
+    assert payload["marker"] == "ZDDV_UVM_SEQUENCE"
+    assert payload["summary"]["finished"] == 1
+
+
 def test_uvm_sequence_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     _record_run(project, "run-sequence-marker")
