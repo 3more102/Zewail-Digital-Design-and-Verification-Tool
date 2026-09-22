@@ -33,6 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
 - Simulator-independent UVM sequence **state** lifecycle JSON model with transition validation, nested parent/sequencer evidence, partial-trace handling, run correlation, SQLite snapshots, and history CLI
 - Simulator-independent UVM sequence-item handshake normalization with run correlation, SQLite snapshot/event persistence, and history filtering
+- Explicit UVM sequencer arbitration-round analysis with contender/winner evidence, deterministic FIFO/strict checks when priority/request order is explicit, and bounded fairness wait metrics
 - Simulator-independent functional coverage snapshots and per-bin database
 - APB normalized-trace transaction reconstruction with wait-state and protocol-violation analysis
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
@@ -169,6 +170,7 @@ zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
+zddv --project my_project uvm-arbitration-analyze arbitration_trace.json
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
@@ -371,7 +373,8 @@ separately from Verilator's annotation threshold.
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
 - [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
-- [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction
+- [x] Explicit sequencer arbitration-round reconstruction with contender/winner evidence, evidence-gated FIFO/strict policy checks, and bounded fairness wait metrics
+- [ ] Automatic sequence/item/arbitration instrumentation adapters from simulator evidence
 
 ### APB Trace Analysis
 
@@ -710,6 +713,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [UVM Arbitration Round Trace](docs/uvm-arbitration.md)
 
 ## License
 
