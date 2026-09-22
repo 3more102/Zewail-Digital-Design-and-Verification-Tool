@@ -677,5 +677,53 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
     )
 
     assert result["status"] == "PASS"
-    assert result["transactions"][0]["qos"] == 0xA
-    assert result["transactions"][0]["region"] == 0x5
+    tx = result["transactions"][0]
+    assert tx["cache"] == 0xF
+    assert tx["prot"] == 0x7
+    assert tx["qos"] == 0xA
+    assert tx["region"] == 0x5
+    assert tx["arprot"] == 0x7
+
+
+def test_preserves_valid_write_address_sidebands():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 6,
+                "AWADDR": 0x300,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWCACHE": 0x3,
+                "AWPROT": 0x2,
+                "AWQOS": 0xC,
+                "AWREGION": 0x7,
+            },
+            {
+                "cycle": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x55,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 6,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    tx = result["transactions"][0]
+    assert tx["cache"] == 0x3
+    assert tx["prot"] == 0x2
+    assert tx["qos"] == 0xC
+    assert tx["region"] == 0x7
+    assert tx["awprot"] == 0x2
