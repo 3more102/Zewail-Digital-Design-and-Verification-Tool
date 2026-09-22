@@ -15,8 +15,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
-- Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, isolated per-run native coverage databases, IMC multi-run merge/report evidence, and normalized Overall Average/Covered score history
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and source-linked `coverage-holes` for statement/branch, scalar condition/expression FEC, documented multibit-expression input-term-bit FEC, and FSM state/transition items; multibit-condition and toggle item normalization remain pending
+- Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, isolated per-run native coverage databases, IMC multi-run merge/report evidence, normalized Overall Average/Covered score history, and conservative item-level block/expression/toggle `coverage-holes` from verified native detail tables
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and source-linked `coverage-holes` for statement/branch, scalar condition/expression FEC, documented multibit-expression input-term-bit FEC, and FSM state/transition items; by-instance toggle text/XML evidence is retained, while toggle item normalization remains pending until an exact offline `vcover report` item schema is verified
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -106,16 +106,17 @@ functional-coverage database. `zddv fcov-history` and `zddv fcov-holes` can then
 inspect those normalized bins. ZDDV also retains complementary detailed code-coverage
 evidence: XML output for machine-readable follow-up, a `-zeros -details` report
 for zero-hit source/file-line evidence, documented multibit-expression detail,
-and dedicated by-instance toggle detail. ZDDV normalizes documented statement
-and branch rows, scalar condition/expression FEC rows, documented multibit-expression
-FEC input-term bits, and FSM state/transition rows into `zddv coverage-holes`.
-Multibit-condition and toggle item normalization remain pending. Questa's weighted
-total coverage remains a
-separate simulator-reported value.
+and dedicated by-instance toggle text/XML detail. ZDDV normalizes documented
+statement and branch rows, scalar condition/expression FEC rows, documented
+multibit-expression FEC input-term bits, and FSM state/transition rows into
+`zddv coverage-holes`. Toggle item normalization remains pending until the exact
+offline `vcover report` item schema is verified; ZDDV keeps the retained native
+toggle evidence raw rather than assuming the interactive `toggle report` text
+layout. Questa's weighted total coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. ZDDV also parses documented module-level Line and Branch total/covered rows from `modinfo.txt` and persists them as explicitly scoped `module_line` and `module_branch` counts; these counts do not replace the design-wide dashboard percentages. ZDDV also aggregates explicitly reported instance-level Line, Cond, Total Bits toggle, and Branch covered/total rows from URG HTML detail pages, while retaining FSM state, transition, and sequence rows as separate metrics and deduplicating repeated/paginated instance evidence. Condition/toggle/FSM module-level counts remain pending. If the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
 
-For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. With `coverage = true`, build enables `-coverage all`; each run is assigned an isolated Cadence coverage hierarchy through `-covworkdir`, `-covscope`, and `-covtest`, and ZDDV records the run database only when a `.ucd` artifact is actually present. `zddv coverage` feeds the captured `.ucd` files to Cadence IMC through a runfile, merges them with `-initial_model union_all`, requires the native merged `.ucm` model plus `.ucd` data under `cov_work/scope/merged`, retains merge diagnostics and the exact report commands as evidence, and then loads that merged run for cumulative reporting. In addition to the summary, ZDDV captures a detailed all-metrics report with source evidence; a detail-report tool error is retained explicitly and does not cause ZDDV to invent item-level coverage. The documented cumulative `Overall`, `Code`, `FSM`, and `Functional` `Average`/`Covered` grades are preserved as separate percentage metrics; `Overall Covered` is the shared history score, and parenthesized two-field covered/total counts are persisted only when explicitly reported by IMC. Unknown summary and detailed-item layouts remain evidence-only, while Xcelium item-level coverage-hole normalization remains pending.
+For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. With `coverage = true`, build enables `-coverage all`; each run is assigned an isolated Cadence coverage hierarchy through `-covworkdir`, `-covscope`, and `-covtest`, and ZDDV records the run database only when a `.ucd` artifact is actually present. `zddv coverage` feeds the captured `.ucd` files to Cadence IMC through a runfile, merges them with `-initial_model union_all`, requires the native merged `.ucm` model plus `.ucd` data under `cov_work/scope/merged`, retains merge diagnostics and the exact report commands as evidence, and then loads that merged run for cumulative reporting. In addition to the summary, ZDDV captures a detailed all-metrics report with source evidence; a detail-report tool error is retained explicitly and does not cause ZDDV to invent item-level coverage. The documented cumulative `Overall`, `Code`, `FSM`, and `Functional` `Average`/`Covered` grades are preserved as separate percentage metrics; `Overall Covered` is the shared history score, and parenthesized two-field covered/total counts are persisted only when explicitly reported by IMC. Verified native IMC block, expression truth-row, and toggle-bit tables are normalized into `zddv coverage-holes`; explicit expression `IGN` rows are not promoted to coverage goals. Unknown detailed-item layouts remain evidence-only, while Xcelium FSM and functional item-level normalization remain pending.
 
 ## Current CLI
 
@@ -695,7 +696,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
 - [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting
-- [ ] Questa multibit condition/expression plus toggle/FSM item-level normalization
+- [x] Questa documented multibit-expression input-term-bit FEC plus FSM state/transition item normalization
+- [x] Questa by-instance toggle text/XML evidence retention
+- [ ] Questa toggle item normalization from a verified offline `vcover report` item schema
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
@@ -707,6 +710,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
 - [x] Xcelium Overall Average/Covered metric normalization into percentage-native coverage history
+- [x] Xcelium verified block/expression/toggle item-level coverage-hole normalization
+- [ ] Xcelium FSM/functional item-level normalization
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
