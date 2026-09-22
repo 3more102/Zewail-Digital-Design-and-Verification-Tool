@@ -77,6 +77,26 @@ _QUESTA_CODE_DETAIL_ROW = re.compile(
     r"(?:\s+(?P<detail>.*?))?\s*$"
 )
 
+_QUESTA_FEC_ITEM_HEADER = re.compile(
+    r"^\s*Line\s+(?P<line>\d+)\s+(?:Item|Stmt)\s+"
+    r"(?P<item>\d+)(?:\s+(?P<detail>.*?))?\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FEC_SCALAR_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+"
+    r"(?P<hits>(?:\*{3})?\d[\d,]*(?:\*{3})?)\s+"
+    r"(?P<target>\S+)(?:\s+(?P<context>.*?))?\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_FEC_VECTOR_INDEX = re.compile(r"<(?P<index>[^>]+)>")
+_QUESTA_FEC_VECTOR_ROW = re.compile(
+    r"^\s*Row\s+(?P<row>\d+):\s+"
+    r"(?P<target>\S+)\s+(?P<rest>.+?)\s*$",
+    re.IGNORECASE,
+)
+_QUESTA_HIT_TOKEN = re.compile(r"^(?:\*{3})?\d[\d,]*(?:\*{3})?$")
+
+
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -189,6 +209,21 @@ def build_coverage_hole_report(
                 **(
                     {"detail": str(point["detail"])}
                     if point.get("detail") is not None
+                    else {}
+                ),
+                **(
+                    {"row": int(point["row"])}
+                    if point.get("row") is not None
+                    else {}
+                ),
+                **(
+                    {"target": str(point["target"])}
+                    if point.get("target") is not None
+                    else {}
+                ),
+                **(
+                    {"index": str(point["index"])}
+                    if point.get("index") is not None
                     else {}
                 ),
             }
@@ -329,49 +364,137 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def _questa_hit_count(token: str) -> int:
+    return int(token.replace("*", "").replace(",", ""))
+
+
 def parse_questa_code_coverage_report(text: str) -> list[dict]:
-    """Normalize statement and branch items from documented vcover detail text."""
+    """Normalize statement/branch items and condition/expression FEC targets."""
     points: list[dict] = []
     kind = ""
     source_file = ""
+    fec_line: int | None = None
+    fec_item: int | None = None
+    fec_detail = ""
+    vector_indices: list[str] = []
 
     for raw_line in text.splitlines():
         header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
         if header is not None:
             kind = header.group("kind").strip().lower()
             source_file = header.group("file").strip()
+            fec_line = None
+            fec_item = None
+            fec_detail = ""
+            vector_indices = []
             continue
 
-        if kind not in {"statement", "branch"} or not source_file:
+        if kind in {"statement", "branch"} and source_file:
+            item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
+            if item is None:
+                continue
+            hits = _questa_hit_count(item.group("hits"))
+            line_number = int(item.group("line"))
+            item_number = int(item.group("item"))
+            detail = (item.group("detail") or "").strip()
+            name = f"{source_file}:{line_number}:{item_number}"
+            if detail:
+                name += f" {detail}"
+            points.append(
+                {
+                    "name": name,
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": kind,
+                    "source_file": source_file,
+                    "line": line_number,
+                    "item": item_number,
+                    "detail": detail,
+                }
+            )
             continue
 
-        item = _QUESTA_CODE_DETAIL_ROW.match(raw_line)
-        if item is None:
+        if kind not in {"condition", "expression"} or not source_file:
             continue
 
-        hits = int(
-            item.group("hits").replace("*", "").replace(",", "")
-        )
-        line_number = int(item.group("line"))
-        item_number = int(item.group("item"))
-        detail = (item.group("detail") or "").strip()
+        fec_header = _QUESTA_FEC_ITEM_HEADER.match(raw_line)
+        if fec_header is not None:
+            fec_line = int(fec_header.group("line"))
+            fec_item = int(fec_header.group("item"))
+            fec_detail = (fec_header.group("detail") or "").strip()
+            vector_indices = []
+            continue
+        if fec_line is None or fec_item is None:
+            continue
 
-        name = f"{source_file}:{line_number}:{item_number}"
-        if detail:
-            name += f" {detail}"
+        stripped = raw_line.strip()
+        if stripped.lower().startswith("i ="):
+            vector_indices = [
+                match.group("index").strip()
+                for match in _QUESTA_FEC_VECTOR_INDEX.finditer(stripped)
+            ]
+            continue
 
-        points.append(
-            {
-                "name": name,
-                "count": hits,
-                "hit": hits > 0,
-                "type": kind,
-                "source_file": source_file,
-                "line": line_number,
-                "item": item_number,
-                "detail": detail,
-            }
-        )
+        scalar = _QUESTA_FEC_SCALAR_ROW.match(raw_line)
+        if scalar is not None:
+            hits = _questa_hit_count(scalar.group("hits"))
+            row_number = int(scalar.group("row"))
+            target = scalar.group("target").strip()
+            context = (scalar.group("context") or "").strip()
+            detail = fec_detail
+            if context:
+                detail = f"{detail} | {context}" if detail else context
+            points.append(
+                {
+                    "name": f"{source_file}:{fec_line}:{fec_item}:row{row_number}:{target}",
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": kind,
+                    "source_file": source_file,
+                    "line": fec_line,
+                    "item": fec_item,
+                    "detail": detail,
+                    "row": row_number,
+                    "target": target,
+                }
+            )
+            continue
+
+        vector = _QUESTA_FEC_VECTOR_ROW.match(raw_line)
+        if vector is None or not vector_indices:
+            continue
+        row_number = int(vector.group("row"))
+        target = vector.group("target").strip()
+        tokens = vector.group("rest").split()
+        if len(tokens) < len(vector_indices):
+            continue
+        hit_tokens = tokens[: len(vector_indices)]
+        if not all(_QUESTA_HIT_TOKEN.match(token) for token in hit_tokens):
+            continue
+        context = " ".join(tokens[len(vector_indices):]).strip()
+        for index, token in zip(vector_indices, hit_tokens):
+            hits = _questa_hit_count(token)
+            detail = fec_detail
+            if context:
+                detail = f"{detail} | {context}" if detail else context
+            points.append(
+                {
+                    "name": (
+                        f"{source_file}:{fec_line}:{fec_item}:"
+                        f"row{row_number}:{target}:i={index}"
+                    ),
+                    "count": hits,
+                    "hit": hits > 0,
+                    "type": kind,
+                    "source_file": source_file,
+                    "line": fec_line,
+                    "item": fec_item,
+                    "detail": detail,
+                    "row": row_number,
+                    "target": target,
+                    "index": index,
+                }
+            )
 
     return points
 
@@ -464,7 +587,7 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "report",
         "-details",
         "-code",
-        "sb",
+        "sbce",
         str(merged_path),
     ]
     code_report = _run(code_cmd, project.root)
