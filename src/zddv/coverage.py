@@ -961,6 +961,137 @@ def _urg_score_cells(
     return cells
 
 
+_URG_LINE_MODULE_HEADER = re.compile(
+    r"^\s*Line Coverage for Module\s*:\s*(?P<module>.+?)\s*$",
+    re.IGNORECASE,
+)
+_URG_COVERAGE_SECTION_HEADER = re.compile(
+    r"^\s*(?:Line|Cond|Condition|Toggle|FSM|Branch|Assertion) "
+    r"Coverage for (?:Module|Instance)\s*:",
+    re.IGNORECASE,
+)
+_URG_LINE_RATIO_INLINE = re.compile(
+    r"^\s*(?P<line>\d+)\s+(?P<covered>\d+)\s*/\s*(?P<total>\d+)"
+    r"(?:\s+(?P<statement>.*))?$"
+)
+_URG_LINE_RATIO_ONLY = re.compile(
+    r"^\s*(?P<covered>\d+)\s*/\s*(?P<total>\d+)\s*$"
+)
+
+
+def _vcs_line_point(
+    module: str,
+    line_number: int,
+    covered: int,
+    total: int,
+    statement: str | None,
+) -> dict | None:
+    if total <= 0 or covered < 0 or covered > total:
+        return None
+    cleaned_statement = (statement or "").strip()
+    if cleaned_statement == "==>":
+        cleaned_statement = ""
+    if cleaned_statement.startswith("==>"):
+        cleaned_statement = cleaned_statement[3:].strip()
+    return {
+        "name": f"{module}:line:{line_number}",
+        "count": covered,
+        "hit": covered >= total,
+        "type": "statement",
+        "scope": module,
+        "line": line_number,
+        "detail": f"{covered}/{total}",
+        **({"statement": cleaned_statement} if cleaned_statement else {}),
+    }
+
+
+def parse_vcs_urg_line_coverage(path: str | Path) -> list[dict]:
+    """Normalize documented module-level line annotations from URG modinfo.txt."""
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+    points: list[dict] = []
+    module: str | None = None
+    in_module_line_section = False
+    index = 0
+
+    while index < len(lines):
+        raw_line = lines[index]
+        header = _URG_LINE_MODULE_HEADER.match(raw_line)
+        if header is not None:
+            module = header.group("module").strip()
+            in_module_line_section = True
+            index += 1
+            continue
+
+        if (
+            in_module_line_section
+            and _URG_COVERAGE_SECTION_HEADER.match(raw_line)
+        ):
+            module = None
+            in_module_line_section = False
+            continue
+
+        if not in_module_line_section or module is None:
+            index += 1
+            continue
+
+        inline = _URG_LINE_RATIO_INLINE.match(raw_line)
+        if inline is not None:
+            point = _vcs_line_point(
+                module,
+                int(inline.group("line")),
+                int(inline.group("covered")),
+                int(inline.group("total")),
+                inline.group("statement"),
+            )
+            if point is not None:
+                points.append(point)
+            index += 1
+            continue
+
+        stripped = raw_line.strip()
+        if not stripped.isdigit():
+            index += 1
+            continue
+
+        line_number = int(stripped)
+        ratio_index = index + 1
+        while ratio_index < len(lines) and not lines[ratio_index].strip():
+            ratio_index += 1
+        if ratio_index >= len(lines):
+            break
+
+        ratio = _URG_LINE_RATIO_ONLY.match(lines[ratio_index])
+        if ratio is None:
+            index += 1
+            continue
+
+        statement: str | None = None
+        statement_index = ratio_index + 1
+        while statement_index < len(lines) and statement_index <= ratio_index + 3:
+            candidate = lines[statement_index].strip()
+            if not candidate or candidate == "==>":
+                statement_index += 1
+                continue
+            if _URG_COVERAGE_SECTION_HEADER.match(lines[statement_index]):
+                break
+            statement = candidate
+            break
+
+        point = _vcs_line_point(
+            module,
+            line_number,
+            int(ratio.group("covered")),
+            int(ratio.group("total")),
+            statement,
+        )
+        if point is not None:
+            points.append(point)
+        index = ratio_index + 1
+
+    return points
+
+
 def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, int | float]], str, str | None]:
     """Parse documented global covergroup type/instance counts from dashboard.txt."""
     section_index = next(
