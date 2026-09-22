@@ -97,7 +97,7 @@ native compile/run orchestration, seeds/tests/plusargs, timeouts, optional VCD c
 ingestion, run-linked UVM ingestion, and per-run native UCDB coverage capture. Multi-run UCDB merge plus documented
 `vcover report -summary` normalization into ZDDV coverage history are implemented. Ordinary
 covergroup bins from `vcover report -cvg -details` are also normalized into the existing
-functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement and branch detail rows are normalized into the shared coverage-hole model; condition/expression/toggle/FSM itemization remains planned.
+functional-coverage database. Machine-readable XML detail output and complementary zero-hit source/file-line evidence are retained when available. Documented statement, branch, and condition FEC detail rows are normalized into the shared coverage-hole model; expression/toggle/FSM itemization remains planned.
 Phase/objection lifecycle normalization, explicit sequence report-context evidence, normalized sequence state lifecycle ingestion, and normalized sequence-item handshake persistence/history are implemented; automatic sequence instrumentation and sequence-item arbitration reconstruction remain planned.
 
 - [x] Questa execution adapter foundation.
@@ -106,22 +106,21 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa ordinary functional covergroup-bin normalization and functional hole queries.
 - [x] Questa detailed XML coverage evidence export.
 - [x] Questa complementary zero-hit source-detail evidence export.
-- [x] Questa statement/branch item/source normalization and coverage-hole reporting.
-- [ ] Questa condition/expression/toggle/FSM item-level normalization.
+- [x] Questa statement/branch/condition item/source normalization and coverage-hole reporting.
+- [ ] Questa expression/toggle/FSM item-level normalization.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
 - [x] VCS multi-run URG merge and report evidence retention.
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion.
 - [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports.
-- [x] Xcelium execution adapter foundation (xrun elaborate/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
-- [ ] Xcelium native coverage capture, merge, and metric normalization.
+- [ ] Xcelium execution adapter.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
 - [x] Explicit `sequencer@@sequence` report-context evidence where present.
 - [x] Normalized sequence state lifecycle reconstruction through an explicit JSON contract.
-- [x] Normalized sequence-item handshake analysis with run correlation, SQLite event/violation persistence, history filtering, and violation queries.
+- [x] Normalized sequence-item handshake analysis with run correlation, SQLite event persistence, and history filtering.
 - [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction.
 
 ## v0.7 — Formal
