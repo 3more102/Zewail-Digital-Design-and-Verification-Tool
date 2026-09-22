@@ -12,6 +12,7 @@ from zddv.storage import get_run_record, record_uvm_item_handshake_snapshot
 
 _ITEM_EVENTS = ("GRANT", "REQUEST", "ITEM_DONE", "RESPONSE")
 _IDENTITY_FIELDS = ("sequence_id", "sequence", "sequencer", "item", "transaction_id")
+_ITEM_LOG_MARKER = "ZDDV_UVM_ITEM"
 
 
 def _require_text(value: Any, *, field: str, index: int) -> str:
@@ -370,36 +371,106 @@ def parse_uvm_item_file(
     return parse_uvm_item_data(payload, source=source)
 
 
-def analyze_uvm_item_file(
-    project: ProjectConfig,
+def parse_uvm_item_log_text(
+    text: str,
+    *,
+    source: str = "uvm-item-log-marker",
+) -> dict[str, Any]:
+    """Parse explicit ZDDV_UVM_ITEM JSON markers from arbitrary simulator log text."""
+    events: list[dict[str, Any]] = []
+    marker_lines: list[int] = []
+
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        marker_index = line.find(_ITEM_LOG_MARKER)
+        if marker_index < 0:
+            continue
+
+        payload_text = line[marker_index + len(_ITEM_LOG_MARKER) :].strip()
+        if not payload_text:
+            raise ValueError(
+                f"{_ITEM_LOG_MARKER} marker at line {line_number} has no JSON payload"
+            )
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{_ITEM_LOG_MARKER} marker at line {line_number} has invalid JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"{_ITEM_LOG_MARKER} marker at line {line_number} must contain a JSON object"
+            )
+
+        metadata = payload.get("metadata", {})
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise ValueError(
+                f"{_ITEM_LOG_MARKER} marker at line {line_number} metadata must be an object"
+            )
+
+        event = dict(payload)
+        event_metadata = dict(metadata)
+        event_metadata.setdefault("log_line", line_number)
+        event["metadata"] = event_metadata
+        events.append(event)
+        marker_lines.append(line_number)
+
+    if not events:
+        raise ValueError(f"No {_ITEM_LOG_MARKER} markers found in log")
+
+    report = parse_uvm_item_data({"source": source, "events": events}, source=source)
+    report["input_mode"] = "explicit-log-marker"
+    report["marker"] = _ITEM_LOG_MARKER
+    report["marker_lines"] = marker_lines
+    report["limitations"] = [
+        *report["limitations"],
+        (
+            "Log ingestion recognizes only explicit ZDDV_UVM_ITEM JSON markers; "
+            "ordinary simulator or UVM text is not reinterpreted as item-handshake evidence."
+        ),
+    ]
+    return report
+
+
+def parse_uvm_item_log(
     path: str | Path,
     *,
-    source: str | None = None,
-    output: str | Path = ".zddv/uvm/items/latest.json",
-    run_id: str | None = None,
+    source: str = "uvm-item-log-marker",
 ) -> dict[str, Any]:
     input_path = Path(path)
-    if not input_path.is_absolute():
-        input_path = project.root / input_path
-    input_path = input_path.resolve()
-    if not input_path.is_file():
-        raise FileNotFoundError(input_path)
+    return parse_uvm_item_log_text(
+        input_path.read_text(encoding="utf-8", errors="replace"),
+        source=source,
+    )
 
-    run_record: dict[str, Any] | None = None
-    if run_id is not None:
-        run_record = get_run_record(project, run_id)
-        if run_record is None:
-            raise ValueError(f"Unknown run ID: {run_id}")
 
-    report = parse_uvm_item_file(input_path, source=source)
+def _resolve_item_run(
+    project: ProjectConfig,
+    run_id: str | None,
+) -> dict[str, Any] | None:
+    if run_id is None:
+        return None
+    run_record = get_run_record(project, run_id)
+    if run_record is None:
+        raise ValueError(f"Unknown run ID: {run_id}")
+    return run_record
 
+
+def _persist_uvm_item_analysis(
+    project: ProjectConfig,
+    report: dict[str, Any],
+    input_path: Path,
+    *,
+    output: str | Path,
+    run_record: dict[str, Any] | None,
+) -> dict[str, Any]:
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
         datetime.now(timezone.utc).strftime("uvm-item-%Y%m%dT%H%M%S")
         + "-"
         + uuid.uuid4().hex[:8]
     )
-
     snapshot_dir = (project.root / ".zddv" / "uvm" / "items" / "snapshots").resolve()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     normalized_path = snapshot_dir / f"{snapshot_id}.json"
@@ -426,7 +497,6 @@ def analyze_uvm_item_file(
                 "simulator": run_record["simulator"],
             }
         )
-
     record["normalized_path"] = str(normalized_path)
     record["report_path"] = str(destination)
 
@@ -435,3 +505,66 @@ def analyze_uvm_item_file(
     destination.write_text(serialized, encoding="utf-8")
     record_uvm_item_handshake_snapshot(project, record)
     return record
+
+
+def analyze_uvm_item_file(
+    project: ProjectConfig,
+    path: str | Path,
+    *,
+    source: str | None = None,
+    output: str | Path = ".zddv/uvm/items/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    input_path = Path(path)
+    if not input_path.is_absolute():
+        input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    run_record = _resolve_item_run(project, run_id)
+    report = parse_uvm_item_file(input_path, source=source)
+    return _persist_uvm_item_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )
+
+
+def analyze_uvm_item_log(
+    project: ProjectConfig,
+    path: str | Path | None,
+    *,
+    source: str | None = None,
+    output: str | Path = ".zddv/uvm/items/latest.json",
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Analyze explicit item markers from a log and persist the shared item report."""
+    run_record = _resolve_item_run(project, run_id)
+    if path is None:
+        if run_record is None:
+            raise ValueError("A UVM item log path or --run must be provided")
+        input_path = Path(run_record["log_path"])
+    else:
+        input_path = Path(path)
+        if not input_path.is_absolute():
+            input_path = project.root / input_path
+    input_path = input_path.resolve()
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+
+    selected_source = source or (
+        f"{run_record['simulator']}-uvm-item-log"
+        if run_record is not None
+        else "uvm-item-log-marker"
+    )
+    report = parse_uvm_item_log(input_path, source=selected_source)
+    return _persist_uvm_item_analysis(
+        project,
+        report,
+        input_path,
+        output=output,
+        run_record=run_record,
+    )

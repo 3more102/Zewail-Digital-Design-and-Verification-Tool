@@ -11,7 +11,12 @@ from zddv.storage import (
     list_uvm_item_handshake_violations,
     record_run,
 )
-from zddv.uvm_item import analyze_uvm_item_file, parse_uvm_item_data
+from zddv.uvm_item import (
+    analyze_uvm_item_file,
+    analyze_uvm_item_log,
+    parse_uvm_item_data,
+    parse_uvm_item_log_text,
+)
 
 
 def _event(
@@ -450,3 +455,96 @@ def test_cli_queries_persisted_item_violations(tmp_path: Path, capsys):
     assert "LATE_GRANT" in output
     assert "item-bad" in output
     assert "observed GRANT after later handshake evidence" in output
+
+def _marker(event: dict[str, object]) -> str:
+    return "ZDDV_UVM_ITEM " + json.dumps(event, separators=(",", ":"))
+
+
+def test_parse_uvm_item_log_markers_preserves_line_provenance():
+    text = "\n".join(
+        [
+            "# simulator banner",
+            "# UVM_INFO @ 1: seq [TRACE] " + _marker(_event("item-1", "GRANT")),
+            _marker(_event("item-1", "REQUEST")),
+            _marker(_event("item-1", "ITEM_DONE")),
+        ]
+    )
+    result = parse_uvm_item_log_text(text, source="marker-test")
+    assert result["status"] == "PASS"
+    assert result["input_mode"] == "explicit-log-marker"
+    assert result["marker"] == "ZDDV_UVM_ITEM"
+    assert result["marker_lines"] == [2, 3, 4]
+    assert result["summary"]["completed"] == 1
+    assert result["arbitration"]["summary"]["grant_events"] == 1
+    assert result["events"][0]["metadata"]["log_line"] == 2
+
+
+def test_parse_uvm_item_log_rejects_malformed_marker():
+    try:
+        parse_uvm_item_log_text('ZDDV_UVM_ITEM {"item_id":')
+    except ValueError as exc:
+        assert "line 1" in str(exc)
+        assert "invalid JSON" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for malformed UVM item marker")
+
+
+def test_cli_analyzes_explicit_item_markers_from_log(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    log = project.root / "simulation.log"
+    log.write_text(
+        "\n".join(
+            [
+                "ordinary simulator text",
+                _marker(_event("item-1", "GRANT")),
+                _marker(_event("item-1", "REQUEST")),
+                _marker(_event("item-1", "ITEM_DONE")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-log-analyze",
+            str(log),
+            "--source",
+            "marker-cli",
+        ]
+    )
+    assert rc == 0
+    latest = project.root / ".zddv" / "uvm" / "items" / "latest.json"
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["source"] == "marker-cli"
+    assert payload["input_mode"] == "explicit-log-marker"
+    assert payload["summary"]["completed"] == 1
+    assert payload["arbitration"]["model"] == "observed_grant_order"
+    assert payload["marker_lines"] == [2, 3, 4]
+
+
+def test_uvm_item_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    _record_run(project, "run-marker")
+    log = project.root / ".zddv" / "runs" / "run-marker" / "simulation.log"
+    log.write_text(
+        "\n".join(
+            [
+                _marker(_event("item-1", "GRANT")),
+                _marker(_event("item-1", "REQUEST")),
+                _marker(_event("item-1", "ITEM_DONE")),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = analyze_uvm_item_log(project, None, run_id="run-marker")
+    assert result["status"] == "PASS"
+    assert result["run_id"] == "run-marker"
+    assert result["simulator"] == "questa"
+    assert result["input_path"] == str(log.resolve())
+    assert result["source"] == "questa-uvm-item-log"
+    events = list_uvm_item_handshake_events(project, result["snapshot_id"])
+    assert events[0]["metadata"]["log_line"] == 1
+

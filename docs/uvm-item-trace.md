@@ -48,6 +48,24 @@ This follows the public Accellera UVM sequence-item API model: arbitration grant
 
 `item_id` and `event` are required. Sequence, sequencer, item name, transaction ID, time, and metadata are optional evidence.
 
+## Explicit log-marker adapter
+
+The same evidence can be emitted inside a simulator/UVM log with an explicit marker:
+
+```text
+ZDDV_UVM_ITEM {"item_id":"item-17","event":"GRANT","sequence_id":"seq-3","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.seqr","item":"axi_item","transaction_id":17,"time":"120 ns"}
+```
+
+Everything after `ZDDV_UVM_ITEM` on that line must be one JSON object using the standalone trace fields. Other log lines are ignored. ZDDV records the source log line in event metadata and does not reinterpret ordinary simulator or UVM messages as item-handshake evidence.
+
+```text
+zddv --project <project> uvm-item-log-analyze simulation.log
+zddv --project <project> uvm-item-log-analyze --run <run-id>
+```
+
+When `--run` is supplied without a path, ZDDV reads the simulation log recorded for that run and retains run status, return code, and simulator as correlation evidence.
+
+
 ## Partial traces
 
 A trace may begin at `REQUEST`, `ITEM_DONE`, or `RESPONSE`. ZDDV marks that item as partial rather than inventing a failure for evidence that may have been captured after the handshake had already started.
@@ -64,6 +82,6 @@ This is an observed grant-order reconstruction only. ZDDV does not infer the seq
 
 ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, normalized per-event evidence, and every detected violation with its code, source event index, item ID, event type, and message. `uvm-item-violations` queries that failure evidence without reopening the JSON artifact. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
-This layer validates event ordering, duplicate events, stable item identity, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
+This layer validates event ordering, duplicate events, stable item identity, explicit marker ingestion, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
