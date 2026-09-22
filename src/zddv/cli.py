@@ -455,7 +455,7 @@ def cmd_coverage(args) -> int:
 
 def cmd_coverage_history(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() == "vcs":
+    if project.simulator.strip().lower() in {"vcs", "xcelium"}:
         rows = list_coverage_score_snapshots(project, limit=args.limit)
         if not rows:
             print("No coverage score snapshots found.")
