@@ -193,9 +193,33 @@ def _parse_objection_event(event: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _parse_sequence_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    component = event.get("component")
+    if not isinstance(component, str) or "@@" not in component:
+        return None
+
+    sequencer, sequence = component.split("@@", 1)
+    sequencer = sequencer.strip()
+    sequence = sequence.strip()
+    if not sequencer or not sequence:
+        return None
+
+    return {
+        "sequencer": sequencer,
+        "sequence": sequence,
+        "action": "report",
+        "time": event.get("time"),
+        "report_id": event.get("report_id"),
+        "message_event_index": int(event["event_index"]),
+        "log_line": int(event["log_line"]),
+        "raw": event["raw"],
+    }
+
+
 def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
     phase_events: list[dict[str, Any]] = []
     objection_events: list[dict[str, Any]] = []
+    sequence_events: list[dict[str, Any]] = []
 
     for message in messages:
         phase_event = _parse_phase_event(message)
@@ -208,6 +232,11 @@ def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
             objection_event["event_index"] = len(objection_events)
             objection_events.append(objection_event)
 
+        sequence_event = _parse_sequence_event(message)
+        if sequence_event is not None:
+            sequence_event["event_index"] = len(sequence_events)
+            sequence_events.append(sequence_event)
+
     phases_seen = list(dict.fromkeys(item["phase"] for item in phase_events))
     objections_seen = list(
         dict.fromkeys(
@@ -215,6 +244,9 @@ def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
             for item in objection_events
             if item.get("objection")
         )
+    )
+    sequences_seen = list(
+        dict.fromkeys(str(item["sequence"]) for item in sequence_events)
     )
     max_total = max((int(item["total"]) for item in objection_events), default=0)
 
@@ -224,6 +256,8 @@ def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
             "phases_seen": phases_seen,
             "objection_events": len(objection_events),
             "objections_seen": objections_seen,
+            "sequence_events": len(sequence_events),
+            "sequences_seen": sequences_seen,
             "direct_raises": sum(
                 item["action"] == "raised" for item in objection_events
             ),
@@ -241,6 +275,7 @@ def _parse_lifecycle(messages: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "phase_events": phase_events,
         "objection_events": objection_events,
+        "sequence_events": sequence_events,
     }
 
 
@@ -336,7 +371,8 @@ def parse_uvm_log_text(text: str, *, source: str = "uvm-log") -> dict[str, Any]:
             "This parser normalizes standard UVM report messages and the final severity summary without depending on a simulator vendor.",
             "The final complete UVM Report Summary is authoritative for severity counts when present; otherwise visible report messages are counted.",
             "Standard UVM phase and objection trace reports are normalized when +UVM_PHASE_TRACE and +UVM_OBJECTION_TRACE evidence is present.",
-            "Sequence and transaction lifecycle reconstruction are not yet modeled.",
+            "Sequence activity is recorded only when an explicit sequencer@@sequence report context is present; these records are report evidence and do not imply sequence start/end semantics.",
+            "Transaction lifecycle reconstruction is not yet modeled.",
             "When linked to a recorded ZDDV run, simulator status and return code are retained as separate evidence from the UVM severity verdict.",
         ],
     }
