@@ -56,17 +56,7 @@ class XceliumBackend(SimulatorBackend):
         label = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
         return label[:40] or "test"
 
-    @staticmethod
-    def _require_supported_project(project: ProjectConfig) -> None:
-        if project.coverage:
-            raise RuntimeError(
-                "Xcelium execution is supported, but native Xcelium coverage "
-                "collection/merge is not implemented yet. Disable coverage "
-                "for this backend."
-            )
-
     def build(self, project: ProjectConfig) -> BuildResult:
-        self._require_supported_project(project)
         sources = project.source_files()
         if not sources:
             raise RuntimeError(
@@ -94,6 +84,8 @@ class XceliumBackend(SimulatorBackend):
         ]
         if project.waveform:
             command.extend(["-access", "+rwc"])
+        if project.coverage:
+            command.extend(["-coverage", "all"])
         command.extend(str(path) for path in sources)
 
         completed = subprocess.run(
@@ -118,8 +110,9 @@ class XceliumBackend(SimulatorBackend):
             "sources": [str(path) for path in sources],
             "waveform_requested": project.waveform,
             "waveform_capture": "vcd-tcl" if project.waveform else "disabled",
-            "coverage_requested": False,
-            "coverage_capture": "disabled",
+            "coverage_requested": project.coverage,
+            "coverage_capture": "instrumented" if project.coverage else "disabled",
+            "coverage_metrics": "all" if project.coverage else None,
             "uvm": "xrun-native",
             "command": command,
             "returncode": completed.returncode,
@@ -204,6 +197,26 @@ class XceliumBackend(SimulatorBackend):
         if input_file is not None:
             command.extend(["-input", str(input_file)])
 
+        expected_coverage_path = (
+            run_dir / "coverage" / run_id
+            if project.coverage
+            else None
+        )
+        if project.coverage:
+            command.extend(
+                [
+                    "-covworkdir",
+                    str(run_dir),
+                    "-covscope",
+                    "coverage",
+                    "-covtest",
+                    run_id,
+                    "-covmodeldir",
+                    str(run_dir / "coverage"),
+                    "-covoverwrite",
+                ]
+            )
+
         runtime_plusargs = list(plusargs or [])
         if test_name:
             command.append(f"+ZDDV_TEST={test_name}")
@@ -246,6 +259,19 @@ class XceliumBackend(SimulatorBackend):
         if not waveform_path.exists():
             waveform_path = None
 
+        coverage_path = expected_coverage_path
+        if coverage_path is not None:
+            has_ucd = coverage_path.is_dir() and any(
+                coverage_path.glob("*.ucd")
+            )
+            if not has_ucd:
+                coverage_path = None
+        coverage_capture = (
+            "ucd-run-db"
+            if coverage_path is not None
+            else ("missing" if project.coverage else "disabled")
+        )
+
         status = (
             "TIMEOUT"
             if timed_out
@@ -270,9 +296,10 @@ class XceliumBackend(SimulatorBackend):
             "run_dir": str(run_dir),
             "log": str(log_path),
             "waveform": str(waveform_path) if waveform_path else None,
-            "coverage_requested": False,
-            "coverage": None,
-            "coverage_capture": "disabled",
+            "coverage_requested": project.coverage,
+            "coverage": str(coverage_path) if coverage_path else None,
+            "coverage_capture": coverage_capture,
+            "coverage_metrics": "all" if project.coverage else None,
             "build_artifact": str(library_dir),
         }
         (run_dir / "run.json").write_text(
@@ -302,7 +329,7 @@ class XceliumBackend(SimulatorBackend):
             run_dir=run_dir,
             log_path=log_path,
             waveform_path=waveform_path,
-            coverage_path=None,
+            coverage_path=coverage_path,
             test_name=test_name,
             seed=seed,
         )
