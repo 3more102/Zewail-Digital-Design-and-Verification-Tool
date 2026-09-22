@@ -85,7 +85,14 @@ result = analyze_uvm_sequence_log(project, "simulation.log")
 result = analyze_uvm_sequence_log(project, None, run_id="run-id")
 ```
 
-When a recorded run is supplied without a path, the adapter reads that run's simulation log and preserves run status, return code, and simulator correlation.
+The same adapter is available from the CLI:
+
+```bash
+zddv --project . uvm-sequence-log-analyze simulation.log
+zddv --project . uvm-sequence-log-analyze --run run-id
+```
+
+When a recorded run is supplied without a path, the adapter reads that run's simulation log and preserves run status, return code, and simulator correlation. The resulting snapshot is visible through `zddv uvm-sequence-history`.
 
 ## Lifecycle Rules
 
