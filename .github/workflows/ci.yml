@@ -268,6 +268,15 @@ jobs:
           grep -q '"partial": 1' examples/counter/.zddv/uvm/items/latest.json
           zddv --project examples/counter uvm-item-history --limit 5 | grep -q 'PASS'
 
+      - name: Analyze UVM arbitration fairness trace
+        run: |
+          zddv --project examples/counter uvm-arbitration-analyze ../uvm_arbitration_trace.json --source example-arbitration
+          test -s examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"analysis": "uvm_arbitration_fairness"' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"violations": 0' examples/counter/.zddv/uvm/arbitration/latest.json
+          grep -q '"max_wait_decisions": 2' examples/counter/.zddv/uvm/arbitration/latest.json
+          zddv --project examples/counter uvm-arbitration-history --limit 5 | grep -q 'PASS'
+
       - name: Verify concurrent async FIFO RTL example
         run: |
           zddv --project examples/async_fifo lint
