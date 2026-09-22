@@ -38,8 +38,17 @@ def test_parse_vcs_urg_module_counts_keeps_module_scope_explicit(tmp_path: Path)
 Line No. Total Covered Percent
 TOTAL 5 4 80.00
 
-Condition Coverage for Module : tb
-TOTAL 99 1 1.01
+Cond Coverage for Module : tb
+Total Covered Percent
+Conditions 3 2 66.67
+Logical 3 2 66.67
+
+Toggle Coverage for Module : tb
+Total Covered Percent
+Totals 2 1 50.00
+Total Bits 8 6 75.00
+Total Bits 0->1 4 3 75.00
+Total Bits 1->0 4 3 75.00
 
 Branch Coverage for Module : tb
 Line No. Total Covered Percent
@@ -48,6 +57,15 @@ Branches 2 1 50.00
 Line Coverage for Module : dut
 Line No. Total Covered Percent
 TOTAL 10 8 80.00
+
+Condition Coverage for Module : dut
+Total Covered Percent
+Conditions 5 4 80.00
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 3 2 66.67
+Total Bits 12 9 75.00
 
 Branch Coverage for Module : dut
 Line No. Total Covered Percent
@@ -69,11 +87,25 @@ Branches 4 3 75.00
         "total": 6,
         "hit_rate": pytest.approx(66.6666667),
     }
+    assert report["by_metric_counts"]["module_condition"] == {
+        "covered": 6,
+        "total": 8,
+        "hit_rate": pytest.approx(75.0),
+    }
+    assert report["by_metric_counts"]["module_toggle_bits"] == {
+        "covered": 15,
+        "total": 20,
+        "hit_rate": pytest.approx(75.0),
+    }
     assert [(item["metric"], item["module"]) for item in report["modules"]] == [
         ("branch", "dut"),
         ("branch", "tb"),
+        ("condition", "dut"),
+        ("condition", "tb"),
         ("line", "dut"),
         ("line", "tb"),
+        ("toggle_bits", "dut"),
+        ("toggle_bits", "tb"),
     ]
 
 
@@ -109,6 +141,17 @@ SCORE LINE COND TOGGLE FSM BRANCH ASSERT GROUP
 Line No. Total Covered Percent
 TOTAL 10 8 80.00
 
+Cond Coverage for Module : dut
+Total Covered Percent
+Conditions 5 4 80.00
+
+Toggle Coverage for Module : dut
+Total Covered Percent
+Totals 4 3 75.00
+Total Bits 20 16 80.00
+Total Bits 0->1 10 8 80.00
+Total Bits 1->0 10 8 80.00
+
 Branch Coverage for Module : dut
 Line No. Total Covered Percent
 Branches 5 2 40.00
@@ -124,9 +167,21 @@ Branches 5 2 40.00
     assert result["metrics_status"] == "normalized"
     assert result["module_counts_status"] == "normalized"
     assert result["metrics"]["by_metric"]["line"] == pytest.approx(80.0)
+    assert result["metrics"]["by_metric"]["condition"] == pytest.approx(70.0)
+    assert result["metrics"]["by_metric"]["toggle"] == pytest.approx(60.0)
     assert result["metrics"]["by_metric_counts"]["module_line"] == {
         "covered": 8,
         "total": 10,
+        "hit_rate": pytest.approx(80.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["module_condition"] == {
+        "covered": 4,
+        "total": 5,
+        "hit_rate": pytest.approx(80.0),
+    }
+    assert result["metrics"]["by_metric_counts"]["module_toggle_bits"] == {
+        "covered": 16,
+        "total": 20,
         "hit_rate": pytest.approx(80.0),
     }
     assert result["metrics"]["by_metric_counts"]["module_branch"] == {
@@ -137,6 +192,8 @@ Branches 5 2 40.00
 
     snapshots = list_coverage_score_snapshots(project, limit=1)
     assert snapshots[0]["by_metric_counts"]["module_line"]["covered"] == 8
+    assert snapshots[0]["by_metric_counts"]["module_condition"]["covered"] == 4
+    assert snapshots[0]["by_metric_counts"]["module_toggle_bits"]["total"] == 20
     assert snapshots[0]["by_metric_counts"]["module_branch"]["total"] == 5
 
 
