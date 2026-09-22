@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import math
 import re
 import shutil
@@ -11,7 +12,7 @@ import time
 
 from zddv.config import ProjectConfig
 
-from .base import FormalBackend, FormalCheckRequest, FormalCheckResult
+from .base import FormalBackend, FormalCheckRequest, FormalCheckResult, FormalPropertyResult
 
 
 _SBY_DONE = re.compile(
@@ -158,6 +159,122 @@ def _normalized_sby_status(outcome: _ProcessOutcome) -> str:
     return "UNKNOWN"
 
 
+def parse_sby_status_jsonl(
+    text: str,
+    *,
+    expected_mode: str | None = None,
+) -> tuple[FormalPropertyResult, ...]:
+    """Normalize machine-readable SBY property status rows conservatively."""
+
+    properties: list[FormalPropertyResult] = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"invalid SymbiYosys status JSONL at line {line_number}"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"SymbiYosys status JSONL line {line_number} must be an object"
+            )
+
+        row_mode = str(row.get("mode", "")).strip().lower()
+        if expected_mode is not None and row_mode and row_mode != expected_mode:
+            raise ValueError(
+                f"SymbiYosys status mode {row_mode!r} does not match "
+                f"expected mode {expected_mode!r}"
+            )
+
+        kind = str(row.get("kind", "")).strip().lower()
+        # The current backend executes BMC safety checks only. Do not invent
+        # cover/liveness semantics from status rows until those modes are
+        # implemented by this backend.
+        if kind != "assert":
+            continue
+
+        name = str(row.get("name", "")).strip()
+        if not name:
+            raise ValueError(
+                f"SymbiYosys status JSONL line {line_number} has no property name"
+            )
+
+        status = str(row.get("status", "UNKNOWN")).strip().upper() or "UNKNOWN"
+        if status not in {"PASS", "FAIL", "UNKNOWN", "ERROR"}:
+            raise ValueError(
+                f"unsupported SymbiYosys assertion status {status!r} "
+                f"at line {line_number}"
+            )
+
+        depth_value = row.get("depth")
+        depth = None if depth_value is None else int(depth_value)
+
+        trace_value = row.get("trace")
+        trace_path = None
+        if trace_value is not None and str(trace_value).strip():
+            trace_path = Path(str(trace_value).strip())
+
+        details: list[str] = ["SymbiYosys status database"]
+        engine = str(row.get("engine", "")).strip()
+        location = str(row.get("location", "")).strip()
+        if engine:
+            details.append(f"engine={engine}")
+        if location:
+            details.append(f"location={location}")
+
+        properties.append(
+            FormalPropertyResult(
+                name=name,
+                kind="assert",
+                status=status,
+                depth=depth,
+                trace_path=trace_path,
+                message="; ".join(details),
+            )
+        )
+
+    return tuple(properties)
+
+
+def _query_sby_property_statuses(
+    executable: str,
+    *,
+    run_dir: Path,
+    cwd: Path,
+    timeout_s: float | None,
+) -> tuple[tuple[FormalPropertyResult, ...], Path | None]:
+    """Query SBY's status DB using its documented JSONL status interface."""
+
+    command = [
+        executable,
+        "--statusfmt",
+        "jsonl",
+        "--latest",
+        str(run_dir),
+    ]
+    outcome = _run_process(command, cwd=cwd, timeout_s=timeout_s)
+    status_path = run_dir / "property-status.jsonl"
+    status_path.write_text(outcome.output, encoding="utf-8")
+
+    if outcome.timed_out or outcome.returncode != 0:
+        return (), status_path
+
+    try:
+        properties = parse_sby_status_jsonl(
+            outcome.output,
+            expected_mode="bmc",
+        )
+    except (ValueError, TypeError):
+        # Retain the raw tool output but do not create property claims from
+        # malformed or unsupported machine-readable evidence.
+        return (), status_path
+
+    return properties, status_path
+
+
 class SymbiYosysBackend(FormalBackend):
     """First concrete ZDDV formal backend: finite-depth SymbiYosys BMC."""
 
@@ -226,6 +343,21 @@ class SymbiYosysBackend(FormalBackend):
         log_path.write_text(output, encoding="utf-8")
 
         status = _normalized_sby_status(outcome)
+        properties: tuple[FormalPropertyResult, ...] = ()
+        artifacts: list[Path] = [config_path]
+        if not outcome.timed_out:
+            properties, status_path = _query_sby_property_statuses(
+                executable,
+                run_dir=run_dir,
+                cwd=project.root,
+                timeout_s=request.timeout_s,
+            )
+            if status_path is not None:
+                artifacts.append(status_path)
+            for item in properties:
+                if item.trace_path is not None and item.trace_path not in artifacts:
+                    artifacts.append(item.trace_path)
+
         return FormalCheckResult(
             backend=self.name,
             engine="smtbmc",
@@ -235,7 +367,7 @@ class SymbiYosysBackend(FormalBackend):
             status=status,
             run_dir=run_dir,
             log_path=log_path,
-            properties=(),
-            artifacts=(config_path,),
+            properties=properties,
+            artifacts=tuple(artifacts),
             runtime_ms=runtime_ms,
         )
