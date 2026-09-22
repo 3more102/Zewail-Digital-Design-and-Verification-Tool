@@ -174,6 +174,56 @@ UVM_FATAL : 0
     assert uvm["simulator"] == "vcs"
 
 
+def test_vcs_run_auto_ingests_explicit_uvm_markers_without_false_report_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    project = _project(tmp_path, waveform=False)
+    backend = VcsBackend()
+    executable = (project.root / ".zddv" / "build" / "simv").resolve()
+    executable.parent.mkdir(parents=True)
+    executable.write_text("simv fixture\n", encoding="utf-8")
+
+    monkeypatch.setattr(backend, "version", lambda: "VCS test")
+
+    marker_output = (
+        'ZDDV_UVM_ITEM {"item_id":"item-1","event":"REQUEST",'
+        '"sequence_id":"seq-1","sequence":"smoke_seq",'
+        '"sequencer":"uvm_test_top.env.sqr"}\n'
+        'ZDDV_UVM_SEQUENCE {"sequence_id":"seq-1","sequence":"smoke_seq",'
+        '"sequencer":"uvm_test_top.env.sqr","state":"UVM_BODY"}\n'
+    )
+
+    monkeypatch.setattr(
+        "zddv.simulator.vcs.subprocess.run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=marker_output,
+        ),
+    )
+
+    result = backend.run(project)
+
+    assert result.status == "PASS"
+    item = loads(
+        (project.root / ".zddv" / "uvm" / "items" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sequence = loads(
+        (project.root / ".zddv" / "uvm" / "sequences" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert item["source"] == "vcs-uvm-item-log"
+    assert item["run_id"] == result.run_id
+    assert item["input_mode"] == "explicit-log-marker"
+    assert sequence["source"] == "vcs-uvm-sequence-log"
+    assert sequence["run_id"] == result.run_id
+    assert sequence["input_mode"] == "explicit-log-marker"
+    assert not (project.root / ".zddv" / "uvm" / "latest.json").exists()
+
+
 def test_vcs_explicit_uvm_test_plusarg_is_not_duplicated(tmp_path, monkeypatch):
     project = _project(tmp_path, waveform=False)
     backend = VcsBackend()
