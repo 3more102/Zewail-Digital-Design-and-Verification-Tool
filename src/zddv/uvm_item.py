@@ -356,7 +356,7 @@ def parse_uvm_item_data(
             "A trace that begins at REQUEST, ITEM_DONE, or RESPONSE is retained as partial evidence rather than failed solely for missing earlier events.",
             "ITEM_DONE is treated as driver-completion evidence; RESPONSE is optional and is not required for an item to be complete.",
             "Observed GRANT order is reconstructed per sequencer, but arbitration mode, priority/fairness, waiting queues, request/grant timing, and delta-cycle constraints are not inferred.",
-            "SQLite persistence stores normalized snapshot summaries and event evidence; vendor-specific automatic instrumentation remains outside this layer.",
+            "SQLite persistence stores normalized snapshot summaries, event evidence, and detected violation rows; vendor-specific automatic instrumentation remains outside this layer.",
         ],
     }
 
@@ -419,10 +419,7 @@ def parse_uvm_item_log_text(
     if not events:
         raise ValueError(f"No {_ITEM_LOG_MARKER} markers found in log")
 
-    report = parse_uvm_item_data(
-        {"source": source, "events": events},
-        source=source,
-    )
+    report = parse_uvm_item_data({"source": source, "events": events}, source=source)
     report["input_mode"] = "explicit-log-marker"
     report["marker"] = _ITEM_LOG_MARKER
     report["marker_lines"] = marker_lines
@@ -474,7 +471,6 @@ def _persist_uvm_item_analysis(
         + "-"
         + uuid.uuid4().hex[:8]
     )
-
     snapshot_dir = (project.root / ".zddv" / "uvm" / "items" / "snapshots").resolve()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     normalized_path = snapshot_dir / f"{snapshot_id}.json"
@@ -501,7 +497,6 @@ def _persist_uvm_item_analysis(
                 "simulator": run_record["simulator"],
             }
         )
-
     record["normalized_path"] = str(normalized_path)
     record["report_path"] = str(destination)
 
@@ -548,7 +543,6 @@ def analyze_uvm_item_log(
 ) -> dict[str, Any]:
     """Analyze explicit item markers from a log and persist the shared item report."""
     run_record = _resolve_item_run(project, run_id)
-
     if path is None:
         if run_record is None:
             raise ValueError("A UVM item log path or --run must be provided")
@@ -557,7 +551,6 @@ def analyze_uvm_item_log(
         input_path = Path(path)
         if not input_path.is_absolute():
             input_path = project.root / input_path
-
     input_path = input_path.resolve()
     if not input_path.is_file():
         raise FileNotFoundError(input_path)

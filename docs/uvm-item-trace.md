@@ -12,6 +12,8 @@ Each analysis is also persisted in the project SQLite database. Query recent sna
 zddv --project <project> uvm-item-history
 zddv --project <project> uvm-item-history --status FAIL
 zddv --project <project> uvm-item-history --run <run-id>
+zddv --project <project> uvm-item-violations <snapshot-id>
+zddv --project <project> uvm-item-violations <snapshot-id> --code LATE_GRANT --item item-17
 ```
 
 The normalized event vocabulary is:
@@ -78,7 +80,7 @@ This is an observed grant-order reconstruction only. ZDDV does not infer the seq
 
 ## Persistence and current boundary
 
-ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, and the normalized per-event evidence. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
+ZDDV stores each normalized item-handshake snapshot in `.zddv/results.db`, including summary counters, optional run correlation, normalized per-event evidence, and every detected violation with its code, source event index, item ID, event type, and message. `uvm-item-violations` queries that failure evidence without reopening the JSON artifact. The JSON snapshot under `.zddv/uvm/items/snapshots/` remains the complete portable artifact.
 
 This layer validates event ordering, duplicate events, stable item identity, explicit marker ingestion, and reconstructs observed grant order from explicit GRANT evidence. It does not infer vendor log formats, arbitration mode/priority/fairness, waiting queues, delta-cycle timing, or transaction payload equality.
 

@@ -8,6 +8,7 @@ from zddv.config import initialize_project
 from zddv.storage import (
     list_uvm_item_handshake_events,
     list_uvm_item_handshake_snapshots,
+    list_uvm_item_handshake_violations,
     record_run,
 )
 from zddv.uvm_item import (
@@ -384,6 +385,77 @@ def test_cli_item_analysis_history_and_run_correlation(tmp_path: Path, capsys):
     assert "PASS" in history
     assert "1/1/1/0" in history
 
+
+def test_persists_item_violation_evidence(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "items-violations.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "events": [
+                    _event("item-bad", "GRANT", transaction_id=31),
+                    _event("item-bad", "ITEM_DONE", transaction_id=31),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = analyze_uvm_item_file(project, trace)
+
+    assert result["status"] == "FAIL"
+    rows = list_uvm_item_handshake_violations(project, result["snapshot_id"])
+    assert len(rows) == 1
+    assert rows[0]["violation_index"] == 0
+    assert rows[0]["code"] == "ITEM_DONE_BEFORE_REQUEST"
+    assert rows[0]["event_index"] == 1
+    assert rows[0]["item_id"] == "item-bad"
+    assert rows[0]["event"] == "ITEM_DONE"
+
+    assert list_uvm_item_handshake_violations(
+        project,
+        result["snapshot_id"],
+        code="ITEM_DONE_BEFORE_REQUEST",
+        item_id="item-bad",
+    ) == rows
+
+
+def test_cli_queries_persisted_item_violations(tmp_path: Path, capsys):
+    project = initialize_project(tmp_path / "demo")
+    trace = project.root / "items-violations.json"
+    trace.write_text(
+        json.dumps(
+            {
+                "events": [
+                    _event("item-bad", "REQUEST", transaction_id=41),
+                    _event("item-bad", "GRANT", transaction_id=41),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = analyze_uvm_item_file(project, trace)
+    assert result["status"] == "FAIL"
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "uvm-item-violations",
+            result["snapshot_id"],
+            "--code",
+            "late_grant",
+            "--item",
+            "item-bad",
+        ]
+    )
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "LATE_GRANT" in output
+    assert "item-bad" in output
+    assert "observed GRANT after later handshake evidence" in output
+
 def _marker(event: dict[str, object]) -> str:
     return "ZDDV_UVM_ITEM " + json.dumps(event, separators=(",", ":"))
 
@@ -397,9 +469,7 @@ def test_parse_uvm_item_log_markers_preserves_line_provenance():
             _marker(_event("item-1", "ITEM_DONE")),
         ]
     )
-
     result = parse_uvm_item_log_text(text, source="marker-test")
-
     assert result["status"] == "PASS"
     assert result["input_mode"] == "explicit-log-marker"
     assert result["marker"] == "ZDDV_UVM_ITEM"
@@ -434,7 +504,6 @@ def test_cli_analyzes_explicit_item_markers_from_log(tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
-
     rc = main(
         [
             "--project",
@@ -445,7 +514,6 @@ def test_cli_analyzes_explicit_item_markers_from_log(tmp_path: Path):
             "marker-cli",
         ]
     )
-
     assert rc == 0
     latest = project.root / ".zddv" / "uvm" / "items" / "latest.json"
     payload = json.loads(latest.read_text(encoding="utf-8"))
@@ -471,9 +539,7 @@ def test_uvm_item_log_uses_recorded_run_log_when_path_omitted(tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
-
     result = analyze_uvm_item_log(project, None, run_id="run-marker")
-
     assert result["status"] == "PASS"
     assert result["run_id"] == "run-marker"
     assert result["simulator"] == "questa"

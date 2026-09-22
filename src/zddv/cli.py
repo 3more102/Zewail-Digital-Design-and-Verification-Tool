@@ -41,6 +41,7 @@ from zddv.storage import (
     list_run_records,
     list_runs,
     list_uvm_item_handshake_snapshots,
+    list_uvm_item_handshake_violations,
     list_uvm_log_snapshots,
     list_uvm_sequence_lifecycle_snapshots,
 )
@@ -427,13 +428,13 @@ def cmd_coverage(args) -> int:
     code_detail_status = result.get("code_detail_status")
     if code_detail_status is not None:
         print(
-            "Normalized Questa statement/branch coverage: "
+            "Normalized Questa statement/branch/condition coverage: "
             f"{code_detail_status} "
             f"{result.get('code_detail_points', 0)} point(s), "
             f"{result.get('code_detail_holes', 0)} hole(s)"
         )
         if result.get("code_report"):
-            print(f"Questa statement/branch detail: {result['code_report']}")
+            print(f"Questa statement/branch/condition detail: {result['code_report']}")
     detailed = result.get("detailed_code_coverage_evidence") or {}
     if detailed:
         xml = detailed.get("xml", {})
@@ -533,10 +534,10 @@ def cmd_coverage_holes(args) -> int:
             limit=args.limit,
         )
     elif simulator in {"questa", "questasim"}:
-        if args.point_type not in {None, "statement", "branch"}:
+        if args.point_type not in {None, "statement", "branch", "condition"}:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement or --type branch."
+                "--type statement, --type branch, or --type condition."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
@@ -894,6 +895,30 @@ def cmd_uvm_item_history(args) -> int:
             f"{row['event_count']:>6} {row['violation_count']:>5} "
             f"{handshake:<15} {activity:<12} "
             f"{run_id[:24]:<24} {row['snapshot_id']}"
+        )
+    return 0
+
+
+def cmd_uvm_item_violations(args) -> int:
+    project = load_project(_project_arg(args))
+    code = args.code.upper() if args.code else None
+    rows = list_uvm_item_handshake_violations(
+        project,
+        args.snapshot_id,
+        limit=args.limit,
+        code=code,
+        item_id=args.item_id,
+    )
+    if not rows:
+        print("No UVM item handshake violations found.")
+        return 0
+
+    print(f"{'IDX':>4} {'EVENT':>5} {'CODE':<28} {'ITEM':<20} MESSAGE")
+    for row in rows:
+        print(
+            f"{row['violation_index']:>4} {row['event_index']:>5} "
+            f"{row['code']:<28} {row['item_id'][:20]:<20} "
+            f"{row['message']}"
         )
     return 0
 
@@ -1435,7 +1460,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="Check the local verification environment")
     p_doctor.add_argument(
         "--simulator",
-        choices=("verilator", "questa", "questasim", "vcs"),
+        choices=("verilator", "questa", "questasim", "vcs", "xcelium", "xrun"),
         default=None,
         help="Simulator backend to check; defaults to verilator",
     )
@@ -1835,6 +1860,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter item-handshake snapshots linked to a recorded ZDDV run ID",
     )
     p_uvm_item_history.set_defaults(func=cmd_uvm_item_history)
+
+    p_uvm_item_violations = sub.add_parser(
+        "uvm-item-violations",
+        help="Show persisted violations for one UVM item-handshake snapshot",
+    )
+    p_uvm_item_violations.add_argument(
+        "snapshot_id",
+        help="Persisted UVM item-handshake snapshot ID",
+    )
+    p_uvm_item_violations.add_argument("--limit", type=int, default=100)
+    p_uvm_item_violations.add_argument(
+        "--code",
+        default=None,
+        help="Filter by exact violation code, e.g. LATE_GRANT",
+    )
+    p_uvm_item_violations.add_argument(
+        "--item",
+        dest="item_id",
+        default=None,
+        help="Filter by exact normalized item ID",
+    )
+    p_uvm_item_violations.set_defaults(func=cmd_uvm_item_violations)
 
     p_uvm_sequence = sub.add_parser(
         "uvm-sequence-analyze",

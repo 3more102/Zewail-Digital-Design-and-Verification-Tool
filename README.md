@@ -14,7 +14,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, and documented global covergroup type/instance counts
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch source-linked `coverage-holes`; condition/expression/toggle/FSM item normalization remains pending
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and normalized statement/branch/condition source-linked `coverage-holes`; expression/toggle/FSM item normalization remains pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -66,6 +66,7 @@ Requirements:
 - Verilator available in `PATH` for the default backend
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 - Optional Synopsys VCS: `vcs` available in `PATH`
+- Optional Cadence Xcelium: `xrun` available in `PATH`
 
 Install ZDDV for development:
 
@@ -76,6 +77,7 @@ python -m pip install -e ".[dev]"
 zddv doctor
 zddv doctor --simulator questa
 zddv doctor --simulator vcs
+zddv doctor --simulator xcelium
 ```
 
 Run the included counter example:
@@ -108,6 +110,8 @@ Condition/expression/toggle/FSM item normalization remains pending. Questa's
 weighted total coverage remains a separate simulator-reported value.
 
 For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. Code-metric object-count aggregation remains pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
+
+For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. Native Xcelium coverage collection/merge is intentionally not claimed yet; projects using this backend must keep `coverage = false` until that layer is implemented.
 
 ## Current CLI
 
@@ -161,6 +165,7 @@ zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
 zddv --project my_project uvm-item-history --limit 20
 zddv --project my_project uvm-item-log-analyze simulation.log
 zddv --project my_project uvm-item-log-analyze --run <run-id>
+zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
@@ -282,7 +287,7 @@ CLI / future GUI
        ├── Verilator  ← implemented
        ├── Questa     ← build/run + UCDB summary coverage implemented
        ├── VCS        ← build/run + native VDB/URG coverage implemented
-       └── Xcelium    ← planned
+       └── Xcelium    ← xrun build/run foundation implemented
 ```
 
 The CLI and future GUI must use the same core APIs. Simulator-specific command construction stays inside simulator adapters.
@@ -365,8 +370,7 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
-- [x] Normalized sequence-item handshake analysis with SQLite persistence/history
-- [x] Explicit `ZDDV_UVM_ITEM` log-marker ingestion into the shared item analyzer
+- [x] Normalized sequence-item handshake analysis with SQLite event/violation persistence and history queries
 - [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction
 
 ### APB Trace Analysis
@@ -676,8 +680,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Questa UCDB merge + summary normalization into ZDDV coverage history
 - [x] Questa ordinary functional covergroup-bin normalization into ZDDV functional coverage
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
-- [x] Questa statement/branch item/source normalization and coverage-hole reporting
-- [ ] Questa condition/expression/toggle/FSM item-level normalization
+- [x] Questa statement/branch/condition item/source normalization and coverage-hole reporting
+- [ ] Questa expression/toggle/FSM item-level normalization
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
