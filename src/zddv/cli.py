@@ -1221,6 +1221,7 @@ def cmd_verification_proposals(args) -> int:
         output,
         limit=args.limit,
         emit_dir=emit_dir,
+        force=args.force,
     )
     print(
         "VERIFICATION PROPOSALS: "
@@ -2926,6 +2927,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default=".zddv/debug/verification-proposals.json",
         help="Review proposal JSON bundle path",
+    )
+    p_verification_proposals.add_argument(
+        "--force",
+        action="store_true",
+        help="Explicitly replace existing disabled scaffold files in --emit-dir",
     )
     p_verification_proposals.set_defaults(func=cmd_verification_proposals)
 
