@@ -190,8 +190,10 @@ snapshot ID used in the calculation.
 ## Current boundary
 
 Native VCD counterexample/witness contents are supported through the explicit
-`formal-vcd-trace` importer, but backend-reported traces are not yet auto-normalized
-during result persistence. ZDDV does not claim unbounded reachability/proof coverage from
+`formal-vcd-trace` importer and are also normalized automatically when a persisted formal
+property result directly reports a VCD counterexample or witness. Automatic normalization
+uses a fixed 100,000-step evidence guard; parse/size failures are recorded on the trace and
+do not change the formal run status. ZDDV does not claim unbounded reachability/proof coverage from
 finite-depth evidence. Direct finite-depth SymbiYosys cover-property reachability and
 conservative cross-run aggregation are supported. Incomplete property universes,
 snapshots without a design fingerprint, different source revisions, different engines,
