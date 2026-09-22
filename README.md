@@ -690,6 +690,21 @@ waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
 remain visible as uncorrelated events rather than being silently dropped.
 
+### Evidence-Ranked Root-Cause Candidates
+
+`zddv root-cause --run <run-id>` composes existing run, assertion, waveform,
+cross-probe, and source-connectivity evidence into a deterministic debug ranking.
+When a failing assertion names an indexed waveform signal, ZDDV cross-probes that
+signal into the RTL hierarchy and elevates explicit driver sites above declaration
+or assertion-only anchors. Timed-out runs retain the explicit timeout status and
+configured timeout as runtime evidence.
+
+The `evidence_score` is deliberately not a causal probability. It is the sum of
+documented evidence classes (for example an explicit driver edge, an exact waveform
+signal hint, an RTL declaration match, and a failing assertion). Every score basis
+and supporting artifact is retained in `.zddv/debug/root-cause.json`; ZDDV does
+not claim that the top-ranked candidate caused the failure.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
@@ -717,7 +732,7 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [ ] Xcelium FSM/functional item-level normalization
 - [x] Formal adapter API
 - [x] Counterexample/witness normalization from normalized JSON and native VCD traces
-- [ ] Automated failure triage
+- [x] Deterministic evidence-ranked root-cause candidate triage
 - [ ] AI-assisted root-cause analysis
 - [ ] Desktop debug GUI
 
