@@ -120,6 +120,15 @@ jobs:
           grep -q '"top.state"' examples/counter/.zddv/formal/counterexamples/latest.json
           grep -q '"last_time": 10' examples/counter/.zddv/formal/counterexamples/latest.json
 
+      - name: Cross-probe normalized formal trace
+        run: |
+          zddv --project examples/counter formal-trace-crossprobe ../formal_crossprobe_trace.json --signal tb_counter.dut.count
+          test -s examples/counter/.zddv/formal/crossprobe/latest.json
+          grep -q '"analysis": "formal_trace_crossprobe"' examples/counter/.zddv/formal/crossprobe/latest.json
+          grep -q '"matched": 1' examples/counter/.zddv/formal/crossprobe/latest.json
+          grep -q '"file": "rtl/counter.sv"' examples/counter/.zddv/formal/crossprobe/latest.json
+          grep -q '"analysis_level": "source_structural"' examples/counter/.zddv/formal/crossprobe/latest.json
+
       - name: Import functional coverage
         run: |
           zddv --project examples/counter fcov-import functional_coverage.json
