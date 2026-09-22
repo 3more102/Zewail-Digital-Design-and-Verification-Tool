@@ -64,8 +64,8 @@ def build_ai_rca_context(
         "semantics": (
             "This file is a deterministic evidence bundle for optional downstream "
             "AI-assisted debugging. ZDDV does not contact a model provider, transmit "
-            "project data, execute suggested commands, or promote evidence scores to "
-            "causal probabilities."
+            "project data, execute suggested commands, or treat evidence scores as a "
+            "causal probability."
         ),
         "policy": {
             "provider_neutral": True,
