@@ -118,7 +118,8 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [ ] VCS remaining condition/toggle/FSM module-level count ingestion from `modinfo.txt`.
 - [x] Xcelium execution adapter foundation (xrun elaborate/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] Xcelium native per-run coverage database capture.
-- [ ] Xcelium multi-run IMC merge/report evidence and metric normalization.
+- [x] Xcelium multi-run IMC merge/report evidence retention.
+- [ ] Xcelium metric normalization into ZDDV coverage history.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence.
