@@ -27,7 +27,7 @@ from zddv.protocols.axi4_waveform import analyze_axi4_waveform
 from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
-from zddv.simulator import VerilatorBackend
+from zddv.simulator import VerilatorBackend, get_backend
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -46,9 +46,7 @@ from zddv.waveform_probe import write_waveform_probe
 
 
 def _backend(name: str):
-    if name == "verilator":
-        return VerilatorBackend()
-    raise RuntimeError(f"Unsupported simulator backend: {name}")
+    return get_backend(name)
 
 
 def _project_arg(args) -> str:
