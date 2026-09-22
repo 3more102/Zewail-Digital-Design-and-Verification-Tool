@@ -389,7 +389,6 @@ def test_parse_xcelium_imc_toggle_detail_normalizes_bit_evidence():
     [
         ("block", IMC_BLOCK_DETAIL),
         ("expression", IMC_EXPRESSION_DETAIL),
-        ("fsm", IMC_FSM_DETAIL),
     ],
 )
 def test_xcelium_coverage_holes_cli_supports_verified_item_tables(
@@ -428,6 +427,48 @@ def test_xcelium_coverage_holes_cli_supports_verified_item_tables(
     assert f"Coverage holes ({point_type}): 1" in capsys.readouterr().out
 
 
+def test_xcelium_coverage_holes_cli_supports_fsm_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    detail_path = (
+        project.root / ".zddv" / "coverage" / "xcelium" / "detail.txt"
+    )
+    detail_path.parent.mkdir(parents=True)
+    detail_path.write_text(IMC_FSM_DETAIL, encoding="utf-8")
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = cmd_coverage_holes(
+        SimpleNamespace(
+            project=str(project.root),
+            output=".zddv/coverage/fsm-holes.json",
+            point_type="fsm",
+            limit=200,
+            show=20,
+        )
+    )
+
+    assert rc == 0
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "fsm-holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["filter_type"] == "fsm"
+    assert payload["total_holes"] == 2
+    assert payload["by_type"] == {"fsm": 2}
+    assert {
+        (hole["fsm_kind"], hole.get("state"), hole.get("transition"))
+        for hole in payload["holes"]
+    } == {
+        ("state", "RUN", None),
+        ("transition", None, "IDLE -> ERROR"),
+    }
+    assert "Coverage holes (fsm): 2" in capsys.readouterr().out
+
+
 def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
     tmp_path: Path,
     monkeypatch,
@@ -438,7 +479,14 @@ def test_xcelium_coverage_holes_cli_combines_verified_tables_by_default(
     )
     detail_path.parent.mkdir(parents=True)
     detail_path.write_text(
-        "\n".join((IMC_BLOCK_DETAIL, IMC_EXPRESSION_DETAIL, IMC_FSM_DETAIL, IMC_TOGGLE_DETAIL)),
+        "\n".join(
+            (
+                IMC_BLOCK_DETAIL,
+                IMC_EXPRESSION_DETAIL,
+                IMC_FSM_DETAIL,
+                IMC_TOGGLE_DETAIL,
+            )
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
