@@ -244,6 +244,33 @@ Public references:
 - https://www.uciexpress.org/specifications
 - https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap
 
+## v0.6 UVM Report and Lifecycle Contract
+
+`zddv uvm-analyze` keeps UVM ingestion simulator-independent by parsing the standard
+UVM report envelope first. Severity summaries and visible report messages remain the
+base result model. When a snapshot is linked to a ZDDV simulation run, simulator
+status and return code remain separate evidence from the UVM severity verdict.
+
+Lifecycle enrichment is derived only when standard trace evidence is present. Phase
+reconstruction recognizes the reference-implementation report IDs
+`PH/TRC/SCHEDULED`, `PH/TRC/STRT`, `PH_READY_TO_END`, `PH_END`, and
+`PH/TRC/DONE`. Objection reconstruction recognizes `OBJTN_TRC` direct and
+propagated updates. Normalized records retain log ordering, timestamp text,
+phase/object identity, count deltas, totals, descriptions, and source objects.
+
+SQLite stores lifecycle evidence in dedicated `uvm_phase_events` and
+`uvm_objection_events` tables keyed by the same snapshot ID used by
+`uvm_log_snapshots`, `uvm_report_messages`, and optional `uvm_run_links`.
+This prevents later debug flows from having to reinterpret generic INFO text.
+
+The portable inputs are UVM's `+UVM_PHASE_TRACE` and
+`+UVM_OBJECTION_TRACE` controls. ZDDV does not claim a portable sequence or
+transaction lifecycle stream until equivalent standardized trace evidence is
+available or an adapter supplies explicit normalized evidence.
+
+Reference implementation:
+https://github.com/accellera-official/uvm-core
+
 ## Simulator Adapter Rule
 
 No CLI or GUI feature should contain simulator-specific command construction. All simulator-specific compile/run logic belongs in `src/zddv/simulator/`.
