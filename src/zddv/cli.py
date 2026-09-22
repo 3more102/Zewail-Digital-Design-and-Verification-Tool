@@ -60,6 +60,7 @@ from zddv.protocols.axi4_waveform import analyze_axi4_waveform
 from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
+from zddv.release import export_verification_release, verify_verification_release
 from zddv.simulator import get_backend
 from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import (
