@@ -158,6 +158,9 @@ zddv --project my_project uvm-history --run <run-id>
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
+zddv --project my_project uvm-item-analyze item_trace.json
+zddv --project my_project uvm-item-analyze item_trace.json --run <run-id>
+zddv --project my_project uvm-item-history --limit 20
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
 zddv --project my_project fcov-holes --limit 50
@@ -359,7 +362,8 @@ separately from Verilator's annotation threshold.
 - [x] Phase/objection-aware UVM lifecycle trace normalization and SQLite persistence
 - [x] Explicit `sequencer@@sequence` report-context evidence
 - [x] Normalized sequence state lifecycle reconstruction from explicit JSON evidence
-- [ ] Automatic sequence state instrumentation/adapters and sequence-item arbitration reconstruction
+- [x] Normalized sequence-item handshake reconstruction with SQLite history
+- [ ] Automatic sequence/item instrumentation adapters and arbitration priority/fairness reconstruction
 
 ### APB Trace Analysis
 
