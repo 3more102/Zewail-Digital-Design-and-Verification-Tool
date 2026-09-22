@@ -295,6 +295,87 @@ CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_violations_code
 CREATE INDEX IF NOT EXISTS idx_uvm_item_handshake_violations_item
     ON uvm_item_handshake_violations(snapshot_id, item_id);
 
+CREATE TABLE IF NOT EXISTS uvm_arbitration_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    project TEXT NOT NULL,
+    source TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    request_count INTEGER NOT NULL,
+    grant_count INTEGER NOT NULL,
+    pending_count INTEGER NOT NULL,
+    sequence_count INTEGER NOT NULL,
+    decision_count INTEGER NOT NULL,
+    violation_count INTEGER NOT NULL,
+    max_bypass_observed INTEGER NOT NULL,
+    max_bypass_limit INTEGER,
+    selection_policy TEXT NOT NULL,
+    run_id TEXT,
+    input_path TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    report_path TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_created
+    ON uvm_arbitration_snapshots(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_status
+    ON uvm_arbitration_snapshots(status);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_run
+    ON uvm_arbitration_snapshots(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_mode
+    ON uvm_arbitration_snapshots(mode);
+
+CREATE TABLE IF NOT EXISTS uvm_arbitration_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    sequence_id TEXT,
+    sequence_name TEXT,
+    sequencer TEXT,
+    priority INTEGER NOT NULL,
+    time_text TEXT,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_events_request
+    ON uvm_arbitration_events(snapshot_id, request_id);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_events_event
+    ON uvm_arbitration_events(event);
+
+CREATE TABLE IF NOT EXISTS uvm_arbitration_decisions (
+    snapshot_id TEXT NOT NULL,
+    decision_index INTEGER NOT NULL,
+    event_index INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    sequencer TEXT,
+    mode TEXT NOT NULL,
+    pending_request_ids_json TEXT NOT NULL,
+    eligible_request_ids_json TEXT NOT NULL,
+    expected_request_id TEXT,
+    highest_priority INTEGER,
+    PRIMARY KEY (snapshot_id, decision_index)
+);
+
+CREATE TABLE IF NOT EXISTS uvm_arbitration_violations (
+    snapshot_id TEXT NOT NULL,
+    violation_index INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, violation_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_arbitration_violations_code
+    ON uvm_arbitration_violations(code);
+
 CREATE TABLE IF NOT EXISTS functional_coverage_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -1312,6 +1393,261 @@ def list_uvm_item_handshake_violations(
 
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def record_uvm_arbitration_snapshot(
+    project: ProjectConfig,
+    record: dict[str, Any],
+) -> Path:
+    path = database_path(project)
+    summary = record["summary"]
+    with _connect(project) as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO uvm_arbitration_snapshots (
+                snapshot_id, created_at, project, source, mode, status,
+                request_count, grant_count, pending_count, sequence_count,
+                decision_count, violation_count, max_bypass_observed,
+                max_bypass_limit, selection_policy, run_id, input_path,
+                normalized_path, report_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["snapshot_id"],
+                record["created_at"],
+                record["project"],
+                record["source"],
+                record["mode"],
+                record["status"],
+                int(summary["requests"]),
+                int(summary["grants"]),
+                int(summary["pending"]),
+                int(summary["sequences"]),
+                int(summary["decisions"]),
+                int(summary["violations"]),
+                int(summary["max_bypass_observed"]),
+                (
+                    None
+                    if summary.get("max_bypass_limit") is None
+                    else int(summary["max_bypass_limit"])
+                ),
+                record["selection_policy"],
+                record.get("run_id"),
+                record["input_path"],
+                record["normalized_path"],
+                record["report_path"],
+            ),
+        )
+        db.execute(
+            "DELETE FROM uvm_arbitration_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_arbitration_events (
+                snapshot_id, event_index, request_id, event, sequence_id,
+                sequence_name, sequencer, priority, time_text, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["request_id"],
+                    item["event"],
+                    item.get("sequence_id"),
+                    (
+                        None
+                        if item.get("sequence") is None
+                        else str(item.get("sequence"))
+                    ),
+                    (
+                        None
+                        if item.get("sequencer") is None
+                        else str(item.get("sequencer"))
+                    ),
+                    int(item["priority"]),
+                    None if item.get("time") is None else str(item.get("time")),
+                    json.dumps(item.get("metadata", {}), sort_keys=True),
+                )
+                for item in record["events"]
+            ],
+        )
+        db.execute(
+            "DELETE FROM uvm_arbitration_decisions WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_arbitration_decisions (
+                snapshot_id, decision_index, event_index, request_id, sequencer,
+                mode, pending_request_ids_json, eligible_request_ids_json,
+                expected_request_id, highest_priority
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    decision_index,
+                    int(item["event_index"]),
+                    item["request_id"],
+                    item.get("sequencer"),
+                    item["mode"],
+                    json.dumps(item.get("pending_request_ids", [])),
+                    json.dumps(item.get("eligible_request_ids", [])),
+                    item.get("expected_request_id"),
+                    (
+                        None
+                        if item.get("highest_priority") is None
+                        else int(item["highest_priority"])
+                    ),
+                )
+                for decision_index, item in enumerate(record["decisions"])
+            ],
+        )
+        db.execute(
+            "DELETE FROM uvm_arbitration_violations WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_arbitration_violations (
+                snapshot_id, violation_index, code, event_index, request_id,
+                message
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    violation_index,
+                    item["code"],
+                    int(item["event_index"]),
+                    item["request_id"],
+                    item["message"],
+                )
+                for violation_index, item in enumerate(record["violations"])
+            ],
+        )
+    return path
+
+
+def list_uvm_arbitration_snapshots(
+    project: ProjectConfig,
+    *,
+    limit: int = 20,
+    status: str | None = None,
+    run_id: str | None = None,
+    mode: str | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if status is not None and status not in {"PASS", "FAIL"}:
+        raise ValueError(f"Unsupported UVM arbitration status: {status}")
+
+    query = """
+        SELECT snapshot_id, created_at, project, source, mode, status,
+               request_count, grant_count, pending_count, sequence_count,
+               decision_count, violation_count, max_bypass_observed,
+               max_bypass_limit, selection_policy, run_id, input_path,
+               normalized_path, report_path
+        FROM uvm_arbitration_snapshots
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if mode is not None:
+        clauses.append("mode = ?")
+        params.append(mode)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_uvm_arbitration_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT snapshot_id, event_index, request_id, event, sequence_id,
+               sequence_name, sequencer, priority, time_text, metadata_json
+        FROM uvm_arbitration_events
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if request_id is not None:
+        query += " AND request_id = ?"
+        params.append(request_id)
+    query += " ORDER BY event_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
+
+
+def list_uvm_arbitration_decisions(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, decision_index, event_index, request_id, sequencer,
+                   mode, pending_request_ids_json, eligible_request_ids_json,
+                   expected_request_id, highest_priority
+            FROM uvm_arbitration_decisions
+            WHERE snapshot_id = ?
+            ORDER BY decision_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["pending_request_ids"] = json.loads(
+            item.pop("pending_request_ids_json")
+        )
+        item["eligible_request_ids"] = json.loads(
+            item.pop("eligible_request_ids_json")
+        )
+        result.append(item)
+    return result
+
+
+def list_uvm_arbitration_violations(
+    project: ProjectConfig,
+    snapshot_id: str,
+) -> list[dict[str, Any]]:
+    with _connect(project) as db:
+        rows = db.execute(
+            """
+            SELECT snapshot_id, violation_index, code, event_index, request_id,
+                   message
+            FROM uvm_arbitration_violations
+            WHERE snapshot_id = ?
+            ORDER BY violation_index
+            """,
+            (snapshot_id,),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
