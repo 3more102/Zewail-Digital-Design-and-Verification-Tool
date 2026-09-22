@@ -14,20 +14,20 @@ _CHANNELS = {
         "ready": "AWREADY",
         "payload": (
             "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST",
-            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION",
+            "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION", "AWUSER",
         ),
         "required": ("AWADDR", "AWLEN", "AWSIZE", "AWBURST"),
     },
     "W": {
         "valid": "WVALID",
         "ready": "WREADY",
-        "payload": ("WDATA", "WSTRB", "WLAST"),
+        "payload": ("WDATA", "WSTRB", "WLAST", "WUSER"),
         "required": ("WDATA", "WSTRB", "WLAST"),
     },
     "B": {
         "valid": "BVALID",
         "ready": "BREADY",
-        "payload": ("BID", "BRESP"),
+        "payload": ("BID", "BRESP", "BUSER"),
         "required": ("BRESP",),
     },
     "AR": {
@@ -35,14 +35,14 @@ _CHANNELS = {
         "ready": "ARREADY",
         "payload": (
             "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST",
-            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION",
+            "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
         ),
         "required": ("ARADDR", "ARLEN", "ARSIZE", "ARBURST"),
     },
     "R": {
         "valid": "RVALID",
         "ready": "RREADY",
-        "payload": ("RID", "RDATA", "RRESP", "RLAST"),
+        "payload": ("RID", "RDATA", "RRESP", "RLAST", "RUSER"),
         "required": ("RDATA", "RRESP", "RLAST"),
     },
 }
@@ -146,9 +146,10 @@ def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
     for name in (
         "AWID", "AWADDR", "AWLEN", "AWSIZE", "AWBURST", "AWCACHE",
-        "AWPROT", "AWQOS", "AWREGION", "WDATA", "WSTRB", "BID", "BRESP",
-        "ARID", "ARADDR", "ARLEN", "ARSIZE", "ARBURST", "ARCACHE",
-        "ARPROT", "ARQOS", "ARREGION", "RID", "RDATA", "RRESP",
+        "AWPROT", "AWQOS", "AWREGION", "AWUSER", "WDATA", "WSTRB", "WUSER",
+        "BID", "BRESP", "BUSER", "ARID", "ARADDR", "ARLEN", "ARSIZE",
+        "ARBURST", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER",
+        "RID", "RDATA", "RRESP", "RUSER",
     ):
         if name in upper:
             sample[name] = _scalar(upper[name])
@@ -381,6 +382,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
         values["cache_attributes"] = _decode_axi4_cache_attributes(values["cache"])
+        values["user"] = sample.get(f"{prefix}USER")
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -559,6 +561,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cache_attributes": sidebands["cache_attributes"],
             "prot": sidebands["prot"],
             "qos": sidebands["qos"],
+            "user": sidebands["user"],
         }
 
     def exclusive_attribute_mismatches(
@@ -707,6 +710,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 tx[f"ar{key}"] = request[key]
         if request.get("cache_attributes") is not None:
             tx["cache_attributes"] = request["cache_attributes"]
+        if request.get("user") is not None:
+            tx["aruser"] = request["user"]
+        read_users = [beat.get("user") for beat in beats]
+        if any(value is not None for value in read_users):
+            tx["read_user"] = read_users
         transactions.append(tx)
 
     for sample in samples:
@@ -745,6 +753,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 "data": sample.get("WDATA"),
                 "strb": sample.get("WSTRB"),
                 "last": bool(sample.get("WLAST", False)),
+                "user": sample.get("WUSER"),
             }
             current_w_beats.append(beat)
             if beat["last"]:
@@ -843,6 +852,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         tx[f"aw{key}"] = request[key]
                 if request.get("cache_attributes") is not None:
                     tx["cache_attributes"] = request["cache_attributes"]
+                if request.get("user") is not None:
+                    tx["awuser"] = request["user"]
+                write_users = [beat.get("user") for beat in beats]
+                if any(value is not None for value in write_users):
+                    tx["write_user"] = write_users
+                if sample.get("BUSER") is not None:
+                    tx["buser"] = sample["BUSER"]
                 transactions.append(tx)
 
         if r_hs:
@@ -891,6 +907,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "response": label,
                     "response_code": code,
                     "last": bool(sample.get("RLAST", False)),
+                    "user": sample.get("RUSER"),
                 }
                 request["beats"].append(beat)
                 observed = len(request["beats"])
@@ -1009,7 +1026,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected and B/M/RA/WA semantics are decoded; AxREGION is checked for 4KB-space consistency.",
-            "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, USER sidebands, and QoS policy are not modeled.",
+            "AXI4 USER sidebands are preserved and checked for VALID/READY stall stability, but their implementation-defined widths and semantics are not interpreted.",
+            "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, and QoS policy are not modeled.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
