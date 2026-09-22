@@ -11,8 +11,8 @@ from zddv.config import initialize_project, load_project, save_project
 from zddv.crossprobe import write_crossprobe_report
 from zddv.connectivity import signal_navigation, write_connectivity_index
 from zddv.coverage import (
+    load_normalized_coverage_points,
     merge_coverage,
-    parse_verilator_coverage,
     write_coverage_hole_report,
 )
 from zddv.dashboard import generate_html_report
@@ -375,6 +375,13 @@ def cmd_coverage(args) -> int:
             "Simulator-reported total coverage: "
             f"{metrics['tool_total_coverage']:.2f}%"
         )
+    if result.get("code_capture"):
+        print(
+            "Detailed code coverage: "
+            f"{result['code_capture']} ({result.get('code_points', 0)} point(s))"
+        )
+    if result.get("points_path"):
+        print(f"Normalized points: {result['points_path']}")
     print(f"Metrics: {result['metrics_path']}")
     print(f"Snapshot: {result['snapshot_id']}")
     if result.get("functional_snapshot_id"):
@@ -407,20 +414,12 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
-    if project.simulator.strip().lower() != "verilator":
-        raise RuntimeError(
-            "Coverage-hole itemization currently requires Verilator point-level "
-            "coverage; Questa UCDB normalization is summary-level only."
-        )
-    merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
-    if not merged_path.exists():
-        raise RuntimeError(
-            f"Merged coverage not found at {merged_path}. Run 'zddv coverage' first."
-        )
-
-    points = parse_verilator_coverage(merged_path)
+    points = load_normalized_coverage_points(project)
     if not points:
-        raise RuntimeError(f"No normalized coverage points found in {merged_path}.")
+        raise RuntimeError(
+            "No normalized code-coverage points were found. "
+            "Run 'zddv coverage' and ensure detailed coverage export is available."
+        )
 
     output = Path(args.output)
     if not output.is_absolute():
