@@ -66,6 +66,27 @@ Example:
 }
 ```
 
+## Explicit Log-Marker Adapter
+
+ZDDV can also consume opt-in lifecycle markers embedded in simulator/UVM logs. The marker is:
+
+```text
+ZDDV_UVM_SEQUENCE {"sequence_id":"seq-17","sequence":"axi_write_seq","sequencer":"uvm_test_top.env.axi_agent.seqr","state":"UVM_BODY","time":"11 ns"}
+```
+
+Everything after `ZDDV_UVM_SEQUENCE` on that line must be one JSON object using the same fields as the standalone lifecycle trace. Other log lines are ignored. ZDDV records the source log line in event metadata and does not reinterpret ordinary simulator or UVM messages as sequence-state evidence.
+
+The adapter API reuses the same lifecycle validator and SQLite persistence path:
+
+```python
+from zddv.uvm_sequence import analyze_uvm_sequence_log
+
+result = analyze_uvm_sequence_log(project, "simulation.log")
+result = analyze_uvm_sequence_log(project, None, run_id="run-id")
+```
+
+When a recorded run is supplied without a path, the adapter reads that run's simulation log and preserves run status, return code, and simulator correlation.
+
 ## Lifecycle Rules
 
 For a normally completed sequence with pre/post callbacks enabled, ZDDV accepts:
@@ -107,7 +128,7 @@ rows are also persisted in the project SQLite database.
 
 ## Scope Boundary
 
-This layer models sequence lifecycle evidence only. It does not infer sequence activity
-from ordinary UVM text logs, and it does not reconstruct sequencer arbitration,
+This layer models sequence lifecycle evidence only. It accepts explicit `ZDDV_UVM_SEQUENCE`
+JSON markers but does not infer sequence activity from ordinary UVM text logs, and it does not reconstruct sequencer arbitration,
 request/grant timing, sequence-item payloads, driver completion, or transaction-level
 semantics.
