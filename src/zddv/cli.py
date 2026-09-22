@@ -367,11 +367,21 @@ def cmd_coverage(args) -> int:
     print(f"Merged coverage: {result['merged']}")
     print(f"Summary: {result['summary']}")
     metrics = result["metrics"]
-    print(
-        f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
-        f"({metrics['hit_rate']:.1f}%)"
-    )
-    if metrics.get("tool_total_coverage") is not None:
+    if metrics.get("counts_available", True):
+        print(
+            f"Coverage points: {metrics['hit_points']}/{metrics['total_points']} hit "
+            f"({metrics['hit_rate']:.1f}%)"
+        )
+    else:
+        print(
+            "Coverage score: "
+            f"{metrics['hit_rate']:.2f}% "
+            "(URG dashboard; raw point counts unavailable)"
+        )
+    if (
+        metrics.get("tool_total_coverage") is not None
+        and metrics.get("counts_available", True)
+    ):
         print(
             "Simulator-reported total coverage: "
             f"{metrics['tool_total_coverage']:.2f}%"
@@ -408,9 +418,14 @@ def cmd_coverage_history(args) -> int:
         print("No coverage snapshots found.")
         return 0
 
-    print(f"{'HIT RATE':>9} {'HIT/TOTAL':>15} {'INPUTS':>6}  SNAPSHOT")
+    print(f"{'RATE':>9} {'HIT/TOTAL':>15} {'INPUTS':>6}  SNAPSHOT")
     for row in rows:
-        ratio = f"{row['hit_points']}/{row['total_points']}"
+        ratio = (
+            "score-only"
+            if row["simulator"].strip().lower() == "vcs"
+            and row["total_points"] == 0
+            else f"{row['hit_points']}/{row['total_points']}"
+        )
         print(
             f"{row['hit_rate']:>8.1f}% {ratio:>15} "
             f"{row['input_count']:>6}  {row['snapshot_id']}"
