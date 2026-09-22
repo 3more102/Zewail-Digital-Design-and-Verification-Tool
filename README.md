@@ -109,7 +109,7 @@ statement/branch rows from `vcover report -details -code sb`, allowing
 Condition/expression/toggle/FSM item normalization remains pending. Questa's
 weighted total coverage remains a separate simulator-reported value.
 
-For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. Code-metric object-count aggregation remains pending; if the dashboard is absent or unparseable, the merged VDB/report evidence remains available without a numeric snapshot.
+For a VCS project with `coverage = true`, ZDDV instruments compilation and simulation with `-cm line+cond+fsm+tgl+branch` and directs each run to its own `coverage.vdb` using `-cm_dir`. The per-run database is recorded only when it actually exists. `zddv coverage` then uses Synopsys URG to merge all per-run VDBs into `.zddv/coverage/coverage.vdb` and retain an `urg-report` directory. When `dashboard.txt` contains the documented Total Coverage Summary, ZDDV normalizes the overall SCORE plus available LINE/COND/TOGGLE/FSM/BRANCH/ASSERT/GROUP percentages and stores them in a percentage-native SQLite history. If the documented Total Groups Coverage Summary is present, ZDDV also stores its global covergroup type and instance COVERED/EXPECTED counts without converting percentages into synthetic counts. When the canonical dashboard omits code-metric counts, ZDDV generates a separate `urg-ratio-report` with `-show ratios` and imports only explicitly reported LINE/COND/TOGGLE/FSM/BRANCH/PATH/ASSERT covered/coverable ratios. The canonical total score remains sourced from the original report, so the ratio report cannot silently change stored score semantics. Missing or unparseable ratio evidence remains evidence-only; counts are never fabricated from percentages.
 
 For an Xcelium project, ZDDV uses the native `xrun` flow: `-elaborate` with a dedicated `-xmlibdirname` build database, followed by `xrun -R` for repeatable runs. The adapter carries `-svseed`, ZDDV/UVM test plusargs, timeout classification, assertion ingestion, run-linked UVM normalization, and optional VCD capture through an `-input` Tcl probe script. Native Xcelium coverage collection/merge is intentionally not claimed yet; projects using this backend must keep `coverage = false` until that layer is implemented.
 
@@ -685,7 +685,8 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] VCS multi-run URG merge/report evidence retention
 - [x] VCS normalized URG dashboard score ingestion and percentage-native history snapshots
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
-- [ ] VCS code-metric covered/total object-count ingestion from module/instance detail reports
+- [x] VCS explicit code-metric covered/coverable count ingestion from isolated URG `-show ratios` evidence
+- [ ] VCS source-linked code-metric hole normalization from module/instance detail reports
 - [ ] Xcelium adapter
 - [ ] Formal adapter API
 - [ ] Counterexample normalization
