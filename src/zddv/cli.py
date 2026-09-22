@@ -25,6 +25,7 @@ from zddv.coverage import (
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
+from zddv.debug_probes import write_debug_probe_suggestions
 from zddv.root_cause import write_root_cause_report
 from zddv.functional_coverage import ingest_functional_coverage
 from zddv.formal import (
@@ -345,6 +346,40 @@ def cmd_root_cause(args) -> int:
         print(f"... {len(result['candidates']) - args.show} more candidate(s)")
     for note in result["limitations"][:5]:
         print(f"Limitation: {note}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
+def cmd_debug_probes(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_debug_probe_suggestions(
+        project,
+        run_id=args.run_id,
+        candidate_limit=args.candidate_limit,
+        event_limit=args.event_limit,
+        signal_limit=args.signal_limit,
+        output=args.output,
+    )
+    summary = result["summary"]
+    print(
+        f"DEBUG PROBES: run={result['run']['run_id']} "
+        f"suggestions={summary['suggestions']} "
+        f"signals={summary['unique_signals']} "
+        f"blockers={summary['blockers']}"
+    )
+    for suggestion in result["suggestions"][: args.show]:
+        argv = " ".join(suggestion["argv"])
+        print(
+            f"#{suggestion['rank']} waveform-probe "
+            f"signal={suggestion['signal']} "
+            f"from-candidate=#{suggestion['source_candidate_rank']} "
+            f"score={suggestion['source_evidence_score']}"
+        )
+        print(f"  zddv --project <project> {argv}")
+    if len(result["suggestions"]) > args.show:
+        print(f"... {len(result['suggestions']) - args.show} more suggestion(s)")
+    for blocker in result["blockers"]:
+        print(f"WITHHELD {blocker['code']}: {blocker['message']}")
     print(f"Report: {result['path']}")
     return 0
 
@@ -2444,6 +2479,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evidence-ranked root-cause JSON report path",
     )
     p_root_cause.set_defaults(func=cmd_root_cause)
+
+    p_debug_probes = sub.add_parser(
+        "debug-probes",
+        help="Suggest debug probes justified by explicit failure evidence",
+    )
+    p_debug_probes.add_argument(
+        "--run",
+        dest="run_id",
+        required=True,
+        help="Exact failing or timed-out run ID",
+    )
+    p_debug_probes.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=10,
+        help="Maximum ranked root-cause candidates to inspect",
+    )
+    p_debug_probes.add_argument(
+        "--event-limit",
+        type=int,
+        default=100,
+        help="Maximum failing assertion events used by the source ranking",
+    )
+    p_debug_probes.add_argument(
+        "--signal-limit",
+        type=int,
+        default=20,
+        help="Maximum exact waveform signal hints per assertion",
+    )
+    p_debug_probes.add_argument(
+        "--show",
+        type=int,
+        default=10,
+        help="Maximum probe suggestions to print",
+    )
+    p_debug_probes.add_argument(
+        "--output",
+        default=".zddv/debug/probe-suggestions.json",
+        help="Evidence-backed debug probe suggestion JSON path",
+    )
+    p_debug_probes.set_defaults(func=cmd_debug_probes)
 
     p_lint = sub.add_parser("lint", help="Lint the configured SystemVerilog design")
     p_lint.set_defaults(func=cmd_lint)

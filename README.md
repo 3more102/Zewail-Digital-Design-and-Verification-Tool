@@ -707,6 +707,19 @@ signal hint, an RTL declaration match, and a failing assertion). Every score bas
 and supporting artifact is retained in `.zddv/debug/root-cause.json`; ZDDV does
 not claim that the top-ranked candidate caused the failure.
 
+### Evidence-Backed Debug Probe Suggestions
+
+`zddv debug-probes --run <run-id>` consumes the deterministic root-cause ranking
+and emits only probes that are directly justified by retained failure evidence. If an
+assertion is explicitly correlated to an indexed waveform signal, ZDDV emits a
+reviewable `waveform-probe` command for that exact signal and run. Suggestions retain
+the source candidate rank, evidence score, assertion/log coordinates, waveform
+artifact, and any resolved RTL driver/declaration evidence.
+
+When no waveform artifact or exact signal hint exists, the report emits explicit
+blockers instead of inventing a signal or time window. Probe suggestions are written
+to `.zddv/debug/probe-suggestions.json` and do not execute automatically.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
