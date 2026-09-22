@@ -4,6 +4,7 @@ ZDDV can analyze explicit, simulator-independent sequence-item handshake evidenc
 
 ```text
 zddv --project <project> uvm-item-analyze <trace.json>
+zddv --project <project> uvm-item-history --limit 20
 ```
 
 The normalized event vocabulary is:
@@ -46,6 +47,6 @@ Once earlier evidence is present, backward ordering is a violation. Examples inc
 
 ## Current boundary
 
-This foundation validates event ordering, duplicate events, and stable item identity. It does not yet infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, compare transaction payloads, or persist item snapshots in SQLite.
+This foundation validates event ordering, duplicate events, and stable item identity. Each analysis is persisted in SQLite together with normalized per-event evidence, optional ZDDV run correlation, and a queryable history exposed through `uvm-item-history`. It does not infer vendor log formats, reconstruct arbitration priority/fairness, validate delta-cycle timing, or compare transaction payloads.
 
 Reference basis: Accellera UVM 1.2 User Guide and UVM 1.2 Class Reference for the sequence/sequencer request-grant and driver item-done/put API flow.
