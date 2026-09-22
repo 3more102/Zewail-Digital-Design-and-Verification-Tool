@@ -351,13 +351,40 @@ jobs:
 
       - name: Build reviewable verification proposals
         run: |
-          zddv --project examples/counter verification-proposals --limit 1 --show 1
+          mkdir -p examples/counter/.zddv/coverage
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("examples/counter/.zddv/coverage/ci-verification-suggestions.json")
+          path.write_text(json.dumps({
+              "source_total_holes": 1,
+              "source_reported_holes": 1,
+              "suggestion_count": 1,
+              "suggestions": [{
+                  "rank": 1,
+                  "kind": "coverage_test_intent",
+                  "coverage_type": "fsm",
+                  "hole_name": "counter:ci_fsm:IDLE->ACTIVE",
+                  "intent": "Target explicit CI FSM transition IDLE -> ACTIVE.",
+                  "evidence": {
+                      "source": "ci-deterministic-fixture",
+                      "fsm_id": "ci_fsm",
+                      "transition": "IDLE -> ACTIVE"
+                  },
+                  "review_required": True,
+                  "auto_execute": False
+              }]
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
+          zddv --project examples/counter verification-proposals --input .zddv/coverage/ci-verification-suggestions.json --limit 1 --show 1
           test -s examples/counter/.zddv/debug/verification-proposals.json
+          grep -q '"proposal_count": 1' examples/counter/.zddv/debug/verification-proposals.json
           if find examples/counter -type f -name '*.sv.disabled' -print -quit | grep -q .; then
             echo "verification-proposals emitted code without explicit opt-in"
             exit 1
           fi
-          zddv --project examples/counter verification-proposals --limit 1 --emit-dir .zddv/generated/review
+          zddv --project examples/counter verification-proposals --input .zddv/coverage/ci-verification-suggestions.json --limit 1 --emit-dir .zddv/generated/review
           test "$(find examples/counter/.zddv/generated/review -type f -name '*.sv.disabled' | wc -l)" -eq 2
 
       - name: Generate HTML dashboard
