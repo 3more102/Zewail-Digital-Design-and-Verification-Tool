@@ -170,6 +170,8 @@ zddv --project my_project uvm-item-log-analyze --run <run-id>
 zddv --project my_project uvm-item-violations <snapshot-id> --code LATE_GRANT
 zddv --project my_project uvm-sequence-analyze sequence_trace.json
 zddv --project my_project uvm-sequence-analyze sequence_trace.json --run <run-id>
+zddv --project my_project uvm-sequence-log-analyze simulation.log
+zddv --project my_project uvm-sequence-log-analyze --run <run-id>
 zddv --project my_project uvm-sequence-history --limit 20
 zddv --project my_project fcov-import functional_coverage.json
 zddv --project my_project fcov-history --limit 20
