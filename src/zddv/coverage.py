@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import uuid
+import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.functional_coverage import ingest_functional_coverage
@@ -299,6 +301,110 @@ def parse_questa_functional_coverage_report(text: str) -> dict:
     return {"source": "questa-vcover", "bins": bins}
 
 
+def _xml_local_name(name: str) -> str:
+    """Return a namespace-insensitive XML name for structural evidence."""
+    if "}" in name:
+        name = name.rsplit("}", 1)[1]
+    if ":" in name:
+        name = name.rsplit(":", 1)[1]
+    return name
+
+
+def inspect_questa_coverage_xml(path: str | Path) -> dict:
+    """Inventory XML structure without assigning vendor-specific semantics.
+
+    Questa's detailed XML is treated as retained evidence. This function records
+    only observable structure so a future normalizer can be based on real
+    fixtures instead of guessed tag meanings.
+    """
+    source = Path(path)
+    root = ET.parse(source).getroot()
+
+    tag_counts: dict[str, int] = defaultdict(int)
+    attributes_by_tag: dict[str, set[str]] = defaultdict(set)
+    element_count = 0
+
+    for element in root.iter():
+        element_count += 1
+        tag = _xml_local_name(str(element.tag))
+        tag_counts[tag] += 1
+        attributes_by_tag[tag]
+        for attribute in element.attrib:
+            attributes_by_tag[tag].add(_xml_local_name(str(attribute)))
+
+    normalized_attributes = {
+        tag: sorted(attributes)
+        for tag, attributes in sorted(attributes_by_tag.items())
+    }
+    schema_basis = {
+        "inventory_version": 1,
+        "root_tag": _xml_local_name(str(root.tag)),
+        "attributes_by_tag": normalized_attributes,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            schema_basis,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        **schema_basis,
+        "element_count": element_count,
+        "tag_counts": dict(sorted(tag_counts.items())),
+        "schema_fingerprint": fingerprint,
+    }
+
+
+def _write_questa_xml_schema_inventory(
+    xml_evidence: dict,
+    out_dir: Path,
+) -> dict:
+    """Persist a bounded structural inventory for retained Questa XML."""
+    schema_path = out_dir / "details-schema.json"
+    if schema_path.exists():
+        schema_path.unlink()
+
+    if (
+        xml_evidence.get("status") != "captured"
+        or not xml_evidence.get("path")
+    ):
+        return {
+            "status": "unavailable",
+            "path": None,
+            "schema_fingerprint": None,
+            "root_tag": None,
+            "element_count": 0,
+            "error": None,
+        }
+
+    try:
+        schema = inspect_questa_coverage_xml(xml_evidence["path"])
+        schema_path.write_text(
+            json.dumps(schema, indent=2),
+            encoding="utf-8",
+        )
+    except (ET.ParseError, OSError, ValueError) as exc:
+        return {
+            "status": "invalid_xml",
+            "path": None,
+            "schema_fingerprint": None,
+            "root_tag": None,
+            "element_count": 0,
+            "error": str(exc),
+        }
+
+    return {
+        "status": "parsed",
+        "path": str(schema_path),
+        "schema_fingerprint": schema["schema_fingerprint"],
+        "root_tag": schema["root_tag"],
+        "element_count": schema["element_count"],
+        "error": None,
+    }
+
+
 def _capture_questa_report_file(
     command: list[str],
     *,
@@ -437,6 +543,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
             output=zero_detail_path,
         ),
     }
+    detailed_code_coverage_evidence["xml_schema"] = (
+        _write_questa_xml_schema_inventory(
+            detailed_code_coverage_evidence["xml"],
+            out_dir,
+        )
+    )
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
