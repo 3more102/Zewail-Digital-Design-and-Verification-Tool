@@ -331,6 +331,41 @@ def _capture_questa_details_xml(
     }
 
 
+def _capture_questa_zero_detail(
+    tool: str,
+    merged_path: Path,
+    out_dir: Path,
+    cwd: Path,
+) -> dict:
+    """Retain Questa zero-hit source/file-line evidence when available."""
+    zero_path = out_dir / "zeros.txt"
+    if zero_path.exists():
+        zero_path.unlink()
+
+    command = [
+        tool,
+        "report",
+        "-zeros",
+        "-details",
+        "-codeAll",
+        "-output",
+        str(zero_path),
+        str(merged_path),
+    ]
+    result = _run(command, cwd)
+    captured = result.returncode == 0 and zero_path.exists()
+    if not captured and zero_path.exists():
+        zero_path.unlink()
+
+    return {
+        "status": "text" if captured else "unavailable",
+        "path": str(zero_path) if captured else None,
+        "command": command,
+        "returncode": int(result.returncode),
+        "output": result.stdout or "",
+    }
+
+
 def merge_questa_coverage(project: ProjectConfig) -> dict:
     tool = shutil.which("vcover")
     if tool is None:
@@ -413,6 +448,12 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         out_dir,
         project.root,
     )
+    zero_detail = _capture_questa_zero_detail(
+        tool,
+        merged_path,
+        out_dir,
+        project.root,
+    )
 
     created_at = datetime.now(timezone.utc).isoformat()
     snapshot_id = (
@@ -435,9 +476,15 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "details": details["path"],
         "details_capture": details["status"],
         "details_command": details["command"],
+        "zero_detail": zero_detail["path"],
+        "zero_detail_capture": zero_detail["status"],
+        "zero_detail_command": zero_detail["command"],
+        "zero_detail_returncode": zero_detail["returncode"],
     }
     if details["status"] != "xml":
         payload["details_error"] = details["output"].strip()
+    if zero_detail["status"] != "text":
+        payload["zero_detail_error"] = zero_detail["output"].strip()
     metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     record_coverage_snapshot(
@@ -464,6 +511,13 @@ def merge_questa_coverage(project: ProjectConfig) -> dict:
         "details_error": (
             details["output"].strip()
             if details["status"] != "xml"
+            else None
+        ),
+        "zero_detail": zero_detail["path"],
+        "zero_detail_capture": zero_detail["status"],
+        "zero_detail_error": (
+            zero_detail["output"].strip()
+            if zero_detail["status"] != "text"
             else None
         ),
     }
