@@ -160,6 +160,51 @@ def test_sby_backend_normalizes_terminal_status_and_retains_evidence(
     assert command[:4] == ["/opt/sby/bin/sby", "-f", "-d", str(result.run_dir)]
 
 
+def test_sby_backend_attaches_native_failure_property_and_trace(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr(
+        "zddv.formal.sby.shutil.which",
+        lambda name: "/opt/sby/bin/sby" if name == "sby" else None,
+    )
+
+    native_output = """\
+SBY [job] engine_0.basecase: ## Assert failed in formal_top.u_dut: p_req_ack
+SBY [job] engine_0.basecase: ## Writing trace to VCD file: engine_0/trace.vcd
+SBY [job] summary: engine_0 (smtbmc boolector) returned FAIL for basecase
+SBY [job] DONE (FAIL, rc=2)
+"""
+
+    def fake_process(command, *, cwd, timeout_s):
+        return SimpleNamespace(
+            returncode=2,
+            output=native_output,
+            timed_out=False,
+        )
+
+    monkeypatch.setattr("zddv.formal.sby._run_process", fake_process)
+
+    result = SymbiYosysBackend().check(
+        project,
+        FormalCheckRequest(mode="bmc", depth=12),
+    )
+
+    assert result.status == "FAIL"
+    assert result.engine == "smtbmc boolector"
+    assert len(result.properties) == 1
+    item = result.properties[0]
+    assert item.name == "p_req_ack"
+    assert item.kind == "assert"
+    assert item.status == "FAIL"
+    assert item.trace_path == (result.run_dir / "engine_0" / "trace.vcd").resolve()
+
+    assert result.artifacts[0].suffix == ".sby"
+    assert item.trace_path in result.artifacts
+    assert len(result.artifacts) == 2
+
+
 def test_sby_backend_timeout_is_unknown_not_pass_or_fail(tmp_path: Path, monkeypatch):
     project = _project(tmp_path)
     monkeypatch.setattr("zddv.formal.sby.shutil.which", lambda name: "/usr/bin/sby")
