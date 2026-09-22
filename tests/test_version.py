@@ -11,4 +11,4 @@ def test_runtime_version_matches_package_metadata():
     metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert __version__ == metadata["project"]["version"]
-    assert __version__ == "0.9.0"
+    assert __version__ == "1.0.0"
