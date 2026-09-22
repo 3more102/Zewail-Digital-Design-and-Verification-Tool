@@ -3,6 +3,8 @@ from pathlib import Path
 
 from zddv.coverage import (
     build_coverage_hole_report,
+    parse_questa_coverage_summary,
+    parse_questa_functional_coverage_report,
     parse_verilator_coverage,
     summarize_coverage_points,
     write_coverage_hole_report,
@@ -69,3 +71,61 @@ def test_coverage_hole_report_filters_sorts_and_writes_json(tmp_path: Path):
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["total_holes"] == 2
     assert payload["by_type"] == {"line": 2}
+
+
+
+def test_parse_questa_coverage_summary_normalizes_code_types():
+    text = """QuestaSim-64 vcover Coverage Utility
+Coverage Report Totals BY INSTANCES: Number of Instances 23
+
+    Enabled Coverage              Bins      Hits    Misses    Weight  Coverage
+    ----------------              ----      ----    ------    ------  --------
+    Branches                     3,044     2,982        62         1    97.96%
+    Expressions                  1,665     1,143       522         1    68.64%
+    Statements                   4,920     4,920         0         1   100.00%
+    Toggles                     72,906    37,574    35,332         1    51.53%
+Total coverage (filtered view): 79.53%
+"""
+
+    metrics = parse_questa_coverage_summary(text)
+
+    assert metrics["total_points"] == 82535
+    assert metrics["hit_points"] == 46619
+    assert metrics["unhit_points"] == 35916
+    assert metrics["by_type"]["branch"]["total"] == 3044
+    assert metrics["by_type"]["statement"]["hit_rate"] == 100.0
+    assert metrics["by_type"]["toggle"]["hit"] == 37574
+
+
+def test_parse_questa_functional_coverage_report_normalizes_bins():
+    text = """COVERGROUP COVERAGE:
+--------------------
+Covergroup                              Metric       Goal    Status
+APB_seq_item_pkg::APB_cg               95.00%      100.00%   Uncovered
+
+    Coverpoint APB_cg::type_cp          50.00%      100.00%   Uncovered
+        bin write                         0          1         ZERO
+        bin read                        154          1         Covered
+
+    Cross APB_cg::write_x_data          40.00%      100.00%   Uncovered
+        bin legal_pair                    2          2         Covered
+        illegal bin bad_pair              1          1         Covered
+"""
+
+    payload = parse_questa_functional_coverage_report(text)
+
+    assert payload["source"] == "questa-vcover"
+    assert len(payload["bins"]) == 3
+    assert payload["bins"][0] == {
+        "scope": "APB_seq_item_pkg::APB_cg",
+        "coverpoint": "APB_cg::type_cp",
+        "bin": "write",
+        "hits": 0,
+        "goal": 1,
+        "metadata": {
+            "questa_status": "ZERO",
+            "coverage_kind": "coverpoint",
+        },
+    }
+    assert payload["bins"][2]["coverpoint"] == "APB_cg::write_x_data"
+    assert payload["bins"][2]["metadata"]["coverage_kind"] == "cross"
