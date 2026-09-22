@@ -297,6 +297,60 @@ def test_rejects_unknown_explicit_arbitration_mode():
         raise AssertionError("Expected ValueError for invalid arbitration mode")
 
 
+
+def _marker_line(decision: dict[str, object]) -> str:
+    return "ZDDV_UVM_ARBITRATION " + json.dumps(decision)
+
+
+def test_parse_arbitration_log_markers_preserves_actual_line_provenance():
+    decision = _decision(
+        "d0",
+        "req-a",
+        [
+            _contender(
+                "req-a",
+                "seq-a",
+                "producer_a",
+                priority=100,
+                request_order=0,
+            )
+        ],
+        mode="UVM_SEQ_ARB_FIFO",
+    )
+    decision["metadata"] = {"log_line": 999, "tag": "from-helper"}
+    text = "\n".join(
+        [
+            "ordinary simulator text",
+            "UVM_INFO prefix " + _marker_line(decision),
+            "ordinary trailer",
+        ]
+    )
+
+    result = parse_uvm_arbitration_log_text(text)
+
+    assert result["status"] == "PASS"
+    assert result["input_mode"] == "explicit-log-marker"
+    assert result["marker"] == "ZDDV_UVM_ARBITRATION"
+    assert result["marker_lines"] == [2]
+    assert result["decisions"][0]["metadata"]["log_line"] == 2
+    assert result["decisions"][0]["metadata"]["tag"] == "from-helper"
+
+
+def test_parse_arbitration_log_rejects_missing_and_invalid_markers():
+    try:
+        parse_uvm_arbitration_log_text("ordinary simulator text")
+    except ValueError as exc:
+        assert "No ZDDV_UVM_ARBITRATION markers found" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError when no arbitration marker exists")
+
+    try:
+        parse_uvm_arbitration_log_text("ZDDV_UVM_ARBITRATION {not-json}")
+    except ValueError as exc:
+        assert "has invalid JSON" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for malformed arbitration marker JSON")
+
 def _record_run(
     project,
     run_id: str,
