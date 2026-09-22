@@ -402,6 +402,11 @@ def cmd_coverage_history(args) -> int:
 
 def cmd_coverage_holes(args) -> int:
     project = load_project(_project_arg(args))
+    if project.simulator.strip().lower() != "verilator":
+        raise RuntimeError(
+            "Coverage-hole itemization currently requires Verilator point-level "
+            "coverage; Questa UCDB normalization is summary-level only."
+        )
     merged_path = (project.root / ".zddv" / "coverage" / "coverage.dat").resolve()
     if not merged_path.exists():
         raise RuntimeError(
