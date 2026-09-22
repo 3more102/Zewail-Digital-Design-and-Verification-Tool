@@ -217,6 +217,16 @@ jobs:
           grep -q '"errors": 0' examples/counter/.zddv/uvm/latest.json
           zddv --project examples/counter uvm-history --limit 5 | grep -q 'zddv_uvm_smoke'
 
+      - name: Verify concurrent async FIFO RTL example
+        run: |
+          zddv --project examples/async_fifo lint
+          zddv --project examples/async_fifo build
+          zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42 --timeout 20
+          zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
+          zddv --project examples/async_fifo coverage
+          test -s examples/async_fifo/.zddv/coverage/metrics.json
+          zddv --project examples/async_fifo assertions --status PASS --limit 50 | grep -q async_fifo_ordering
+
       - name: Export JUnit results
         run: |
           zddv --project examples/counter junit --output .zddv/junit.xml --limit 10
