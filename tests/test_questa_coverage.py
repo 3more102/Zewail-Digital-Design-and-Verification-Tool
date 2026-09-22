@@ -6,10 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from zddv.cli import cmd_coverage
+from zddv.cli import cmd_coverage, cmd_coverage_holes
 from zddv.config import ProjectConfig
 from zddv.coverage import (
     merge_questa_coverage,
+    parse_questa_branch_coverage_report,
     parse_questa_coverage_summary,
     parse_questa_functional_coverage_report,
 )
@@ -31,6 +32,31 @@ Coverage Report Totals BY INSTANCES: Number of Instances 23
     Toggles                      72906     37574     35332         1    51.53%
 Total coverage (filtered view): 79.53%
 """
+
+QUESTA_BRANCH_DETAILS = """Coverage Report by file with details
+
+=================================================================================
+=== File: top.v
+=================================================================================
+Branch Coverage:
+    Enabled Coverage            Bins      Hits    Misses % Covered
+    ----------------            ----      ----    ------ ---------
+    Branches                         5         3         2     60.00
+
+================================Branch Details================================
+
+Branch Coverage for file top.v --
+
+    12                                         3  Count coming in to IF
+    12              1                    ***0***  if (i == 16)
+    14              1                          1  else if (i == 2)
+    16              1                          1  else if (i == 10)
+    18              1                          1  else if (i == 18)
+    20              1                    ***0***  else
+
+Branch totals: 3 hits of 5 branches = 60.0%
+"""
+
 
 QUESTA_FUNCTIONAL = """COVERGROUP COVERAGE:
 --------------------
@@ -102,6 +128,24 @@ def test_parse_questa_summary_accepts_comma_grouped_counts():
     assert metrics["by_type"]["branch"]["total"] == 3044
 
 
+def test_parse_questa_branch_coverage_matches_documented_detail_rows():
+    points = parse_questa_branch_coverage_report(QUESTA_BRANCH_DETAILS)
+
+    assert len(points) == 5
+    assert [point["line"] for point in points if not point["hit"]] == [12, 20]
+    assert points[0] == {
+        "name": "top.v:12:1 if (i == 16)",
+        "count": 0,
+        "hit": False,
+        "type": "branch",
+        "source_file": "top.v",
+        "line": 12,
+        "item": 1,
+        "detail": "if (i == 16)",
+    }
+    assert all("Count coming in to IF" not in point["name"] for point in points)
+
+
 def test_parse_questa_functional_coverage_keeps_only_ordinary_bins():
     payload = parse_questa_functional_coverage_report(QUESTA_FUNCTIONAL)
 
@@ -161,6 +205,10 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
             output = Path(command[command.index("-output") + 1])
             output.write_text("rtl/dut.sv:42 ZERO\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="zero report written\n")
+        if command[1:5] == ["report", "-details", "-code", "b"]:
+            output = Path(command[command.index("-output") + 1])
+            output.write_text(QUESTA_BRANCH_DETAILS, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="branch report written\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -205,6 +253,16 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
         str(Path(result["merged"]).with_name("zeros.txt")),
         result["merged"],
     ]
+    assert commands[5] == [
+        "/opt/questa/bin/vcover",
+        "report",
+        "-details",
+        "-code",
+        "b",
+        "-output",
+        str(Path(result["merged"]).with_name("branch-details.txt")),
+        result["merged"],
+    ]
     assert len(result["inputs"]) == 2
     assert Path(result["merged"]).exists()
     assert Path(result["summary"]).read_text(encoding="utf-8") == QUESTA_SUMMARY
@@ -219,8 +277,12 @@ def test_merge_questa_coverage_merges_reports_and_persists_snapshot(
     evidence = payload["detailed_code_coverage_evidence"]
     assert evidence["xml"]["status"] == "captured"
     assert evidence["zero_detail"]["status"] == "captured"
+    assert evidence["branch_detail"]["status"] == "captured"
+    assert payload["branch_detail_points"] == 5
+    assert payload["branch_detail_holes"] == 2
     assert Path(evidence["xml"]["path"]).read_text(encoding="utf-8") == "<coverage/>\n"
     assert Path(evidence["zero_detail"]["path"]).read_text(encoding="utf-8") == "rtl/dut.sv:42 ZERO\n"
+    assert Path(evidence["branch_detail"]["path"]).read_text(encoding="utf-8") == QUESTA_BRANCH_DETAILS
     assert Path(result["functional_report"]).read_text(
         encoding="utf-8"
     ) == QUESTA_FUNCTIONAL
@@ -275,7 +337,13 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
             "detailed_code_coverage_evidence": {
                 "xml": {"status": "captured", "path": "/tmp/details.xml"},
                 "zero_detail": {"status": "captured", "path": "/tmp/zeros.txt"},
+                "branch_detail": {
+                    "status": "captured",
+                    "path": "/tmp/branch-details.txt",
+                },
             },
+            "branch_detail_points": 5,
+            "branch_detail_holes": 2,
         },
     )
 
@@ -288,6 +356,43 @@ def test_coverage_cli_surfaces_questa_functional_snapshot(tmp_path: Path, monkey
     assert "Functional report: /tmp/functional.txt" in output
     assert "Detailed code coverage XML: captured /tmp/details.xml" in output
     assert "Zero-hit source detail: captured /tmp/zeros.txt" in output
+    assert "Branch detail: captured /tmp/branch-details.txt" in output
+    assert "Branch items: 5 total, 2 uncovered" in output
+
+
+def test_coverage_holes_cli_supports_questa_branch_items(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    report_path = project.root / ".zddv" / "coverage" / "branch-details.txt"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(QUESTA_BRANCH_DETAILS, encoding="utf-8")
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+    args = SimpleNamespace(
+        project=str(project.root),
+        output=".zddv/coverage/holes.json",
+        point_type="branch",
+        limit=50,
+        show=10,
+    )
+
+    rc = cmd_coverage_holes(args)
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Coverage holes (branch): 2 unhit point(s)" in output
+    assert "[branch] top.v:12:1 if (i == 16)" in output
+    assert "[branch] top.v:20:1 else" in output
+
+    payload = json.loads(
+        (project.root / ".zddv" / "coverage" / "holes.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["by_type"] == {"branch": 2}
 
 
 def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_files(
@@ -320,6 +425,8 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
             return SimpleNamespace(returncode=0, stdout="")
         if "-xml" in command or "-zeros" in command:
             return SimpleNamespace(returncode=2, stdout="unsupported fixture\n")
+        if command[1:5] == ["report", "-details", "-code", "b"]:
+            return SimpleNamespace(returncode=2, stdout="branch detail unavailable\n")
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr("zddv.coverage._run", fake_run)
@@ -332,5 +439,9 @@ def test_questa_detailed_evidence_failure_is_nonfatal_and_does_not_reuse_stale_f
     assert evidence["xml"]["diagnostic"] == "unsupported fixture"
     assert evidence["zero_detail"]["status"] == "failed"
     assert evidence["zero_detail"]["diagnostic"] == "unsupported fixture"
+    assert evidence["branch_detail"]["status"] == "failed"
+    assert evidence["branch_detail"]["diagnostic"] == "branch detail unavailable"
+    assert result["branch_detail_points"] == 0
+    assert result["branch_detail_holes"] == 0
     assert not Path(evidence["xml"]["path"]).exists()
     assert not Path(evidence["zero_detail"]["path"]).exists()
