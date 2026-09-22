@@ -10,10 +10,10 @@ DEFAULT_UVM_ITEM_INSTRUMENTATION_PATH = (
 )
 
 
-_SV_SOURCE = r'''\`ifndef ZDDV_UVM_ITEM_INSTRUMENTATION_SVH
-\`define ZDDV_UVM_ITEM_INSTRUMENTATION_SVH
+_SV_SOURCE = r'''`ifndef ZDDV_UVM_ITEM_INSTRUMENTATION_SVH
+`define ZDDV_UVM_ITEM_INSTRUMENTATION_SVH
 
-\`include "uvm_macros.svh"
+`include "uvm_macros.svh"
 
 package zddv_uvm_item_instrumentation_pkg;
   import uvm_pkg::*;
@@ -308,7 +308,7 @@ package zddv_uvm_item_instrumentation_pkg;
   endclass
 endpackage
 
-\`endif
+`endif
 '''
 
 
