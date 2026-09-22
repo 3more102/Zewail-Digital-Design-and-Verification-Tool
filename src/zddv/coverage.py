@@ -922,8 +922,98 @@ def _parse_urg_score_token(token: str) -> float | None:
     return parsed
 
 
+def _parse_vcs_urg_group_summary(lines: list[str]) -> tuple[dict[str, dict[str, int | float]], str, str | None]:
+    """Parse documented global covergroup type/instance counts from dashboard.txt."""
+    section_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if "Total Groups Coverage Summary" in line
+        ),
+        None,
+    )
+    if section_index is None:
+        return {}, "group-summary-missing", None
+
+    for header_index in range(section_index + 1, min(len(lines), section_index + 12)):
+        header = lines[header_index].upper()
+        if not (
+            "COVERED" in header
+            and "EXPECTED" in header
+            and "SCORE" in header
+        ):
+            continue
+
+        for value_index in range(header_index + 1, min(len(lines), header_index + 8)):
+            raw = lines[value_index].strip()
+            if not raw or set(raw) <= {"-", "=", "+", "|", " "}:
+                continue
+
+            tokens = re.findall(r"\d[\d,]*(?:\.\d+)?%?", raw)
+            if len(tokens) < 3:
+                continue
+
+            try:
+                covered = int(tokens[0].replace(",", "").rstrip("%"))
+                total = int(tokens[1].replace(",", "").rstrip("%"))
+                score = _parse_urg_score_token(tokens[2])
+            except ValueError:
+                continue
+            if score is None:
+                continue
+            if covered < 0 or total < 0 or covered > total:
+                return {}, "group-summary-unparsed", (
+                    "URG Total Groups Coverage Summary has invalid type counts"
+                )
+
+            counts: dict[str, dict[str, int | float]] = {
+                "group": {
+                    "covered": covered,
+                    "total": total,
+                    "hit_rate": score,
+                }
+            }
+
+            # Current URG dashboards can also report instance counts in the
+            # same row: COVERED EXPECTED INST SCORE. Keep these separate from
+            # type counts instead of folding them together.
+            if len(tokens) >= 6:
+                try:
+                    instance_covered = int(
+                        tokens[3].replace(",", "").rstrip("%")
+                    )
+                    instance_total = int(
+                        tokens[4].replace(",", "").rstrip("%")
+                    )
+                    instance_score = _parse_urg_score_token(tokens[5])
+                except ValueError:
+                    return {}, "group-summary-unparsed", (
+                        "URG Total Groups Coverage Summary has invalid instance counts"
+                    )
+                if (
+                    instance_score is None
+                    or instance_covered < 0
+                    or instance_total < 0
+                    or instance_covered > instance_total
+                ):
+                    return {}, "group-summary-unparsed", (
+                        "URG Total Groups Coverage Summary has invalid instance counts"
+                    )
+                counts["group_instance"] = {
+                    "covered": instance_covered,
+                    "total": instance_total,
+                    "hit_rate": instance_score,
+                }
+
+            return counts, "normalized", None
+
+    return {}, "group-summary-unparsed", (
+        "URG Total Groups Coverage Summary count row could not be parsed"
+    )
+
+
 def parse_vcs_urg_dashboard(path: str | Path) -> dict:
-    """Parse the documented URG dashboard Total Coverage Summary scores."""
+    """Parse documented URG dashboard coverage scores and global group counts."""
     source = Path(path)
     lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
 
@@ -978,16 +1068,22 @@ def parse_vcs_urg_dashboard(path: str | Path) -> dict:
             if score is None:
                 raise ValueError("URG Total Coverage Summary has no SCORE value")
 
-            return {
+            group_counts, count_status, count_error = _parse_vcs_urg_group_summary(lines)
+            result = {
                 "tool_total_coverage": score,
                 "by_metric": {
                     name: value
                     for name, value in parsed.items()
                     if value is not None
                 },
+                "by_metric_counts": group_counts,
+                "count_status": count_status,
                 "source": "urg-dashboard",
                 "dashboard": str(source.resolve()),
             }
+            if count_error is not None:
+                result["count_error"] = count_error
+            return result
 
     raise ValueError("URG Total Coverage Summary score row could not be parsed")
 
@@ -1104,6 +1200,7 @@ def merge_vcs_coverage(project: ProjectConfig) -> dict:
                 "input_count": len(inputs),
                 "score": metrics["tool_total_coverage"],
                 "by_metric": metrics["by_metric"],
+                "by_metric_counts": metrics.get("by_metric_counts", {}),
                 "merged": str(merged_path),
                 "summary": str(summary_path),
                 "metrics_path": str(manifest_path),
