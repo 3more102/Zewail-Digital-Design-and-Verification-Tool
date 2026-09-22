@@ -432,13 +432,13 @@ def cmd_coverage(args) -> int:
     code_detail_status = result.get("code_detail_status")
     if code_detail_status is not None:
         print(
-            "Normalized Questa statement/branch/condition/expression coverage: "
+            "Normalized Questa statement/branch/condition/expression/FSM coverage: "
             f"{code_detail_status} "
             f"{result.get('code_detail_points', 0)} point(s), "
             f"{result.get('code_detail_holes', 0)} hole(s)"
         )
         if result.get("code_report"):
-            print(f"Questa statement/branch/condition/expression detail: {result['code_report']}")
+            print(f"Questa statement/branch/condition/expression/FSM detail: {result['code_report']}")
     brief_status = result.get("brief_status")
     if brief_status is not None:
         print(f"VCS uncovered-object evidence: {brief_status}")
@@ -551,10 +551,11 @@ def cmd_coverage_holes(args) -> int:
             "branch",
             "condition",
             "expression",
+            "fsm",
         }:
             raise RuntimeError(
                 "Questa item-level coverage currently supports "
-                "--type statement, branch, condition, or expression."
+                "--type statement, branch, condition, expression, or fsm."
             )
         if args.point_type == "statement":
             report = write_questa_statement_hole_report(
@@ -585,6 +586,14 @@ def cmd_coverage_holes(args) -> int:
                     f"No normalized Questa {args.point_type} FEC rows found in "
                     f"{source_path}. Scalar FEC rows are supported; multibit "
                     "FEC tables are not normalized yet."
+                )
+            if (
+                args.point_type == "fsm"
+                and not any(point.get("type") == "fsm" for point in points)
+            ):
+                raise RuntimeError(
+                    f"No normalized Questa FSM state/transition rows found in "
+                    f"{source_path}."
                 )
             if not points:
                 raise RuntimeError(
