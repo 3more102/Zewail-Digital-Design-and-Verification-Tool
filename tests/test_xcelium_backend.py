@@ -5,7 +5,6 @@ from pathlib import Path
 import subprocess
 from types import SimpleNamespace
 
-import pytest
 
 from zddv.cli import main
 from zddv.config import ProjectConfig
@@ -293,14 +292,80 @@ def test_xcelium_timeout_is_recorded(tmp_path, monkeypatch):
     assert run_record["returncode"] == 124
 
 
-def test_xcelium_rejects_unimplemented_native_coverage(tmp_path):
-    project = _project(tmp_path, coverage=True)
+def test_xcelium_build_instruments_native_coverage(tmp_path, monkeypatch):
+    project = _project(tmp_path, waveform=False, coverage=True)
     backend = XceliumBackend()
+    monkeypatch.setattr(backend, "version", lambda: "TOOL: xrun test")
+    monkeypatch.setattr(backend, "_tool", lambda: "xrun")
 
-    with pytest.raises(RuntimeError, match="coverage"):
-        backend.build(project)
-    with pytest.raises(RuntimeError, match="coverage"):
-        backend.run(project)
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = list(command)
+        library_dir = Path(command[command.index("-xmlibdirname") + 1])
+        library_dir.mkdir(parents=True)
+        return SimpleNamespace(returncode=0, stdout="elaboration complete\n")
+
+    monkeypatch.setattr("zddv.simulator.xcelium.subprocess.run", fake_run)
+
+    result = backend.build(project)
+
+    command = captured["command"]
+    assert result.passed is True
+    assert command[command.index("-coverage") + 1] == "all"
+
+    manifest = loads(
+        (project.root / ".zddv" / "build" / "build.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["coverage_requested"] is True
+    assert manifest["coverage_capture"] == "instrumented"
+    assert manifest["coverage_metrics"] == "all"
+
+
+def test_xcelium_run_captures_native_coverage_database(tmp_path, monkeypatch):
+    project = _project(tmp_path, waveform=False, coverage=True)
+    backend = XceliumBackend()
+    library_dir = (
+        project.root / ".zddv" / "build" / "xcelium.d"
+    ).resolve()
+    library_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(backend, "version", lambda: "TOOL: xrun test")
+    monkeypatch.setattr(backend, "_tool", lambda: "xrun")
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = list(command)
+        coverage_workdir = Path(command[command.index("-covworkdir") + 1])
+        coverage_test = command[command.index("-covtest") + 1]
+        coverage_dir = coverage_workdir / "scope" / coverage_test
+        coverage_dir.mkdir(parents=True)
+        (coverage_dir / "icc_test.ucm").write_text("model", encoding="utf-8")
+        (coverage_dir / "icc_test.ucd").write_text("data", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="simulation complete\n")
+
+    monkeypatch.setattr("zddv.simulator.xcelium.subprocess.run", fake_run)
+
+    result = backend.run(project, test_name="coverage_smoke", seed=11)
+
+    command = captured["command"]
+    assert "-covoverwrite" in command
+    assert command[command.index("-covtest") + 1] == "zddv"
+    assert result.coverage_path is not None
+    assert result.coverage_path.name == "zddv"
+    assert any(result.coverage_path.glob("*.ucm"))
+    assert any(result.coverage_path.glob("*.ucd"))
+
+    run_record = loads(
+        (result.run_dir / "run.json").read_text(encoding="utf-8")
+    )
+    assert run_record["coverage_requested"] is True
+    assert run_record["coverage"] == str(result.coverage_path)
+    assert run_record["coverage_capture"] == "ucm-ucd"
+    assert run_record["coverage_metrics"] == "all"
 
 
 def test_xcelium_version_uses_xrun_version(monkeypatch):
