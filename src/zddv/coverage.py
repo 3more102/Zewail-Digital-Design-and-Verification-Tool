@@ -224,6 +224,10 @@ def build_coverage_hole_report(
                         "transition",
                         "transition_id",
                         "evidence",
+                        "bit",
+                        "multibit",
+                        "fec_hits",
+                        "fec_conditions",
                     )
                     if key in point and point[key] is not None
                 },
@@ -621,6 +625,166 @@ def parse_questa_code_coverage_report(text: str) -> list[dict]:
         point[kind] = fec_context
         points.append(point)
 
+    return points
+
+
+def parse_questa_multibit_expression_report(text: str) -> list[dict]:
+    """Normalize documented Questa multibit expression FEC detail rows.
+
+    A multibit expression coverage point is one input-term bit. The point is
+    covered only when both paired FEC targets for logical 0 and logical 1 have
+    non-zero hit counts, matching Questa's multibit expression report model.
+    """
+    row_re = re.compile(
+        r"^\s*Row\s+(?P<row>\d+):\s+(?P<target>\S+)\s+(?P<rest>.+?)\s*$",
+        re.IGNORECASE,
+    )
+    index_re = re.compile(r"<(?P<index>\d+)>")
+    hit_token_re = re.compile(r"^(?:\*{3})?\d[\d,]*(?:\*{3})?$")
+
+    points: list[dict] = []
+    source_file = ""
+    fec_line: int | None = None
+    fec_item: int | None = None
+    fec_context = ""
+    bit_indices: list[int] = []
+    rows: list[dict] = []
+    in_multibit_rows = False
+
+    def flush() -> None:
+        nonlocal bit_indices, rows
+        if (
+            not source_file
+            or fec_line is None
+            or fec_item is None
+            or not bit_indices
+            or not rows
+        ):
+            bit_indices = []
+            rows = []
+            return
+
+        grouped: dict[str, dict[str, dict]] = {}
+        for row in rows:
+            match = re.match(
+                r"^(?P<base>.+)\[i\]_(?P<state>[01])$",
+                str(row["target"]),
+            )
+            if match is None:
+                continue
+            grouped.setdefault(match.group("base"), {})[
+                match.group("state")
+            ] = row
+
+        for base, states in grouped.items():
+            if set(states) != {"0", "1"}:
+                continue
+            zero = states["0"]
+            one = states["1"]
+            zero_hits = list(zero["hits"])
+            one_hits = list(one["hits"])
+            if len(zero_hits) != len(bit_indices) or len(one_hits) != len(bit_indices):
+                continue
+
+            for column, bit_index in enumerate(bit_indices):
+                zero_count = int(zero_hits[column])
+                one_count = int(one_hits[column])
+                hit = zero_count > 0 and one_count > 0
+                target = f"{base}[{bit_index}]"
+                evidence = f"{target} _0={zero_count} _1={one_count}"
+                points.append(
+                    {
+                        "name": f"{source_file}:{fec_line}:{fec_item}:{target}",
+                        "count": int(hit),
+                        "hit": hit,
+                        "type": "expression",
+                        "source_file": source_file,
+                        "line": fec_line,
+                        "item": fec_item,
+                        "bit": bit_index,
+                        "expression": fec_context,
+                        "fec_context": fec_context,
+                        "fec_target": target,
+                        "fec_hits": {"0": zero_count, "1": one_count},
+                        "fec_conditions": {
+                            "0": str(zero.get("detail") or ""),
+                            "1": str(one.get("detail") or ""),
+                        },
+                        "multibit": True,
+                        "evidence": evidence,
+                        "detail": evidence,
+                    }
+                )
+
+        bit_indices = []
+        rows = []
+
+    for raw_line in text.splitlines():
+        header = _QUESTA_CODE_DETAIL_HEADER.match(raw_line)
+        if header is not None:
+            flush()
+            if header.group("kind").strip().lower() == "expression":
+                source_file = header.group("file").strip()
+            else:
+                source_file = ""
+            fec_line = None
+            fec_item = None
+            fec_context = ""
+            in_multibit_rows = False
+            continue
+
+        if not source_file:
+            continue
+
+        item = _QUESTA_FEC_ITEM.match(raw_line)
+        if item is not None:
+            flush()
+            fec_line = int(item.group("line"))
+            fec_item = int(item.group("item"))
+            fec_context = (item.group("detail") or "").strip()
+            in_multibit_rows = False
+            continue
+
+        normalized = raw_line.strip().lower()
+        if normalized.startswith("rows: fec target"):
+            bit_indices = []
+            rows = []
+            in_multibit_rows = True
+            continue
+        if not in_multibit_rows:
+            continue
+
+        indices = [
+            int(match.group("index"))
+            for match in index_re.finditer(raw_line)
+        ]
+        if indices and "i" in normalized and "=" in normalized:
+            bit_indices = indices
+            continue
+
+        row = row_re.match(raw_line)
+        if row is None or not bit_indices:
+            continue
+        tokens = row.group("rest").split()
+        width = len(bit_indices)
+        if len(tokens) < width:
+            continue
+        hit_tokens = tokens[:width]
+        if not all(hit_token_re.match(token) for token in hit_tokens):
+            continue
+        rows.append(
+            {
+                "row": int(row.group("row")),
+                "target": row.group("target").strip(),
+                "hits": [
+                    int(token.replace("*", "").replace(",", ""))
+                    for token in hit_tokens
+                ],
+                "detail": " ".join(tokens[width:]).strip(),
+            }
+        )
+
+    flush()
     return points
 
 
