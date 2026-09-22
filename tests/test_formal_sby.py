@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from zddv.cli import main
-from zddv.config import ProjectConfig
+from zddv.config import ProjectConfig, save_project
 from zddv.formal import FormalCheckRequest, FormalCheckResult, SymbiYosysBackend
 from zddv.formal.sby import render_sby_bmc_config
 
@@ -31,7 +31,7 @@ endmodule
 """,
         encoding="utf-8",
     )
-    return ProjectConfig(
+    project = ProjectConfig(
         root=root,
         name="demo",
         top="formal_top",
@@ -41,6 +41,8 @@ endmodule
         waveform=False,
         coverage=False,
     )
+    save_project(project)
+    return project
 
 
 def test_render_sby_bmc_config_uses_explicit_bound_and_project_sources(tmp_path: Path):
