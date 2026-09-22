@@ -107,6 +107,30 @@ CREATE INDEX IF NOT EXISTS idx_uvm_messages_severity
 CREATE INDEX IF NOT EXISTS idx_uvm_messages_report_id
     ON uvm_report_messages(report_id);
 
+CREATE TABLE IF NOT EXISTS uvm_lifecycle_events (
+    snapshot_id TEXT NOT NULL,
+    event_index INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    action TEXT NOT NULL,
+    name TEXT NOT NULL,
+    component TEXT,
+    time_text TEXT,
+    report_id TEXT,
+    description TEXT,
+    count_value INTEGER,
+    total_value INTEGER,
+    log_line INTEGER NOT NULL,
+    raw TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, event_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_lifecycle_kind
+    ON uvm_lifecycle_events(kind);
+
+CREATE INDEX IF NOT EXISTS idx_uvm_lifecycle_name
+    ON uvm_lifecycle_events(name);
+
 CREATE TABLE IF NOT EXISTS uvm_run_links (
     snapshot_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL
@@ -545,6 +569,38 @@ def record_uvm_log_snapshot(
                 for item in record["messages"]
             ],
         )
+        db.execute(
+            "DELETE FROM uvm_lifecycle_events WHERE snapshot_id = ?",
+            (record["snapshot_id"],),
+        )
+        db.executemany(
+            """
+            INSERT INTO uvm_lifecycle_events (
+                snapshot_id, event_index, kind, action, name, component,
+                time_text, report_id, description, count_value, total_value,
+                log_line, raw, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    record["snapshot_id"],
+                    int(item["event_index"]),
+                    item["kind"],
+                    item["action"],
+                    item["name"],
+                    item.get("component"),
+                    item.get("time"),
+                    item.get("report_id"),
+                    item.get("description"),
+                    item.get("count"),
+                    item.get("total"),
+                    int(item["log_line"]),
+                    item["raw"],
+                    json.dumps(item.get("metadata", {}), sort_keys=True),
+                )
+                for item in record.get("lifecycle_events", [])
+            ],
+        )
     return path
 
 
@@ -564,7 +620,19 @@ def list_uvm_log_snapshots(
         SELECT s.snapshot_id, s.created_at, s.project, s.source, s.test_name,
                s.status, s.count_source, s.info_count, s.warning_count,
                s.error_count, s.fatal_count, s.total_reports, s.input_path,
-               s.normalized_path, s.report_path, l.run_id
+               s.normalized_path, s.report_path, l.run_id,
+               (
+                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
+                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'phase'
+               ) AS phase_events,
+               (
+                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
+                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'objection'
+               ) AS objection_events,
+               (
+                   SELECT COUNT(*) FROM uvm_lifecycle_events AS e
+                   WHERE e.snapshot_id = s.snapshot_id AND e.kind = 'sequence'
+               ) AS sequence_events
         FROM uvm_log_snapshots AS s
         LEFT JOIN uvm_run_links AS l ON l.snapshot_id = s.snapshot_id
     """
@@ -615,6 +683,40 @@ def list_uvm_report_messages(
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_uvm_lifecycle_events(
+    project: ProjectConfig,
+    snapshot_id: str,
+    *,
+    kind: str | None = None,
+) -> list[dict[str, Any]]:
+    allowed = {"phase", "objection", "sequence"}
+    if kind is not None and kind not in allowed:
+        raise ValueError(f"Unsupported UVM lifecycle kind: {kind}")
+
+    query = """
+        SELECT snapshot_id, event_index, kind, action, name, component,
+               time_text, report_id, description, count_value, total_value,
+               log_line, raw, metadata_json
+        FROM uvm_lifecycle_events
+        WHERE snapshot_id = ?
+    """
+    params: list[Any] = [snapshot_id]
+    if kind is not None:
+        query += " AND kind = ?"
+        params.append(kind)
+    query += " ORDER BY event_index"
+
+    with _connect(project) as db:
+        rows = db.execute(query, params).fetchall()
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        result.append(item)
+    return result
 
 
 def record_functional_coverage_snapshot(
