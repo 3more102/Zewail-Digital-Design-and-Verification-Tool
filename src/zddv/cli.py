@@ -572,25 +572,24 @@ def cmd_coverage_holes(args) -> int:
                 encoding="utf-8",
                 errors="replace",
             )
-            points = [
-                *parse_questa_code_coverage_report(report_text),
-                *parse_questa_fec_coverage_report(report_text),
-            ]
-            if not points:
-                raise RuntimeError(
-                    f"No normalized coverage points found in {source_path}."
-                )
+            code_points = parse_questa_code_coverage_report(report_text)
+            fec_points = parse_questa_fec_coverage_report(report_text)
+            points = [*code_points, *fec_points]
             if (
                 args.point_type in {"condition", "expression"}
                 and not any(
                     point.get("type") == args.point_type
-                    for point in points
+                    for point in fec_points
                 )
             ):
                 raise RuntimeError(
                     f"No normalized Questa {args.point_type} FEC rows found in "
                     f"{source_path}. Scalar FEC rows are supported; multibit "
                     "FEC tables are not normalized yet."
+                )
+            if not points:
+                raise RuntimeError(
+                    f"No normalized coverage points found in {source_path}."
                 )
             report = write_coverage_hole_report(
                 points,
