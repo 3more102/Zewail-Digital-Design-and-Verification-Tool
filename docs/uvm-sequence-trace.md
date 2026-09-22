@@ -87,7 +87,7 @@ result = analyze_uvm_sequence_log(project, None, run_id="run-id")
 
 When a recorded run is supplied without a path, the adapter reads that run's simulation log and preserves run status, return code, and simulator correlation.
 
-An executable marker-log example is available at `examples/uvm_sequence_marker.log`.
+An executable marker-log example is available at `examples/uvm_sequence_marker.log`.\n\nWhen a Questa, VCS, or Xcelium run emits either supported explicit marker, ZDDV automatically performs aggregate post-run marker analysis. Marker-only logs do not create ordinary UVM report snapshots. You can run the same aggregate analysis explicitly with `zddv --project <project> uvm-marker-analyze <simulation.log>` or `--run <run-id>`.
 
 ## Lifecycle Rules
 
