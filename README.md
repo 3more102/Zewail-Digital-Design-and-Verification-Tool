@@ -11,7 +11,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - TOML-based verification projects
 - RTL/testbench source discovery
 - Simulator-adapter architecture
-- Formal adapter API with normalized check/property/result contracts (execution backends pending)
+- Formal adapter API plus finite-depth SymbiYosys BMC execution with retained configuration/log evidence
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
@@ -142,6 +142,7 @@ zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
 zddv --project my_project assertion-waveform --status FAIL
 zddv --project my_project lint
 zddv --project my_project build
+zddv --project my_project formal-bmc --depth 20
 
 zddv --project my_project run
 zddv --project my_project run --test smoke --seed 100
@@ -700,7 +701,9 @@ remain visible as uncorrelated events rather than being silently dropped.
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
 - [ ] Xcelium metric normalization into ZDDV coverage history
-- [ ] Formal adapter API
+- [x] Formal adapter API
+- [x] SymbiYosys bounded BMC checks with explicit finite depth
+- [ ] Formal property/cover persistence and tool-specific ingestion
 - [ ] Counterexample normalization
 - [ ] Automated failure triage
 - [ ] AI-assisted root-cause analysis
