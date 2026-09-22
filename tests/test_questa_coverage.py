@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from zddv.cli import main
 from zddv.cli import cmd_coverage
 from zddv.config import ProjectConfig
 from zddv.coverage import (
@@ -419,4 +420,87 @@ def test_write_questa_statement_hole_report_uses_merged_ucdb(
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["by_type"] == {"statement": 1}
     assert payload["holes"][0]["line"] == 20
+
+def test_coverage_holes_cli_routes_questa_statement_report(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    def fake_report(project_arg, output, *, limit):
+        captured["project"] = project_arg
+        captured["output"] = Path(output)
+        captured["limit"] = limit
+        return {
+            "filter_type": "statement",
+            "total_holes": 1,
+            "reported_holes": 1,
+            "by_type": {"statement": 1},
+            "holes": [
+                {
+                    "type": "statement",
+                    "name": "/tb/dut|rtl/dut.sv:20:stmt1",
+                    "count": 0,
+                }
+            ],
+            "xml": str(project.root / ".zddv/coverage/questa/statement-details.xml"),
+            "path": str(project.root / ".zddv/coverage/holes.json"),
+        }
+
+    monkeypatch.setattr(
+        "zddv.cli.write_questa_statement_hole_report",
+        fake_report,
+    )
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "coverage-holes",
+            "--type",
+            "statement",
+            "--limit",
+            "7",
+            "--show",
+            "2",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["project"] is project
+    assert captured["limit"] == 7
+    assert captured["output"] == project.root / ".zddv/coverage/holes.json"
+    output = capsys.readouterr().out
+    assert "Coverage holes (statement): 1 unhit point(s)" in output
+    assert "[statement] /tb/dut|rtl/dut.sv:20:stmt1" in output
+    assert "Questa XML:" in output
+
+
+def test_coverage_holes_cli_rejects_unsupported_questa_item_type(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    monkeypatch.setattr("zddv.cli.load_project", lambda path: project)
+
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "coverage-holes",
+            "--type",
+            "toggle",
+        ]
+    )
+
+    assert rc == 2
+    assert (
+        "Questa item-level coverage currently supports --type statement only."
+        in capsys.readouterr().err
+    )
 
