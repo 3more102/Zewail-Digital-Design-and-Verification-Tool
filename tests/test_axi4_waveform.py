@@ -20,6 +20,7 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["timescale"] == "1ns"
     assert trace["data_width_bits"] == 16
     assert trace["waveform"]["data_width_bits"] == 16
+    assert trace["waveform"]["rdata_width_bits"] == 16
     assert trace["waveform"]["wstrb_width"] == 2
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
@@ -89,3 +90,46 @@ def test_axi4_waveform_cli(tmp_path: Path, capsys):
     assert "2 completed transaction(s)" in output
     assert "Scope: tb.axi" in output
     assert "Normalized trace:" in output
+
+
+def test_rejects_mismatched_axi4_vcd_read_write_data_widths(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 16 B RDATA [15:0] $end",
+        "$var wire 32 B RDATA [31:0] $end",
+    )
+    bad = tmp_path / "mismatched_data_width.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    try:
+        extract_axi4_trace_from_vcd(bad)
+    except RuntimeError as exc:
+        assert "WDATA and RDATA widths must match" in str(exc)
+    else:
+        raise AssertionError("Expected mismatched WDATA/RDATA widths to fail")
+
+
+def test_rejects_nonstandard_axi4_vcd_data_width(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 16 k WDATA [15:0] $end",
+        "$var wire 24 k WDATA [23:0] $end",
+    )
+    source = source.replace(
+        "$var wire 2 l WSTRB [1:0] $end",
+        "$var wire 3 l WSTRB [2:0] $end",
+    )
+    source = source.replace(
+        "$var wire 16 B RDATA [15:0] $end",
+        "$var wire 24 B RDATA [23:0] $end",
+    )
+    bad = tmp_path / "nonstandard_data_width.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    try:
+        extract_axi4_trace_from_vcd(bad)
+    except RuntimeError as exc:
+        assert "8, 16, 32, 64, 128, 256, 512, or 1024" in str(exc)
+    else:
+        raise AssertionError("Expected nonstandard AXI4 VCD data width to fail")
+

@@ -33,7 +33,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, AxCACHE/AxPROT/AxQOS/AxREGION validation, and optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, AxCACHE/AxPROT/AxQOS/AxREGION validation, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence, and data-width-aware WSTRB byte-lane checks
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
@@ -319,6 +319,7 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency
 - [x] AXI4 reserved AxCACHE encoding checks and B/M/RA/WA attribute decoding
 - [x] AXI4 optional USER-sideband capture, backpressure-stability checking, and transaction evidence
+- [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics
 - [x] Async-FIFO CDC normalized-event invariant analysis
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation
@@ -401,6 +402,13 @@ observed matching exclusive read before its write starts, matching observable
 read/write attributes, and OKAY/EXOKAY response consistency. An unmatched
 exclusive write returning OKAY remains a legal failed-exclusive outcome.
 
+When a normalized trace provides `data_width_bits`, ZDDV accepts the standard
+AXI data widths of 8/16/32/64/128/256/512/1024 bits, bounds AxSIZE by that
+interface width, and checks each accepted WSTRB value against the byte lanes
+permitted by the write beat's address and transfer size. Narrow and unaligned
+writes are handled per beat, and any subset of valid lanes, including WSTRB=0,
+is legal.
+
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage. Topology-dependent cache reachability and optional coherency/domain/
 snoop/MMU attributes remain outside the current model.
@@ -413,8 +421,10 @@ The default report is `.zddv/protocols/axi4/latest.json`.
 
 ZDDV can decode full burst-aware AXI4 directly from a VCD waveform with
 `axi4-waveform`. The extractor samples ACLK edges, auto-detects a complete AXI4
-scope when unambiguous, preserves optional ID/sideband signals when present, and
-feeds the same normalized burst analyzer used by `axi4-analyze`.
+scope when unambiguous, preserves optional ID/sideband signals when present,
+requires WDATA and RDATA to use the same standard AXI data width, verifies that
+WSTRB has one bit per data byte, derives `data_width_bits`, and feeds the same
+normalized burst analyzer used by `axi4-analyze`.
 
 ```bash
 zddv --project my_project axi4-waveform --input axi4.vcd

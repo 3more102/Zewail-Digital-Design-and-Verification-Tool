@@ -168,12 +168,15 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
     data_bus_bytes: int | None = None
     if data_width_bits is not None:
         data_width_bits = _scalar(data_width_bits)
+        legal_data_widths = {8, 16, 32, 64, 128, 256, 512, 1024}
         if (
             not isinstance(data_width_bits, int)
-            or data_width_bits <= 0
-            or data_width_bits % 8
+            or data_width_bits not in legal_data_widths
         ):
-            raise ValueError("data_width_bits must be a positive multiple of 8")
+            raise ValueError(
+                "data_width_bits must be one of "
+                "8, 16, 32, 64, 128, 256, 512, or 1024"
+            )
         data_bus_bytes = data_width_bits // 8
 
     samples = [_normalize_sample(sample, index) for index, sample in enumerate(raw_samples)]
