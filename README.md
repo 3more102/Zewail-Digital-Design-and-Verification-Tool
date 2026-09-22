@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.6 UVM + Commercial Simulator Adapters — run-aware UVM ingestion, native Questa coverage workflows, and a Synopsys VCS build/run plus per-run coverage-capture foundation on top of v0.5 protocol verification**
+> Status: **v0.6 UVM + Commercial Simulator Adapters — run-aware UVM ingestion, native Questa coverage workflows, and Synopsys VCS build/run plus URG coverage merge/report ingestion on top of v0.5 protocol verification**
 
 ## What Works Today
 
@@ -13,7 +13,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-adapter architecture
 - Verilator detection and version reporting
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
-- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, and per-run native `.vdb` coverage capture; normalized VCS coverage merge/reporting remains pending
+- Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, and URG multi-run merge/text-dashboard score ingestion
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, automatic ordinary covergroup-bin ingestion from `vcover report -cvg -details`, and retained machine-readable detailed XML evidence; detailed code-item/source hole normalization is still pending
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
