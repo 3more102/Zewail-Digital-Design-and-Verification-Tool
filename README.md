@@ -31,7 +31,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, and AxCACHE/AxPROT/AxQOS/AxREGION validation
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, reserved AxCACHE encoding checks, and AxCACHE/AxPROT/AxQOS/AxREGION validation
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
@@ -301,7 +301,7 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 burst normalized-trace foundation
 - [x] AXI4 burst VCD waveform extraction
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checks
-- [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency
+- [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks, reserved AxCACHE encoding checks, and AxREGION 4KB consistency
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent checks
 - [x] Async-FIFO CDC normalized-event invariant analysis
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation
@@ -374,6 +374,7 @@ observed matching exclusive read before its write starts, matching observable
 read/write attributes, and OKAY/EXOKAY response consistency. An unmatched
 exclusive write returning OKAY remains a legal failed-exclusive outcome.
 
+The analyzer also rejects AxCACHE values that the AXI4 memory-type encoding table reserves.
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage. Topology-dependent cache reachability and optional coherency/domain/
 snoop/MMU attributes remain outside the current model.
