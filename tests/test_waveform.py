@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 
 from zddv.cli import main
 from zddv.config import initialize_project
@@ -102,6 +103,43 @@ def test_fst_is_indexed_as_metadata_only(tmp_path: Path):
     assert result["run_id"] == "run-fst"
     assert result["signals"] == []
     assert "FST" in result["note"]
+
+
+def test_fst_can_be_indexed_via_explicit_converter(
+    tmp_path: Path,
+    monkeypatch,
+):
+    path = tmp_path / "waveform.fst"
+    path.write_bytes(b"FST-placeholder")
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd",
+    )
+
+    def fake_run(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    result = build_waveform_index(
+        path,
+        run_id="run-fst",
+        project_name="demo",
+        fst_converter="fst2vcd",
+    )
+
+    assert result["format"] == "fst"
+    assert result["parse_status"] == "indexed-via-fst2vcd"
+    assert result["run_id"] == "run-fst"
+    assert result["artifact"]["path"] == str(path.resolve())
+    assert result["adapter"]["adapter"] == "fst2vcd"
+    assert result["timescale"] == "1ns"
+    assert [signal["path"] for signal in result["signals"]] == [
+        "tb_top.clk",
+        "tb_top.rst_n",
+        "tb_top.dut.count",
+    ]
 
 
 def test_select_latest_waveform_run_and_write_index(tmp_path: Path):
