@@ -27,6 +27,9 @@
 
 ### Desktop Debug Studio
 
+- Surface trusted elaborated boundary driver/load/unclassified counts in Desktop
+  waveform cross-probe evidence, while refusing to treat missing role-list fields as
+  zero evidence and keeping unsupported-expression counts explicit.
 - Add bounded detail panes for normalized assertion events, formal property results,
   and UVM report messages while preserving source, source-level hierarchy, and
   persisted simulator-elaborated hierarchy views.
