@@ -29,9 +29,9 @@ The desktop provides:
   elaborated instance, while explicitly unsupported complex expressions remain evidence
   rather than inferred connectivity;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
-  hierarchy/source/connectivity cross-probing, including explicit module-port matches and
-  normalized direct pin/VARREF connectivity relationships when elaboration evidence is
-  available;
+  hierarchy/source/connectivity cross-probing, including explicit module-port matches,
+  bounded exact parent-signal/child-pin relationships, and explicit unsupported complex
+  pin-expression evidence when the normalized direct-pin contract is available;
 - bounded detailed assertion, formal-property, and UVM-message panes.
 
 Source preview is authorized by the current design index, including explicitly configured
@@ -71,7 +71,9 @@ unavailable rather than being inferred. Unsupported complex pin expressions can 
 only as unsupported evidence and are never promoted to exact connectivity. The elaborated
 hierarchy browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
-unbounded evidence set in the GUI.
+unbounded evidence set in the GUI. Waveform pin details are interpreted only for the core
+`simulator_elaborated_direct_pin_varref` contract; unknown future connectivity contracts
+remain undisplayed rather than being guessed.
 
 The only desktop paths that intentionally perform project/tool actions are the explicit
 SHA-confirmed action panes described above. They reuse the existing core APIs rather than
