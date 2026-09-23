@@ -120,7 +120,9 @@ policy, and signoff SHA-256 provenance. A modified or malformed input fails clos
 
 The diff reports exact policy keys that changed; added, removed, or modified run IDs;
 coverage/formal/UVM evidence changes; check-state changes; review-state transition; and
-blocking checks added or removed. The report has its own deterministic `diff_sha256`.
+blocking checks added or removed. Bundle references are stored as project-relative paths,
+so the report's deterministic `diff_sha256` is stable when an otherwise identical project
+is relocated to a different filesystem root.
 
 The diff is descriptive only. It does not infer that a change is better or worse and
 does not expand the meaning of `READY_FOR_REVIEW`.
