@@ -156,6 +156,105 @@ def _desktop_boundary_role_item_is_normalized(
     return False
 
 
+def _desktop_source_correlation_item_is_normalized(item: Any) -> bool:
+    """Validate one source-correlation item against the current core producer contract."""
+    if not isinstance(item, dict):
+        return False
+
+    status = item.get("status")
+    if status not in {"MATCHED", "NOT_FOUND", "AMBIGUOUS", "UNAVAILABLE"}:
+        return False
+
+    if item.get("binding_side") not in {"parent_signal", "instance_port"}:
+        return False
+    for key in ("instance_path", "pin", "parent_instance_path", "parent_signal"):
+        value = item.get(key)
+        if not isinstance(value, str) or not value:
+            return False
+
+    if status == "UNAVAILABLE":
+        return item.get("reason") in {
+            "parent_elaborated_instance_not_found",
+            "parent_source_unit_not_resolved",
+        }
+
+    source_unit = item.get("source_unit")
+    if not isinstance(source_unit, str) or not source_unit:
+        return False
+
+    if status == "NOT_FOUND":
+        return item.get("reason") in {
+            "parent_signal_not_in_source_connectivity",
+            "no_exact_source_instance_port_edge",
+        }
+
+    if status == "AMBIGUOUS":
+        candidate_count = item.get("candidate_count")
+        return (
+            isinstance(candidate_count, int)
+            and not isinstance(candidate_count, bool)
+            and candidate_count > 1
+        )
+
+    source_edge = item.get("source_edge")
+    if not isinstance(source_edge, dict):
+        return False
+    if source_edge.get("kind") != "instance_port":
+        return False
+    if source_edge.get("unit") != source_unit:
+        return False
+    if source_edge.get("signal") != item["parent_signal"]:
+        return False
+    if source_edge.get("instance_path") != item["parent_instance_path"]:
+        return False
+
+    for key in ("file", "instance", "child_type", "port", "expression"):
+        value = source_edge.get(key)
+        if not isinstance(value, str) or not value:
+            return False
+    line = source_edge.get("line")
+    if (
+        not isinstance(line, int)
+        or isinstance(line, bool)
+        or line <= 0
+    ):
+        return False
+
+    direction = source_edge.get("direction")
+    expected_roles = {
+        "input": ["load"],
+        "output": ["driver"],
+        "inout": ["driver", "load"],
+    }.get(direction)
+    if expected_roles is None or item.get("source_roles") != expected_roles:
+        return False
+
+    match_basis = item.get("match_basis")
+    if not isinstance(match_basis, list) or not match_basis:
+        return False
+    if match_basis != sorted(set(match_basis)):
+        return False
+
+    child_path = item["instance_path"]
+    resolution = source_edge.get("elaborated_child_resolution")
+    if resolution == "exact":
+        return (
+            match_basis == ["source_edge_exact_child_path"]
+            and source_edge.get("elaborated_child_path") == child_path
+        )
+    if resolution == "ambiguous":
+        candidates = source_edge.get("elaborated_child_candidates")
+        return (
+            match_basis == ["direct_pin_resolves_source_generated_candidate"]
+            and isinstance(candidates, list)
+            and bool(candidates)
+            and candidates == sorted(set(candidates))
+            and all(isinstance(value, str) and value for value in candidates)
+            and child_path in candidates
+        )
+    return False
+
+
 def desktop_crossprobe_evidence_rows(
     report: dict[str, Any],
     *,
@@ -506,47 +605,8 @@ def desktop_crossprobe_evidence_rows(
             and bool(raw_correlations)
             and all(isinstance(item, dict) for item in raw_correlations)
         ):
-            allowed_statuses = {
-                "MATCHED",
-                "NOT_FOUND",
-                "AMBIGUOUS",
-                "UNAVAILABLE",
-            }
             trusted_source_correlation = all(
-                item.get("status") in allowed_statuses
-                and (
-                    item.get("status") != "MATCHED"
-                    or (
-                        item.get("binding_side")
-                        in {"parent_signal", "instance_port"}
-                        and all(
-                            isinstance(item.get(key), str) and bool(item.get(key))
-                            for key in (
-                                "instance_path",
-                                "pin",
-                                "parent_instance_path",
-                                "parent_signal",
-                                "source_unit",
-                            )
-                        )
-                        and isinstance(item.get("source_edge"), dict)
-                        and isinstance(item["source_edge"].get("file"), str)
-                        and bool(item["source_edge"].get("file"))
-                        and isinstance(item["source_edge"].get("line"), int)
-                        and item["source_edge"]["line"] > 0
-                        and isinstance(item.get("source_roles"), list)
-                        and all(
-                            isinstance(role, str) and bool(role)
-                            for role in item.get("source_roles", [])
-                        )
-                        and isinstance(item.get("match_basis"), list)
-                        and bool(item.get("match_basis"))
-                        and all(
-                            isinstance(basis, str) and bool(basis)
-                            for basis in item.get("match_basis", [])
-                        )
-                    )
-                )
+                _desktop_source_correlation_item_is_normalized(item)
                 for item in raw_correlations
             )
             if trusted_source_correlation:
