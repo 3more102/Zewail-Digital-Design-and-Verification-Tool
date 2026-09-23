@@ -10,6 +10,13 @@ The tab reuses the same `build_waveform_index` and `probe_vcd_signals` core APIs
 
 When cross-probe returns the trusted `simulator_elaborated_direct_pin_varref` contract, the desktop also renders the core-provided module-boundary driver, load, and unclassified role buckets. Role rows preserve the reported `query_side`, parent/child endpoint, and port direction, are bounded by the existing elaborated-evidence limit, and are not recomputed in the GUI. Unknown future connectivity contracts remain uninterpreted.
 
+When normalized elaborated evidence exists, the cross-probe pane keeps source-structural
+drivers/loads separate from simulator-elaborated evidence. It surfaces the core
+`simulator_elaborated_to_source_structural_correlation` contract only when role semantics
+remain `source_structural_only`; ambiguous, missing, or unavailable correlations are
+summarized without being displayed as exact source routes. A correlated source edge is
+shown only when exactly one trusted `MATCHED` item carries explicit source-edge evidence.
+
 ## Trust boundary
 
 Waveform values are observations from the recorded artifact. The desktop view does not execute verification, edit HDL, invoke AI, apply generated artifacts, or infer a new pass/fail conclusion from a transition.

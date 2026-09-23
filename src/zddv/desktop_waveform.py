@@ -330,6 +330,72 @@ def desktop_crossprobe_evidence_rows(
                     )
                 )
 
+    elaborated_source_correlation = report.get("elaborated_source_correlation")
+    trusted_source_correlation = (
+        isinstance(elaborated_source_correlation, dict)
+        and elaborated_source_correlation.get("analysis_level")
+        == "simulator_elaborated_to_source_structural_correlation"
+        and elaborated_source_correlation.get("role_semantics")
+        == "source_structural_only"
+    )
+    if trusted_source_correlation:
+        correlations = [
+            item
+            for item in elaborated_source_correlation.get("correlations", [])
+            if isinstance(item, dict)
+        ]
+        status_counts = {
+            status: sum(
+                1
+                for item in correlations
+                if str(item.get("status") or "UNKNOWN") == status
+            )
+            for status in ("MATCHED", "NOT_FOUND", "AMBIGUOUS", "UNAVAILABLE")
+        }
+        correlation_detail = (
+            "simulator_elaborated_to_source_structural_correlation · "
+            f"correlations={len(correlations)} · "
+            f"matched={status_counts['MATCHED']} · "
+            f"not-found={status_counts['NOT_FOUND']} · "
+            f"ambiguous={status_counts['AMBIGUOUS']} · "
+            f"unavailable={status_counts['UNAVAILABLE']} · "
+            "roles=source_structural_only"
+        )
+        rows.append(("Elaborated/source correlation", correlation_detail))
+
+        matched = [
+            item
+            for item in correlations
+            if item.get("status") == "MATCHED"
+            and isinstance(item.get("source_edge"), dict)
+        ]
+        if len(matched) == 1:
+            item = matched[0]
+            source_edge = item["source_edge"]
+            source_roles = ",".join(
+                str(role)
+                for role in item.get("source_roles", [])
+                if role
+            ) or "-"
+            source_location = str(source_edge.get("file") or "-")
+            if source_edge.get("line") is not None:
+                source_location += f":{source_edge['line']}"
+            rows.append(
+                (
+                    "Correlated source edge",
+                    (
+                        f"{item.get('parent_instance_path') or '-'}."
+                        f"{item.get('parent_signal') or '-'} ↔ "
+                        f"{item.get('instance_path') or '-'}."
+                        f"{item.get('pin') or '-'} · "
+                        f"binding_side={item.get('binding_side') or '-'} · "
+                        f"source={item.get('source_unit') or '-'} · "
+                        f"source_roles={source_roles} · "
+                        f"location={source_location}"
+                    ),
+                )
+            )
+
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
         boundary_detail = str(elaborated_boundary.get("status") or "UNKNOWN")
