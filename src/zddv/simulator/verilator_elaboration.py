@@ -15,7 +15,7 @@ _LOC_RE = re.compile(
     r"^(?P<file>[^,]+),(?P<first_line>\d+):(?P<first_col>\d+),"
     r"(?P<last_line>\d+):(?P<last_col>\d+)$"
 )
-_MODULE_NODE_TYPES = {"MODULE", "INTERFACE"}
+_MODULE_NODE_TYPES = {"MODULE"}
 
 
 def _sha256(path: Path) -> str:
