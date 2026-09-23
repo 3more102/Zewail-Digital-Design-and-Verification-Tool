@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_snapshot,
+    probe_desktop_waveform_signal,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -240,3 +244,98 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+
+def test_desktop_waveform_snapshot_resolves_relative_recorded_vcd_without_writes(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "wave-demo")
+    run_dir = project.root / ".zddv" / "runs" / "run-wave"
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.vcd"
+    waveform.write_text(
+        """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0011 #
+""",
+        encoding="utf-8",
+    )
+
+    row = _run_record("run-wave", "PASS", seed=3)
+    row["run_dir"] = ".zddv/runs/run-wave"
+    row["log"] = ".zddv/runs/run-wave/simulation.log"
+    row["waveform"] = ".zddv/runs/run-wave/waveform.vcd"
+    record_run(project, row)
+
+    state = build_desktop_waveform_snapshot(project, run_id="run-wave")
+
+    assert state["run_id"] == "run-wave"
+    assert state["path"] == str(waveform.resolve())
+    assert state["format"] == "vcd"
+    assert state["parse_status"] == "indexed"
+    assert state["timescale"] == "1ns"
+    assert [item["path"] for item in state["signals"]] == [
+        "tb_top.clk",
+        "tb_top.dut.count",
+    ]
+    assert not (project.root / ".zddv" / "waveforms").exists()
+
+
+def test_desktop_waveform_probe_reads_selected_signal_without_persisting_report(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "probe-demo")
+    run_dir = project.root / ".zddv" / "runs" / "run-probe"
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.vcd"
+    waveform.write_text(
+        """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$enddefinitions $end
+#0
+0!
+#5
+1!
+#10
+0!
+""",
+        encoding="utf-8",
+    )
+
+    row = _run_record("run-probe", "FAIL", seed=4)
+    row["run_dir"] = str(run_dir)
+    row["log"] = str(run_dir / "simulation.log")
+    row["waveform"] = str(waveform)
+    record_run(project, row)
+
+    result = probe_desktop_waveform_signal(
+        project,
+        "tb_top.clk",
+        run_id="run-probe",
+        start_time=5,
+        end_time=10,
+        max_changes=10,
+    )
+
+    assert result["run_id"] == "run-probe"
+    assert result["summary"]["signals"] == 1
+    assert result["summary"]["total_changes"] == 2
+    assert result["signals"][0]["changes"] == [
+        {"time": 5, "value": "1"},
+        {"time": 10, "value": "0"},
+    ]
+    assert not (project.root / ".zddv" / "waveforms").exists()
+    assert not (project.root / ".zddv" / "debug" / "probe-suggestions.json").exists()
