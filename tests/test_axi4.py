@@ -1622,6 +1622,58 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
     assert read["ruser"] == [0x1A]
 
 
+def test_requires_configured_user_sideband_on_every_valid_cycle():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {"AWUSER": 4},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 0,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "missing_user_sideband"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["sample_index"] == 0
+    assert violation["channel"] == "AW"
+    assert violation["signal"] == "AWUSER"
+    assert violation["expected"] == "unsigned 4-bit USER value"
+    assert violation["actual"] is None
+
+
+def test_does_not_require_configured_user_sideband_when_channel_valid_is_low():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {"AWUSER": 4},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 0,
+                    "AWREADY": 0,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert not any(
+        item["code"] == "missing_user_sideband"
+        for item in result["violations"]
+    )
+
+
 def test_reports_user_sideband_values_that_do_not_fit_configured_width():
     result = analyze_axi4_trace(
         {
