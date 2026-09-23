@@ -503,6 +503,151 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
 
 
 
+def test_desktop_crossprobe_rows_surface_bounded_internal_assignment_evidence():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_internal_connectivity": {
+                "status": "NORMALIZED",
+                "analysis_level": "simulator_elaborated_module_root_assignw_direct_varref",
+                "evidence_contract": "verilator_module_root_assignw_direct_varref_only",
+                "role_semantics": "direct_continuous_assignment",
+                "query_instance_path": "tb_top.dut",
+                "query_module": "dut",
+                "query_signal": "mid",
+                "drivers": [
+                    {
+                        "kind": "continuous_assignment",
+                        "assignment_type": "ASSIGNW",
+                        "instance_path": "tb_top.dut",
+                        "module": "dut",
+                        "source_signal": "src",
+                        "target_signal": "mid",
+                        "location": {"path": "rtl/dut.sv", "line": 7},
+                    }
+                ],
+                "loads": [
+                    {
+                        "kind": "continuous_assignment",
+                        "assignment_type": "ASSIGNW",
+                        "instance_path": "tb_top.dut",
+                        "module": "dut",
+                        "source_signal": "mid",
+                        "target_signal": "dst",
+                        "location": {"path": "rtl/dut.sv", "line": 8},
+                    },
+                    {
+                        "kind": "continuous_assignment",
+                        "assignment_type": "ASSIGNW",
+                        "instance_path": "tb_top.dut",
+                        "module": "dut",
+                        "source_signal": "mid",
+                        "target_signal": "tap",
+                        "location": {"path": "rtl/dut.sv", "line": 9},
+                    },
+                ],
+                "unresolved_assignments": [],
+            }
+        },
+        elaborated_limit=2,
+    )
+
+    summary = next(
+        detail
+        for kind, detail in rows
+        if kind == "Elaborated internal connectivity"
+    )
+    assert summary == (
+        "NORMALIZED · drivers=1 · loads=2 · unresolved=0 · "
+        "roles=direct_continuous_assignment"
+    )
+    edge_rows = [
+        detail for kind, detail in rows if kind == "Elaborated internal edge"
+    ]
+    assert edge_rows == [
+        "DRIVER · tb_top.dut.src -> tb_top.dut.mid · "
+        "ASSIGNW · location=rtl/dut.sv:7",
+        "LOAD · tb_top.dut.mid -> tb_top.dut.dst · "
+        "ASSIGNW · location=rtl/dut.sv:8",
+        "1 additional internal connectivity item(s) not shown",
+    ]
+
+
+def test_desktop_crossprobe_rows_surface_partial_internal_assignment_evidence():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_internal_connectivity": {
+                "status": "PARTIAL",
+                "analysis_level": "simulator_elaborated_module_root_assignw_direct_varref",
+                "evidence_contract": "verilator_module_root_assignw_direct_varref_only",
+                "role_semantics": "direct_continuous_assignment",
+                "query_instance_path": "tb_top.dut",
+                "query_module": "dut",
+                "query_signal": "src",
+                "drivers": [],
+                "loads": [],
+                "unresolved_assignments": [
+                    {
+                        "status": "UNSUPPORTED",
+                        "assignment_type": "ASSIGNW",
+                        "instance_path": "tb_top.dut",
+                        "module": "dut",
+                        "query_references": ["rhs"],
+                        "lhs_expression_type": "VARREF",
+                        "rhs_expression_type": "AND",
+                        "lhs_varrefs": ["dst"],
+                        "rhs_varrefs": ["other", "src"],
+                        "location": {"path": "rtl/dut.sv", "line": 11},
+                    }
+                ],
+            }
+        }
+    )
+
+    rows_map = dict(rows)
+    assert rows_map["Elaborated internal connectivity"] == (
+        "PARTIAL · drivers=0 · loads=0 · unresolved=1 · "
+        "roles=direct_continuous_assignment"
+    )
+    assert rows_map["Elaborated internal edge"] == (
+        "UNRESOLVED · query_references=rhs · "
+        "lhs=VARREF[dst] · rhs=AND[other,src] · location=rtl/dut.sv:11"
+    )
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_untrusted_internal_connectivity():
+    base = {
+        "status": "NORMALIZED",
+        "analysis_level": "simulator_elaborated_module_root_assignw_direct_varref",
+        "evidence_contract": "verilator_module_root_assignw_direct_varref_only",
+        "role_semantics": "direct_continuous_assignment",
+        "query_instance_path": "tb_top.dut",
+        "query_module": "dut",
+        "query_signal": "mid",
+        "drivers": [],
+        "loads": [],
+        "unresolved_assignments": [],
+    }
+
+    variants = [
+        {**base, "analysis_level": "future_internal_contract"},
+        {**base, "evidence_contract": "future_assignment_contract"},
+        {**base, "role_semantics": "inferred_driver_load"},
+        {**base, "drivers": [{"kind": "continuous_assignment"}]},
+        {**base, "status": "PARTIAL"},
+    ]
+    for payload in variants:
+        rows = desktop_crossprobe_evidence_rows(
+            {"elaborated_internal_connectivity": payload}
+        )
+        assert not any(
+            kind in {
+                "Elaborated internal connectivity",
+                "Elaborated internal edge",
+            }
+            for kind, _detail in rows
+        )
+
+
 def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
     report = {
         "elaborated_source_correlation": {
