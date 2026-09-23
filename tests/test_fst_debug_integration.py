@@ -30,8 +30,8 @@ def _project(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     rtl = project.root / "rtl"
     tb = project.root / "tb"
-    rtl.mkdir()
-    tb.mkdir()
+    rtl.mkdir(exist_ok=True)
+    tb.mkdir(exist_ok=True)
     (rtl / "counter.sv").write_text(
         """module counter(
     input logic clk,
