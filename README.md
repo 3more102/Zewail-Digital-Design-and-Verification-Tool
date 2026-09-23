@@ -56,6 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
+- Read-only desktop Debug Studio with persisted verification evidence, configured source browsing, source hierarchy, and persisted elaborated-hierarchy navigation
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
@@ -105,6 +106,7 @@ zddv --project examples/async_fifo lint
 zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 zddv --project examples/async_fifo coverage
+zddv --project examples/async_fifo gui
 ```
 
 For a Questa project, setting `coverage = true` in `[run]` enables native
@@ -179,6 +181,7 @@ zddv --project my_project signoff --run-id <release-run-id> --coverage-snapshot-
 zddv --project my_project signoff-diff .zddv/signoff/baseline.json .zddv/signoff/current.json
 zddv --project my_project release-export --expected-signoff-sha256 <reviewed-signoff-sha256> --private-key release-private.pem --key-id lab-release-2026
 zddv --project my_project release-verify .zddv/signoff/release.zip --public-key release-public.pem
+zddv --project my_project gui --limit 100
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
@@ -817,7 +820,8 @@ bundle is review-required before any external use.
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
-- [ ] Desktop debug GUI
+- [x] Desktop Debug Studio read-only foundation with verification summary, run/failure/evidence views, configured source browsing, and source/elaborated hierarchy navigation
+- [ ] Waveform navigation, targeted probe visualization, detailed UVM/formal panes, and review-gated project actions
 
 ## Design Principles
 
