@@ -265,6 +265,75 @@ def desktop_crossprobe_evidence_rows(
                 )
             )
 
+        boundary_role_keys = (
+            "boundary_drivers",
+            "boundary_loads",
+            "boundary_unclassified_bindings",
+        )
+        if any(key in elaborated_connectivity for key in boundary_role_keys):
+            boundary_drivers = [
+                item
+                for item in elaborated_connectivity.get("boundary_drivers", [])
+                if isinstance(item, dict)
+            ]
+            boundary_loads = [
+                item
+                for item in elaborated_connectivity.get("boundary_loads", [])
+                if isinstance(item, dict)
+            ]
+            boundary_unclassified = [
+                item
+                for item in elaborated_connectivity.get(
+                    "boundary_unclassified_bindings", []
+                )
+                if isinstance(item, dict)
+            ]
+            rows.append(
+                (
+                    "Elaborated boundary roles",
+                    f"drivers={len(boundary_drivers)} · "
+                    f"loads={len(boundary_loads)} · "
+                    f"unclassified={len(boundary_unclassified)}",
+                )
+            )
+
+            role_items: list[tuple[str, dict[str, Any]]] = []
+            role_items.extend(("DRIVER", item) for item in boundary_drivers)
+            role_items.extend(("LOAD", item) for item in boundary_loads)
+            role_items.extend(
+                ("UNCLASSIFIED", item) for item in boundary_unclassified
+            )
+            for role, binding in role_items[:elaborated_limit]:
+                parent = (
+                    f"{binding.get('parent_instance_path') or '-'}."
+                    f"{binding.get('parent_signal') or '-'}"
+                )
+                child = (
+                    f"{binding.get('instance_path') or '-'}."
+                    f"{binding.get('pin') or '-'}"
+                )
+                rows.append(
+                    (
+                        "Elaborated role",
+                        f"{role} · query_side="
+                        f"{binding.get('query_side') or 'unknown'} · "
+                        f"parent={parent} · child={child} · "
+                        f"direction={binding.get('port_direction') or 'unknown'}",
+                    )
+                )
+
+            hidden_roles = len(role_items) - min(
+                len(role_items),
+                elaborated_limit,
+            )
+            if hidden_roles:
+                rows.append(
+                    (
+                        "Elaborated role",
+                        f"{hidden_roles} additional boundary role item(s) not shown",
+                    )
+                )
+
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
         boundary_detail = str(elaborated_boundary.get("status") or "UNKNOWN")
