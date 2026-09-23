@@ -321,6 +321,33 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
                         "location": {"path": "rtl/dut.sv", "line": 14, "column": 5},
                     }
                 ],
+                "pin_binding_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_cell_pin_direct_varref_only",
+                    "unsupported_expression_count": 0,
+                },
+                "pin_bindings": [
+                    {
+                        "pin": "ready",
+                        "expression_type": "VARREF",
+                        "status": "NORMALIZED",
+                        "signal": "ready_wire",
+                        "instance_path": "tb_top.dut",
+                        "instance_module": "dut",
+                        "parent_instance_path": "tb_top",
+                        "pin_location": {
+                            "path": "tb/tb_top.sv",
+                            "line": 8,
+                            "column": 19,
+                        },
+                        "signal_location": {
+                            "path": "tb/tb_top.sv",
+                            "line": 8,
+                            "column": 26,
+                        },
+                    }
+                ],
                 "instances": [
                     {
                         "path": "tb_top",
@@ -362,6 +389,15 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     assert evidence["ports"][0]["name"] == "ready"
     assert evidence["ports"][0]["direction"] == "output"
     assert evidence["ports"][0]["direction_field"] == "ioDirection"
+    assert evidence["pin_binding_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_cell_pin_direct_varref_only",
+        "unsupported_expression_count": 0,
+    }
+    assert evidence["pin_bindings"][0]["pin"] == "ready"
+    assert evidence["pin_bindings"][0]["signal"] == "ready_wire"
+    assert evidence["pin_bindings"][0]["instance_path"] == "tb_top.dut"
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
 
@@ -391,6 +427,21 @@ def test_desktop_snapshot_suppresses_unnormalized_port_rows(tmp_path: Path):
                         "direction": "output",
                     }
                 ],
+                "pin_binding_evidence": {
+                    "status": "UNAVAILABLE",
+                    "source_format": "xml",
+                    "reason": "legacy_xml_pin_binding_schema_not_normalized",
+                },
+                "pin_bindings": [
+                    {
+                        "pin": "ready",
+                        "status": "NORMALIZED",
+                        "signal": "untrusted_wire",
+                        "instance_path": project.top,
+                        "instance_module": "untrusted",
+                        "parent_instance_path": "parent",
+                    }
+                ],
                 "instances": [
                     {
                         "path": project.top,
@@ -413,6 +464,12 @@ def test_desktop_snapshot_suppresses_unnormalized_port_rows(tmp_path: Path):
         "status": "UNAVAILABLE",
         "source_format": "xml",
         "reason": "legacy_xml_port_schema_not_normalized",
+    }
+    assert evidence["pin_bindings"] == []
+    assert evidence["pin_binding_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_pin_binding_schema_not_normalized",
     }
 
 
@@ -455,6 +512,8 @@ def test_desktop_snapshot_rejects_elaboration_after_rtl_revision(tmp_path: Path)
     assert evidence["instances"] == []
     assert evidence["ports"] == []
     assert evidence["port_evidence"]["status"] == "STALE"
+    assert evidence["pin_bindings"] == []
+    assert evidence["pin_binding_evidence"]["status"] == "STALE"
     assert evidence["design_fingerprint"] == original_fingerprint
     assert evidence["current_design_fingerprint"] == design_revision_fingerprint(project)
     assert evidence["current_design_fingerprint"] != original_fingerprint
