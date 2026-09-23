@@ -723,6 +723,8 @@ $enddefinitions $end
                 "status": "NORMALIZED",
                 "module": "passthrough",
                 "assignment_type": "ASSIGNW",
+                "lhs_expression_type": "VARREF",
+                "rhs_expression_type": "VARREF",
                 "lhs_signal": "dst",
                 "rhs_signal": "src",
                 "lhs_aliases": ["dst"],
@@ -735,6 +737,8 @@ $enddefinitions $end
                 "status": "NORMALIZED",
                 "module": "passthrough",
                 "assignment_type": "ASSIGNW",
+                "lhs_expression_type": "VARREF",
+                "rhs_expression_type": "VARREF",
                 "lhs_signal": "tap",
                 "rhs_signal": "dst",
                 "lhs_aliases": ["tap"],
@@ -842,6 +846,149 @@ def test_crossprobe_rejects_malformed_normalized_direct_assignment_schema(
             elaborated_index=elaborated,
         )
 
+
+
+def test_crossprobe_rejects_semantically_invalid_trusted_direct_assignments(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+    waveform = build_waveform_index(waveform_path, project_name=project.name)
+    design = build_design_index(project)
+
+    def valid_elaboration() -> dict:
+        return {
+            "schema_version": 1,
+            "project": project.name,
+            "top": project.top,
+            "simulator": project.simulator,
+            "instances": [],
+            "direct_assignment_evidence": {
+                "status": "NORMALIZED",
+                "source_format": "json",
+                "contract": "verilator_module_root_assignw_direct_varref_only",
+                "unsupported_assignment_count": 0,
+            },
+            "direct_assignments": [
+                {
+                    "status": "NORMALIZED",
+                    "module": "tb_top",
+                    "assignment_type": "ASSIGNW",
+                    "lhs_expression_type": "VARREF",
+                    "rhs_expression_type": "VARREF",
+                    "lhs_signal": "dst",
+                    "rhs_signal": "src",
+                    "lhs_aliases": ["dst"],
+                    "rhs_aliases": ["src"],
+                    "lhs_varrefs": ["dst"],
+                    "rhs_varrefs": ["src"],
+                    "location": {"path": "rtl/top.sv", "line": 3},
+                }
+            ],
+        }
+
+    cases: list[tuple[dict, str]] = []
+
+    wrong_expression = valid_elaboration()
+    wrong_expression["direct_assignments"][0]["rhs_expression_type"] = "AND"
+    cases.append((wrong_expression, "rhs_expression_type is not VARREF"))
+
+    missing_alias = valid_elaboration()
+    missing_alias["direct_assignments"][0]["rhs_aliases"] = []
+    cases.append((missing_alias, "rhs_aliases does not contain rhs_signal"))
+
+    wrong_varrefs = valid_elaboration()
+    wrong_varrefs["direct_assignments"][0]["rhs_varrefs"] = ["other", "src"]
+    cases.append(
+        (
+            wrong_varrefs,
+            "rhs_varrefs does not match the direct VARREF signal",
+        )
+    )
+
+    wrong_source_format = valid_elaboration()
+    wrong_source_format["direct_assignment_evidence"]["source_format"] = "xml"
+    cases.append(
+        (
+            wrong_source_format,
+            "trusted direct_assignment_evidence source_format is not json",
+        )
+    )
+
+    wrong_count = valid_elaboration()
+    wrong_count["direct_assignment_evidence"]["unsupported_assignment_count"] = 1
+    cases.append(
+        (
+            wrong_count,
+            "unsupported_assignment_count does not match direct_assignments",
+        )
+    )
+
+    unsupported_with_signal = valid_elaboration()
+    unsupported_with_signal["direct_assignments"] = [
+        {
+            "status": "UNSUPPORTED",
+            "module": "tb_top",
+            "assignment_type": "ASSIGNW",
+            "lhs_expression_type": "VARREF",
+            "rhs_expression_type": "AND",
+            "lhs_varrefs": ["dst"],
+            "rhs_varrefs": ["src", "other"],
+            "lhs_signal": "dst",
+            "rhs_signal": None,
+            "location": {"path": "rtl/top.sv", "line": 4},
+        }
+    ]
+    unsupported_with_signal["direct_assignment_evidence"][
+        "unsupported_assignment_count"
+    ] = 1
+    cases.append(
+        (
+            unsupported_with_signal,
+            "lhs_signal must be null when UNSUPPORTED",
+        )
+    )
+
+    for elaborated, expected in cases:
+        with pytest.raises(ValueError, match=expected):
+            build_crossprobe(
+                project,
+                "tb_top.dut.count",
+                waveform,
+                design_index=design,
+                elaborated_index=elaborated,
+            )
+
+
+def test_crossprobe_ignores_unknown_future_direct_assignment_contract(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index={
+            "schema_version": 1,
+            "project": project.name,
+            "top": project.top,
+            "simulator": project.simulator,
+            "instances": [],
+            "direct_assignment_evidence": {
+                "status": "NORMALIZED",
+                "source_format": "future",
+                "contract": "future_direct_assignment_contract",
+            },
+            "direct_assignments": [{"future_shape": True}],
+        },
+    )
+
+    assert result["elaborated_internal_connectivity"] is None
 
 
 def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
