@@ -72,7 +72,12 @@ only as unsupported evidence and are never promoted to exact connectivity. Wavef
 details are rendered only for the core `simulator_elaborated_direct_pin_varref` contract.
 Boundary-role rows are rendered only when all three core role buckets (drivers, loads,
 and unclassified) are present as normalized lists of mapping records; partial or malformed
-role evidence is suppressed rather than converted into zero-count claims. Unknown future
+role evidence is suppressed rather than converted into zero-count claims. Elaborated/source correlation is rendered only for the core
+`simulator_elaborated_to_source_structural_correlation` contract when
+`role_semantics=source_structural_only`, the correlation list is non-empty and
+well-typed, every status is recognized, and every MATCHED item preserves complete
+source-edge plus non-empty `match_basis` provenance. Multiple MATCHED items remain
+summary-only; the desktop does not choose one. Unknown future
 contracts are not interpreted by the desktop. The elaborated hierarchy
 browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
