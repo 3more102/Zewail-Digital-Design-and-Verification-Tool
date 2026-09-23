@@ -71,8 +71,11 @@ unavailable rather than being inferred. Unsupported complex pin expressions can 
 only as unsupported evidence and are never promoted to exact connectivity. Waveform pin
 details are rendered only for the core `simulator_elaborated_direct_pin_varref` contract.
 Boundary-role rows are rendered only when all three core role buckets (drivers, loads,
-and unclassified) are present as normalized lists of mapping records; partial or malformed
-role evidence is suppressed rather than converted into zero-count claims. Unknown future
+and unclassified) are present as normalized lists of mapping records. Each role item must
+also carry non-empty parent/child endpoints, a recognized query side, the core
+direction-to-relationship pairing, and a direction that is semantically valid for its
+DRIVER/LOAD/UNCLASSIFIED bucket. Partial, malformed, or internally inconsistent role
+evidence is suppressed rather than converted into trusted counts or rows. Unknown future
 contracts are not interpreted by the desktop. The elaborated hierarchy
 browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
