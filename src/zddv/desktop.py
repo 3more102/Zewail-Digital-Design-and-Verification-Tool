@@ -98,15 +98,25 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
     }
 
 
-def _read_source(project: ProjectConfig, value: str) -> str:
-    """Read one project-owned source file for display without mutating project state."""
+def _read_source(
+    project: ProjectConfig,
+    value: str,
+    *,
+    allowed_paths: set[Path] | None = None,
+) -> str:
+    """Read one approved source file for display without mutating project state."""
     root = project.root.resolve()
     path = Path(value)
     candidate = (path if path.is_absolute() else root / path).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("source path must remain inside the project root") from exc
+
+    if allowed_paths is None:
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("source path must remain inside the project root") from exc
+    elif candidate not in allowed_paths:
+        raise ValueError("source path is not part of the current design index")
+
     return candidate.read_text(encoding="utf-8", errors="replace")
 
 
@@ -434,6 +444,7 @@ def launch_desktop_gui(
     source_targets: dict[str, tuple[str, int | None]] = {}
     hierarchy_targets: dict[str, tuple[str, int | None]] = {}
     elaborated_targets: dict[str, tuple[str, int | None]] = {}
+    allowed_source_paths: set[Path] = set()
 
     def _clear(tree) -> None:
         for item in tree.get_children():
@@ -441,8 +452,12 @@ def launch_desktop_gui(
 
     def _show_source(path_value: str, line: int | None = None) -> None:
         try:
-            text = _read_source(project, path_value)
-        except OSError as exc:
+            text = _read_source(
+                project,
+                path_value,
+                allowed_paths=allowed_source_paths,
+            )
+        except (OSError, ValueError) as exc:
             source_title_text.set(f"{path_value} · unavailable: {exc}")
             text = ""
             line = None
@@ -530,6 +545,13 @@ def launch_desktop_gui(
 
 
         design = current["design"]
+        allowed_source_paths.clear()
+        for source in design["files"]:
+            source_path = Path(source["path"])
+            if not source_path.is_absolute():
+                source_path = project.root / source_path
+            allowed_source_paths.add(source_path.resolve())
+
         units_by_file: dict[str, list[dict[str, Any]]] = {}
         for unit in design["units"]:
             units_by_file.setdefault(unit["file"], []).append(unit)
