@@ -153,3 +153,118 @@ def test_ucie_file_and_cli_write_report(tmp_path: Path, capsys):
     assert "UCIe PASS" in output
     assert "health=DEGRADED" in output
     assert "2 flit(s)" in output
+
+
+
+def test_ucie_3_0_accepts_64_gt_s_public_generation_rate():
+    result = analyze_ucie_trace(
+        {
+            "negotiated": {
+                "spec_version": "3.0",
+                "data_rate_gt_s": 64,
+                "protocol": "CXL",
+            },
+            "flits": [
+                {
+                    "cycle": 0,
+                    "direction": "TX",
+                    "size_bytes": 256,
+                    "ack_nak": "ACK",
+                    "crc_ok": True,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["negotiated"]["spec_version"] == "3.0"
+    assert result["negotiated"]["data_rate_gt_s"] == 64.0
+    assert result["negotiated"]["public_generation_max_data_rate_gt_s"] == 64.0
+
+
+def test_ucie_2_0_rejects_rate_above_public_32_gt_s_generation_ceiling():
+    result = analyze_ucie_trace(
+        {
+            "negotiated": {
+                "spec_version": "2.0",
+                "data_rate_gt_s": 48,
+            },
+            "flits": [
+                {
+                    "cycle": 0,
+                    "direction": "RX",
+                    "size_bytes": 68,
+                    "ack_nak": "ACK",
+                    "crc_ok": True,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "FAIL"
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "data_rate_exceeds_public_generation"
+    )
+    assert violation["scope"] == "negotiated"
+    assert violation["expected"] == "<= 32 GT/s for UCIe 2.0"
+    assert violation["actual"] == 48.0
+
+
+def test_ucie_legacy_frequency_field_is_preserved_and_aliased_to_data_rate():
+    result = analyze_ucie_trace(
+        {
+            "negotiated": {
+                "spec_version": 3,
+                "frequency_gt_s": "32",
+            },
+            "flits": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["negotiated"]["spec_version"] == "3.0"
+    assert result["negotiated"]["frequency_gt_s"] == "32"
+    assert result["negotiated"]["data_rate_gt_s"] == 32.0
+    assert result["negotiated"]["public_generation_max_data_rate_gt_s"] == 64.0
+
+
+def test_ucie_rejects_unmodeled_public_spec_version():
+    result = analyze_ucie_trace(
+        {
+            "negotiated": {
+                "spec_version": "4.0",
+                "data_rate_gt_s": 64,
+            },
+            "flits": [],
+        }
+    )
+
+    assert result["status"] == "FAIL"
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "unsupported_public_spec_version"
+    )
+    assert violation["scope"] == "negotiated"
+    assert violation["expected"] == "1.0/1.1/2.0/3.0"
+
+
+
+def test_ucie_rejects_nonfinite_or_boolean_data_rate():
+    for bad_rate in ("nan", "inf", True):
+        result = analyze_ucie_trace(
+            {
+                "negotiated": {
+                    "spec_version": "3.0",
+                    "data_rate_gt_s": bad_rate,
+                },
+                "flits": [],
+            }
+        )
+
+        assert result["status"] == "FAIL"
+        assert "invalid_negotiated_data_rate" in {
+            item["code"] for item in result["violations"]
+        }
