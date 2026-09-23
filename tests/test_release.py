@@ -110,7 +110,8 @@ def test_release_export_requires_exact_reviewed_signoff_sha(tmp_path: Path):
 def test_release_export_rejects_foreign_signoff_identity(tmp_path: Path):
     source_project = initialize_project(tmp_path / "source")
     record_run(source_project, _run_record("source-pass"))
-    source_signoff = write_verification_signoff_bundle(source_project)
+    written_signoff = write_verification_signoff_bundle(source_project)
+    source_signoff = json.loads(Path(written_signoff["path"]).read_text(encoding="utf-8"))
 
     target_project = initialize_project(tmp_path / "target")
     foreign_signoff_path = target_project.root / ".zddv" / "signoff" / "signoff.json"
@@ -132,7 +133,8 @@ def test_release_verification_rejects_signed_manifest_identity_mismatch(
 ):
     source_project = initialize_project(tmp_path / "source")
     record_run(source_project, _run_record("source-pass"))
-    source_signoff = write_verification_signoff_bundle(source_project)
+    written_signoff = write_verification_signoff_bundle(source_project)
+    source_signoff = json.loads(Path(written_signoff["path"]).read_text(encoding="utf-8"))
 
     manifest_project = initialize_project(tmp_path / "manifest-project")
     private_key_path, public_key_path = _write_keypair(tmp_path)
