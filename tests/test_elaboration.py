@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from zddv.config import initialize_project, save_project
+from zddv.design_revision import design_revision_fingerprint
 from zddv.elaboration import (
     hierarchy_lines,
     parse_verilator_json,
@@ -325,3 +326,4 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
     assert Path(result["source_index"]).exists()
     assert Path(result["hierarchy_path"]).read_text(encoding="utf-8") == "top: top\n"
     assert result["summary"] == {"modules": 1, "instances": 1}
+    assert result["design_fingerprint"] == design_revision_fingerprint(project)
