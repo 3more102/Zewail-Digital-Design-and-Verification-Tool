@@ -708,6 +708,14 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
         "access_is_hint": True,
     }
     assert tx["qos"] == 0xA
+    assert tx["qos_attributes"] == {
+        "encoding": 0xA,
+        "is_default_no_qos": False,
+        "recommended_priority": 0xA,
+        "higher_value_recommended_higher_priority": True,
+        "exact_use_protocol_defined": False,
+        "axi_ordering_rules_take_precedence": True,
+    }
     assert tx["region"] == 0x5
     assert tx["arcache"] == 0xF
     assert tx["arprot"] == 0x7
@@ -765,6 +773,14 @@ def test_preserves_valid_write_address_sidebands():
         "access_is_hint": True,
     }
     assert tx["qos"] == 0xC
+    assert tx["qos_attributes"] == {
+        "encoding": 0xC,
+        "is_default_no_qos": False,
+        "recommended_priority": 0xC,
+        "higher_value_recommended_higher_priority": True,
+        "exact_use_protocol_defined": False,
+        "axi_ordering_rules_take_precedence": True,
+    }
     assert tx["region"] == 0x7
     assert tx["awcache"] == 0x3
     assert tx["awprot"] == 0x2
@@ -1422,3 +1438,43 @@ def test_missing_required_payload_still_fails_without_absence_metadata():
     }
     assert result["status"] == "FAIL"
     assert {"AWLEN", "AWSIZE", "AWBURST"} <= missing
+
+
+
+def test_decodes_axi4_qos_default_without_inventing_system_policy():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 1,
+                "ARADDR": 0x400,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARQOS": 0,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 1,
+                "RDATA": 0xAA,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    qos = result["transactions"][0]["qos_attributes"]
+    assert qos == {
+        "encoding": 0,
+        "is_default_no_qos": True,
+        "recommended_priority": 0,
+        "higher_value_recommended_higher_priority": True,
+        "exact_use_protocol_defined": False,
+        "axi_ordering_rules_take_precedence": True,
+    }
+    assert "system-specific QoS scheduling policy" in " ".join(result["limitations"])
