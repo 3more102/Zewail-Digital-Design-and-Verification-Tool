@@ -352,3 +352,86 @@ def test_desktop_crossprobe_rows_bound_elaborated_pin_details():
     ]
     with pytest.raises(ValueError, match="row limit must be > 0"):
         desktop_crossprobe_evidence_rows({}, elaborated_limit=0)
+
+
+def test_desktop_crossprobe_rows_surface_bounded_boundary_role_evidence():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "parent_signal_bindings": [],
+                "instance_port_bindings": [],
+                "unsupported_instance_port_bindings": [],
+                "boundary_drivers": [
+                    {
+                        "instance_path": "tb_top.u_out",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "query_side": "parent_signal",
+                    }
+                ],
+                "boundary_loads": [
+                    {
+                        "instance_path": "tb_top.u_in",
+                        "pin": "clk",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "clk",
+                        "port_direction": "input",
+                        "query_side": "parent_signal",
+                    }
+                ],
+                "boundary_unclassified_bindings": [
+                    {
+                        "instance_path": "tb_top.u_unknown",
+                        "pin": "ready",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "ready",
+                        "port_direction": None,
+                        "query_side": "parent_signal",
+                    }
+                ],
+            }
+        },
+        elaborated_limit=2,
+    )
+
+    summary = next(
+        detail for kind, detail in rows if kind == "Elaborated boundary roles"
+    )
+    assert summary == "drivers=1 · loads=1 · unclassified=1"
+
+    role_rows = [detail for kind, detail in rows if kind == "Elaborated role"]
+    assert role_rows == [
+        "DRIVER · query_side=parent_signal · parent=tb_top.count · "
+        "child=tb_top.u_out.count · direction=output",
+        "LOAD · query_side=parent_signal · parent=tb_top.clk · "
+        "child=tb_top.u_in.clk · direction=input",
+        "1 additional boundary role item(s) not shown",
+    ]
+
+
+def test_desktop_crossprobe_rows_do_not_interpret_boundary_roles_on_unknown_contract():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "future_unverified_contract",
+                "boundary_drivers": [
+                    {
+                        "instance_path": "tb_top.u_out",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "query_side": "parent_signal",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert not any(
+        kind in {"Elaborated boundary roles", "Elaborated role"}
+        for kind, _detail in rows
+    )

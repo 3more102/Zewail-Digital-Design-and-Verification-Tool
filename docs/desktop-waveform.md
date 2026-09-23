@@ -8,6 +8,8 @@ The Waveform tab selects the newest recorded run whose waveform file still exist
 
 The tab reuses the same `build_waveform_index` and `probe_vcd_signals` core APIs used by the CLI, but it does not call the artifact-writing waveform-index or waveform-probe commands. FST remains metadata-only until a verified parser or converter adapter is available.
 
+When cross-probe returns the trusted `simulator_elaborated_direct_pin_varref` contract, the desktop also renders the core-provided module-boundary driver, load, and unclassified role buckets. Role rows preserve the reported `query_side`, parent/child endpoint, and port direction, are bounded by the existing elaborated-evidence limit, and are not recomputed in the GUI. Unknown future connectivity contracts remain uninterpreted.
+
 ## Trust boundary
 
 Waveform values are observations from the recorded artifact. The desktop view does not execute verification, edit HDL, invoke AI, apply generated artifacts, or infer a new pass/fail conclusion from a transition.
