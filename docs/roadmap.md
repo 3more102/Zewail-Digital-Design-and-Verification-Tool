@@ -47,7 +47,8 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 Current status: deterministic source indexing, source-level hierarchy,
 simulator-resolved elaborated hierarchy, VCD waveform indexing, targeted VCD
 value-change probing, source-level structural drivers/loads navigation,
-waveform-to-source cross-probing, assertion-to-waveform correlation, and the
+waveform-to-source cross-probing with persisted elaborated/generated hierarchy
+preference, assertion-to-waveform correlation, and the
 first protocol transaction reconstruction path (normalized APB traces) are
 implemented. Exact elaborated drivers/loads remain future enrichment work.
 
@@ -55,6 +56,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata).
 - [x] Waveform-to-source cross-probing.
+- [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted VCD value-change probing (time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
@@ -218,7 +220,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
-- [x] Waveform navigation and bounded targeted VCD probe integration.
+- [x] Read-only recorded-waveform navigation and bounded targeted VCD probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
 
