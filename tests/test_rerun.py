@@ -5,21 +5,28 @@ from pathlib import Path
 import pytest
 
 from zddv.config import initialize_project
-from zddv.rerun import historical_run_snapshot, rerun_run_id
+from zddv.rerun import historical_run_snapshot, rerun_run_id, rerun_snapshot
 from zddv.simulator.base import BuildResult, RunResult
 from zddv.storage import record_run
 
 
-def _record(project, *, run_id: str = "run-fail", seed: int = 7) -> None:
+def _record(
+    project,
+    *,
+    run_id: str = "run-fail",
+    seed: int = 7,
+    simulator: str | None = None,
+    top: str | None = None,
+) -> None:
     record_run(
         project,
         {
             "run_id": run_id,
             "created_at": "2026-09-23T07:15:00+00:00",
             "project": project.name,
-            "simulator": project.simulator,
+            "simulator": simulator or project.simulator,
             "simulator_version": "Verilator test",
-            "top": project.top,
+            "top": top or project.top,
             "test": "smoke",
             "seed": seed,
             "status": "FAIL",
@@ -99,6 +106,11 @@ def test_historical_run_snapshot_binds_recorded_inputs(tmp_path: Path):
         "timeout_s": 30.0,
     }
     assert snapshot["recorded_command"] == ["sim", "+MODE=stress"]
+    assert snapshot["replay_contract"] == {
+        "backend": "current_configured_backend",
+        "recorded_runtime_inputs_exact": True,
+        "recorded_command_replayed_verbatim": False,
+    }
 
 
 def test_rerun_run_id_uses_exact_recorded_runtime_inputs(tmp_path: Path):
@@ -141,3 +153,37 @@ def test_rerun_run_id_rejects_unknown_run(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Run not found"):
         rerun_run_id(project, "missing")
+
+
+def test_rerun_snapshot_uses_reviewed_inputs_even_if_database_record_changes(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    _record(project, seed=7)
+    snapshot = historical_run_snapshot(project, "run-fail")
+    _record(project, seed=99)
+    backend = _Backend(project.root)
+
+    result = rerun_snapshot(project, snapshot, backend=backend)
+
+    assert result["status"] == "PASS"
+    assert backend.run_calls[0]["seed"] == 7
+    assert result["source"]["recorded_inputs"]["seed"] == 7
+
+
+def test_reviewed_rerun_rejects_incompatible_historical_identity(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    _record(project, run_id="wrong-top", top="different_top")
+
+    with pytest.raises(ValueError, match="Historical run identity mismatch"):
+        historical_run_snapshot(project, "wrong-top")
+
+
+def test_rerun_snapshot_rejects_tampered_identity(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    _record(project)
+    snapshot = historical_run_snapshot(project, "run-fail")
+    snapshot["identity"]["simulator"] = "questa"
+
+    with pytest.raises(ValueError, match="Historical run identity mismatch"):
+        rerun_snapshot(project, snapshot, backend=_Backend(project.root))
