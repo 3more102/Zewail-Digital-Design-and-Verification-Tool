@@ -135,6 +135,8 @@ jobs:
           zddv --project examples/counter crossprobe tb_counter.dut.count
           test -s examples/counter/.zddv/debug/crossprobe.json
           grep -q '"status": "MATCHED"' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"hierarchy_resolution": "simulator_elaborated"' examples/counter/.zddv/debug/crossprobe.json
+          grep -q '"status": "PRESENT"' examples/counter/.zddv/debug/crossprobe.json
           grep -q '"file": "rtl/counter.sv"' examples/counter/.zddv/debug/crossprobe.json
           grep -q '"analysis_level": "source_structural"' examples/counter/.zddv/debug/crossprobe.json
 
