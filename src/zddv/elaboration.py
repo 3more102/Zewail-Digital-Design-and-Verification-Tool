@@ -269,6 +269,141 @@ def _json_cell_pin_bindings(
     return bindings
 
 
+def _json_single_child(node: dict[str, Any], key: str) -> dict[str, Any] | None:
+    raw = node.get(key)
+    if (
+        isinstance(raw, list)
+        and len(raw) == 1
+        and isinstance(raw[0], dict)
+    ):
+        return raw[0]
+    if isinstance(raw, dict):
+        return raw
+    return None
+
+
+def _json_varref_names(value: Any) -> list[str]:
+    names: set[str] = set()
+    for node in _walk(value):
+        if str(node.get("type", "")).upper() != "VARREF":
+            continue
+        name = _json_node_name(node)
+        if name:
+            names.add(name)
+    return sorted(names)
+
+
+def _json_module_root_assignw(
+    module_node: dict[str, Any],
+    *,
+    files: dict[str, dict[str, Any]],
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    """Normalize module-root ASSIGNW only when both sides are plain VARREF nodes."""
+    module_name = (
+        module_node.get("origName")
+        or module_node.get("verilogName")
+        or module_node.get("name")
+    )
+    if not module_name:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    for child in module_node.values():
+        if isinstance(child, dict):
+            if str(child.get("type", "")).upper() == "ASSIGNW":
+                candidates.append(child)
+        elif isinstance(child, list):
+            candidates.extend(
+                item
+                for item in child
+                if isinstance(item, dict)
+                and str(item.get("type", "")).upper() == "ASSIGNW"
+            )
+
+    assignments: list[dict[str, Any]] = []
+    for node in candidates:
+        lhs = _json_single_child(node, "lhsp")
+        rhs = _json_single_child(node, "rhsp")
+        lhs_type = (
+            str(lhs.get("type", "")).upper()
+            if isinstance(lhs, dict)
+            else None
+        )
+        rhs_type = (
+            str(rhs.get("type", "")).upper()
+            if isinstance(rhs, dict)
+            else None
+        )
+        lhs_name = _json_node_name(lhs) if isinstance(lhs, dict) else None
+        rhs_name = _json_node_name(rhs) if isinstance(rhs, dict) else None
+        record: dict[str, Any] = {
+            "module": str(module_name),
+            "module_elaborated_name": module_node.get("name"),
+            "assignment_type": "ASSIGNW",
+            "location": _decode_location(node.get("loc"), files, project_root),
+            "lhs_expression_type": lhs_type,
+            "rhs_expression_type": rhs_type,
+            "lhs_varrefs": _json_varref_names(node.get("lhsp")),
+            "rhs_varrefs": _json_varref_names(node.get("rhsp")),
+        }
+
+        if (
+            lhs_type == "VARREF"
+            and rhs_type == "VARREF"
+            and lhs_name
+            and rhs_name
+        ):
+            record.update(
+                {
+                    "status": "NORMALIZED",
+                    "lhs_signal": lhs_name,
+                    "rhs_signal": rhs_name,
+                    "lhs_aliases": sorted(
+                        {
+                            str(value)
+                            for value in (
+                                lhs.get("name"),
+                                lhs.get("origName"),
+                                lhs.get("verilogName"),
+                            )
+                            if value
+                        }
+                    ),
+                    "rhs_aliases": sorted(
+                        {
+                            str(value)
+                            for value in (
+                                rhs.get("name"),
+                                rhs.get("origName"),
+                                rhs.get("verilogName"),
+                            )
+                            if value
+                        }
+                    ),
+                    "lhs_hierarchy": lhs.get("hier"),
+                    "rhs_hierarchy": rhs.get("hier"),
+                    "lhs_location": _decode_location(
+                        lhs.get("loc"), files, project_root
+                    ),
+                    "rhs_location": _decode_location(
+                        rhs.get("loc"), files, project_root
+                    ),
+                }
+            )
+        else:
+            record.update(
+                {
+                    "status": "UNSUPPORTED",
+                    "lhs_signal": None,
+                    "rhs_signal": None,
+                }
+            )
+        assignments.append(record)
+
+    return assignments
+
+
 def _json_direct_cells(
     value: Any,
     *,
@@ -376,6 +511,7 @@ def parse_verilator_json(
     module_nodes: list[dict[str, Any]] = []
     ports: list[dict[str, Any]] = []
     pin_bindings: list[dict[str, Any]] = []
+    direct_assignments: list[dict[str, Any]] = []
     for node in nodes:
         if str(node.get("type", "")).upper() != "MODULE":
             continue
@@ -390,6 +526,13 @@ def parse_verilator_json(
         module_nodes.append(node)
         ports.extend(
             _json_module_ports(
+                node,
+                files=files,
+                project_root=root,
+            )
+        )
+        direct_assignments.extend(
+            _json_module_root_assignw(
                 node,
                 files=files,
                 project_root=root,
@@ -599,6 +742,19 @@ def parse_verilator_json(
     unsupported_pin_expressions = sum(
         1 for item in pin_bindings if item.get("status") == "UNSUPPORTED"
     )
+    direct_assignments = sorted(
+        direct_assignments,
+        key=lambda item: (
+            item["module"],
+            str((item.get("location") or {}).get("path") or ""),
+            int((item.get("location") or {}).get("line") or 0),
+            str(item.get("lhs_signal") or ""),
+            str(item.get("rhs_signal") or ""),
+        ),
+    )
+    unsupported_direct_assignments = sum(
+        1 for item in direct_assignments if item.get("status") == "UNSUPPORTED"
+    )
     return {
         "modules": modules,
         "instances": instances,
@@ -614,6 +770,13 @@ def parse_verilator_json(
             "source_format": "json",
             "contract": "verilator_cell_pin_direct_varref_only",
             "unsupported_expression_count": unsupported_pin_expressions,
+        },
+        "direct_assignments": direct_assignments,
+        "direct_assignment_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_root_assignw_direct_varref_only",
+            "unsupported_assignment_count": unsupported_direct_assignments,
         },
     }
 
@@ -691,6 +854,12 @@ def parse_verilator_xml(
             "source_format": "xml",
             "reason": "legacy_xml_pin_binding_schema_not_normalized",
         },
+        "direct_assignments": [],
+        "direct_assignment_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_direct_assignment_schema_not_normalized",
+        },
     }
 
 
@@ -761,11 +930,14 @@ def write_elaborated_index(
         "port_evidence": parsed["port_evidence"],
         "pin_bindings": parsed["pin_bindings"],
         "pin_binding_evidence": parsed["pin_binding_evidence"],
+        "direct_assignments": parsed["direct_assignments"],
+        "direct_assignment_evidence": parsed["direct_assignment_evidence"],
         "summary": {
             "modules": len(parsed["modules"]),
             "instances": len(parsed["instances"]),
             "ports": len(parsed["ports"]),
             "pin_bindings": len(parsed["pin_bindings"]),
+            "direct_assignments": len(parsed["direct_assignments"]),
         },
         "tool_log": export["log"],
     }

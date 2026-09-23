@@ -318,6 +318,137 @@ def test_parse_verilator_json_normalizes_direct_cell_pin_varrefs_only(
     assert complex_expr["signal"] is None
 
 
+def test_parse_verilator_json_normalizes_module_root_direct_assignw_varrefs_only(
+    tmp_path: Path,
+):
+    rtl = tmp_path / "rtl" / "assigns.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module top(input logic src, input logic other, "
+        "output logic dst, output logic complex_dst);\n"
+        "assign dst = src;\n"
+        "assign complex_dst = src & other;\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "level": 1,
+                "topModule": True,
+                "loc": "d,1:1,4:9",
+                "stmtsp": [
+                    {
+                        "type": "ASSIGNW",
+                        "loc": "d,2:1,2:17",
+                        "rhsp": [
+                            {
+                                "type": "VARREF",
+                                "name": "src",
+                                "origName": "src",
+                                "verilogName": "src",
+                                "loc": "d,2:14,2:16",
+                            }
+                        ],
+                        "lhsp": [
+                            {
+                                "type": "VARREF",
+                                "name": "dst",
+                                "origName": "dst",
+                                "verilogName": "dst",
+                                "loc": "d,2:8,2:10",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "ASSIGNW",
+                        "loc": "d,3:1,3:33",
+                        "rhsp": [
+                            {
+                                "type": "AND",
+                                "lhsp": {
+                                    "type": "VARREF",
+                                    "name": "src",
+                                },
+                                "rhsp": {
+                                    "type": "VARREF",
+                                    "name": "other",
+                                },
+                            }
+                        ],
+                        "lhsp": [
+                            {
+                                "type": "VARREF",
+                                "name": "complex_dst",
+                                "origName": "complex_dst",
+                                "verilogName": "complex_dst",
+                                "loc": "d,3:8,3:18",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/assigns.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert result["direct_assignment_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_root_assignw_direct_varref_only",
+        "unsupported_assignment_count": 1,
+    }
+    assert len(result["direct_assignments"]) == 2
+
+    simple = result["direct_assignments"][0]
+    assert simple["status"] == "NORMALIZED"
+    assert simple["module"] == "top"
+    assert simple["assignment_type"] == "ASSIGNW"
+    assert simple["lhs_signal"] == "dst"
+    assert simple["rhs_signal"] == "src"
+    assert simple["lhs_aliases"] == ["dst"]
+    assert simple["rhs_aliases"] == ["src"]
+    assert simple["lhs_varrefs"] == ["dst"]
+    assert simple["rhs_varrefs"] == ["src"]
+    assert simple["location"]["path"] == "rtl/assigns.sv"
+    assert simple["location"]["line"] == 2
+
+    complex_expr = result["direct_assignments"][1]
+    assert complex_expr["status"] == "UNSUPPORTED"
+    assert complex_expr["lhs_expression_type"] == "VARREF"
+    assert complex_expr["rhs_expression_type"] == "AND"
+    assert complex_expr["lhs_signal"] is None
+    assert complex_expr["rhs_signal"] is None
+    assert complex_expr["lhs_varrefs"] == ["complex_dst"]
+    assert complex_expr["rhs_varrefs"] == ["other", "src"]
+
+
 def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
     rtl = tmp_path / "rtl" / "design.sv"
     rtl.parent.mkdir()
@@ -461,6 +592,12 @@ def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
         "source_format": "xml",
         "reason": "legacy_xml_pin_binding_schema_not_normalized",
     }
+    assert result["direct_assignments"] == []
+    assert result["direct_assignment_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_direct_assignment_schema_not_normalized",
+    }
 
 
 def test_elaborated_hierarchy_lines_and_version_detection():
@@ -581,6 +718,7 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "instances": 1,
         "ports": 0,
         "pin_bindings": 0,
+        "direct_assignments": 0,
     }
     assert result["ports"] == []
     assert result["port_evidence"] == {
@@ -594,5 +732,12 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "source_format": "json",
         "contract": "verilator_cell_pin_direct_varref_only",
         "unsupported_expression_count": 0,
+    }
+    assert result["direct_assignments"] == []
+    assert result["direct_assignment_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_root_assignw_direct_varref_only",
+        "unsupported_assignment_count": 0,
     }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)

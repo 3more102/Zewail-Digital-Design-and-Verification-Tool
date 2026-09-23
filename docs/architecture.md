@@ -195,8 +195,20 @@ queried waveform signal as a `boundary_driver`, `boundary_load`, or both for
 `boundary_unclassified_bindings`, and unsupported expressions are excluded from
 these role lists.
 
-This qualification and correlation are hierarchy/boundary evidence only: exact
-elaborated internal signal drivers and loads remain a separate enrichment milestone.
+A separate `elaborated_internal_connectivity` view consumes only normalized
+module-root Verilator `ASSIGNW` records whose left and right expressions are each a
+plain `VARREF`. For such exact records, the right-hand signal is a direct continuous
+assignment driver of the left-hand signal; querying the left side yields a driver edge,
+while querying the right side yields a load edge. The contract is tagged
+`simulator_elaborated_module_root_assignw_direct_varref` and remains separate from
+source-structural and module-boundary role evidence.
+
+Any `ASSIGNW` whose left or right side is not a plain `VARREF` is retained only as
+`UNSUPPORTED` reference evidence. If the queried signal occurs inside that expression,
+the internal connectivity result becomes `PARTIAL` and records the unresolved assignment
+without creating a driver or load edge. Legacy XML, generated-scope assignments,
+procedural assignments, selects, concatenations, and other complex expressions remain
+outside this contract until their Verilator JSON schemas are explicitly normalized.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 

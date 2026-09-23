@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Elaborated internal connectivity
+
+- Normalize module-root Verilator `ASSIGNW` records only when both sides are plain `VARREF` expressions.
+- Expose exact continuous-assignment driver/load edges in cross-probing as a separate simulator-elaborated internal layer.
+- Preserve complex assignment sides as unresolved reference evidence and mark affected queries partial instead of inferring connectivity.
+- Keep legacy XML, generated-scope, procedural, select, concatenation, and other complex-expression semantics outside the normalized contract.
+
 ### Elaborated debug correlation
 
 - Extend direct pin-to-source edge correlation to generated instances only when

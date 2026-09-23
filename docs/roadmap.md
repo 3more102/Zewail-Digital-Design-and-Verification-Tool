@@ -55,9 +55,11 @@ conservative direct CELL-pin-to-VARREF elaborated connectivity with complex expr
 retained as unsupported evidence plus bidirectional waveform cross-probing across exact
 normalized pin bindings, fail-closed pin-binding schema validation with unsupported
 child-pin query evidence retained separately, direction-qualified boundary driver/load
-roles for trusted direct bindings, assertion-to-waveform correlation, and the
+roles for trusted direct bindings, module-root Verilator ASSIGNW direct
+VARREF-to-VARREF internal connectivity, assertion-to-waveform correlation, and the
 first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Exact elaborated drivers/loads remain future enrichment work.
+implemented. Broader generated-scope, procedural, and complex-expression elaborated
+internal drivers/loads remain future enrichment work.
 
 - [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
@@ -76,6 +78,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Exact direct pin-binding to source instance-port edge correlation without promoting source roles to elaborated semantics.
 - [x] Generated-instance source-edge correlation when a direct pin selects one path from an explicitly enumerated ambiguous child-candidate set.
 - [x] Direction-qualified boundary driver/load roles for direct normalized pin bindings; unavailable direction remains explicitly unclassified.
+- [x] Module-root Verilator ASSIGNW direct VARREF-to-VARREF internal driver/load evidence; complex assignment sides remain unresolved rather than inferred.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
