@@ -252,6 +252,14 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+The analyzer keeps Arm USER guidance separate from protocol legality. It records
+non-failing advisories for the guidance maxima on `USER_REQ_WIDTH`,
+`USER_DATA_WIDTH`, and `USER_RESP_WIDTH`, for the recommended USER data-width
+granularity, and for changing lower RUSER response bits across a multi-beat read
+response when the required width evidence is explicit. Advisory evidence is
+reported independently of `status` and never upgrades a recommendation into a
+mandatory AXI4 rule.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,

@@ -501,6 +501,14 @@ WUSER + BUSER, matching `USER_DATA_WIDTH + USER_RESP_WIDTH`. Partial metadata
 remains partial and does not cause missing widths to be guessed. When the metadata
 is omitted, existing USER transport behavior is unchanged.
 
+ZDDV also reports the Arm USER configuration guidance as explicit non-failing
+`advisories`: request widths above the 128-bit guidance maximum, response widths
+above 16 bits, USER data widths above `DATA_WIDTH/2`, USER data widths that are
+not an integer multiple of the data-bus width in bytes, and changing lower
+RUSER response bits across a multi-beat read response. These findings never
+change protocol `status` by themselves because the specification presents the
+limits as guidance and the response-bit behavior as a recommendation.
+
 `zddv axi4-waveform` records the declared widths of USER signals that are actually
 present in the selected VCD scope and feeds that evidence into the same checks. A
 USER signal missing from the VCD is not automatically treated as a zero-width

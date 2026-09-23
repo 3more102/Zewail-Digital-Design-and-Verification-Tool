@@ -470,6 +470,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         for index, sample in enumerate(raw_samples)
     ]
     violations: list[dict[str, Any]] = []
+    advisories: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
 
     channel_state: dict[str, dict[str, Any] | None] = {
@@ -522,6 +523,28 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             entry["actual"] = actual
         violations.append(entry)
 
+    def add_advisory(
+        code: str,
+        message: str,
+        *,
+        transaction_index: int | None = None,
+        signal: str | None = None,
+        expected: Any = None,
+        actual: Any = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "code": code,
+            "kind": "recommendation",
+            "message": message,
+        }
+        if transaction_index is not None:
+            entry["transaction_index"] = transaction_index
+        if signal is not None:
+            entry["signal"] = signal
+            entry["expected"] = expected
+            entry["actual"] = actual
+        advisories.append(entry)
+
     def validate_user_sidebands(sample: dict[str, Any]) -> None:
         channels = {
             "AWUSER": "AW",
@@ -556,6 +579,60 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     expected=f"unsigned {width}-bit value (0..{(1 << width) - 1})",
                     actual=value,
                 )
+
+    def evaluate_user_signal_guidance() -> None:
+        request_signal = (
+            "AWUSER"
+            if "AWUSER" in user_signal_widths
+            else "ARUSER"
+            if "ARUSER" in user_signal_widths
+            else None
+        )
+        if request_signal is not None:
+            request_width = user_signal_widths[request_signal]
+            if request_width > 128:
+                add_advisory(
+                    "user_req_width_above_guidance",
+                    "USER_REQ_WIDTH exceeds the Arm guidance maximum of 128 bits",
+                    signal=request_signal,
+                    expected="0..128 bits (guidance)",
+                    actual=request_width,
+                )
+
+        data_width = user_signal_widths.get("WUSER")
+        if data_width is not None and data_width_bits is not None:
+            if data_width > data_width_bits // 2:
+                add_advisory(
+                    "user_data_width_above_guidance",
+                    "USER_DATA_WIDTH exceeds the Arm guidance maximum of DATA_WIDTH/2",
+                    signal="WUSER",
+                    expected=f"0..{data_width_bits // 2} bits (guidance)",
+                    actual=data_width,
+                )
+            if (
+                data_width > 0
+                and data_bus_bytes is not None
+                and data_width % data_bus_bytes != 0
+            ):
+                add_advisory(
+                    "user_data_width_granularity_recommendation",
+                    "USER_DATA_WIDTH is recommended to be an integer multiple of the data-bus width in bytes",
+                    signal="WUSER",
+                    expected=f"multiple of {data_bus_bytes} bits (recommendation)",
+                    actual=data_width,
+                )
+
+        response_width = user_signal_widths.get("BUSER")
+        if response_width is not None and response_width > 16:
+            add_advisory(
+                "user_resp_width_above_guidance",
+                "USER_RESP_WIDTH exceeds the Arm guidance maximum of 16 bits",
+                signal="BUSER",
+                expected="0..16 bits (guidance)",
+                actual=response_width,
+            )
+
+    evaluate_user_signal_guidance()
 
     def channel_event(sample: dict[str, Any], channel: str) -> bool:
         spec = _CHANNELS[channel]
@@ -1214,6 +1291,29 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         r_users = [beat.get("user") for beat in beats]
         if any(value is not None for value in r_users):
             tx["ruser"] = r_users
+
+        response_width = user_signal_widths.get("BUSER")
+        ruser_width = user_signal_widths.get("RUSER")
+        if (
+            isinstance(response_width, int)
+            and response_width > 0
+            and isinstance(ruser_width, int)
+            and ruser_width >= response_width
+            and len(r_users) > 1
+            and all(isinstance(value, int) for value in r_users)
+        ):
+            response_mask = (1 << response_width) - 1
+            response_bits = [int(value) & response_mask for value in r_users]
+            if len(set(response_bits)) > 1:
+                add_advisory(
+                    "ruser_response_bits_vary_across_read_beats",
+                    "Arm recommends that User response bits keep the same value on every beat of a read response",
+                    transaction_index=tx["index"],
+                    signal="RUSER",
+                    expected=f"lower {response_width} response bits stable across all read beats",
+                    actual=response_bits,
+                )
+
         transactions.append(tx)
 
     for sample in samples:
@@ -1510,7 +1610,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_id_widths_user_widths_write_strobes_master_defaults",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_id_widths_user_widths_user_guidance_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
         "id_widths": id_widths,
@@ -1536,9 +1636,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "matched_exclusive_writes": matched_exclusive_writes,
             "channel_stall_cycles": channel_stall_cycles,
             "violations": len(violations),
+            "advisories": len(advisories),
         },
         "transactions": transactions,
         "violations": violations,
+        "advisories": advisories,
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
@@ -1547,7 +1649,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Optional id_widths metadata validates the AXI ID_W_WIDTH relationship across AWID/BID and ID_R_WIDTH across ARID/RID, including the protocol-defined width-zero signal-absence rule, without inferring interface widths from observed transaction values.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
-            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits.",
+            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits. Arm USER width maxima/granularity and multi-beat response-bit recommendations are reported as non-failing advisories, not protocol violations.",
             "Topology-dependent AxCACHE reachability, cross-master memory-attribute consistency, the AxREGION downstream-address-decode placement requirement, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled without explicit system topology metadata.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
