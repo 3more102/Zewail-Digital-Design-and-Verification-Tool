@@ -7,6 +7,7 @@ from typing import Any
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
 from zddv.desktop_actions import attach_desktop_actions_tab
+from zddv.desktop_review import attach_desktop_review_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
     assertion_statistics,
@@ -163,10 +164,14 @@ def build_desktop_snapshot(
             "simulator": project.simulator,
         },
         "policy": {
-            "display_only": True,
-            "executes_verification": False,
+            "display_only": False,
+            "evidence_views_display_only": True,
+            "executes_verification": True,
+            "automatic_verification_execution": False,
             "invokes_ai": False,
-            "applies_generated_artifacts": False,
+            "applies_generated_artifacts": True,
+            "automatic_generated_artifact_apply": False,
+            "review_gated_project_actions": True,
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
@@ -188,7 +193,7 @@ def launch_desktop_gui(
     *,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Launch a read-only Tk desktop dashboard and return the last shown snapshot."""
+    """Launch read-only evidence views plus explicit review-gated project actions."""
     try:
         import tkinter as tk
         from tkinter import ttk
@@ -255,6 +260,7 @@ def launch_desktop_gui(
     notebook.add(elaborated_tab, text="Elaborated")
     attach_desktop_waveform_tab(notebook, project)
     attach_desktop_actions_tab(notebook, project)
+    attach_desktop_review_tab(notebook, project, limit=limit)
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -436,9 +442,9 @@ def launch_desktop_gui(
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence and source files; "
-            "it does not run verification, invoke AI, write design indexes, or apply "
-            "generated artifacts."
+            "Evidence views are read-only. Actions can run only after exact SHA-confirmed "
+            "review; Generated Review can stage/apply exact reviewed bytes through the "
+            "existing core gate. No AI invocation or automatic execution/apply."
         ),
     ).pack(side="left")
 
