@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Generated elaborated/source correlation
+
+- Extend direct pin-to-source edge correlation to generated instances only when the exact elaborated child path is already present in the source edge's explicit ambiguous candidate set.
+- Preserve the original candidate set and source-structural driver/load semantics instead of promoting the resolved route to complete simulator-elaborated connectivity.
+
 ### Elaborated boundary connectivity
 
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
