@@ -209,6 +209,65 @@ def _match_elaborated_port_evidence(
     }
 
 
+def _pin_binding_item_errors(
+    item: Any,
+    *,
+    index: int,
+) -> list[str]:
+    prefix = f"pin_bindings[{index}]"
+    if not isinstance(item, dict):
+        return [f"{prefix} is not an object"]
+
+    errors: list[str] = []
+    status = item.get("status")
+    if status not in {"NORMALIZED", "UNSUPPORTED"}:
+        errors.append(f"{prefix}.status is not NORMALIZED or UNSUPPORTED")
+
+    for key in ("instance_path", "parent_instance_path", "pin"):
+        value = item.get(key)
+        if not isinstance(value, str) or not value:
+            errors.append(f"{prefix}.{key} is not a non-empty string")
+
+    instance_module = item.get("instance_module")
+    if instance_module is not None and (
+        not isinstance(instance_module, str) or not instance_module
+    ):
+        errors.append(
+            f"{prefix}.instance_module is not a non-empty string or null"
+        )
+
+    generate_scopes = item.get("generate_scopes")
+    if not isinstance(generate_scopes, list) or any(
+        not isinstance(value, str) or not value
+        for value in generate_scopes
+    ):
+        errors.append(f"{prefix}.generate_scopes is not a string list")
+
+    for key in ("pin_location", "signal_location"):
+        location = item.get(key)
+        if location is not None and not isinstance(location, dict):
+            errors.append(f"{prefix}.{key} is not an object or null")
+
+    expression_type = item.get("expression_type")
+    if expression_type is not None and (
+        not isinstance(expression_type, str) or not expression_type
+    ):
+        errors.append(
+            f"{prefix}.expression_type is not a non-empty string or null"
+        )
+
+    if status == "NORMALIZED":
+        if expression_type != "VARREF":
+            errors.append(f"{prefix}.expression_type is not VARREF")
+        signal = item.get("signal")
+        if not isinstance(signal, str) or not signal:
+            errors.append(f"{prefix}.signal is not a non-empty string")
+    elif status == "UNSUPPORTED" and item.get("signal") is not None:
+        errors.append(f"{prefix}.signal must be null when UNSUPPORTED")
+
+    return errors
+
+
 def _direct_assignment_item_errors(
     item: Any,
     *,
@@ -328,12 +387,63 @@ def _elaborated_identity_errors(
         dict,
     ):
         errors.append("pin_binding_evidence is not an object")
-    elif (
-        isinstance(pin_binding_evidence, dict)
-        and pin_binding_evidence.get("status") == "NORMALIZED"
-        and not isinstance(pin_bindings, list)
-    ):
-        errors.append("normalized pin_binding_evidence requires a pin_bindings list")
+    elif isinstance(pin_binding_evidence, dict):
+        if (
+            pin_binding_evidence.get("status") == "NORMALIZED"
+            and not isinstance(pin_bindings, list)
+        ):
+            errors.append(
+                "normalized pin_binding_evidence requires a pin_bindings list"
+            )
+
+        trusted_contract = (
+            pin_binding_evidence.get("status") == "NORMALIZED"
+            and pin_binding_evidence.get("contract")
+            == "verilator_cell_pin_direct_varref_only"
+        )
+        if trusted_contract:
+            if pin_binding_evidence.get("source_format") != "json":
+                errors.append(
+                    "trusted pin_binding_evidence source_format is not json"
+                )
+
+            unsupported_count = pin_binding_evidence.get(
+                "unsupported_expression_count"
+            )
+            valid_unsupported_count = (
+                isinstance(unsupported_count, int)
+                and not isinstance(unsupported_count, bool)
+                and unsupported_count >= 0
+            )
+            if not valid_unsupported_count:
+                errors.append(
+                    "trusted pin_binding_evidence unsupported_expression_count "
+                    "is not a non-negative integer"
+                )
+
+            if isinstance(pin_bindings, list):
+                for binding_index, binding in enumerate(pin_bindings):
+                    errors.extend(
+                        _pin_binding_item_errors(
+                            binding,
+                            index=binding_index,
+                        )
+                    )
+
+                actual_unsupported_count = sum(
+                    1
+                    for binding in pin_bindings
+                    if isinstance(binding, dict)
+                    and binding.get("status") == "UNSUPPORTED"
+                )
+                if (
+                    valid_unsupported_count
+                    and unsupported_count != actual_unsupported_count
+                ):
+                    errors.append(
+                        "trusted pin_binding_evidence "
+                        "unsupported_expression_count does not match pin_bindings"
+                    )
 
     direct_assignments = index.get("direct_assignments")
     if direct_assignments is not None and not isinstance(direct_assignments, list):
