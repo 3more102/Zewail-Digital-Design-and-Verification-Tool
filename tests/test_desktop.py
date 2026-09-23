@@ -366,6 +366,56 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
 
 
+def test_desktop_snapshot_suppresses_unnormalized_port_rows(tmp_path: Path):
+    project = initialize_project(tmp_path / "elaborated-unavailable-ports")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    elaborated_path = design_dir / "elaborated.json"
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "source_format": "xml",
+                "design_fingerprint": design_revision_fingerprint(project),
+                "port_evidence": {
+                    "status": "UNAVAILABLE",
+                    "source_format": "xml",
+                    "reason": "legacy_xml_port_schema_not_normalized",
+                },
+                "ports": [
+                    {
+                        "module": "untrusted",
+                        "name": "ready",
+                        "direction": "output",
+                    }
+                ],
+                "instances": [
+                    {
+                        "path": project.top,
+                        "name": project.top,
+                        "module": project.top,
+                        "top": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    evidence = snapshot["elaborated_hierarchy"]
+
+    assert evidence["status"] == "PRESENT"
+    assert evidence["ports"] == []
+    assert evidence["port_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_port_schema_not_normalized",
+    }
+
+
 def test_desktop_snapshot_rejects_elaboration_after_rtl_revision(tmp_path: Path):
     project = initialize_project(tmp_path / "elaborated-stale")
     source = project.root / "rtl" / "top.sv"
