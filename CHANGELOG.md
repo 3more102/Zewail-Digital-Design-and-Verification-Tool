@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Questa coverage evidence
+
+- Add value-excluding layout fingerprints for captured Questa text/XML evidence: lexical cue shapes for text and tag/attribute-name/child-tag structure for XML.
+- Preserve pending multibit-condition and enumerated/unknown toggle layouts as evidence-only; no new item semantics or coverage-hole normalization is inferred.
+
 ### Xcelium coverage evidence
 
 - Add schema-neutral lexical layout fingerprints for captured IMC detail sections using only structured delimiters, field counts, and token classes; unverified FSM/functional layouts remain evidence-only and are not normalized.
