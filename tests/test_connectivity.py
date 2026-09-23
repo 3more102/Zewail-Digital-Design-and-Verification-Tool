@@ -207,6 +207,46 @@ def test_elaborated_port_direction_mismatch_does_not_relabel_source_role(
     assert instance_driver["elaborated_role_consistent"] is False
 
 
+def test_unavailable_elaborated_port_contract_fails_closed(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_ports=[
+            {
+                "module": "child",
+                "name": "a",
+                "direction": "input",
+                "direction_field": "ioDirection",
+            },
+        ],
+        port_evidence={
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_port_schema_not_normalized",
+        },
+    )
+
+    instance_load = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert instance_load["elaborated_child_resolution"] == "exact"
+    assert instance_load["elaborated_port_resolution"] == "unavailable"
+    assert instance_load["elaborated_port_unavailable"] == {
+        "contract_status": "UNAVAILABLE",
+        "reason": "legacy_xml_port_schema_not_normalized",
+    }
+    assert "elaborated_port_direction" not in instance_load
+    assert "elaborated_role_consistent" not in instance_load
+
+
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
     project = _connectivity_project(tmp_path)
     index = build_connectivity_index(project)
