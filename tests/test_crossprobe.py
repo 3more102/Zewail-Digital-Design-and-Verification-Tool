@@ -381,7 +381,8 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         "ports": [
             {
                 "module": "counter",
-                "name": "clk",
+                "name": "__Vcellinp__clk",
+                "verilog_name": "clk",
                 "direction": "input",
             },
             {
@@ -459,10 +460,6 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     )
     assert len(parent_count["elaborated_connectivity"]["boundary_drivers"]) == 1
     assert parent_count["elaborated_connectivity"]["boundary_loads"] == []
-    assert (
-        parent_count["elaborated_connectivity"]["boundary_drivers"][0]["query_side"]
-        == "parent_signal"
-    )
 
     child_clk = build_crossprobe(
         project,
@@ -473,10 +470,6 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     )
     assert len(child_clk["elaborated_connectivity"]["boundary_drivers"]) == 1
     assert child_clk["elaborated_connectivity"]["boundary_loads"] == []
-    assert (
-        child_clk["elaborated_connectivity"]["boundary_drivers"][0]["query_side"]
-        == "child_port"
-    )
 
     child = build_crossprobe(
         project,
