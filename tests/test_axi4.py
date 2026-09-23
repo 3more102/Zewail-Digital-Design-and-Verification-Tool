@@ -1121,3 +1121,76 @@ def test_accepts_all_zero_write_strobe_as_partial_write():
     assert result["status"] == "PASS"
     assert result["transactions"][0]["write_strobes"] == [0]
     assert result["transactions"][0]["allowed_write_strobes"] == [0xF]
+
+
+
+def test_decodes_axi4_protection_attributes():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 7,
+                "ARADDR": 0x500,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARPROT": 0b101,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 7,
+                "RDATA": 0x44,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 8,
+                "AWADDR": 0x600,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWPROT": 0b010,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x55,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 8,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+
+    assert read["prot_attributes"] == {
+        "encoding": 0b101,
+        "privilege": "privileged",
+        "security": "secure",
+        "access": "instruction",
+        "instruction_hint": True,
+    }
+    assert write["prot_attributes"] == {
+        "encoding": 0b010,
+        "privilege": "unprivileged",
+        "security": "non_secure",
+        "access": "data",
+        "instruction_hint": False,
+    }
