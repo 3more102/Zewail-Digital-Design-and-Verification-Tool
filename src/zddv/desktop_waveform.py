@@ -113,8 +113,13 @@ def crossprobe_desktop_waveform_signal(
 
 def desktop_crossprobe_evidence_rows(
     report: dict[str, Any],
+    *,
+    elaborated_limit: int = 20,
 ) -> list[tuple[str, str]]:
-    """Format cross-probe evidence for the desktop without adding new inference."""
+    """Format bounded cross-probe evidence without adding desktop-side inference."""
+    if elaborated_limit <= 0:
+        raise ValueError("Elaborated evidence row limit must be > 0")
+
     rows: list[tuple[str, str]] = []
 
     hierarchy = report.get("hierarchy") or {}
@@ -172,7 +177,12 @@ def desktop_crossprobe_evidence_rows(
         rows.append(("Elaborated port", port_detail))
 
     elaborated_connectivity = report.get("elaborated_connectivity")
-    if isinstance(elaborated_connectivity, dict):
+    trusted_elaborated_connectivity = (
+        isinstance(elaborated_connectivity, dict)
+        and elaborated_connectivity.get("analysis_level")
+        == "simulator_elaborated_direct_pin_varref"
+    )
+    if trusted_elaborated_connectivity:
         parent_bindings = [
             item
             for item in elaborated_connectivity.get("parent_signal_bindings", [])
@@ -183,8 +193,15 @@ def desktop_crossprobe_evidence_rows(
             for item in elaborated_connectivity.get("instance_port_bindings", [])
             if isinstance(item, dict)
         ]
+        unsupported_bindings = [
+            item
+            for item in elaborated_connectivity.get(
+                "unsupported_instance_port_bindings", []
+            )
+            if isinstance(item, dict)
+        ]
         connectivity_detail = (
-            f"{elaborated_connectivity.get('analysis_level') or 'direct_pin_varref'} · "
+            "simulator_elaborated_direct_pin_varref · "
             f"parent-signal bindings={len(parent_bindings)} · "
             f"instance-port bindings={len(instance_bindings)}"
         )
@@ -197,7 +214,56 @@ def desktop_crossprobe_evidence_rows(
         )
         if relationships:
             connectivity_detail += f" · relationships={','.join(relationships)}"
+        if unsupported_bindings:
+            connectivity_detail += f" · unsupported={len(unsupported_bindings)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
+
+        evidence_items: list[tuple[str, dict[str, Any]]] = [
+            ("normalized", item) for item in parent_bindings + instance_bindings
+        ]
+        evidence_items.extend(
+            ("unsupported", item) for item in unsupported_bindings
+        )
+
+        for kind, binding in evidence_items[:elaborated_limit]:
+            child = (
+                f"{binding.get('instance_path') or '-'}."
+                f"{binding.get('pin') or '-'}"
+            )
+            direction = binding.get("port_direction") or "unknown"
+            if kind == "unsupported":
+                expression = binding.get("expression_type") or "unknown"
+                detail = (
+                    f"{child} · UNSUPPORTED · direction={direction} · "
+                    f"expression={expression} · no direct VARREF relation"
+                )
+            else:
+                parent = (
+                    f"{binding.get('parent_instance_path') or '-'}."
+                    f"{binding.get('parent_signal') or '-'}"
+                )
+                relationship = (
+                    binding.get("relationship") or "direct_pin_varref"
+                )
+                if relationship == "parent_signal_to_child_input":
+                    relation = f"{parent} -> {child}"
+                elif relationship == "child_output_to_parent_signal":
+                    relation = f"{child} -> {parent}"
+                elif relationship == "bidirectional_child_port":
+                    relation = f"{parent} <-> {child}"
+                else:
+                    relation = f"parent={parent} · child={child}"
+                detail = f"{relation} · {direction} · {relationship}"
+            rows.append(("Elaborated pin", detail))
+
+        hidden = len(evidence_items) - min(len(evidence_items), elaborated_limit)
+        if hidden:
+            rows.append(
+                (
+                    "Elaborated pin",
+                    f"{hidden} additional evidence item(s) not shown",
+                )
+            )
 
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
@@ -209,7 +275,6 @@ def desktop_crossprobe_evidence_rows(
         rows.append(("Elaborated boundary", boundary_detail))
 
     return rows
-
 
 def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     """Attach a self-contained read-only waveform navigation tab to a Tk notebook."""
@@ -278,7 +343,7 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
         tab,
         columns=("kind", "details"),
         show="headings",
-        height=6,
+        height=9,
     )
     evidence_tree.heading("kind", text="Cross-probe evidence")
     evidence_tree.heading("details", text="Resolved detail")
