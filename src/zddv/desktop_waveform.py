@@ -207,8 +207,11 @@ def _desktop_internal_connectivity_item_is_normalized(
     if (
         not isinstance(query_references, list)
         or not query_references
+        or any(
+            not isinstance(side, str) or side not in {"lhs", "rhs"}
+            for side in query_references
+        )
         or len(set(query_references)) != len(query_references)
-        or any(side not in {"lhs", "rhs"} for side in query_references)
     ):
         return False
 
