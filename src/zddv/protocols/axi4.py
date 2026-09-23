@@ -454,6 +454,21 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             )
         data_bus_bytes = data_width_bits // 8
 
+    address_width_bits = payload.get("address_width_bits")
+    if address_width_bits is not None:
+        if isinstance(address_width_bits, bool):
+            raise ValueError(
+                "address_width_bits must be an integer bit width in the range 1..64"
+            )
+        address_width_bits = _scalar(address_width_bits)
+        if (
+            not isinstance(address_width_bits, int)
+            or not 1 <= address_width_bits <= 64
+        ):
+            raise ValueError(
+                "address_width_bits must be an integer bit width in the range 1..64"
+            )
+
     id_widths = _configured_id_widths(payload)
     user_signal_widths = _configured_user_signal_widths(payload)
     master_defaults = _master_default_signals(
@@ -899,6 +914,19 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 f"{prefix}ADDR must be a non-negative integer",
                 channel=prefix, signal=f"{prefix}ADDR",
                 expected="non-negative integer", actual=addr,
+            )
+        elif (
+            address_width_bits is not None
+            and addr >= (1 << address_width_bits)
+        ):
+            add_violation(
+                "invalid_address_width",
+                sample,
+                f"{prefix}ADDR does not fit ADDR_WIDTH={address_width_bits}",
+                channel=prefix,
+                signal=f"{prefix}ADDR",
+                expected=f"0..{(1 << address_width_bits) - 1}",
+                actual=addr,
             )
 
         sidebands = validate_address_sidebands(
@@ -1629,9 +1657,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_id_widths_user_widths_user_guidance_write_strobes_master_defaults",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_address_width_id_widths_user_widths_user_guidance_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
+        "address_width_bits": address_width_bits,
         "id_widths": id_widths,
         "user_signal_widths": user_signal_widths,
         "absent_master_signals": sorted(master_defaults),
@@ -1666,6 +1695,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics and protocol-defined AxQOS recommendation/default evidence are decoded, and AxREGION default/capacity/address-space evidence plus 4KB-space consistency are modeled.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "Optional id_widths metadata validates the AXI ID_W_WIDTH relationship across AWID/BID and ID_R_WIDTH across ARID/RID, including the protocol-defined width-zero signal-absence rule, without inferring interface widths from observed transaction values.",
+            "Optional address_width_bits metadata validates AWADDR/ARADDR values against the AXI ADDR_WIDTH interface property in the 1..64-bit range; missing metadata remains unknown.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits. Arm USER width maxima/granularity and multi-beat response-bit recommendations are reported as non-failing advisories, not protocol violations.",

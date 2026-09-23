@@ -120,6 +120,20 @@ def extract_axi4_trace_from_vcd(
             f"got WDATA={wdata_width}, WSTRB={wstrb_width}"
         )
 
+    awaddr_width = int(scoped_signals["AWADDR"]["width"])
+    araddr_width = int(scoped_signals["ARADDR"]["width"])
+    if awaddr_width != araddr_width:
+        raise RuntimeError(
+            "AXI4 ADDR_WIDTH requires matching AWADDR/ARADDR widths; "
+            f"got AWADDR={awaddr_width}, ARADDR={araddr_width}"
+        )
+    if not 1 <= awaddr_width <= 64:
+        raise RuntimeError(
+            "AXI4 ADDR_WIDTH must be in the range 1..64 bits; "
+            f"got {awaddr_width}"
+        )
+    address_width_bits = awaddr_width
+
     user_signal_widths = {
         name: int(scoped_signals[name]["width"])
         for name in ("AWUSER", "WUSER", "BUSER", "ARUSER", "RUSER")
@@ -192,6 +206,7 @@ def extract_axi4_trace_from_vcd(
     waveform = dict(sampled["waveform"])
     waveform["clock"] = actual_clock
     waveform["data_width_bits"] = wdata_width
+    waveform["address_width_bits"] = address_width_bits
     waveform["rdata_width_bits"] = rdata_width
     waveform["wstrb_width"] = wstrb_width
     waveform["id_widths"] = dict(id_widths)
@@ -199,6 +214,7 @@ def extract_axi4_trace_from_vcd(
     return {
         "source": "vcd-waveform",
         "data_width_bits": wdata_width,
+        "address_width_bits": address_width_bits,
         "id_widths": id_widths,
         "user_signal_widths": user_signal_widths,
         "waveform": waveform,
