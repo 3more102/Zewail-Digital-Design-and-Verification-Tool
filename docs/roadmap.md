@@ -79,6 +79,7 @@ internal drivers/loads remain future enrichment work.
 - [x] Generated-instance source-edge correlation when a direct pin selects one path from an explicitly enumerated ambiguous child-candidate set.
 - [x] Direction-qualified boundary driver/load roles for direct normalized pin bindings; unavailable direction remains explicitly unclassified.
 - [x] Module-root Verilator ASSIGNW direct VARREF-to-VARREF internal driver/load evidence; complex assignment sides remain unresolved rather than inferred.
+- [x] Bounded Desktop rendering of trusted module-root ASSIGNW internal driver/load/unresolved evidence with fail-closed contract validation.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
