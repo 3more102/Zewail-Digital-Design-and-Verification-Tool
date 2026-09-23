@@ -246,6 +246,7 @@ gates; the GUI does not automatically invoke AI or execute generated code.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
+- [x] Contract-gated Desktop waveform summary for elaborated boundary driver/load/unclassified roles without treating missing role fields as zero evidence.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
 - [x] Review-gated recorded-input historical rerun using persisted test/seed/plusargs/timeout evidence, with the selected run record bound into the reviewed SHA-256 payload, the current configured backend rebuilt, and the historical command retained as evidence rather than replayed verbatim.
