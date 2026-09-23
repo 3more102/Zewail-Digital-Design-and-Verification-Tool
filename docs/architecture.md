@@ -267,6 +267,14 @@ response when the required width evidence is explicit. Advisory evidence is
 reported independently of `status` and never upgrades a recommendation into a
 mandatory AXI4 rule.
 
+A normalized trace can also opt into transaction-ID interface evidence with
+`id_widths`: `ID_W_WIDTH` applies to AWID/BID and `ID_R_WIDTH` applies to
+ARID/RID. Each property is constrained to 0..32 bits. An explicit zero means the
+paired ID signals are physically absent; a positive width constrains IDs observed
+on active channels. Logical AXI master defaults are kept distinct from physical
+signal observation, so a synthesized logical ID value of zero does not prove that
+an ID signal exists. Omitting `id_widths` preserves legacy trace behavior.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
@@ -293,8 +301,12 @@ the same standard AXI data width, verifies that WSTRB has one bit per data byte,
 derives `data_width_bits`, and records the declared VCD widths for USER signals
 that are actually present in the selected scope. Those observed widths feed the
 same core USER-width consistency checks; an undumped USER signal is not interpreted
-as proof of a zero-width physical signal. Physical waveform timestamps are recorded
-alongside logical sample cycles. The burst analyzer then propagates those timestamps
+as proof of a zero-width physical signal. ID width properties follow the same
+evidence rule: `ID_W_WIDTH` is derived only when both AWID and BID declarations
+are present, and `ID_R_WIDTH` only when both ARID and RID declarations are
+present. Matching declarations must have the same width. A partial or entirely
+undumped ID pair leaves the property unknown rather than fabricating width zero.
+Physical waveform timestamps are recorded alongside logical sample cycles. The burst analyzer then propagates those timestamps
 into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
 an input adapter; protocol semantics remain simulator-independent in the AXI4 core.
 
