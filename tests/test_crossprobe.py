@@ -232,6 +232,21 @@ $enddefinitions $end
                 "location": {"path": "tb/tb_top.sv", "line": 5},
             },
         ],
+        "ports": [
+            {
+                "module": "leaf",
+                "module_elaborated_name": "leaf",
+                "name": "count",
+                "direction": "output",
+                "direction_field": "ioDirection",
+                "location": {"path": "rtl/leaf.sv", "line": 3, "column": 5},
+            },
+        ],
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
     }
 
     result = build_crossprobe(
@@ -265,6 +280,16 @@ $enddefinitions $end
             + result["connectivity"]["loads"]
         )
     )
+    assert result["connectivity"]["elaborated_port_evidence"]["status"] == "NORMALIZED"
+    boundary_load = next(
+        item
+        for item in result["connectivity"]["loads"]
+        if item["kind"] == "boundary_port"
+    )
+    assert boundary_load["elaborated_port_resolution"] == "matched"
+    assert boundary_load["elaborated_port_direction"] == "output"
+    assert boundary_load["elaborated_port_direction_consistent"] is True
+    assert boundary_load["elaborated_role_consistent"] is True
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
