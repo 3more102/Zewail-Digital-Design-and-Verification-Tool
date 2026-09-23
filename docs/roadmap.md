@@ -74,7 +74,7 @@ internal drivers/loads remain future enrichment work.
 - [x] Elaborated module-port direction/source evidence in waveform cross-probing and the Desktop elaborated browser.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
-- [x] Fail-closed normalized pin-binding schema validation and explicit unsupported child-pin query evidence without inferred parent relationships.
+- [x] Fail-closed trusted pin-binding container and item-semantic validation, with explicit unsupported child-pin query evidence and no inferred parent relationships.
 - [x] Exact direct pin-binding to source instance-port edge correlation without promoting source roles to elaborated semantics.
 - [x] Generated-instance source-edge correlation when a direct pin selects one path from an explicitly enumerated ambiguous child-candidate set.
 - [x] Direction-qualified boundary driver/load roles for direct normalized pin bindings; unavailable direction remains explicitly unclassified.
