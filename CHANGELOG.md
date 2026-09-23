@@ -17,6 +17,7 @@ auditable end to end.
 - Reproducible release ZIP export with fixed archive metadata and exact reviewed
   signoff-SHA confirmation.
 - Ed25519-signed release manifests with separate trusted-public-key verification.
+- Release verification enforces the canonical ZIP envelope plus project/simulator/top identity consistency with the bundled signoff.
 
 ### AI-assisted review workflow
 
