@@ -204,6 +204,23 @@ uncollected verification objectives passed.
 - [x] Coverage/formal/UVM evidence-change summaries without quality inference.
 - [x] CLI JSON artifact for release/review change inspection.
 
+## v1.1 — Desktop Debug Studio
+
+Current status: the first desktop foundation is a display-only Tk/ttk view over the
+same persisted ZDDV evidence used by the CLI. Refreshing the view does not execute
+simulation, invoke an AI provider, or apply generated verification artifacts.
+
+- [x] Project/simulator/top and run-status summary.
+- [x] Recent persisted run browser.
+- [x] Normalized failure-group browser.
+- [x] Assertion statistics plus latest coverage/formal/UVM evidence summary.
+- [x] Coverage selection across point-based and percentage-native snapshots.
+- [x] Headless-testable snapshot composition independent of the Tk window.
+- [ ] Interactive source/hierarchy navigation panes.
+- [ ] Waveform navigation and targeted probe integration.
+- [ ] Assertion/UVM/formal drill-down panes.
+- [ ] Explicitly review-gated project actions using existing core APIs.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
