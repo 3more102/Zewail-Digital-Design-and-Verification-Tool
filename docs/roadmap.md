@@ -224,6 +224,18 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
 
+## v1.2 — Desktop Review Workflows
+
+Current status: the first v1.2 review workflow is implemented beside the existing
+SHA-confirmed lint/build/run Actions pane.
+
+- [x] Separate generated-artifact review pane without replacing v1.1 project actions.
+- [x] Read-only discovery and integrity re-hashing of staged generated verification drafts.
+- [x] Bounded exact-byte preview with changed/missing/malformed draft rejection.
+- [x] Manual exact content SHA-256 plus explicit approval before apply.
+- [x] Reuse the existing generated-artifact apply API and preserve overwrite/path safeguards.
+- [x] Keep generated-code compilation/simulation disconnected from apply.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
