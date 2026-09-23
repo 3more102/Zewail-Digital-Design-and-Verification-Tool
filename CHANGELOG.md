@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 transaction-ID width evidence
+
+- Add opt-in `id_widths` validation for Arm AXI `ID_W_WIDTH` (AWID/BID) and `ID_R_WIDTH` (ARID/RID), including the 0..32 range and explicit width-zero signal absence.
+- Capture matching AWID/BID and ARID/RID declaration widths from VCD as interface evidence without inferring zero width from partial or undumped signal pairs.
+- Preserve legacy normalized traces that omit ID-width metadata and retain explicit master-interface default handling separately from physical signal evidence.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
