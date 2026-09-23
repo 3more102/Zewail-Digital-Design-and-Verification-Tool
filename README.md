@@ -794,6 +794,19 @@ This command does **not** contact an AI provider, transmit project data, execute
 commands, or reinterpret `evidence_score` as a causal probability. The generated
 bundle is review-required before any external use.
 
+### Desktop Debug Studio Waveform Navigation
+
+The read-only **Waveform** pane browses recorded waveform artifacts from persisted
+runs. For VCD evidence, ZDDV indexes the declaration header in memory, lets the user
+select a signal, and streams a bounded set of recorded value changes for an optional
+time window. Multiple recent waveform-bearing runs can be selected directly in the
+desktop view.
+
+The desktop path uses the existing in-memory waveform index/probe APIs. It does not
+write the normal `.zddv/waveforms/*.json` index or probe artifacts, launch simulation,
+or infer a verification conclusion from a displayed transition. FST remains
+metadata-only until a supported FST parser/converter path is added.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
