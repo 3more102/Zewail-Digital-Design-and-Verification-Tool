@@ -1,7 +1,9 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The v1.1 desktop Debug Studio uses the same persisted ZDDV verification evidence,
+deterministic design index, simulator backends, and review gates used by the CLI/core.
+Evidence and navigation views are read-only; project-changing or simulator actions are
+available only behind explicit SHA-confirmed review gates.
 
 Launch it with:
 
@@ -25,26 +27,33 @@ The desktop provides:
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
 - a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+  timestamp, log line, and message;
+- an **Actions** pane for SHA-reviewed lint/build/run operations with live project/source
+  revalidation before execution;
+- a **Generated Review** pane for exact staged SystemVerilog preview and SHA-confirmed
+  apply through the existing generated-artifact core gate.
 
 Formal-property and UVM-message database reads are explicitly bounded by the GUI
 limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Refresh and all evidence/navigation panes only read/rebuild verification state. The
+desktop never invokes or transmits data to an AI provider. Lint/build/run execution is
+blocked until a deterministic review payload is explicitly approved with its exact
+SHA-256, then the live project configuration and matched source bytes are revalidated.
+
+Generated verification drafts are only listed and previewed until the user supplies the
+exact staged-content SHA-256 and explicit approval. Apply delegates to
+`apply_generated_artifact`, which rejects tamper, project-root escape, writes back into
+`.zddv`, and overwrite of existing project files. Applied generated code remains
+`execution_enabled=false`; the review pane does not compile or simulate it.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
-Therefore "display-only" describes verification/project actions rather than a
-guarantee of zero filesystem writes.
 
-## Remaining desktop milestones
+## Desktop milestone status
 
-Waveform navigation and bounded targeted VCD probing are already integrated through
-the existing core APIs. The remaining desktop milestone is review-gated project
-actions, which must continue to reuse the existing core APIs rather than duplicate
-simulator-specific logic in the GUI.
+The v1.1 Debug Studio roadmap items are implemented. Further desktop work should extend
+the same deterministic evidence and explicit-review boundaries rather than introduce
+GUI-only simulator or mutation logic.
