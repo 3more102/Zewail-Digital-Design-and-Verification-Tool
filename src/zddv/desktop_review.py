@@ -83,6 +83,9 @@ def inspect_desktop_review_draft(
     elif manifest.get("auto_apply") is not False:
         integrity = "INVALID"
         error = "manifest does not preserve auto_apply=false"
+    elif manifest.get("execution_enabled") is not False:
+        integrity = "INVALID"
+        error = "manifest does not preserve execution_enabled=false"
     elif not draft_id or expected_dir.name != draft_id:
         integrity = "INVALID"
         error = "manifest draft_id does not match its directory"
