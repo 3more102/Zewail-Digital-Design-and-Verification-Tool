@@ -562,12 +562,14 @@ The normalized trace is written to
 `.zddv/protocols/axi4/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4/waveform-latest.json`. AW, W-beat, AR, R-beat, and
 response timestamps are retained so protocol violations and reconstructed bursts
-can be cross-referenced to the waveform. VCD extraction also records `ID_W_WIDTH`
-from matching AWID/BID declarations and `ID_R_WIDTH` from matching ARID/RID
-declarations. Both signals in each pair must be present with the same width or
-both absent; absence is represented as width 0. The normalized analyzer accepts
-the same optional `id_widths` metadata and validates 0..32-bit bounds, width-zero
-signal absence, and observed ID values without inferring widths from transaction data.
+can be cross-referenced to the waveform. VCD extraction records `ID_W_WIDTH`
+only when AWID/BID are both dumped with the same declared width, and records
+`ID_R_WIDTH` only when ARID/RID are both dumped with the same declared width.
+A partial or undumped pair remains unknown rather than being interpreted as width
+0; matching declarations must have the same width. The normalized analyzer accepts
+explicit `id_widths` metadata and validates 0..32-bit bounds, explicit width-zero
+physical signal absence, and observed ID values without inferring physical
+interface absence from missing waveform declarations.
 
 ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
 signals on PCLK edges, emits the same normalized trace model, then runs the same
