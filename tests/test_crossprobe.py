@@ -215,6 +215,26 @@ $enddefinitions $end
         "simulator": project.simulator,
         "simulator_version": "Verilator test",
         "source_format": "json",
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+        "ports": [
+            {
+                "module": "leaf",
+                "module_elaborated_name": "leaf",
+                "name": "count",
+                "elaborated_name": "count",
+                "verilog_name": "count",
+                "original_name": "count",
+                "direction": "output",
+                "direction_raw": "OUTPUT",
+                "direction_field": "ioDirection",
+                "var_type": "PORT",
+                "location": {"path": "rtl/leaf.sv", "line": 3, "column": 18},
+            }
+        ],
         "instances": [
             {
                 "path": "tb_top",
@@ -248,6 +268,12 @@ $enddefinitions $end
     assert result["hierarchy"]["type"] == "leaf"
     assert result["hierarchy"]["generate_scopes"] == ["g[0]"]
     assert result["elaborated_hierarchy"]["match"] == "scope-suffix"
+    assert result["elaborated_port"]["status"] == "MATCHED"
+    assert result["elaborated_port"]["instance_path"] == "tb_top.g[0].u_leaf"
+    assert result["elaborated_port"]["module"] == "leaf"
+    assert result["elaborated_port"]["signal"] == "count"
+    assert result["elaborated_port"]["port"]["direction"] == "output"
+    assert result["elaborated_port"]["port"]["direction_field"] == "ioDirection"
     assert result["source"]["unit"] == "leaf"
     assert result["source"]["file"] == "rtl/leaf.sv"
     assert result["source"]["declaration"]["line"] == 3
@@ -265,6 +291,52 @@ $enddefinitions $end
             + result["connectivity"]["loads"]
         )
     )
+
+
+def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "simulator_version": "Verilator legacy XML",
+        "source_format": "xml",
+        "port_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_port_schema_not_normalized",
+        },
+        "ports": [],
+        "instances": [
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "rtl/counter.sv", "line": 1},
+            }
+        ],
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["hierarchy_resolution"] == "simulator_elaborated"
+    assert result["elaborated_port"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_port_schema_not_normalized",
+    }
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
