@@ -142,10 +142,16 @@ connectivity, and waveform index paths used as evidence. Results remain
 `PARTIAL` when the waveform scope maps to a design unit but an exact declaration
 cannot be proven.
 
-This cross-probe contract remains source-level. Simulator-resolved hierarchy,
-including generated scopes, is captured separately in
-`.zddv/design/elaborated.json`; consuming that hierarchy in cross-probing,
-plus exact elaborated drivers/loads, remains enrichment work.
+Cross-probing consumes persisted simulator-elaborated hierarchy when
+`.zddv/design/elaborated.json` is present and its project, top, and simulator
+identity exactly match the active project. Scope resolution prefers that
+simulator-resolved evidence, including generated-scope paths, then falls back to
+the deterministic source hierarchy. Invalid or stale persisted elaboration is
+reported as evidence state and is never guessed or regenerated implicitly.
+
+Source declaration and driver/load evidence remain tied to the source design
+index and `analysis_level = "source_structural"`. Exact elaborated signal/port
+drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
@@ -332,7 +338,7 @@ hidden queues, lock/grab state, and vendor transcript semantics are still not in
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Feed simulator-elaborated/generated hierarchy into waveform cross-probing and add exact elaborated drivers/loads.
+5. Add exact elaborated signal/port drivers and loads; generated hierarchy is already consumed by waveform cross-probing.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
