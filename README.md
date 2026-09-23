@@ -732,8 +732,13 @@ Probe reports are written under `.zddv/waveforms/probes/` and retain the source
 waveform fingerprint, timescale, normalized signal metadata, exact timestamps,
 values, truncation status, and converter provenance when used. This complements
 `crossprobe`, which maps waveform signals back to RTL source locations. Cross-probe
-and assertion-correlation flows still keep FST metadata-only unless they explicitly
-adopt the converter adapter in a future change.
+and assertion-correlation keep FST metadata-only by default and opt in to the same
+adapter only when `--fst2vcd` is supplied explicitly.
+
+```bash
+zddv --project my_project crossprobe tb_top.dut.count --input trace.fst --fst2vcd
+zddv --project my_project assertion-waveform --run <run-id> --status FAIL --fst2vcd
+```
 
 ### Debug Studio Drivers/Loads Navigation
 
@@ -763,7 +768,9 @@ navigation does not silently select the wrong signal.
 
 The report records the waveform signal, matched hierarchy path, RTL unit,
 source declaration, source-level driver/load evidence, match type, and the
-design/connectivity/waveform index artifacts used as evidence. When valid persisted
+design/connectivity/waveform index artifacts used as evidence. FST stays
+metadata-only unless `--fst2vcd` is provided; explicit conversion retains the
+original FST artifact identity and records converter provenance. When valid persisted
 elaboration resolves the waveform scope, the source-structural connectivity is
 qualified with that exact parent instance path; instance-port edges include an
 exact child instance only when the elaborated hierarchy proves one unique match,
@@ -778,7 +785,10 @@ line, ZDDV returns a partial result instead of claiming an exact source location
 run and its waveform index. The JSON report includes run/test/seed context,
 waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
-remain visible as uncorrelated events rather than being silently dropped.
+remain visible as uncorrelated events rather than being silently dropped. FST-backed
+runs remain metadata-only unless `--fst2vcd` is explicitly supplied; when enabled,
+the temporary conversion feeds only the normalized signal index and the report
+retains converter provenance.
 
 ### Evidence-Ranked Root-Cause Candidates
 
