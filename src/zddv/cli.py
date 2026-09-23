@@ -39,7 +39,6 @@ from zddv.questa_detail_audit import write_questa_coverage_evidence_audit
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
 from zddv.gui import launch_debug_gui
-from zddv.desktop import launch_desktop_gui
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.elaboration import hierarchy_lines as elaborated_hierarchy_lines
 from zddv.elaboration import write_elaborated_index
@@ -2877,13 +2876,7 @@ def cmd_release_verify(args) -> int:
 
 def cmd_gui(args) -> int:
     project = load_project(_project_arg(args))
-    snapshot = launch_desktop_gui(project, limit=args.limit)
-    stats = snapshot["stats"]
-    print(
-        f"GUI CLOSED: {stats['passed']}/{stats['total']} passed "
-        f"({stats['pass_rate']:.1f}%)"
-    )
-    return 0
+    return launch_debug_gui(project, limit=args.limit)
 
 
 def cmd_report(args) -> int:
