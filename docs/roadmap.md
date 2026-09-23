@@ -206,8 +206,8 @@ uncollected verification objectives passed.
 
 ## v1.1 — Desktop Debug Studio
 
-Current status: the first desktop foundation is a display-only Tk/ttk view over the
-same persisted ZDDV evidence used by the CLI. Refreshing the view does not execute
+Current status: the desktop is a display-only Tk/ttk view over persisted ZDDV evidence
+plus deterministic read-only source/hierarchy navigation. Refreshing the view does not execute
 simulation, invoke an AI provider, or apply generated verification artifacts.
 
 - [x] Project/simulator/top and run-status summary.
@@ -216,7 +216,7 @@ simulation, invoke an AI provider, or apply generated verification artifacts.
 - [x] Assertion statistics plus latest coverage/formal/UVM evidence summary.
 - [x] Coverage selection across point-based and percentage-native snapshots.
 - [x] Headless-testable snapshot composition independent of the Tk window.
-- [ ] Interactive source/hierarchy navigation panes.
+- [x] Read-only source/hierarchy navigation panes (in-memory source index + persisted elaborated hierarchy).
 - [ ] Waveform navigation and targeted probe integration.
 - [ ] Assertion/UVM/formal drill-down panes.
 - [ ] Explicitly review-gated project actions using existing core APIs.
