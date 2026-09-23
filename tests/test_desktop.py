@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,104 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+def test_desktop_snapshot_indexes_current_sources_without_writing_design_artifacts(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    project.top = "top"
+    project.rtl = ["rtl/*.sv"]
+
+    (project.root / "rtl" / "child.sv").write_text(
+        """module child(input logic a, output logic y);
+  assign y = a;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (project.root / "rtl" / "top.sv").write_text(
+        """module top(input logic a, output logic y);
+  child u_child (
+    .a(a),
+    .y(y)
+  );
+endmodule
+""",
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    design = snapshot["design"]
+    assert design["summary"]["files"] == 2
+    assert design["summary"]["units"] == 2
+    assert design["summary"]["instances"] == 1
+    assert design["hierarchy"]["instance"] == "top"
+    assert design["hierarchy"]["children"][0]["instance"] == "u_child"
+    assert design["hierarchy"]["children"][0]["type"] == "child"
+    assert snapshot["persisted_elaboration"]["status"] == "NOT_PRESENT"
+    assert not (project.root / ".zddv" / "design" / "index.json").exists()
+
+
+def test_desktop_snapshot_reads_persisted_elaboration_without_running_tools(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    project.top = "top"
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True)
+    elaborated_path = design_dir / "elaborated.json"
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created_at": "2026-09-23T06:40:00+00:00",
+                "project": "demo",
+                "top": "top",
+                "simulator": "verilator",
+                "simulator_version": "Verilator 5.x",
+                "source_format": "json",
+                "modules": [{"name": "top", "top": True, "location": None}],
+                "instances": [
+                    {
+                        "path": "top",
+                        "name": "top",
+                        "module": "top",
+                        "top": True,
+                        "location": {
+                            "path": "rtl/top.sv",
+                            "line": 1,
+                            "column": 1,
+                            "end_line": 1,
+                            "end_column": 3,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    elaboration = snapshot["persisted_elaboration"]
+    assert elaboration["status"] == "PRESENT"
+    assert elaboration["simulator"] == "verilator"
+    assert elaboration["simulator_version"] == "Verilator 5.x"
+    assert elaboration["instances"][0]["path"] == "top"
+    assert elaboration["path"] == str(elaborated_path.resolve())
+
+
+def test_desktop_snapshot_marks_malformed_persisted_elaboration_invalid(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True)
+    (design_dir / "elaborated.json").write_text("{bad json", encoding="utf-8")
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    assert snapshot["persisted_elaboration"]["status"] == "INVALID"
+    assert "error" in snapshot["persisted_elaboration"]
