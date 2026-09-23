@@ -168,8 +168,18 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+When the persisted direct-pin evidence contract is `NORMALIZED`, an exact resolved
+child instance also lets ZDDV qualify the corresponding source `instance_port`
+edge by child path and port name. A unique direct `VARREF` record is attached to
+that source edge and reports whether its elaborated parent signal agrees with the
+source-structural signal. A known complex pin expression is retained as
+`unsupported_expression`; ambiguous, missing, or invalid records are not guessed.
+The source-derived driver/load role and direction are never rewritten by this
+comparison.
+
+This qualification adds hierarchy and direct child-boundary consistency evidence
+only: general exact elaborated internal signal drivers/loads remain a separate
+enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
