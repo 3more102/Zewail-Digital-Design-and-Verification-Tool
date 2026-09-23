@@ -89,6 +89,101 @@ def _match_hierarchy_scope(
     return None, None
 
 
+def _match_elaborated_scope(
+    scope: str,
+    instances: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    candidates = [
+        item
+        for item in instances
+        if isinstance(item, dict)
+        and item.get("path")
+        and item.get("module")
+    ]
+
+    exact = [item for item in candidates if str(item["path"]) == scope]
+    if len(exact) == 1:
+        return exact[0], "exact"
+
+    suffix = [
+        item
+        for item in candidates
+        if scope.endswith("." + str(item["path"]))
+    ]
+    if not suffix:
+        return None, None
+
+    longest = max(len(str(item["path"])) for item in suffix)
+    best = [item for item in suffix if len(str(item["path"])) == longest]
+    if len(best) == 1:
+        return best[0], "scope-suffix"
+    return None, None
+
+
+def _elaborated_identity_errors(
+    project: ProjectConfig,
+    index: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    expected = {
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+    }
+    for key, value in expected.items():
+        if index.get(key) != value:
+            errors.append(
+                f"{key}={index.get(key)!r} (expected {value!r})"
+            )
+    if not isinstance(index.get("instances"), list):
+        errors.append("instances is not a list")
+    return errors
+
+
+def _load_persisted_elaborated_evidence(
+    project: ProjectConfig,
+) -> dict[str, Any]:
+    path = (project.root / ".zddv" / "design" / "elaborated.json").resolve()
+    evidence: dict[str, Any] = {
+        "status": "NOT_PRESENT",
+        "path": str(path),
+    }
+    if not path.exists():
+        return evidence
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            **evidence,
+            "status": "INVALID",
+            "error": str(exc),
+        }
+
+    if not isinstance(payload, dict):
+        return {
+            **evidence,
+            "status": "INVALID",
+            "error": "Elaborated index root is not a JSON object.",
+        }
+
+    identity_errors = _elaborated_identity_errors(project, payload)
+    if identity_errors:
+        return {
+            **evidence,
+            "status": "STALE",
+            "error": "; ".join(identity_errors),
+        }
+
+    return {
+        **evidence,
+        "status": "PRESENT",
+        "index": payload,
+        "simulator_version": payload.get("simulator_version"),
+        "source_format": payload.get("source_format"),
+    }
+
+
 def _design_unit_for_node(
     node: dict[str, Any],
     design_index: dict[str, Any],
@@ -101,6 +196,32 @@ def _design_unit_for_node(
         if unit.get("name") == node_type
         and (node_file is None or unit.get("file") == node_file)
     ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _design_unit_for_elaborated_instance(
+    instance: dict[str, Any],
+    design_index: dict[str, Any],
+) -> dict[str, Any] | None:
+    module_name = instance.get("module")
+    if not module_name:
+        return None
+
+    matches = [
+        unit
+        for unit in design_index.get("units", [])
+        if unit.get("name") == module_name
+    ]
+    location = instance.get("location") or {}
+    location_path = location.get("path")
+    if location_path:
+        source_matches = [
+            unit for unit in matches if unit.get("file") == location_path
+        ]
+        if len(source_matches) == 1:
+            return source_matches[0]
     if len(matches) == 1:
         return matches[0]
     return None
@@ -155,8 +276,9 @@ def build_crossprobe(
     *,
     design_index: dict[str, Any] | None = None,
     connectivity_index: dict[str, Any] | None = None,
+    elaborated_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Correlate a waveform signal with source-level design hierarchy metadata."""
+    """Correlate a waveform signal with elaborated/source hierarchy and RTL evidence."""
     if waveform_index.get("parse_status") != "indexed":
         raise RuntimeError(
             "Cross-probing requires a signal-indexed waveform. "
@@ -164,92 +286,140 @@ def build_crossprobe(
         )
 
     design = design_index or build_design_index(project)
+    if elaborated_index is not None:
+        identity_errors = _elaborated_identity_errors(project, elaborated_index)
+        if identity_errors:
+            raise ValueError(
+                "Elaborated index identity mismatch: " + "; ".join(identity_errors)
+            )
+
     signal, signal_match = _match_waveform_signal(
         list(waveform_index.get("signals", [])),
         signal_query,
     )
     scope = str(signal.get("scope", ""))
-    hierarchy_node, hierarchy_match = _match_hierarchy_scope(
+
+    source_hierarchy_node, source_hierarchy_match = _match_hierarchy_scope(
         scope,
         design["hierarchy"],
     )
+    elaborated_node: dict[str, Any] | None = None
+    elaborated_match: str | None = None
+    if elaborated_index is not None:
+        elaborated_node, elaborated_match = _match_elaborated_scope(
+            scope,
+            list(elaborated_index.get("instances", [])),
+        )
+
+    selected_kind: str | None = None
+    unit: dict[str, Any] | None = None
+    if elaborated_node is not None:
+        selected_kind = "simulator_elaborated"
+        unit = _design_unit_for_elaborated_instance(elaborated_node, design)
+    if unit is None and source_hierarchy_node is not None:
+        if selected_kind is None:
+            selected_kind = "source_structural"
+        unit = _design_unit_for_node(source_hierarchy_node, design)
 
     source: dict[str, Any] | None = None
     connectivity_payload: dict[str, Any] | None = None
     status = "PARTIAL"
     note: str | None = None
 
-    if hierarchy_node is None:
+    if elaborated_node is None and source_hierarchy_node is None:
         note = (
             "The waveform signal was found, but its scope could not be mapped "
-            "to the source-level hierarchy."
+            "to the available elaborated or source hierarchy evidence."
+        )
+    elif unit is None:
+        note = (
+            "The waveform scope matched hierarchy evidence, but the source "
+            "design unit could not be resolved uniquely."
         )
     else:
-        unit = _design_unit_for_node(hierarchy_node, design)
-        if unit is None:
-            note = (
-                "The waveform scope matched the hierarchy, but the design unit "
-                "could not be resolved uniquely."
-            )
-        else:
-            declaration = _find_source_declaration(
-                project,
-                unit,
-                str(signal.get("name", "")),
-            )
-            source = {
-                "unit": unit["name"],
-                "kind": unit["kind"],
-                "file": unit["file"],
-                "unit_line": unit["line"],
-                "unit_end_line": unit["end_line"],
-                "declaration": declaration,
-            }
-
-            connectivity = connectivity_index or build_connectivity_index(project)
-            try:
-                navigation = signal_navigation(
-                    connectivity,
-                    unit=str(unit["name"]),
-                    signal=str(signal.get("name", "")),
-                )
-            except ValueError:
-                navigation = None
-            if navigation is not None:
-                connectivity_payload = {
-                    "analysis_level": connectivity.get("analysis_level"),
-                    "unit": navigation["unit"],
-                    "signal": navigation["signal"],
-                    "drivers": navigation["drivers"],
-                    "loads": navigation["loads"],
-                }
-
-            if declaration is not None:
-                status = "MATCHED"
-            else:
-                note = (
-                    "The waveform scope matched a source design unit, but no "
-                    "same-line SystemVerilog declaration was found for the signal."
-                )
-
-    hierarchy_payload = None
-    if hierarchy_node is not None:
-        hierarchy_payload = {
-            "waveform_scope": scope,
-            "design_path": hierarchy_node["path"],
-            "instance": hierarchy_node["instance"],
-            "type": hierarchy_node["type"],
-            "file": hierarchy_node.get("file"),
-            "line": hierarchy_node.get("line"),
-            "match": hierarchy_match,
+        declaration = _find_source_declaration(
+            project,
+            unit,
+            str(signal.get("name", "")),
+        )
+        source = {
+            "unit": unit["name"],
+            "kind": unit["kind"],
+            "file": unit["file"],
+            "unit_line": unit["line"],
+            "unit_end_line": unit["end_line"],
+            "declaration": declaration,
         }
 
+        connectivity = connectivity_index or build_connectivity_index(project)
+        try:
+            navigation = signal_navigation(
+                connectivity,
+                unit=str(unit["name"]),
+                signal=str(signal.get("name", "")),
+            )
+        except ValueError:
+            navigation = None
+        if navigation is not None:
+            connectivity_payload = {
+                "analysis_level": connectivity.get("analysis_level"),
+                "unit": navigation["unit"],
+                "signal": navigation["signal"],
+                "drivers": navigation["drivers"],
+                "loads": navigation["loads"],
+            }
+
+        if declaration is not None:
+            status = "MATCHED"
+        else:
+            note = (
+                "The waveform scope matched hierarchy evidence, but no "
+                "same-line SystemVerilog declaration was found for the signal."
+            )
+
+    source_hierarchy_payload = None
+    if source_hierarchy_node is not None:
+        source_hierarchy_payload = {
+            "waveform_scope": scope,
+            "design_path": source_hierarchy_node["path"],
+            "instance": source_hierarchy_node["instance"],
+            "type": source_hierarchy_node["type"],
+            "file": source_hierarchy_node.get("file"),
+            "line": source_hierarchy_node.get("line"),
+            "match": source_hierarchy_match,
+            "analysis_level": "source_hierarchy",
+        }
+
+    elaborated_hierarchy_payload = None
+    if elaborated_node is not None:
+        location = elaborated_node.get("location") or {}
+        elaborated_hierarchy_payload = {
+            "waveform_scope": scope,
+            "design_path": elaborated_node["path"],
+            "instance": elaborated_node.get("name"),
+            "type": elaborated_node.get("module"),
+            "file": location.get("path"),
+            "line": location.get("line"),
+            "match": elaborated_match,
+            "analysis_level": "simulator_elaborated",
+            "generate_scopes": list(elaborated_node.get("generate_scopes", [])),
+        }
+
+    hierarchy_payload = (
+        elaborated_hierarchy_payload
+        if elaborated_hierarchy_payload is not None
+        else source_hierarchy_payload
+    )
+    if hierarchy_payload is None:
+        selected_kind = None
+
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "project": project.name,
         "status": status,
         "query": signal_query,
         "signal_match": signal_match,
+        "hierarchy_resolution": selected_kind,
         "waveform": {
             "run_id": waveform_index.get("run_id"),
             "format": waveform_index.get("format"),
@@ -257,6 +427,8 @@ def build_crossprobe(
             "signal": signal,
         },
         "hierarchy": hierarchy_payload,
+        "source_hierarchy": source_hierarchy_payload,
+        "elaborated_hierarchy": elaborated_hierarchy_payload,
         "source": source,
         "connectivity": connectivity_payload,
         "note": note,
@@ -278,16 +450,30 @@ def write_crossprobe_report(
         run_id=run_id,
         input_path=input_path,
     )
+    elaborated_evidence = _load_persisted_elaborated_evidence(project)
+    elaborated_index = (
+        elaborated_evidence.get("index")
+        if elaborated_evidence.get("status") == "PRESENT"
+        else None
+    )
     report = build_crossprobe(
         project,
         signal_query,
         waveform,
         design_index=design,
         connectivity_index=connectivity,
+        elaborated_index=elaborated_index,
     )
     report["design_index_path"] = design["path"]
     report["connectivity_index_path"] = connectivity["path"]
     report["waveform_index_path"] = waveform["path"]
+    report["elaborated_evidence"] = {
+        key: value
+        for key, value in elaborated_evidence.items()
+        if key != "index"
+    }
+    if elaborated_evidence.get("status") == "PRESENT":
+        report["elaborated_index_path"] = elaborated_evidence["path"]
 
     destination = Path(output)
     if not destination.is_absolute():
@@ -296,3 +482,4 @@ def write_crossprobe_report(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return {**report, "report_path": str(destination)}
+
