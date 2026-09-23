@@ -300,6 +300,36 @@ def _read_source(
     return candidate.read_text(encoding="utf-8", errors="replace")
 
 
+
+def _bounded_elaborated_pin_bindings(
+    bindings: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
+    """Group displayable pin bindings while bounding Desktop tree expansion."""
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    total = 0
+    shown = 0
+    for binding in bindings:
+        instance_path = str(binding.get("instance_path") or "")
+        if not instance_path:
+            continue
+        total += 1
+        if shown >= limit:
+            continue
+        grouped.setdefault(instance_path, []).append(binding)
+        shown += 1
+
+    return grouped, {
+        "total": total,
+        "shown": shown,
+        "truncated": max(0, total - shown),
+    }
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -842,11 +872,12 @@ def launch_desktop_gui(
             for key in ambiguous_port_directions:
                 port_directions.pop(key, None)
 
-            pin_bindings_by_instance: dict[str, list[dict[str, Any]]] = {}
-            for binding in elaborated.get("pin_bindings", []):
-                instance_path = str(binding.get("instance_path") or "")
-                if instance_path:
-                    pin_bindings_by_instance.setdefault(instance_path, []).append(binding)
+            pin_bindings_by_instance, pin_binding_display = (
+                _bounded_elaborated_pin_bindings(
+                    elaborated.get("pin_bindings", []),
+                    limit=limit,
+                )
+            )
 
             for row in elaborated["instances"]:
                 location = row.get("location") or {}
@@ -946,6 +977,20 @@ def launch_desktop_gui(
                             if binding_location.get("line")
                             else None,
                         )
+
+            if pin_binding_display["truncated"]:
+                elaborated_tree.insert(
+                    "",
+                    "end",
+                    text="Pin-binding rows truncated",
+                    values=(
+                        "-",
+                        "-",
+                        f"showing {pin_binding_display['shown']} of "
+                        f"{pin_binding_display['total']} displayable bindings",
+                        "TRUNCATED",
+                    ),
+                )
 
             port_evidence = elaborated.get("port_evidence") or {}
             if port_evidence.get("status") != "NORMALIZED":
