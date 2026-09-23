@@ -8,6 +8,7 @@
 - Expose exact continuous-assignment driver/load edges in cross-probing as a separate simulator-elaborated internal layer.
 - Preserve complex assignment sides as unresolved reference evidence and mark affected queries partial instead of inferring connectivity.
 - Keep legacy XML, generated-scope, procedural, select, concatenation, and other complex-expression semantics outside the normalized contract.
+- Surface the trusted direct `ASSIGNW` internal driver/load and unresolved-expression evidence in Desktop waveform cross-probing with fail-closed schema checks and bounded rows.
 
 ### Elaborated debug correlation
 
