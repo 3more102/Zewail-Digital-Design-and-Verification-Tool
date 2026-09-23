@@ -435,3 +435,64 @@ def test_desktop_crossprobe_rows_do_not_interpret_boundary_roles_on_unknown_cont
         kind in {"Elaborated boundary roles", "Elaborated role"}
         for kind, _detail in rows
     )
+
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_role_lists():
+    base = {
+        "analysis_level": "simulator_elaborated_direct_pin_varref",
+        "parent_signal_bindings": [],
+        "instance_port_bindings": [],
+        "unsupported_instance_port_bindings": [],
+    }
+    driver = {
+        "instance_path": "tb_top.u_out",
+        "pin": "count",
+        "parent_instance_path": "tb_top",
+        "parent_signal": "count",
+        "port_direction": "output",
+        "query_side": "parent_signal",
+    }
+
+    partial_rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                **base,
+                "boundary_drivers": [driver],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated boundary roles", "Elaborated role"}
+        for kind, _detail in partial_rows
+    )
+
+    malformed_container_rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                **base,
+                "boundary_drivers": [driver],
+                "boundary_loads": {},
+                "boundary_unclassified_bindings": [],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated boundary roles", "Elaborated role"}
+        for kind, _detail in malformed_container_rows
+    )
+
+    malformed_item_rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                **base,
+                "boundary_drivers": [driver, "invalid"],
+                "boundary_loads": [],
+                "boundary_unclassified_bindings": [],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated boundary roles", "Elaborated role"}
+        for kind, _detail in malformed_item_rows
+    )
