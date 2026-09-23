@@ -203,3 +203,70 @@ def test_debug_gui_snapshot_rejects_nonpositive_limit(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     with pytest.raises(ValueError, match="limit must be >= 1"):
         build_debug_gui_snapshot(project, limit=0)
+
+
+def test_debug_gui_snapshot_indexes_sources_and_source_hierarchy_without_writing_index(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    rtl_dir = project.root / "rtl"
+    tb_dir = project.root / "tb"
+    rtl_dir.mkdir(exist_ok=True)
+    tb_dir.mkdir(exist_ok=True)
+
+    (rtl_dir / "child.sv").write_text(
+        """module child(
+    input logic a,
+    output logic y
+);
+assign y = a;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (tb_dir / "tb_top.sv").write_text(
+        """module tb_top;
+logic a;
+logic y;
+child dut (
+    .a(a),
+    .y(y)
+);
+endmodule
+""",
+        encoding="utf-8",
+    )
+
+    project.rtl = ["rtl/*.sv"]
+    project.tb = ["tb/*.sv"]
+    project.top = "tb_top"
+
+    design_artifact = project.root / ".zddv" / "design" / "index.json"
+    assert not design_artifact.exists()
+
+    snapshot = build_debug_gui_snapshot(project)
+    design = snapshot["design"]
+
+    assert design["summary"] == {
+        "files": 2,
+        "units": 2,
+        "instances": 1,
+        "duplicate_unit_names": 0,
+    }
+    assert [item["path"] for item in design["files"]] == [
+        "rtl/child.sv",
+        "tb/tb_top.sv",
+    ]
+    assert design["hierarchy"]["instance"] == "tb_top"
+    assert design["hierarchy"]["type"] == "tb_top"
+    assert design["hierarchy"]["resolved"] is True
+    assert len(design["hierarchy"]["children"]) == 1
+    child = design["hierarchy"]["children"][0]
+    assert child["instance"] == "dut"
+    assert child["type"] == "child"
+    assert child["file"] == "rtl/child.sv"
+    assert child["resolved"] is True
+
+    # The GUI consumes the in-memory source index. It must not materialize
+    # the normal CLI design-index artifact as a side effect of viewing.
+    assert not design_artifact.exists()
