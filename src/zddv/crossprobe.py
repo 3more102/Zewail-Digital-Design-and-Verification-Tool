@@ -209,6 +209,106 @@ def _match_elaborated_port_evidence(
     }
 
 
+def _match_elaborated_pin_binding_evidence(
+    elaborated_index: dict[str, Any] | None,
+    elaborated_node: dict[str, Any] | None,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    """Match one waveform signal to normalized direct CELL pin-binding evidence."""
+    if elaborated_index is None or elaborated_node is None:
+        return None
+
+    evidence = elaborated_index.get("pin_binding_evidence")
+    if not isinstance(evidence, dict):
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "pin_binding_evidence_metadata_missing",
+        }
+
+    evidence_status = str(evidence.get("status") or "UNAVAILABLE")
+    if evidence_status != "NORMALIZED":
+        return {
+            "status": evidence_status,
+            "source_format": evidence.get("source_format"),
+            "reason": (
+                evidence.get("reason")
+                or "pin_binding_evidence_not_normalized"
+            ),
+        }
+
+    bindings = elaborated_index.get("pin_bindings")
+    if not isinstance(bindings, list):
+        return {
+            "status": "INVALID",
+            "reason": "normalized_pin_binding_evidence_requires_bindings_list",
+        }
+
+    instance_path = elaborated_node.get("path")
+    if not instance_path:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "matched_elaborated_instance_has_no_path",
+        }
+
+    matches: list[dict[str, Any]] = []
+    for binding in bindings:
+        if (
+            not isinstance(binding, dict)
+            or binding.get("instance_path") != instance_path
+        ):
+            continue
+        aliases = {
+            str(value)
+            for value in (
+                binding.get("pin"),
+                binding.get("pin_elaborated_name"),
+                binding.get("pin_verilog_name"),
+                binding.get("pin_original_name"),
+            )
+            if value
+        }
+        if signal_name in aliases:
+            matches.append(binding)
+
+    common = {
+        "instance_path": instance_path,
+        "module": elaborated_node.get("module"),
+        "signal": signal_name,
+        "evidence": dict(evidence),
+    }
+    if len(matches) == 1:
+        binding = matches[0]
+        binding_status = str(binding.get("status") or "INVALID").upper()
+        if binding_status == "NORMALIZED" and binding.get("signal"):
+            return {
+                **common,
+                "status": "MATCHED",
+                "binding": binding,
+            }
+        if binding_status == "UNSUPPORTED":
+            return {
+                **common,
+                "status": "UNSUPPORTED_EXPRESSION",
+                "binding": binding,
+            }
+        return {
+            **common,
+            "status": "INVALID_BINDING",
+            "binding": binding,
+        }
+    if not matches:
+        return {
+            **common,
+            "status": "NOT_A_BOUND_PIN",
+        }
+    return {
+        **common,
+        "status": "AMBIGUOUS",
+        "candidate_count": len(matches),
+        "candidates": matches,
+    }
+
+
 def _elaborated_identity_errors(
     project: ProjectConfig,
     index: dict[str, Any],
@@ -240,6 +340,24 @@ def _elaborated_identity_errors(
         and not isinstance(ports, list)
     ):
         errors.append("normalized port_evidence requires a ports list")
+
+    pin_bindings = index.get("pin_bindings")
+    if pin_bindings is not None and not isinstance(pin_bindings, list):
+        errors.append("pin_bindings is not a list")
+
+    pin_binding_evidence = index.get("pin_binding_evidence")
+    if pin_binding_evidence is not None and not isinstance(
+        pin_binding_evidence, dict
+    ):
+        errors.append("pin_binding_evidence is not an object")
+    elif (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and not isinstance(pin_bindings, list)
+    ):
+        errors.append(
+            "normalized pin_binding_evidence requires a pin_bindings list"
+        )
     return errors
 
 
@@ -435,6 +553,11 @@ def build_crossprobe(
         elaborated_node,
         str(signal.get("name", "")),
     )
+    elaborated_pin_binding = _match_elaborated_pin_binding_evidence(
+        elaborated_index,
+        elaborated_node,
+        str(signal.get("name", "")),
+    )
 
     selected_kind: str | None = None
     unit: dict[str, Any] | None = None
@@ -570,6 +693,7 @@ def build_crossprobe(
         "source_hierarchy": source_hierarchy_payload,
         "elaborated_hierarchy": elaborated_hierarchy_payload,
         "elaborated_port": elaborated_port,
+        "elaborated_pin_binding": elaborated_pin_binding,
         "source": source,
         "connectivity": connectivity_payload,
         "note": note,
