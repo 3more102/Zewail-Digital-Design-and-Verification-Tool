@@ -209,9 +209,10 @@ uncollected verification objectives passed.
 
 ## v1.1 — Desktop Debug Studio
 
-Current status: the first desktop foundation is read-only and reuses the authoritative
-ZDDV verification database. It intentionally does not execute simulations, mutate
-project files, invoke AI, or infer verification state from the UI.
+Current status: evidence/source/hierarchy/waveform refresh remains read-only and reuses
+the authoritative ZDDV verification database. Separate explicit action surfaces may run
+lint/build/run or apply generated verification code only after their SHA-confirmed review
+gates. The desktop does not invoke AI automatically or infer verification state from UI state.
 
 - [x] Tk/ttk desktop shell with verification summary.
 - [x] Recent-run browser backed by persisted run records.
@@ -223,6 +224,13 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+
+## v1.2 — Desktop Review Workflows
+
+- [x] Generated-artifact review pane backed by the existing stage/apply core APIs.
+- [x] Bounded exact-byte preview with content re-hash and explicit `execution_enabled=false` validation.
+- [x] Exact typed SHA-256 plus explicit approval before generated code can enter a new project source path.
+- [x] Desktop rejection of stale simulator-elaboration evidence after RTL/config revisions.
 
 ## Long-Term Direction
 
