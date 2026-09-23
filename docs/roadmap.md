@@ -83,7 +83,6 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
-- [x] UCIe public-generation metadata with version-aware 32/64 GT/s ceiling checks through UCIe 3.0.
 - [ ] Specification-complete UCIe protocol/PHY conformance checking.
 
 Each pack should support reusable checks, assertions, transaction extraction, coverage goals, and debug summaries.
@@ -205,7 +204,7 @@ uncollected verification objectives passed.
 - [x] Coverage/formal/UVM evidence-change summaries without quality inference.
 - [x] CLI JSON artifact for release/review change inspection.
 
-## v1.1 — Desktop Debug Studio
+## v1.2 — Desktop Debug Studio
 
 Current status: the first desktop foundation is read-only and reuses the authoritative
 ZDDV verification database. It intentionally does not execute simulations, mutate
@@ -216,7 +215,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Failure-group browser backed by normalized failure signatures.
 - [x] Latest normalized coverage, assertion, formal, and UVM evidence overview.
 - [x] Refresh from the shared backend without duplicating verification logic.
-- [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
+- [ ] Source/hierarchy navigation panes.
 - [ ] Waveform navigation and targeted probe integration.
 - [ ] Detailed assertion/UVM/formal evidence panes.
 - [ ] Review-gated project actions using the existing CLI/core APIs.

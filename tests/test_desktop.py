@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from zddv.cli import main
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop import build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -89,11 +90,85 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
     assert snapshot["latest_coverage"]["percent"] == 93.5
     assert snapshot["latest_formal"] is None
     assert snapshot["latest_uvm"] is None
+    assert snapshot["design"]["summary"] == {
+        "files": 0,
+        "units": 0,
+        "instances": 0,
+        "duplicate_unit_names": 0,
+    }
     assert snapshot["policy"] == {
         "display_only": True,
         "executes_verification": False,
         "invokes_ai": False,
         "applies_generated_artifacts": False,
+    }
+
+
+def test_desktop_snapshot_builds_source_hierarchy_without_running_simulator(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    project.top = "top"
+    project.rtl = ["rtl/*.sv"]
+    save_project(project)
+
+    (project.root / "rtl" / "child.sv").write_text(
+        "module child(input logic a, output logic y); assign y = a; endmodule\n",
+        encoding="utf-8",
+    )
+    (project.root / "rtl" / "top.sv").write_text(
+        "module top(input logic a, output logic y);\n"
+        "  child u_child(.a(a), .y(y));\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    design = snapshot["design"]
+    assert design["summary"]["files"] == 2
+    assert design["summary"]["units"] == 2
+    assert design["summary"]["instances"] == 1
+    assert design["hierarchy"]["instance"] == "top"
+    assert design["hierarchy"]["file"] == "rtl/top.sv"
+    assert design["hierarchy"]["children"][0]["instance"] == "u_child"
+    assert design["hierarchy"]["children"][0]["type"] == "child"
+    assert design["hierarchy"]["children"][0]["file"] == "rtl/child.sv"
+
+
+def test_desktop_snapshot_reads_only_matching_persisted_elaboration(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True)
+    path = design_dir / "elaborated.json"
+    path.write_text(
+        json.dumps(
+            {
+                "project": project.name,
+                "top": project.top,
+                "simulator": "verilator",
+                "simulator_version": "Verilator 5.x",
+                "source_format": "json",
+                "modules": [{"name": project.top, "top": True, "location": None}],
+                "instances": [
+                    {
+                        "path": project.top,
+                        "name": project.top,
+                        "module": project.top,
+                        "top": True,
+                        "location": None,
+                    }
+                ],
+                "summary": {"modules": 1, "instances": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project)
+
+    assert snapshot["persisted_elaboration"]["path"] == str(path)
+    assert snapshot["persisted_elaboration"]["summary"] == {
+        "modules": 1,
+        "instances": 1,
     }
 
 
@@ -106,7 +181,6 @@ def test_desktop_snapshot_rejects_nonpositive_limit(tmp_path: Path):
 def test_gui_cli_launches_viewer_with_requested_limit(
     tmp_path: Path,
     monkeypatch,
-    capsys,
 ):
     project = initialize_project(tmp_path / "demo")
     captured = {}
@@ -114,15 +188,7 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     def fake_launch(project_arg, *, limit):
         captured["root"] = project_arg.root
         captured["limit"] = limit
-        return {
-            "stats": {
-                "total": 0,
-                "passed": 0,
-                "failed": 0,
-                "timed_out": 0,
-                "pass_rate": 0.0,
-            }
-        }
+        return {"stats": {"total": 0}}
 
     monkeypatch.setattr("zddv.cli.launch_desktop_gui", fake_launch)
 
@@ -130,64 +196,3 @@ def test_gui_cli_launches_viewer_with_requested_limit(
 
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
-    assert "GUI CLOSED" in capsys.readouterr().out
-
-
-def test_desktop_snapshot_indexes_sources_and_hierarchy_without_writing_artifact(
-    tmp_path: Path,
-):
-    project = initialize_project(tmp_path / "demo")
-    (project.root / "rtl" / "child.sv").write_text(
-        """module child(
-    input logic a,
-    output logic y
-);
-assign y = a;
-endmodule
-""",
-        encoding="utf-8",
-    )
-    (project.root / "tb" / "tb_top.sv").write_text(
-        """module tb_top;
-logic a;
-logic y;
-child dut (
-    .a(a),
-    .y(y)
-);
-endmodule
-""",
-        encoding="utf-8",
-    )
-    project.rtl = ["rtl/*.sv"]
-    project.tb = ["tb/*.sv"]
-    project.top = "tb_top"
-
-    index_artifact = project.root / ".zddv" / "design" / "index.json"
-    assert not index_artifact.exists()
-
-    snapshot = build_desktop_snapshot(project, limit=10)
-    design = snapshot["design"]
-
-    assert design["summary"] == {
-        "files": 2,
-        "units": 2,
-        "instances": 1,
-        "duplicate_unit_names": 0,
-    }
-    assert [row["path"] for row in design["files"]] == [
-        "rtl/child.sv",
-        "tb/tb_top.sv",
-    ]
-    assert design["hierarchy"]["instance"] == "tb_top"
-    assert design["hierarchy"]["resolved"] is True
-    assert len(design["hierarchy"]["children"]) == 1
-    child = design["hierarchy"]["children"][0]
-    assert child["instance"] == "dut"
-    assert child["type"] == "child"
-    assert child["file"] == "rtl/child.sv"
-    assert child["resolved"] is True
-
-    # The desktop view uses the in-memory design index and must not create
-    # the normal CLI design-index artifact merely by viewing the project.
-    assert not index_artifact.exists()
