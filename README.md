@@ -56,6 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
+- Read-only desktop Debug Studio with persisted run, failure, coverage, assertion, formal, UVM, and per-test views
 - Read-only desktop Debug Studio foundation using Python Tk/ttk, backed by persisted verification evidence
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
@@ -182,6 +183,7 @@ zddv --project my_project signoff-diff .zddv/signoff/baseline.json .zddv/signoff
 zddv --project my_project release-export --expected-signoff-sha256 <reviewed-signoff-sha256> --private-key release-private.pem --key-id lab-release-2026
 zddv --project my_project release-verify .zddv/signoff/release.zip --public-key release-public.pem
 zddv --project my_project report --limit 100
+zddv --project my_project gui --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
 zddv --project my_project questa-detail-audit
