@@ -338,3 +338,25 @@ def test_desktop_source_reader_resolves_project_relative_source(tmp_path: Path):
     assert _read_source(project, "rtl/preview.sv") == (
         "module preview;\n  logic value;\nendmodule\n"
     )
+
+
+def test_desktop_source_reader_rejects_unindexed_file(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-preview-guard")
+    indexed = project.root / "rtl" / "indexed.sv"
+    indexed.write_text("module indexed; endmodule\n", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("do not display\n", encoding="utf-8")
+
+    allowed = {indexed.resolve()}
+    assert _read_source(
+        project,
+        "rtl/indexed.sv",
+        allowed_paths=allowed,
+    ) == "module indexed; endmodule\n"
+
+    with pytest.raises(PermissionError, match="not part of the current design index"):
+        _read_source(
+            project,
+            str(outside),
+            allowed_paths=allowed,
+        )
