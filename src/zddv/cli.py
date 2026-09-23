@@ -38,6 +38,7 @@ from zddv.coverage_suggestions import write_coverage_test_suggestions
 from zddv.questa_detail_audit import write_questa_coverage_evidence_audit
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
+from zddv.gui import launch_debug_gui
 from zddv.desktop import launch_desktop_gui
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.elaboration import hierarchy_lines as elaborated_hierarchy_lines

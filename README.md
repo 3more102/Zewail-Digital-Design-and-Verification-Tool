@@ -56,6 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
+- Read-only Tk/ttk Debug Studio backed by persisted evidence, with run/failure/coverage/evidence views plus source and hierarchy navigation
 - Read-only desktop Debug Studio foundation using Python Tk/ttk, backed by persisted verification evidence
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
@@ -77,6 +78,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 Requirements:
 
 - Python 3.11+
+- Optional desktop GUI: Python Tk support (`tkinter`)
 - Verilator available in `PATH` for the default backend
 - Optional Questa/QuestaSim: `vlib`, `vlog`, `vsim`, and `vcover` available in `PATH` for native UCDB coverage workflows
 - Optional Synopsys VCS: `vcs` available in `PATH`
@@ -101,6 +103,7 @@ zddv --project examples/counter build
 zddv --project examples/counter run --test counter_basic --seed 42
 zddv --project examples/counter regress examples/counter/regression.toml
 zddv --project examples/counter coverage
+zddv --project examples/counter gui
 
 zddv --project examples/async_fifo lint
 zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
