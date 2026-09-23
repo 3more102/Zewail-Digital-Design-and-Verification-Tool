@@ -711,6 +711,10 @@ def desktop_crossprobe_evidence_rows(
         isinstance(elaborated_source_correlation, dict)
         and elaborated_source_correlation.get("analysis_level")
         == "simulator_elaborated_to_source_structural_correlation"
+        and elaborated_source_correlation.get("elaborated_analysis_level")
+        == "simulator_elaborated_direct_pin_varref"
+        and elaborated_source_correlation.get("source_analysis_level")
+        == "source_structural"
         and elaborated_source_correlation.get("role_semantics")
         == "source_structural_only"
     ):
