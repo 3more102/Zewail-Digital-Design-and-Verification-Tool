@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated module-port evidence
+
+- Surface normalized Verilator JSON module-port evidence in waveform cross-probing, preserving documented `ioDirection` provenance without inferring unsupported schemas.
+- Show normalized ports beneath matching simulator-elaborated instances in Debug Studio with direction and source navigation.
+- Keep legacy XML, stale snapshots, missing metadata, and malformed normalized evidence fail-closed and explicit.
+
 ### Xcelium coverage evidence
 
 - Add schema-neutral lexical layout fingerprints for captured IMC detail sections using only structured delimiters, field counts, and token classes; unverified FSM/functional layouts remain evidence-only and are not normalized.
