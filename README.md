@@ -66,8 +66,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Deterministic source index with file hashes and source locations
 - Source-level module/interface hierarchy with recursive-cycle protection
 - Simulator-elaborated hierarchy normalized from Verilator JSON/XML parser output
-- VCD waveform scope/signal index with FST artifact metadata support
-- Targeted VCD signal value probing with exact/unique-name resolution, time windows, and bounded change capture
+- VCD waveform scope/signal index with FST artifact metadata by default and explicit opt-in `fst2vcd` scope/signal indexing
+- Targeted VCD signal value probing plus explicit opt-in FST probing through `fst2vcd`, with exact/unique-name resolution, time windows, and bounded change capture
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
 - Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
@@ -690,27 +690,41 @@ specific run with `--run`. It writes a normalized JSON catalog under
 
 For VCD, ZDDV indexes hierarchical scopes, signal paths, widths, identifier
 codes, timescale, file size, and SHA-256 fingerprint while stopping at the VCD
-declaration boundary rather than loading value-change samples. FST is currently
-recorded as metadata-only until a converter or simulator-native adapter is added.
+declaration boundary rather than loading value-change samples. FST remains
+metadata-only by default. When the user explicitly supplies `--fst2vcd` (optionally
+with an executable path), ZDDV converts the FST to a temporary VCD, derives the
+same normalized scope/signal catalog, records the adapter provenance, and removes
+the temporary VCD after indexing. Converter failures and security rejections are
+surfaced; ZDDV does not bypass them.
 
-### Targeted VCD Value Probing
+```bash
+zddv --project my_project waveform-index --input trace.fst --fst2vcd
+zddv --project my_project waveform-index --input trace.fst --fst2vcd /opt/gtkwave/bin/fst2vcd
+```
+
+### Targeted Waveform Value Probing
 
 `zddv waveform-probe` streams only requested VCD signals from the value-change
-section instead of loading the complete waveform. A signal can be selected by exact
-hierarchical path or by a unique leaf name; ambiguous leaf names are rejected and
-must be disambiguated with the full path. Optional inclusive `--start` / `--end`
-timestamps and `--max-changes` bounds keep debug queries deterministic on large
-waveforms.
+section instead of loading the complete waveform. FST uses the same normalized
+probe path only when `--fst2vcd` is explicitly supplied; the converted VCD is
+temporary and the persisted artifact identity remains the original FST. A signal
+can be selected by exact hierarchical path or by a unique leaf name; ambiguous
+leaf names are rejected and must be disambiguated with the full path. Optional
+inclusive `--start` / `--end` timestamps and `--max-changes` bounds keep debug
+queries deterministic on large waveforms.
 
 ```bash
 zddv --project my_project waveform-probe tb_top.dut.count --run <run-id>
 zddv --project my_project waveform-probe count clk --input trace.vcd --start 100 --end 500
+zddv --project my_project waveform-probe count --input trace.fst --fst2vcd --start 100 --end 500
 ```
 
-Probe reports are written under `.zddv/waveforms/probes/` and retain the waveform
-timescale, normalized signal metadata, exact timestamps, values, and truncation
-status. This complements `crossprobe`, which maps waveform signals back to RTL
-source locations.
+Probe reports are written under `.zddv/waveforms/probes/` and retain the source
+waveform fingerprint, timescale, normalized signal metadata, exact timestamps,
+values, truncation status, and converter provenance when used. This complements
+`crossprobe`, which maps waveform signals back to RTL source locations. Cross-probe
+and assertion-correlation flows still keep FST metadata-only unless they explicitly
+adopt the converter adapter in a future change.
 
 ### Debug Studio Drivers/Loads Navigation
 
