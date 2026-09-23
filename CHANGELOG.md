@@ -5,7 +5,8 @@
 ### Desktop Debug Studio
 
 - Add bounded detail panes for normalized assertion events, formal property results,
-  and UVM report messages while preserving the existing Sources and Hierarchy views.
+  and UVM report messages while preserving source, source-level hierarchy, and
+  persisted simulator-elaborated hierarchy views.
 - Add optional query limits to formal-property and UVM-message storage readers so the
   desktop does not materialize an unbounded evidence set.
 - Keep refresh display-only with respect to verification execution, AI invocation,
@@ -17,6 +18,8 @@
   the bundled verified signoff exactly.
 - Reject signed manifests whose `key_id` is empty or non-canonical due to leading or
   trailing whitespace.
+- Reject an otherwise-valid signoff before signing when its project, simulator, or
+  top-level identity differs from the active project configuration.
 
 ### Signoff change review
 
