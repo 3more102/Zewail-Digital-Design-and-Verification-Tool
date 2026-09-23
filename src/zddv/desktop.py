@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.crossprobe import load_persisted_elaborated_evidence
 from zddv.design_index import build_design_index
 from zddv.desktop_actions import attach_desktop_actions_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
@@ -64,38 +65,25 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
 
 
 def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, Any]:
-    path = project.root / ".zddv" / "design" / "elaborated.json"
-    if not path.exists():
-        return {"status": "NOT_PRESENT", "path": str(path), "instances": []}
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    evidence = load_persisted_elaborated_evidence(project)
+    if evidence.get("status") != "PRESENT":
         return {
-            "status": "INVALID",
-            "path": str(path),
-            "error": str(exc),
+            **{key: value for key, value in evidence.items() if key != "index"},
             "instances": [],
         }
 
-    instances = payload.get("instances") if isinstance(payload, dict) else None
-    if not isinstance(instances, list):
-        return {
-            "status": "INVALID",
-            "path": str(path),
-            "error": "elaborated hierarchy payload must contain an instances list",
-            "instances": [],
-        }
-
+    payload = evidence["index"]
     return {
         "status": "PRESENT",
-        "path": str(path),
+        "path": evidence["path"],
         "created_at": payload.get("created_at"),
         "simulator": payload.get("simulator"),
         "simulator_version": payload.get("simulator_version"),
         "source_format": payload.get("source_format"),
         "summary": payload.get("summary") or {},
-        "instances": instances,
+        "design_fingerprint": evidence.get("design_fingerprint"),
+        "current_design_fingerprint": evidence.get("current_design_fingerprint"),
+        "instances": list(payload["instances"]),
     }
 
 
