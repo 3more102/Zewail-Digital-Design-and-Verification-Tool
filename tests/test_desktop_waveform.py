@@ -512,11 +512,18 @@ def test_desktop_crossprobe_rows_surface_trusted_internal_assignw_evidence():
                     "simulator_elaborated_module_root_assignw_direct_varref"
                 ),
                 "role_semantics": "direct_continuous_assignment",
+                "evidence_contract": (
+                    "verilator_module_root_assignw_direct_varref_only"
+                ),
+                "query_instance_path": "tb_top.dut",
+                "query_module": "passthrough",
+                "query_signal": "dst",
                 "drivers": [
                     {
                         "kind": "continuous_assignment",
                         "assignment_type": "ASSIGNW",
                         "instance_path": "tb_top.dut",
+                        "module": "passthrough",
                         "source_signal": "src",
                         "target_signal": "dst",
                         "location": {"path": "rtl/passthrough.sv", "line": 6},
@@ -527,6 +534,7 @@ def test_desktop_crossprobe_rows_surface_trusted_internal_assignw_evidence():
                         "kind": "continuous_assignment",
                         "assignment_type": "ASSIGNW",
                         "instance_path": "tb_top.dut",
+                        "module": "passthrough",
                         "source_signal": "dst",
                         "target_signal": "tap",
                         "location": {"path": "rtl/passthrough.sv", "line": 7},
@@ -537,9 +545,12 @@ def test_desktop_crossprobe_rows_surface_trusted_internal_assignw_evidence():
                         "status": "UNSUPPORTED",
                         "assignment_type": "ASSIGNW",
                         "instance_path": "tb_top.dut",
+                        "module": "passthrough",
                         "query_references": ["rhs"],
                         "lhs_expression_type": "VARREF",
                         "rhs_expression_type": "AND",
+                        "lhs_varrefs": ["complex_dst"],
+                        "rhs_varrefs": ["dst", "other"],
                         "location": {"path": "rtl/passthrough.sv", "line": 8},
                     }
                 ],
@@ -575,8 +586,10 @@ def test_desktop_crossprobe_rows_surface_trusted_internal_assignw_evidence():
 def test_desktop_crossprobe_rows_bound_internal_assignw_evidence():
     drivers = [
         {
+            "kind": "continuous_assignment",
             "assignment_type": "ASSIGNW",
             "instance_path": "tb_top.dut",
+            "module": "passthrough",
             "source_signal": f"src{index}",
             "target_signal": "dst",
         }
@@ -590,6 +603,12 @@ def test_desktop_crossprobe_rows_bound_internal_assignw_evidence():
                     "simulator_elaborated_module_root_assignw_direct_varref"
                 ),
                 "role_semantics": "direct_continuous_assignment",
+                "evidence_contract": (
+                    "verilator_module_root_assignw_direct_varref_only"
+                ),
+                "query_instance_path": "tb_top.dut",
+                "query_module": "passthrough",
+                "query_signal": "dst",
                 "drivers": drivers,
                 "loads": [],
                 "unresolved_assignments": [],
@@ -642,6 +661,60 @@ def test_desktop_crossprobe_rows_fail_closed_on_untrusted_internal_assignw_evide
         kind.startswith("Elaborated internal")
         for kind, _detail in malformed_rows
     )
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_semantically_invalid_internal_assignw_evidence():
+    base = {
+        "status": "NORMALIZED",
+        "analysis_level": "simulator_elaborated_module_root_assignw_direct_varref",
+        "evidence_contract": "verilator_module_root_assignw_direct_varref_only",
+        "role_semantics": "direct_continuous_assignment",
+        "query_instance_path": "tb_top.dut",
+        "query_module": "passthrough",
+        "query_signal": "dst",
+        "drivers": [],
+        "loads": [],
+        "unresolved_assignments": [],
+    }
+    valid_edge = {
+        "kind": "continuous_assignment",
+        "assignment_type": "ASSIGNW",
+        "instance_path": "tb_top.dut",
+        "module": "passthrough",
+        "source_signal": "src",
+        "target_signal": "dst",
+    }
+    invalid_unresolved = {
+        "status": "UNSUPPORTED",
+        "assignment_type": "ASSIGNW",
+        "instance_path": "tb_top.dut",
+        "module": "passthrough",
+        "query_references": ["rhs"],
+        "lhs_expression_type": "VARREF",
+        "rhs_expression_type": "AND",
+        "lhs_varrefs": ["complex_dst"],
+        "rhs_varrefs": ["other"],
+    }
+    invalid_payloads = [
+        {**base, "evidence_contract": "future_contract"},
+        {**base, "drivers": [{**valid_edge, "kind": "procedural"}]},
+        {**base, "drivers": [{**valid_edge, "module": "other_module"}]},
+        {**base, "status": "PARTIAL"},
+        {
+            **base,
+            "status": "PARTIAL",
+            "unresolved_assignments": [invalid_unresolved],
+        },
+    ]
+
+    for payload in invalid_payloads:
+        rows = desktop_crossprobe_evidence_rows(
+            {"elaborated_internal_connectivity": payload}
+        )
+        assert not any(
+            kind.startswith("Elaborated internal")
+            for kind, _detail in rows
+        )
 
 
 def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
