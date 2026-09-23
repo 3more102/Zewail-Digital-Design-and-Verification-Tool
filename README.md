@@ -70,6 +70,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Targeted VCD signal value probing plus explicit opt-in FST probing through `fst2vcd`, with exact/unique-name resolution, time windows, and bounded change capture
 - Assertion-to-waveform run correlation with conservative signal hints
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
+- Verilator JSON module-port direction evidence validated against elaborated parent/child instances without upgrading source roles into exact net connectivity
 - Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
 
 ## Quick Start
