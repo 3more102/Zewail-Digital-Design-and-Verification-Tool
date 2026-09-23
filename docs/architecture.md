@@ -267,6 +267,12 @@ response when the required width evidence is explicit. Advisory evidence is
 reported independently of `status` and never upgrades a recommendation into a
 mandatory AXI4 rule.
 
+A normalized trace can additionally provide `address_width_bits` for the AXI
+`ADDR_WIDTH` interface property. The metadata must be 1..64 bits; accepted
+AWADDR/ARADDR values that do not fit that width are reported as protocol-evidence
+violations. Missing address-width metadata remains unknown rather than being
+inferred from observed transaction values.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
@@ -288,8 +294,9 @@ an explicit scope must contain the required five-channel handshake and burst pay
 signals; automatic selection succeeds only when exactly one complete AXI4 scope exists.
 
 The extractor streams selected VCD identifiers only, preserves optional transaction IDs,
-address sidebands, and USER sidebands when present, requires WDATA and RDATA to use
-the same standard AXI data width, verifies that WSTRB has one bit per data byte,
+address sidebands, and USER sidebands when present, requires AWADDR and ARADDR to
+share one 1..64-bit `ADDR_WIDTH`, requires WDATA and RDATA to use the same standard
+AXI data width, verifies that WSTRB has one bit per data byte,
 derives `data_width_bits`, and records the declared VCD widths for USER signals
 that are actually present in the selected scope. Those observed widths feed the
 same core USER-width consistency checks; an undumped USER signal is not interpreted
