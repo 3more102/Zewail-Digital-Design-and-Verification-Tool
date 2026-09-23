@@ -222,7 +222,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
 - [x] Read-only recorded-waveform navigation and bounded targeted VCD probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
-- [ ] Review-gated project actions using the existing CLI/core APIs.
+- [x] Review-gated generated-artifact apply action using the existing SHA-confirmed core API.\n- [ ] Review-gated exact historical rerun action.
 
 ## Long-Term Direction
 
