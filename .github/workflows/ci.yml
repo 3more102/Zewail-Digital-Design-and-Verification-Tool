@@ -359,6 +359,14 @@ jobs:
           grep -q '"review_state": "READY_FOR_REVIEW"' examples/counter/.zddv/signoff/signoff.json
           grep -q '"evidence_sha256"' examples/counter/.zddv/signoff/signoff.json
 
+      - name: Compare signoff bundles
+        run: |
+          cp examples/counter/.zddv/signoff/signoff.json examples/counter/.zddv/signoff/signoff-baseline.json
+          zddv --project examples/counter signoff-diff             .zddv/signoff/signoff-baseline.json             .zddv/signoff/signoff.json             --output .zddv/signoff/diff.json
+          test -s examples/counter/.zddv/signoff/diff.json
+          grep -q '"changed": false' examples/counter/.zddv/signoff/diff.json
+          grep -q '"diff_sha256"' examples/counter/.zddv/signoff/diff.json
+
       - name: Export and verify signed release archive
         run: |
           python - <<'PY'
