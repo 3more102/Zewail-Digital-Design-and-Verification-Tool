@@ -101,6 +101,22 @@ def _decode_axi4_cache_attributes(value: Any) -> dict[str, Any] | None:
     }
 
 
+def _decode_axi4_prot_attributes(value: Any) -> dict[str, Any] | None:
+    scalar = _scalar(value)
+    if not isinstance(scalar, int) or not 0 <= scalar <= 0x7:
+        return None
+    return {
+        "encoding": scalar,
+        "privileged": bool(scalar & 0x1),
+        "non_secure": bool(scalar & 0x2),
+        "instruction": bool(scalar & 0x4),
+        "privilege_class": "privileged" if scalar & 0x1 else "unprivileged",
+        "security_class": "non-secure" if scalar & 0x2 else "secure",
+        "access_class": "instruction" if scalar & 0x4 else "data",
+        "access_is_hint": True,
+    }
+
+
 def _decode_response(value: Any) -> tuple[int | None, str]:
     if isinstance(value, str):
         name = value.strip().upper()
@@ -397,6 +413,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
         values["cache_attributes"] = _decode_axi4_cache_attributes(values["cache"])
+        values["prot_attributes"] = _decode_axi4_prot_attributes(values["prot"])
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -594,6 +611,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cache": sidebands["cache"],
             "cache_attributes": sidebands["cache_attributes"],
             "prot": sidebands["prot"],
+            "prot_attributes": sidebands["prot_attributes"],
             "qos": sidebands["qos"],
             "user": sample.get(f"{prefix}USER"),
         }
@@ -827,6 +845,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 tx[f"ar{key}"] = request[key]
         if request.get("cache_attributes") is not None:
             tx["cache_attributes"] = request["cache_attributes"]
+        if request.get("prot_attributes") is not None:
+            tx["prot_attributes"] = request["prot_attributes"]
         if request.get("user") is not None:
             tx["aruser"] = request["user"]
         r_users = [beat.get("user") for beat in beats]
@@ -973,6 +993,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         tx[f"aw{key}"] = request[key]
                 if request.get("cache_attributes") is not None:
                     tx["cache_attributes"] = request["cache_attributes"]
+                if request.get("prot_attributes") is not None:
+                    tx["prot_attributes"] = request["prot_attributes"]
                 if request.get("user") is not None:
                     tx["awuser"] = request["user"]
                 w_users = [beat.get("user") for beat in beats]
@@ -1147,7 +1169,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected and B/M/RA/WA semantics are decoded; AxREGION is checked for 4KB-space consistency.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M/RA/WA and AxPROT privilege/security/access semantics are decoded, and AxREGION is checked for 4KB-space consistency.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning and width are implementation-defined, so semantic or width legality is not inferred without explicit interface metadata.",
