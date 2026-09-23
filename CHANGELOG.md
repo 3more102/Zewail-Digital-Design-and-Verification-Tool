@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 ID width evidence
+
+- Add opt-in `id_widths` metadata for Arm `ID_R_WIDTH` (ARID/RID) and `ID_W_WIDTH` (AWID/BID), including the specification-defined 0..32 range.
+- Treat width zero as explicit absence evidence and positive widths as active-channel presence plus unsigned value-range constraints.
+- Derive paired ID-width evidence from VCD only when both signals are present with matching widths; incomplete pairs remain unknown rather than being guessed.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
