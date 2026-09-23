@@ -6,6 +6,7 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
+from zddv.design_revision import design_revision_fingerprint
 from zddv.desktop_actions import attach_desktop_actions_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
@@ -78,7 +79,15 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
         }
 
-    instances = payload.get("instances") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy root must be a JSON object",
+            "instances": [],
+        }
+
+    instances = payload.get("instances")
     if not isinstance(instances, list):
         return {
             "status": "INVALID",
@@ -87,14 +96,47 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
         }
 
-    return {
-        "status": "PRESENT",
+    current_fingerprint = design_revision_fingerprint(project)
+    stored_fingerprint = payload.get("design_fingerprint")
+    stale_reasons: list[str] = []
+    for field, expected in (
+        ("project", project.name),
+        ("top", project.top),
+        ("simulator", project.simulator),
+    ):
+        actual = payload.get(field)
+        if actual != expected:
+            stale_reasons.append(
+                f"{field} mismatch: stored={actual!r} current={expected!r}"
+            )
+    if stored_fingerprint != current_fingerprint:
+        stale_reasons.append(
+            "design_fingerprint is missing"
+            if stored_fingerprint is None
+            else "design_fingerprint does not match the current RTL/config revision"
+        )
+
+    common = {
         "path": str(path),
         "created_at": payload.get("created_at"),
         "simulator": payload.get("simulator"),
         "simulator_version": payload.get("simulator_version"),
         "source_format": payload.get("source_format"),
         "summary": payload.get("summary") or {},
+        "design_fingerprint": stored_fingerprint,
+        "current_design_fingerprint": current_fingerprint,
+    }
+    if stale_reasons:
+        return {
+            **common,
+            "status": "STALE",
+            "error": "; ".join(stale_reasons),
+            "instances": [],
+        }
+
+    return {
+        **common,
+        "status": "PRESENT",
         "instances": instances,
     }
 
