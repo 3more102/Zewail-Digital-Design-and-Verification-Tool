@@ -177,6 +177,13 @@ binding is `UNSUPPORTED` is retained separately as
 location but no inferred parent signal or relationship. Malformed normalized
 pin-binding containers are rejected before cross-probing.
 
+For direct normalized bindings with trusted module-port direction, the same
+`elaborated_connectivity` record classifies the boundary relation relative to the
+queried waveform signal as a `boundary_driver`, `boundary_load`, or both for
+`inout`. If direction evidence is missing or ambiguous, the binding is retained in
+`boundary_unclassified_bindings`; unsupported expressions are never promoted into
+these role lists.
+
 This qualification is hierarchy/boundary evidence only: exact elaborated internal
 signal drivers and loads remain a separate enrichment milestone.
 
