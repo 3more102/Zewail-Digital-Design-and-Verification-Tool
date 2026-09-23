@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
@@ -56,6 +58,39 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
+def _load_persisted_elaboration(project: ProjectConfig) -> dict[str, Any]:
+    path = (project.root / ".zddv" / "design" / "elaborated.json").resolve()
+    if not path.exists():
+        return {"state": "NOT_PRESENT", "path": str(path), "index": None}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "state": "INVALID",
+            "path": str(path),
+            "index": None,
+            "error": str(exc),
+        }
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("instances", []), list):
+        return {
+            "state": "INVALID",
+            "path": str(path),
+            "index": None,
+            "error": "elaborated.json does not match the normalized hierarchy shape",
+        }
+
+    return {"state": "PRESENT", "path": str(path), "index": payload}
+
+
+def _read_source(project: ProjectConfig, value: str) -> str:
+    path = Path(value)
+    if not path.is_absolute():
+        path = project.root / path
+    return path.resolve().read_text(encoding="utf-8", errors="replace")
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -91,6 +126,7 @@ def build_desktop_snapshot(
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
         "design": design,
+        "elaborated_hierarchy": _load_persisted_elaboration(project),
     }
 
 
@@ -203,8 +239,15 @@ def launch_desktop_gui(
     evidence_tree.pack(fill="both", expand=True)
 
     source_columns = ("kind", "location", "details")
+    source_pane = ttk.Panedwindow(sources_tab, orient="horizontal")
+    source_pane.pack(fill="both", expand=True)
+    source_left = ttk.Frame(source_pane)
+    source_right = ttk.Frame(source_pane)
+    source_pane.add(source_left, weight=2)
+    source_pane.add(source_right, weight=5)
+
     source_tree = ttk.Treeview(
-        sources_tab,
+        source_left,
         columns=source_columns,
         show="tree headings",
     )
@@ -219,9 +262,35 @@ def launch_desktop_gui(
         source_tree.column(column, width=width, anchor="w")
     source_tree.pack(fill="both", expand=True)
 
+    source_title_text = tk.StringVar(value="Select a source file or design unit.")
+    ttk.Label(source_right, textvariable=source_title_text).grid(
+        row=0,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        pady=(0, 6),
+    )
+    source_text = tk.Text(source_right, wrap="none")
+    source_ybar = ttk.Scrollbar(source_right, orient="vertical", command=source_text.yview)
+    source_xbar = ttk.Scrollbar(source_right, orient="horizontal", command=source_text.xview)
+    source_text.configure(yscrollcommand=source_ybar.set, xscrollcommand=source_xbar.set)
+    source_text.grid(row=1, column=0, sticky="nsew")
+    source_ybar.grid(row=1, column=1, sticky="ns")
+    source_xbar.grid(row=2, column=0, sticky="ew")
+    source_right.rowconfigure(1, weight=1)
+    source_right.columnconfigure(0, weight=1)
+    source_text.configure(state="disabled")
+
+    hierarchy_book = ttk.Notebook(hierarchy_tab)
+    hierarchy_book.pack(fill="both", expand=True)
+    source_hierarchy_tab = ttk.Frame(hierarchy_book, padding=4)
+    elaborated_hierarchy_tab = ttk.Frame(hierarchy_book, padding=4)
+    hierarchy_book.add(source_hierarchy_tab, text="Source-level")
+    hierarchy_book.add(elaborated_hierarchy_tab, text="Persisted elaborated")
+
     hierarchy_columns = ("type", "source", "state")
     hierarchy_tree = ttk.Treeview(
-        hierarchy_tab,
+        source_hierarchy_tab,
         columns=hierarchy_columns,
         show="tree headings",
     )
@@ -236,21 +305,92 @@ def launch_desktop_gui(
         hierarchy_tree.column(column, width=width, anchor="w")
     hierarchy_tree.pack(fill="both", expand=True)
 
+    elaborated_status_text = tk.StringVar(value="")
+    ttk.Label(
+        elaborated_hierarchy_tab,
+        textvariable=elaborated_status_text,
+    ).pack(fill="x", pady=(0, 6))
+    elaborated_tree = ttk.Treeview(
+        elaborated_hierarchy_tab,
+        columns=("module", "source", "path"),
+        show="tree headings",
+    )
+    elaborated_tree.heading("#0", text="Instance")
+    elaborated_tree.column("#0", width=240, anchor="w")
+    for column, title, width in (
+        ("module", "Module", 200),
+        ("source", "Source", 320),
+        ("path", "Hierarchy path", 420),
+    ):
+        elaborated_tree.heading(column, text=title)
+        elaborated_tree.column(column, width=width, anchor="w")
+    elaborated_tree.pack(fill="both", expand=True)
+
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence; it does not run "
-            "verification, invoke AI, or apply generated artifacts."
+            "Display-only viewer: refresh reads persisted evidence and current source "
+            "files; it does not run verification, invoke AI, write design indexes, or "
+            "apply generated artifacts."
         ),
     ).pack(side="left")
 
     current: dict[str, Any] = {}
+    source_targets: dict[str, tuple[str, int | None]] = {}
+    hierarchy_targets: dict[str, tuple[str, int | None]] = {}
+    elaborated_targets: dict[str, tuple[str, int | None]] = {}
 
     def _clear(tree) -> None:
         for item in tree.get_children():
             tree.delete(item)
+
+    def _show_source(path_value: str, line: int | None = None) -> None:
+        try:
+            text = _read_source(project, path_value)
+        except OSError as exc:
+            source_title_text.set(f"{path_value} · unavailable: {exc}")
+            text = ""
+            line = None
+
+        source_text.configure(state="normal")
+        source_text.delete("1.0", "end")
+        source_text.insert("1.0", text)
+        source_text.configure(state="disabled")
+        if line and line > 0:
+            source_text.see(f"{line}.0")
+            source_title_text.set(f"{path_value}:{line}")
+        else:
+            source_title_text.set(path_value)
+
+    def _on_source_select(_event=None) -> None:
+        selection = source_tree.selection()
+        if not selection:
+            return
+        target = source_targets.get(selection[0])
+        if target is not None:
+            _show_source(*target)
+
+    def _open_hierarchy_source(tree, targets) -> None:
+        selection = tree.selection()
+        if not selection:
+            return
+        target = targets.get(selection[0])
+        if target is None:
+            return
+        notebook.select(sources_tab)
+        _show_source(*target)
+
+    source_tree.bind("<<TreeviewSelect>>", _on_source_select)
+    hierarchy_tree.bind(
+        "<Double-1>",
+        lambda _event: _open_hierarchy_source(hierarchy_tree, hierarchy_targets),
+    )
+    elaborated_tree.bind(
+        "<Double-1>",
+        lambda _event: _open_hierarchy_source(elaborated_tree, elaborated_targets),
+    )
 
     def refresh() -> None:
         nonlocal current
@@ -301,6 +441,7 @@ def launch_desktop_gui(
         for unit in design["units"]:
             units_by_file.setdefault(unit["file"], []).append(unit)
 
+        source_targets.clear()
         _clear(source_tree)
         for source in design["files"]:
             file_id = source_tree.insert(
@@ -315,8 +456,9 @@ def launch_desktop_gui(
                 ),
                 open=True,
             )
+            source_targets[file_id] = (source["path"], 1)
             for unit in units_by_file.get(source["path"], []):
-                source_tree.insert(
+                unit_id = source_tree.insert(
                     file_id,
                     "end",
                     text=unit["name"],
@@ -327,7 +469,9 @@ def launch_desktop_gui(
                         f"{len(unit['instances'])} child instances",
                     ),
                 )
+                source_targets[unit_id] = (unit["file"], int(unit["line"]))
 
+        hierarchy_targets.clear()
         _clear(hierarchy_tree)
 
         def _insert_hierarchy(parent: str, node: dict[str, Any]) -> None:
@@ -349,10 +493,61 @@ def launch_desktop_gui(
                 values=(node["type"], source, state),
                 open=True,
             )
+            if node.get("file") is not None:
+                hierarchy_targets[item_id] = (
+                    str(node["file"]),
+                    int(node["line"]) if node.get("line") else None,
+                )
             for child in node.get("children", []):
                 _insert_hierarchy(item_id, child)
 
         _insert_hierarchy("", design["hierarchy"])
+
+        elaborated_targets.clear()
+        _clear(elaborated_tree)
+        elaborated = current["elaborated_hierarchy"]
+        if elaborated["state"] != "PRESENT":
+            detail = elaborated.get("error", "")
+            elaborated_status_text.set(
+                f"{elaborated['state']} · {elaborated['path']}"
+                + (f" · {detail}" if detail else "")
+            )
+        else:
+            index = elaborated["index"]
+            elaborated_status_text.set(
+                f"PRESENT · {index.get('simulator', 'simulator')} · "
+                f"{index.get('source_format', 'normalized')} · {elaborated['path']}"
+            )
+            elaborated_ids: dict[str, str] = {}
+            for row in index.get("instances", []):
+                hierarchy_path = str(row.get("path") or "")
+                if not hierarchy_path:
+                    continue
+                parent_path = hierarchy_path.rsplit(".", 1)[0] if "." in hierarchy_path else ""
+                parent_id = elaborated_ids.get(parent_path, "")
+                location = row.get("location") or {}
+                source_location = "-"
+                if location.get("path"):
+                    source_location = str(location["path"])
+                    if location.get("line"):
+                        source_location += f":{location['line']}"
+                item_id = elaborated_tree.insert(
+                    parent_id,
+                    "end",
+                    text=row.get("name") or hierarchy_path.rsplit(".", 1)[-1],
+                    values=(
+                        row.get("module") or "-",
+                        source_location,
+                        hierarchy_path,
+                    ),
+                    open=hierarchy_path.count(".") < 2,
+                )
+                elaborated_ids[hierarchy_path] = item_id
+                if location.get("path"):
+                    elaborated_targets[item_id] = (
+                        str(location["path"]),
+                        int(location["line"]) if location.get("line") else None,
+                    )
 
         _clear(evidence_tree)
         assertions = current["assertions"]
