@@ -854,7 +854,7 @@ bundle is review-required before any external use.
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
 - [x] Desktop Debug Studio read-only foundation with source/hierarchy navigation, persisted elaborated hierarchy, bounded waveform probing, and detailed assertion/formal/UVM evidence panes
-- [x] Review-gated lint/build/run and exact historical-rerun actions with exact SHA-256 approval and project/source/run-evidence revalidation
+- [x] Review-gated lint/build/run and recorded-input historical rerun with exact SHA-256 approval, project/source/run-evidence revalidation, current-backend rebuild, and no verbatim historical-command replay
 
 ## Design Principles
 
