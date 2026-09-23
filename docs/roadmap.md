@@ -82,7 +82,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA attribute decoding.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
-- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
+- [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.\n- [x] AXI4 exclusive read/write attribute parity diagnostics for AxADDR/AxLEN/AxSIZE/AxBURST/AxREGION/AxCACHE/AxPROT.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
 - [x] UCIe public-generation metadata with version-aware 32/64 GT/s ceiling checks through UCIe 3.0.
