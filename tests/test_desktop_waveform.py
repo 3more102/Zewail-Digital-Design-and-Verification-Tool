@@ -503,6 +503,164 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
 
 
 
+def test_desktop_crossprobe_rows_surface_trusted_internal_assignw_evidence():
+    report = {
+        "elaborated_internal_connectivity": {
+            "status": "NORMALIZED",
+            "analysis_level": (
+                "simulator_elaborated_module_root_assignw_direct_varref"
+            ),
+            "evidence_contract": (
+                "verilator_module_root_assignw_direct_varref_only"
+            ),
+            "role_semantics": "direct_continuous_assignment",
+            "query_instance_path": "tb_top.dut",
+            "query_module": "counter",
+            "query_signal": "count",
+            "drivers": [
+                {
+                    "kind": "continuous_assignment",
+                    "assignment_type": "ASSIGNW",
+                    "instance_path": "tb_top.dut",
+                    "module": "counter",
+                    "source_signal": "next_count",
+                    "target_signal": "count",
+                    "location": {"path": "rtl/counter.sv", "line": 5},
+                }
+            ],
+            "loads": [
+                {
+                    "kind": "continuous_assignment",
+                    "assignment_type": "ASSIGNW",
+                    "instance_path": "tb_top.dut",
+                    "module": "counter",
+                    "source_signal": "count",
+                    "target_signal": "shadow",
+                    "location": {"path": "rtl/counter.sv", "line": 6},
+                }
+            ],
+            "unresolved_assignments": [],
+        }
+    }
+
+    rows = desktop_crossprobe_evidence_rows(report)
+    row_map = dict(rows)
+    assert row_map["Elaborated internal connectivity"] == (
+        "NORMALIZED · direct_continuous_assignment · "
+        "drivers=1 · loads=1 · unresolved=0"
+    )
+    internal_rows = [
+        detail for kind, detail in rows if kind == "Elaborated internal edge"
+    ]
+    assert internal_rows == [
+        "DRIVER · tb_top.dut.next_count -> tb_top.dut.count · "
+        "location=rtl/counter.sv:5",
+        "LOAD · tb_top.dut.count -> tb_top.dut.shadow · "
+        "location=rtl/counter.sv:6",
+    ]
+
+
+def test_desktop_crossprobe_rows_surface_partial_internal_assignw_evidence():
+    report = {
+        "elaborated_internal_connectivity": {
+            "status": "PARTIAL",
+            "analysis_level": (
+                "simulator_elaborated_module_root_assignw_direct_varref"
+            ),
+            "evidence_contract": (
+                "verilator_module_root_assignw_direct_varref_only"
+            ),
+            "role_semantics": "direct_continuous_assignment",
+            "query_instance_path": "tb_top.dut",
+            "query_module": "counter",
+            "query_signal": "count",
+            "drivers": [],
+            "loads": [],
+            "unresolved_assignments": [
+                {
+                    "status": "UNSUPPORTED",
+                    "assignment_type": "ASSIGNW",
+                    "instance_path": "tb_top.dut",
+                    "module": "counter",
+                    "query_references": ["rhs"],
+                    "lhs_expression_type": "VARREF",
+                    "rhs_expression_type": "ADD",
+                    "lhs_varrefs": ["next_count"],
+                    "rhs_varrefs": ["count", "enable"],
+                    "location": {"path": "rtl/counter.sv", "line": 7},
+                }
+            ],
+        }
+    }
+
+    rows = desktop_crossprobe_evidence_rows(report)
+    row_map = dict(rows)
+    assert row_map["Elaborated internal connectivity"] == (
+        "PARTIAL · direct_continuous_assignment · "
+        "drivers=0 · loads=0 · unresolved=1"
+    )
+    assert row_map["Elaborated internal edge"] == (
+        "UNRESOLVED · query_refs=rhs · lhs=VARREF · rhs=ADD · "
+        "location=rtl/counter.sv:7"
+    )
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_untrusted_internal_connectivity():
+    base = {
+        "status": "NORMALIZED",
+        "analysis_level": (
+            "simulator_elaborated_module_root_assignw_direct_varref"
+        ),
+        "evidence_contract": "verilator_module_root_assignw_direct_varref_only",
+        "role_semantics": "direct_continuous_assignment",
+        "query_instance_path": "tb_top.dut",
+        "query_module": "counter",
+        "query_signal": "count",
+        "drivers": [],
+        "loads": [],
+        "unresolved_assignments": [],
+    }
+
+    unknown_contract = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_internal_connectivity": {
+                **base,
+                "evidence_contract": "future_unverified_contract",
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated internal connectivity", "Elaborated internal edge"}
+        for kind, _detail in unknown_contract
+    )
+
+    malformed = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_internal_connectivity": {
+                **base,
+                "drivers": ["invalid"],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated internal connectivity", "Elaborated internal edge"}
+        for kind, _detail in malformed
+    )
+
+    inconsistent_status = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_internal_connectivity": {
+                **base,
+                "status": "PARTIAL",
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated internal connectivity", "Elaborated internal edge"}
+        for kind, _detail in inconsistent_status
+    )
+
+
 def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
     report = {
         "elaborated_source_correlation": {
