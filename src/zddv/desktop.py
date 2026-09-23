@@ -210,6 +210,7 @@ def build_desktop_snapshot(
             "invokes_ai": False,
             "applies_generated_artifacts": True,
             "automatic_generated_artifact_apply": False,
+            "executes_generated_artifacts": False,
             "review_gated_project_actions": True,
         },
         "stats": run_statistics(project),
