@@ -652,12 +652,16 @@ def qualify_signal_navigation_with_elaboration(
     *,
     instance_path: str,
     elaborated_instances: list[dict[str, Any]],
+    elaborated_pin_bindings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Attach deterministic elaborated-instance context to source connectivity.
 
-    The driver/load roles remain source-structural evidence.  This helper only
+    The driver/load roles remain source-structural evidence.  This helper
     qualifies that evidence with an already-resolved elaborated parent instance
     and, for instance-port edges, exact or ambiguous child-instance candidates.
+    When the caller supplies evidence-gated direct pin bindings, an exact child
+    edge is also correlated with its normalized or unsupported pin record without
+    changing the source-derived role.
     """
     parent_path = str(instance_path).strip()
     if not parent_path:
@@ -697,6 +701,33 @@ def qualify_signal_navigation_with_elaboration(
                 matches.append(candidate_path)
         return sorted(set(matches))
 
+    def pin_binding_for_edge(
+        entry: dict[str, Any],
+        child_path: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        if elaborated_pin_bindings is None:
+            return "unavailable", None
+
+        matches = [
+            binding
+            for binding in elaborated_pin_bindings
+            if isinstance(binding, dict)
+            and str(binding.get("instance_path") or "") == child_path
+            and str(binding.get("pin") or "") == str(entry.get("port") or "")
+        ]
+        if not matches:
+            return "not_found", None
+        if len(matches) != 1:
+            return "ambiguous", None
+
+        binding = matches[0]
+        binding_status = str(binding.get("status") or "").upper()
+        if binding_status == "NORMALIZED" and binding.get("signal"):
+            return "matched", binding
+        if binding_status == "UNSUPPORTED":
+            return "unsupported_expression", binding
+        return "invalid", binding
+
     def enrich(entry: dict[str, Any]) -> dict[str, Any]:
         item = {**entry, "instance_path": parent_path}
         if entry.get("kind") != "instance_port":
@@ -704,8 +735,18 @@ def qualify_signal_navigation_with_elaboration(
 
         candidates = child_candidates(entry)
         if len(candidates) == 1:
+            child_path = candidates[0]
             item["elaborated_child_resolution"] = "exact"
-            item["elaborated_child_path"] = candidates[0]
+            item["elaborated_child_path"] = child_path
+            pin_status, binding = pin_binding_for_edge(entry, child_path)
+            if elaborated_pin_bindings is not None:
+                item["elaborated_pin_resolution"] = pin_status
+            if binding is not None:
+                item["elaborated_pin_binding"] = binding
+                if pin_status == "matched":
+                    item["elaborated_pin_source_consistent"] = (
+                        str(binding.get("signal")) == str(entry.get("signal"))
+                    )
         elif candidates:
             item["elaborated_child_resolution"] = "ambiguous"
             item["elaborated_child_candidates"] = candidates
