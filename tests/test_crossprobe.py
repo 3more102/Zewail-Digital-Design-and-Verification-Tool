@@ -294,6 +294,152 @@ $enddefinitions $end
     )
 
 
+def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+        "ports": [
+            {
+                "module": "counter",
+                "name": "clk",
+                "direction": "input",
+            },
+            {
+                "module": "counter",
+                "name": "count",
+                "direction": "output",
+            },
+        ],
+        "instances": [
+            {
+                "path": "tb_top",
+                "name": "tb_top",
+                "module": "tb_top",
+                "top": True,
+                "location": {"path": "tb/tb_top.sv", "line": 1},
+            },
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "tb/tb_top.sv", "line": 4},
+            },
+        ],
+        "pin_bindings": [
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.dut",
+                "instance_module": "counter",
+                "pin": "clk",
+                "parent_instance_path": "tb_top",
+                "signal": "clk",
+                "generate_scopes": [],
+            },
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.dut",
+                "instance_module": "counter",
+                "pin": "count",
+                "parent_instance_path": "tb_top",
+                "signal": "count",
+                "generate_scopes": [],
+            },
+        ],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
+    }
+    waveform = build_waveform_index(waveform_path, project_name=project.name)
+    design = build_design_index(project)
+
+    parent = build_crossprobe(
+        project,
+        "TOP.tb_top.clk",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    parent_connectivity = parent["elaborated_connectivity"]
+    assert parent_connectivity["analysis_level"] == (
+        "simulator_elaborated_direct_pin_varref"
+    )
+    assert parent_connectivity["instance_port_bindings"] == []
+    assert len(parent_connectivity["parent_signal_bindings"]) == 1
+    child_pin = parent_connectivity["parent_signal_bindings"][0]
+    assert child_pin["instance_path"] == "tb_top.dut"
+    assert child_pin["pin"] == "clk"
+    assert child_pin["parent_signal"] == "clk"
+    assert child_pin["port_direction"] == "input"
+    assert child_pin["relationship"] == "parent_signal_to_child_input"
+
+    child = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    assert child["elaborated_port"]["status"] == "MATCHED"
+    assert child["elaborated_port"]["port"]["direction"] == "output"
+    child_connectivity = child["elaborated_connectivity"]
+    assert child_connectivity["parent_signal_bindings"] == []
+    assert len(child_connectivity["instance_port_bindings"]) == 1
+    parent_binding = child_connectivity["instance_port_bindings"][0]
+    assert parent_binding["parent_instance_path"] == "tb_top"
+    assert parent_binding["parent_signal"] == "count"
+    assert parent_binding["port_direction"] == "output"
+    assert parent_binding["relationship"] == "child_output_to_parent_signal"
+
+
+def test_crossprobe_rejects_malformed_normalized_pin_binding_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="normalized pin_binding_evidence requires a pin_bindings list",
+    ):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index={
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "instances": [
+                    {
+                        "path": "tb_top.dut",
+                        "name": "dut",
+                        "module": "counter",
+                    }
+                ],
+                "pin_binding_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_cell_pin_direct_varref_only",
+                },
+            },
+        )
+
+
 def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
     project = _project(tmp_path)
     waveform_path = project.root / "trace.vcd"
