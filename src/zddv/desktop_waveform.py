@@ -172,7 +172,11 @@ def desktop_crossprobe_evidence_rows(
         rows.append(("Elaborated port", port_detail))
 
     elaborated_connectivity = report.get("elaborated_connectivity")
-    if isinstance(elaborated_connectivity, dict):
+    if (
+        isinstance(elaborated_connectivity, dict)
+        and elaborated_connectivity.get("analysis_level")
+        == "simulator_elaborated_direct_pin_varref"
+    ):
         parent_bindings = [
             item
             for item in elaborated_connectivity.get("parent_signal_bindings", [])
