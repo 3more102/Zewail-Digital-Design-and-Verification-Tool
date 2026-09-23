@@ -130,6 +130,21 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
                 "generate_scopes": [],
             },
         ],
+        elaborated_ports=[
+            {
+                "module": "child",
+                "module_elaborated_name": "child",
+                "name": "a",
+                "direction": "input",
+                "direction_field": "ioDirection",
+                "location": {"path": "rtl/design.sv", "line": 2, "column": 5},
+            },
+        ],
+        port_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
     )
 
     instance_load = next(
@@ -140,6 +155,56 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["instance_path"] == "top"
     assert instance_load["elaborated_child_resolution"] == "exact"
     assert instance_load["elaborated_child_path"] == "top.u_child"
+    assert instance_load["elaborated_port_resolution"] == "matched"
+    assert instance_load["elaborated_port_direction"] == "input"
+    assert instance_load["elaborated_port_direction_consistent"] is True
+    assert instance_load["elaborated_role_consistent"] is True
+    assert instance_load["elaborated_port_evidence"]["contract"] == (
+        "verilator_module_var_io_direction"
+    )
+    assert qualified["elaborated_port_evidence"]["status"] == "NORMALIZED"
+
+
+def test_elaborated_port_direction_mismatch_does_not_relabel_source_role(
+    tmp_path: Path,
+):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="dst")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_ports=[
+            {
+                "module": "child",
+                "module_elaborated_name": "child",
+                "name": "y",
+                "direction": "input",
+                "direction_field": "ioDirection",
+                "location": {"path": "rtl/design.sv", "line": 4, "column": 5},
+            },
+        ],
+        port_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+    )
+
+    instance_driver = next(
+        item for item in qualified["drivers"] if item["kind"] == "instance_port"
+    )
+    assert instance_driver["role"] == "driver"
+    assert instance_driver["direction"] == "output"
+    assert instance_driver["elaborated_port_resolution"] == "matched"
+    assert instance_driver["elaborated_port_direction"] == "input"
+    assert instance_driver["elaborated_port_direction_consistent"] is False
+    assert instance_driver["elaborated_role_consistent"] is False
 
 
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
