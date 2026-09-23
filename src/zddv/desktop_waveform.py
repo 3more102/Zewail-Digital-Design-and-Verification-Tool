@@ -330,6 +330,118 @@ def desktop_crossprobe_evidence_rows(
                     )
                 )
 
+    elaborated_internal_connectivity = report.get(
+        "elaborated_internal_connectivity"
+    )
+    trusted_internal_connectivity = (
+        isinstance(elaborated_internal_connectivity, dict)
+        and elaborated_internal_connectivity.get("analysis_level")
+        == "simulator_elaborated_module_root_assignw_direct_varref"
+        and elaborated_internal_connectivity.get("role_semantics")
+        == "direct_continuous_assignment"
+        and elaborated_internal_connectivity.get("status")
+        in {"NORMALIZED", "PARTIAL"}
+    )
+    if trusted_internal_connectivity:
+        internal_role_keys = (
+            "drivers",
+            "loads",
+            "unresolved_assignments",
+        )
+        internal_role_values = [
+            elaborated_internal_connectivity.get(key)
+            for key in internal_role_keys
+        ]
+        internal_roles_normalized = all(
+            isinstance(value, list)
+            and all(isinstance(item, dict) for item in value)
+            for value in internal_role_values
+        )
+        if internal_roles_normalized:
+            internal_drivers = list(
+                elaborated_internal_connectivity["drivers"]
+            )
+            internal_loads = list(
+                elaborated_internal_connectivity["loads"]
+            )
+            unresolved_assignments = list(
+                elaborated_internal_connectivity["unresolved_assignments"]
+            )
+            rows.append(
+                (
+                    "Elaborated internal connectivity",
+                    "simulator_elaborated_module_root_assignw_direct_varref · "
+                    f"status={elaborated_internal_connectivity['status']} · "
+                    f"drivers={len(internal_drivers)} · "
+                    f"loads={len(internal_loads)} · "
+                    f"unresolved={len(unresolved_assignments)}",
+                )
+            )
+
+            internal_items: list[tuple[str, dict[str, Any]]] = []
+            internal_items.extend(("DRIVER", item) for item in internal_drivers)
+            internal_items.extend(("LOAD", item) for item in internal_loads)
+            internal_items.extend(
+                ("UNRESOLVED", item) for item in unresolved_assignments
+            )
+
+            for role, item in internal_items[:elaborated_limit]:
+                location = item.get("location")
+                location_text = "-"
+                if isinstance(location, dict):
+                    location_text = str(location.get("path") or "-")
+                    if location.get("line") is not None:
+                        location_text += f":{location['line']}"
+
+                instance_path = item.get("instance_path") or "-"
+                if role == "UNRESOLVED":
+                    query_references = item.get("query_references")
+                    query_sides = (
+                        ",".join(
+                            str(value)
+                            for value in query_references
+                            if value
+                        )
+                        if isinstance(query_references, list)
+                        else "-"
+                    ) or "-"
+                    rows.append(
+                        (
+                            "Elaborated internal unresolved",
+                            f"UNRESOLVED · instance={instance_path} · "
+                            f"query_references={query_sides} · "
+                            f"lhs={item.get('lhs_expression_type') or 'unknown'} · "
+                            f"rhs={item.get('rhs_expression_type') or 'unknown'} · "
+                            f"location={location_text}",
+                        )
+                    )
+                    continue
+
+                source_signal = item.get("source_signal") or "-"
+                target_signal = item.get("target_signal") or "-"
+                rows.append(
+                    (
+                        "Elaborated internal edge",
+                        f"{role} · {instance_path}.{source_signal} -> "
+                        f"{instance_path}.{target_signal} · "
+                        f"{item.get('assignment_type') or 'ASSIGNW'} · "
+                        f"location={location_text}",
+                    )
+                )
+
+            hidden_internal = len(internal_items) - min(
+                len(internal_items),
+                elaborated_limit,
+            )
+            if hidden_internal:
+                rows.append(
+                    (
+                        "Elaborated internal edge",
+                        f"{hidden_internal} additional internal evidence item(s) "
+                        "not shown",
+                    )
+                )
+
     elaborated_source_correlation = report.get("elaborated_source_correlation")
     trusted_source_correlation = (
         isinstance(elaborated_source_correlation, dict)
