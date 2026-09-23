@@ -74,6 +74,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
 - [x] Fail-closed normalized pin-binding schema validation and explicit unsupported child-pin query evidence without inferred parent relationships.
 - [x] Exact direct pin-binding to source instance-port edge correlation without promoting source roles to elaborated semantics.
+- [x] Generated-instance source-edge correlation when a direct pin selects one path from an explicitly enumerated ambiguous child-candidate set.
 - [x] Direction-qualified boundary driver/load roles for direct normalized pin bindings; unavailable direction remains explicitly unclassified.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
