@@ -632,6 +632,12 @@ def test_desktop_crossprobe_rows_fail_closed_on_untrusted_internal_assignw_evide
                 "status": "NORMALIZED",
                 "analysis_level": "future_internal_connectivity_contract",
                 "role_semantics": "direct_continuous_assignment",
+                "evidence_contract": (
+                    "verilator_module_root_assignw_direct_varref_only"
+                ),
+                "query_instance_path": "tb_top.dut",
+                "query_module": "passthrough",
+                "query_signal": "dst",
                 "drivers": [],
                 "loads": [],
                 "unresolved_assignments": [],
@@ -651,6 +657,12 @@ def test_desktop_crossprobe_rows_fail_closed_on_untrusted_internal_assignw_evide
                     "simulator_elaborated_module_root_assignw_direct_varref"
                 ),
                 "role_semantics": "direct_continuous_assignment",
+                "evidence_contract": (
+                    "verilator_module_root_assignw_direct_varref_only"
+                ),
+                "query_instance_path": "tb_top.dut",
+                "query_module": "passthrough",
+                "query_signal": "dst",
                 "drivers": [],
                 "loads": {},
                 "unresolved_assignments": [],
