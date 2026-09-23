@@ -228,8 +228,8 @@ def test_elaborated_hierarchy_lines_and_version_detection():
     ]
     assert VerilatorBackend._version_tuple("Verilator 5.020 2024-01-01") == (5, 20)
     assert VerilatorBackend._version_tuple("Verilator 5.052 devel") == (5, 52)
-    assert VerilatorBackend._version_tuple("Verilator 5.043") < (5, 44)
-    assert VerilatorBackend._version_tuple("Verilator 5.044") >= (5, 44)
+    assert VerilatorBackend._version_tuple("Verilator 5.021") < (5, 22)
+    assert VerilatorBackend._version_tuple("Verilator 5.022") >= (5, 22)
 
 
 def test_verilator_export_uses_documented_json_version_boundary(
@@ -245,8 +245,8 @@ def test_verilator_export_uses_documented_json_version_boundary(
     save_project(project)
 
     for version, expected_format, expected_flag in (
-        ("Verilator 5.043", "xml", "--xml-only"),
-        ("Verilator 5.044", "json", "--json-only"),
+        ("Verilator 5.021", "xml", "--xml-only"),
+        ("Verilator 5.022", "json", "--json-only"),
     ):
         backend = VerilatorBackend()
         monkeypatch.setattr(backend, "_tool", lambda: "verilator")
