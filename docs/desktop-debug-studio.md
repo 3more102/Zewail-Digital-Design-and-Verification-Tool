@@ -1,7 +1,7 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The v1.1 Desktop Debug Studio reuses the same persisted ZDDV evidence, deterministic
+design index, simulator adapters, and generated-artifact gates as the CLI.
 
 Launch it with:
 
@@ -10,41 +10,36 @@ zddv --project my_project gui
 zddv --project my_project gui --limit 100
 ```
 
-The `--limit` value bounds recent runs and each detailed evidence query.
+The `--limit` value bounds recent runs and detailed evidence queries.
 
-## Current views
+## Current views and actions
 
-The desktop provides:
+The desktop provides read-only verification summary, run/failure, source/hierarchy,
+elaborated hierarchy, waveform/cross-probe, assertion, formal, and UVM views.
 
-- verification summary cards and recent simulation runs;
-- deterministic failure-signature groups;
-- an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
-- read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
-- a detailed Assertions pane with status, assertion name, run, log line, and message;
-- a detailed Formal pane for the newest formal snapshot with property kind, status,
-  interpretation, depth, and message;
-- a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+The **Actions** tab exposes lint, build, and one simulation run through the existing
+core APIs. Preparing an action does not execute it. Execution requires explicit
+approval plus the exact review SHA-256, which binds the project configuration,
+matched source bytes, selected action, and runtime parameters. ZDDV rebuilds that
+review state immediately before execution and blocks the action if it changed.
 
-Formal-property and UVM-message database reads are explicitly bounded by the GUI
-limit. Assertion events already use the existing bounded history query.
+The **Generated Review** tab exposes the existing generated-verification workflow.
+A proposal can be staged only through the authoritative staging API under
+`.zddv/generated/drafts`. The tab previews the exact staged bytes and recomputes
+their SHA-256. Applying a draft requires both explicit approval and the exact
+content SHA-256, and final application is delegated to the existing core apply gate.
+Changed, missing, invalid, or already-applied drafts are refused.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Evidence refresh, source preview, hierarchy navigation, waveform probing, and
+persisted evidence inspection remain read-only. Source preview is authorized by the
+current deterministic design index rather than arbitrary filesystem paths.
 
-The shared SQLite helpers may initialize or upgrade the local
-`.zddv/results.db` schema when opened, consistent with existing reporting commands.
-Therefore "display-only" describes verification/project actions rather than a
-guarantee of zero filesystem writes.
+Lint/build/run can execute only through the SHA-confirmed Actions gate. Generated
+artifacts can mutate project sources only through the separate exact-content
+SHA-confirmed apply gate. The desktop does not invoke AI, does not automatically run
+verification, and does not automatically apply or execute generated code.
 
-## Remaining desktop milestones
-
-Waveform navigation and bounded targeted VCD probing are already integrated through
-the existing core APIs. The remaining desktop milestone is review-gated project
-actions, which must continue to reuse the existing core APIs rather than duplicate
-simulator-specific logic in the GUI.
+The shared SQLite helpers may initialize or upgrade the local `.zddv/results.db`
+schema when opened, consistent with existing reporting commands.
