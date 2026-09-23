@@ -72,8 +72,9 @@ burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/
 foundation. Core AXI4 exclusive-access semantics plus address-sideband width and AxREGION 4KB
 consistency checks, reserved AxCACHE encoding validation, B/M plus direction-aware
 Allocate/Other-Allocate memory-class evidence (with legacy RA/WA bit compatibility),
-optional USER-sideband transport evidence, and data-width-aware AxSIZE/WSTRB byte-lane
-validation are implemented; exhaustive optional AXI4 sideband/coherency semantics,
+optional USER-sideband transport evidence, data-width-aware AxSIZE/WSTRB byte-lane
+validation, and explicit absent-master-signal default normalization are implemented;
+exhaustive optional AXI4 sideband/coherency semantics,
 structural CDC signoff, and specification-complete UCIe checking remain planned.
 
 - [x] APB normalized-trace reconstruction and protocol checks.
@@ -86,6 +87,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 direction-aware AxCACHE Allocate/Other-Allocate semantics and memory-class evidence.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
+- [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
