@@ -6,6 +6,7 @@ import pytest
 
 from zddv.config import initialize_project, save_project
 from zddv.desktop_waveform import (
+    build_desktop_crossprobe_evidence_rows,
     build_desktop_waveform_snapshot,
     crossprobe_desktop_waveform_signal,
     probe_desktop_waveform_signal,
@@ -182,3 +183,87 @@ b0001 !
     assert result["elaborated_evidence"]["status"] == "NOT_PRESENT"
     assert not (project.root / ".zddv" / "design" / "connectivity.json").exists()
     assert not (project.root / ".zddv" / "debug" / "crossprobe.json").exists()
+
+
+def test_formats_elaborated_port_and_pin_evidence_for_desktop():
+    rows = build_desktop_crossprobe_evidence_rows(
+        {
+            "hierarchy_resolution": "simulator_elaborated",
+            "hierarchy": {
+                "design_path": "tb_top.dut",
+                "type": "counter",
+            },
+            "source": {
+                "unit": "counter",
+                "file": "rtl/counter.sv",
+                "declaration": {"line": 3},
+            },
+            "connectivity": {"drivers": [{}], "loads": [{}, {}]},
+            "elaborated_port": {
+                "status": "MATCHED",
+                "instance_path": "tb_top.dut",
+                "module": "counter",
+                "signal": "count",
+                "port": {"direction": "output"},
+            },
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "evidence_contract": "verilator_cell_pin_direct_varref_only",
+                "parent_signal_bindings": [],
+                "instance_port_bindings": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "relationship": "child_output_to_parent_signal",
+                    }
+                ],
+            },
+            "elaborated_evidence": {"status": "PRESENT"},
+        }
+    )
+
+    assert ("Hierarchy", "simulator_elaborated · tb_top.dut · counter") in rows
+    assert ("RTL source", "counter · rtl/counter.sv:3") in rows
+    assert ("Drivers", "1 source-structural item(s)") in rows
+    assert ("Loads", "2 source-structural item(s)") in rows
+    assert (
+        "Elaborated port",
+        "MATCHED · tb_top.dut.count · output · module=counter",
+    ) in rows
+    assert (
+        "Elaborated pins",
+        "0 parent-signal / 1 instance-port binding(s) · "
+        "contract=verilator_cell_pin_direct_varref_only",
+    ) in rows
+    assert (
+        "Elaborated pin",
+        "tb_top.dut.count -> tb_top.count · direction=output · "
+        "child_output_to_parent_signal",
+    ) in rows
+    assert ("Elaboration", "PRESENT") in rows
+
+
+def test_formats_missing_elaborated_pin_evidence_without_inference():
+    rows = build_desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_port": {
+                "status": "UNAVAILABLE",
+                "reason": "port_evidence_metadata_missing",
+            },
+            "elaborated_connectivity": None,
+            "elaborated_evidence": {"status": "NOT_PRESENT"},
+        }
+    )
+
+    assert (
+        "Elaborated port",
+        "UNAVAILABLE · port_evidence_metadata_missing",
+    ) in rows
+    assert (
+        "Elaborated pins",
+        "No normalized direct pin binding matched this signal.",
+    ) in rows
+    assert ("Elaboration", "NOT_PRESENT") in rows
