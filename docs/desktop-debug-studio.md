@@ -26,8 +26,9 @@ The desktop provides:
 - normalized Verilator JSON module ports displayed beneath matching elaborated instances,
   including direction and source evidence derived only from documented `ioDirection`;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
-  hierarchy/source/connectivity cross-probing, including explicit module-port matches when
-  normalized elaboration evidence is available;
+  hierarchy/source/connectivity cross-probing, including explicit module-port matches and
+  normalized direct pin/VARREF connectivity relationships when elaboration evidence is
+  available;
 - bounded detailed assertion, formal-property, and UVM-message panes.
 
 Source preview is authorized by the current design index, including explicitly configured
