@@ -248,3 +248,37 @@ def test_assertion_waveform_cli_supports_explicit_fst2vcd(
     assert event["waveform"]["parse_status"] == "indexed-via-fst2vcd"
     assert event["waveform"]["adapter"]["adapter"] == "fst2vcd"
     assert event["waveform"]["signal_hints"][0]["path"] == "tb_top.dut.count"
+
+
+
+def test_assertion_waveform_fst_is_not_converted_without_explicit_adapter(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-fst-default"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT counter_sequence FAIL final_count=8\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    report = correlate_assertions(project, run_id=run_id, status="FAIL")
+
+    assert report["summary"]["with_waveform"] == 1
+    assert report["summary"]["with_indexed_waveform"] == 0
+    assert report["summary"]["with_signal_hints"] == 0
+    event_waveform = report["events"][0]["waveform"]
+    assert event_waveform["format"] == "fst"
+    assert event_waveform["parse_status"] == "metadata-only"
+    assert "adapter" not in event_waveform
