@@ -94,6 +94,7 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
         "executes_verification": False,
         "invokes_ai": False,
         "applies_generated_artifacts": False,
+        "review_gated_project_actions": True,
     }
 
 
