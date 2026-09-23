@@ -1141,3 +1141,92 @@ def test_accepts_all_zero_write_strobe_as_partial_write():
     assert result["status"] == "PASS"
     assert result["transactions"][0]["write_strobes"] == [0]
     assert result["transactions"][0]["allowed_write_strobes"] == [0xF]
+
+
+def test_reports_mismatched_exclusive_read_write_attributes():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 9,
+                "ARADDR": 0x100,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARLOCK": 1,
+                "ARCACHE": 0x0,
+                "ARPROT": 0x0,
+                "ARQOS": 0x1,
+                "ARREGION": 0x1,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 9,
+                "RDATA": 0xAA,
+                "RRESP": "EXOKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 9,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWLOCK": 1,
+                "AWCACHE": 0x3,
+                "AWPROT": 0x1,
+                "AWQOS": 0x9,
+                "AWREGION": 0x2,
+            },
+            {
+                "cycle": 3,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x55,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+            },
+            {
+                "cycle": 4,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 9,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    mismatches = [
+        item for item in result["violations"]
+        if item["code"] == "exclusive_attribute_mismatch"
+    ]
+
+    assert result["status"] == "FAIL"
+    assert {item["signal"] for item in mismatches} == {
+        "AWCACHE",
+        "AWPROT",
+        "AWREGION",
+    }
+    assert {
+        item["signal"]: (item["expected"], item["actual"])
+        for item in mismatches
+    } == {
+        "AWCACHE": (0x0, 0x3),
+        "AWPROT": (0x0, 0x1),
+        "AWREGION": (0x1, 0x2),
+    }
+
+    write = next(
+        tx for tx in result["transactions"]
+        if tx["direction"] == "WRITE"
+    )
+    assert write["exclusive_pair_status"] == "attributes_mismatch"
+    assert write["exclusive_pair_mismatches"] == ["region", "cache", "prot"]
+    assert write["qos"] == 0x9
