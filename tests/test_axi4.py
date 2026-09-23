@@ -1948,3 +1948,90 @@ def test_axi4_rejects_invalid_id_width_metadata(width):
                 "samples": [],
             }
         )
+
+
+
+def test_positive_id_width_rejects_conflicting_absent_master_id():
+    with pytest.raises(
+        ValueError,
+        match="AWID cannot be declared absent_master_signals",
+    ):
+        analyze_axi4_trace(
+            {
+                "id_widths": {"ID_W_WIDTH": 2},
+                "absent_master_signals": ["AWID"],
+                "samples": [],
+            }
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="ARID cannot be declared absent_master_signals",
+    ):
+        analyze_axi4_trace(
+            {
+                "id_widths": {"ID_R_WIDTH": 2},
+                "absent_master_signals": ["ARID"],
+                "samples": [],
+            }
+        )
+
+
+def test_zero_id_width_accepts_matching_absent_master_default_without_false_presence():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x55,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["id"] == 0
+
+
+def test_zero_id_width_rejects_observed_id_even_without_handshake():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWID": 0,
+                    "BID": 0,
+                }
+            ],
+        }
+    )
+
+    violations = [
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    ]
+    assert result["status"] == "FAIL"
+    assert {item["signal"] for item in violations} == {"AWID", "BID"}
