@@ -27,6 +27,10 @@
   payload. Execution rebuilds the current configured backend and replays those
   recorded runtime inputs; the historical command is review evidence and is not
   executed verbatim.
+- Derive exact direct-binding elaborated driver/load roles only when normalized pin
+  bindings and normalized module-port directions agree, and surface their counts in
+  Desktop waveform cross-probe evidence. Bidirectional, missing-direction, and
+  unsupported-expression evidence remains explicit/partial rather than inferred.
 
 ### Release verification hardening
 
