@@ -7,6 +7,7 @@ from zddv.cli import main
 from zddv.config import initialize_project, save_project
 from zddv.crossprobe import build_crossprobe, write_crossprobe_report
 from zddv.design_index import build_design_index
+from zddv.design_revision import design_revision_fingerprint
 from zddv.waveform import build_waveform_index
 
 
@@ -286,6 +287,56 @@ def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
     assert "top='different_top'" in result["elaborated_evidence"]["error"]
     assert "elaborated_index_path" not in result
     assert result["hierarchy"]["design_path"] == "tb_top.dut"
+
+
+def test_crossprobe_rejects_persisted_elaboration_after_rtl_change(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated_path = project.root / ".zddv" / "design" / "elaborated.json"
+    elaborated_path.parent.mkdir(parents=True, exist_ok=True)
+    original_fingerprint = design_revision_fingerprint(project)
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "design_fingerprint": original_fingerprint,
+                "instances": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    counter = project.root / "rtl" / "counter.sv"
+    counter.write_text(
+        counter.read_text(encoding="utf-8") + "\n// design revision changed\n",
+        encoding="utf-8",
+    )
+
+    result = write_crossprobe_report(
+        project,
+        "tb_top.dut.count",
+        input_path="trace.vcd",
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["hierarchy_resolution"] == "source_structural"
+    assert result["elaborated_evidence"]["status"] == "STALE"
+    assert "design_fingerprint" in result["elaborated_evidence"]["error"]
+    assert result["elaborated_evidence"]["design_fingerprint"] == original_fingerprint
+    assert (
+        result["elaborated_evidence"]["current_design_fingerprint"]
+        == design_revision_fingerprint(project)
+    )
+    assert (
+        result["elaborated_evidence"]["current_design_fingerprint"]
+        != original_fingerprint
+    )
+    assert "elaborated_index_path" not in result
 
 
 def test_crossprobe_rejects_mismatched_explicit_elaboration(tmp_path: Path):
