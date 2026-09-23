@@ -68,9 +68,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-elaborated hierarchy normalized from Verilator JSON/XML parser output
 - VCD waveform scope/signal index with FST artifact metadata by default and explicit opt-in `fst2vcd` scope/signal indexing
 - Targeted VCD signal value probing plus explicit opt-in FST probing through `fst2vcd`, with exact/unique-name resolution, time windows, and bounded change capture
-- Assertion-to-waveform run correlation with conservative signal hints
+- Assertion-to-waveform run correlation with conservative signal hints and explicit opt-in FST indexing through `fst2vcd`
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
-- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
+- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution and explicit opt-in FST indexing through `fst2vcd`
 
 ## Quick Start
 
@@ -158,7 +158,9 @@ zddv --project my_project waveform-index --input trace.vcd
 zddv --project my_project waveform-probe tb_top.dut.count --start 0 --end 1000
 zddv --project my_project crossprobe tb_top.dut.count
 zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
+zddv --project my_project crossprobe tb_top.dut.count --input trace.fst --fst2vcd
 zddv --project my_project assertion-waveform --status FAIL
+zddv --project my_project assertion-waveform --status FAIL --fst2vcd
 zddv --project my_project lint
 zddv --project my_project build
 zddv --project my_project formal-bmc --depth 20
@@ -732,8 +734,8 @@ Probe reports are written under `.zddv/waveforms/probes/` and retain the source
 waveform fingerprint, timescale, normalized signal metadata, exact timestamps,
 values, truncation status, and converter provenance when used. This complements
 `crossprobe`, which maps waveform signals back to RTL source locations. Cross-probe
-and assertion-correlation flows still keep FST metadata-only unless they explicitly
-adopt the converter adapter in a future change.
+and assertion-correlation flows keep FST metadata-only by default and can opt in
+explicitly with `--fst2vcd [PATH]`; temporary VCD output is not retained.
 
 ### Debug Studio Drivers/Loads Navigation
 
@@ -759,7 +761,9 @@ complex lvalues, and other constructs require later simulator-AST enrichment.
 source hierarchy and searches the resolved SystemVerilog design unit for the
 signal declaration. Full waveform paths, source-style suffix paths, and unique
 short signal names are supported. Ambiguous short names are rejected so debug
-navigation does not silently select the wrong signal.
+navigation does not silently select the wrong signal. FST inputs remain metadata-only
+unless `--fst2vcd [PATH]` is supplied explicitly; converter provenance is retained
+in the cross-probe report while the original FST remains the artifact of record.
 
 The report records the waveform signal, matched hierarchy path, RTL unit,
 source declaration, source-level driver/load evidence, match type, and the
@@ -778,7 +782,10 @@ line, ZDDV returns a partial result instead of claiming an exact source location
 run and its waveform index. The JSON report includes run/test/seed context,
 waveform format and timescale, and conservative signal hints when assertion text
 contains an exact waveform signal name or hierarchical path. Missing waveforms
-remain visible as uncorrelated events rather than being silently dropped.
+remain visible as uncorrelated events rather than being silently dropped. FST-backed
+runs remain metadata-only unless `--fst2vcd [PATH]` is supplied; when enabled,
+converter provenance is recorded and one converted index is cached per run for the
+correlation pass.
 
 ### Evidence-Ranked Root-Cause Candidates
 

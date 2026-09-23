@@ -248,3 +248,84 @@ def test_assertion_waveform_cli_supports_explicit_fst2vcd(
     assert event["waveform"]["parse_status"] == "indexed-via-fst2vcd"
     assert event["waveform"]["adapter"]["adapter"] == "fst2vcd"
     assert event["waveform"]["signal_hints"][0]["path"] == "tb_top.dut.count"
+
+
+def test_assertion_correlation_fst_stays_metadata_only_without_adapter(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-fst-default"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT counter_sequence FAIL count=8\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    report = correlate_assertions(project, run_id=run_id)
+
+    assert report["summary"]["with_waveform"] == 1
+    assert report["summary"]["with_indexed_waveform"] == 0
+    assert report["summary"]["with_signal_hints"] == 0
+    assert report["events"][0]["waveform"]["parse_status"] == "metadata-only"
+    assert "adapter" not in report["events"][0]["waveform"]
+
+
+def test_assertion_correlation_converts_each_fst_run_once(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-fst-two-events"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT first_check FAIL count=8\n"
+        "ZDDV_ASSERT second_check FAIL count=9\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    calls = []
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd" if requested == "fst2vcd" else None,
+    )
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    report = correlate_assertions(
+        project,
+        run_id=run_id,
+        fst_converter="fst2vcd",
+    )
+
+    assert len(calls) == 1
+    assert report["summary"]["with_indexed_waveform"] == 2
+    assert report["summary"]["with_signal_hints"] == 2
+    assert all(
+        event["waveform"]["parse_status"] == "indexed-via-fst2vcd"
+        for event in report["events"]
+    )

@@ -104,9 +104,11 @@ fail-closed default.
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
 simulation run and recorded waveform. VCD-backed runs reuse the waveform index.
-The standalone waveform index/probe paths can opt in to the `fst2vcd` adapter,
-but assertion correlation does not invoke external conversion implicitly, so its
-FST-backed runs remain metadata-only until that flow explicitly adopts the adapter.
+Assertion correlation never invokes external conversion implicitly. FST-backed runs
+remain metadata-only by default; callers may opt in explicitly with the same
+`fst2vcd` adapter. An opted-in run is indexed once per correlation pass, reports
+`parse_status = "indexed-via-fst2vcd"`, preserves converter provenance, and keeps
+the original FST as the waveform artifact of record.
 
 Correlation is evidence-based: signal hints are emitted only when identifiers in
 the assertion name/message match a waveform signal by exact hierarchical path or
@@ -137,7 +139,10 @@ must be enriched by simulator AST/elaboration adapters rather than guessed.
 `zddv crossprobe <signal>` composes normalized evidence across the waveform,
 source hierarchy, and source-level connectivity models. Signal resolution is
 deterministic: exact path, unique hierarchy suffix, then unique short name.
-Ambiguous short-name matches are rejected instead of guessed.
+Ambiguous short-name matches are rejected instead of guessed. FST inputs remain
+metadata-only unless the caller explicitly supplies the `fst2vcd` adapter; opted-in
+cross-probing accepts `indexed-via-fst2vcd` evidence and records the adapter
+provenance without retaining the temporary VCD.
 
 A successful source match records the waveform signal, matched hierarchy scope,
 design instance path and type, source design unit, exact declaration line when
