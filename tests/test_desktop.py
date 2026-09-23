@@ -6,7 +6,7 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import build_desktop_snapshot, probe_desktop_waveform
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -240,3 +240,66 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+def test_desktop_waveform_navigation_and_probe_are_read_only(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "wave.vcd"
+    waveform.write_text(
+        """$date today $end
+$version zddv-test $end
+$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$var wire 1 " data $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+0"
+#5
+1!
+1"
+#10
+0!
+""",
+        encoding="utf-8",
+    )
+
+    record = _run_record("run-wave", "PASS", seed=3)
+    record["waveform"] = str(waveform)
+    record_run(project, record)
+
+    probes_dir = project.root / ".zddv" / "waveforms" / "probes"
+    assert not probes_dir.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    indexed = snapshot["latest_waveform"]
+
+    assert indexed is not None
+    assert indexed["run_id"] == "run-wave"
+    assert indexed["format"] == "vcd"
+    assert indexed["parse_status"] == "indexed"
+    assert indexed["summary"]["signals"] == 2
+    assert [signal["path"] for signal in indexed["signals"]] == [
+        "tb_top.clk",
+        "tb_top.data",
+    ]
+
+    result = probe_desktop_waveform(
+        indexed,
+        ["tb_top.data"],
+        start_time=0,
+        end_time=10,
+    )
+
+    assert result["summary"] == {
+        "signals": 1,
+        "total_changes": 2,
+        "truncated_signals": 0,
+    }
+    assert result["signals"][0]["changes"] == [
+        {"time": 0, "value": "0"},
+        {"time": 5, "value": "1"},
+    ]
+    assert not probes_dir.exists()
