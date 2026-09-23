@@ -132,7 +132,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Xcelium explicitly reported two-field covered/total count persistence without percentage-derived counts.
 - [x] Xcelium IMC detailed all-metrics/source report evidence capture, with tool failures retained without fabricating item data.
 - [x] Xcelium verified block/expression/toggle item-level normalization persisted in `.zddv/coverage/xcelium/items.json` and consumed by coverage-hole queries.
-- [x] Xcelium native IMC detail-section schema audit with source/section SHA-256 evidence and explicit unverified-layout classification.
+- [x] Xcelium native IMC detail-section schema audit with source/section SHA-256 evidence, schema-neutral lexical layout fingerprints, and explicit unverified-layout classification.
 - [ ] Xcelium FSM/functional item-level coverage-hole normalization pending verified native schemas.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
