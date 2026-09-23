@@ -217,3 +217,35 @@ def test_axi4_waveform_does_not_infer_zero_id_width_from_omitted_declarations(
 
     assert "ID_W_WIDTH" not in trace["id_widths"]
     assert trace["id_widths"]["ID_R_WIDTH"] == 2
+
+def test_axi4_waveform_rejects_mismatched_address_widths(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 12 u ARADDR [11:0] $end",
+        "$var wire 13 u ARADDR [12:0] $end",
+    )
+    bad = tmp_path / "mismatched_address_width.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="ADDR_WIDTH"):
+        extract_axi4_trace_from_vcd(bad)
+
+
+def test_axi4_waveform_rejects_address_width_above_protocol_property_limit(
+    tmp_path: Path,
+):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 12 e AWADDR [11:0] $end",
+        "$var wire 65 e AWADDR [64:0] $end",
+    )
+    source = source.replace(
+        "$var wire 12 u ARADDR [11:0] $end",
+        "$var wire 65 u ARADDR [64:0] $end",
+    )
+    bad = tmp_path / "oversized_address_width.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="1..64"):
+        extract_axi4_trace_from_vcd(bad)
+
