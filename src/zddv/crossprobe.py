@@ -428,6 +428,9 @@ def _elaborated_pin_connectivity(
     parent_signal_bindings: list[dict[str, Any]] = []
     instance_port_bindings: list[dict[str, Any]] = []
     unsupported_instance_port_bindings: list[dict[str, Any]] = []
+    boundary_drivers: list[dict[str, Any]] = []
+    boundary_loads: list[dict[str, Any]] = []
+    boundary_unclassified_bindings: list[dict[str, Any]] = []
 
     for binding in elaborated_index.get("pin_bindings", []):
         if not isinstance(binding, dict):
@@ -503,8 +506,23 @@ def _elaborated_pin_connectivity(
 
         if str(parent_path) == instance_path and str(parent_signal) == signal_name:
             parent_signal_bindings.append(normalized)
+            role_entry = {**normalized, "query_side": "parent_signal"}
+            if direction in {"output", "inout"}:
+                boundary_drivers.append(role_entry)
+            if direction in {"input", "inout"}:
+                boundary_loads.append(role_entry)
+            if direction not in {"input", "output", "inout"}:
+                boundary_unclassified_bindings.append(role_entry)
+
         if str(child_path) == instance_path and str(pin) == signal_name:
             instance_port_bindings.append(normalized)
+            role_entry = {**normalized, "query_side": "child_port"}
+            if direction in {"input", "inout"}:
+                boundary_drivers.append(role_entry)
+            if direction in {"output", "inout"}:
+                boundary_loads.append(role_entry)
+            if direction not in {"input", "output", "inout"}:
+                boundary_unclassified_bindings.append(role_entry)
 
     if (
         not parent_signal_bindings
@@ -528,6 +546,36 @@ def _elaborated_pin_connectivity(
         "instance_port_bindings": sorted(
             instance_port_bindings,
             key=lambda item: (
+                item["parent_instance_path"],
+                item["parent_signal"],
+            ),
+        ),
+        "boundary_drivers": sorted(
+            boundary_drivers,
+            key=lambda item: (
+                item["query_side"],
+                item["instance_path"],
+                item["pin"],
+                item["parent_instance_path"],
+                item["parent_signal"],
+            ),
+        ),
+        "boundary_loads": sorted(
+            boundary_loads,
+            key=lambda item: (
+                item["query_side"],
+                item["instance_path"],
+                item["pin"],
+                item["parent_instance_path"],
+                item["parent_signal"],
+            ),
+        ),
+        "boundary_unclassified_bindings": sorted(
+            boundary_unclassified_bindings,
+            key=lambda item: (
+                item["query_side"],
+                item["instance_path"],
+                item["pin"],
                 item["parent_instance_path"],
                 item["parent_signal"],
             ),
