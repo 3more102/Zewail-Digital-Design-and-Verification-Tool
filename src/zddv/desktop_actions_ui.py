@@ -22,7 +22,7 @@ def attach_desktop_actions_tab(notebook: Any, project: ProjectConfig) -> None:
 
     notice = (
         "No action runs automatically. Prepare a structured request, review it, "
-        "then enter its full SHA-256 exactly before Execute is enabled by policy."
+        "then enter its full SHA-256 exactly before execution is permitted."
     )
     ttk.Label(tab, text=notice, anchor="w", wraplength=1000).pack(
         fill="x", pady=(0, 8)
