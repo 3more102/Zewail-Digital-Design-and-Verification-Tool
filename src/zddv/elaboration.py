@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 from zddv.config import ProjectConfig
 from zddv.design_index import write_design_index
+from zddv.design_revision import design_revision_fingerprint
 from zddv.simulator import VerilatorBackend
 
 
@@ -497,6 +498,7 @@ def write_elaborated_index(
         "simulator_version": export["simulator_version"],
         "source_format": export["format"],
         "source_index": source_index["path"],
+        "design_fingerprint": design_revision_fingerprint(project),
         "modules": parsed["modules"],
         "instances": parsed["instances"],
         "summary": {
