@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from zddv.config import ProjectConfig
@@ -56,6 +57,42 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
+def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, Any]:
+    path = project.root / ".zddv" / "design" / "elaborated.json"
+    if not path.exists():
+        return {"status": "NOT_PRESENT", "path": str(path), "instances": []}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": str(exc),
+            "instances": [],
+        }
+
+    instances = payload.get("instances") if isinstance(payload, dict) else None
+    if not isinstance(instances, list):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy payload must contain an instances list",
+            "instances": [],
+        }
+
+    return {
+        "status": "PRESENT",
+        "path": str(path),
+        "created_at": payload.get("created_at"),
+        "simulator": payload.get("simulator"),
+        "simulator_version": payload.get("simulator_version"),
+        "source_format": payload.get("source_format"),
+        "summary": payload.get("summary") or {},
+        "instances": instances,
+    }
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -91,6 +128,7 @@ def build_desktop_snapshot(
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
         "design": design,
+        "elaborated_hierarchy": _load_persisted_elaborated_hierarchy(project),
     }
 
 
@@ -151,11 +189,13 @@ def launch_desktop_gui(
     evidence_tab = ttk.Frame(notebook, padding=8)
     sources_tab = ttk.Frame(notebook, padding=8)
     hierarchy_tab = ttk.Frame(notebook, padding=8)
+    elaborated_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
+    notebook.add(elaborated_tab, text="Elaborated")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -235,6 +275,24 @@ def launch_desktop_gui(
         hierarchy_tree.heading(column, text=title)
         hierarchy_tree.column(column, width=width, anchor="w")
     hierarchy_tree.pack(fill="both", expand=True)
+
+
+    elaborated_columns = ("module", "source", "state")
+    elaborated_tree = ttk.Treeview(
+        elaborated_tab,
+        columns=elaborated_columns,
+        show="tree headings",
+    )
+    elaborated_tree.heading("#0", text="Hierarchy path")
+    elaborated_tree.column("#0", width=420, anchor="w")
+    for column, title, width in (
+        ("module", "Module", 220),
+        ("source", "Source", 320),
+        ("state", "State", 120),
+    ):
+        elaborated_tree.heading(column, text=title)
+        elaborated_tree.column(column, width=width, anchor="w")
+    elaborated_tree.pack(fill="both", expand=True)
 
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
@@ -353,6 +411,35 @@ def launch_desktop_gui(
                 _insert_hierarchy(item_id, child)
 
         _insert_hierarchy("", design["hierarchy"])
+
+        _clear(elaborated_tree)
+        elaborated = current["elaborated_hierarchy"]
+        if elaborated["status"] == "PRESENT":
+            for row in elaborated["instances"]:
+                location = row.get("location") or {}
+                source = "-"
+                if location.get("path"):
+                    source = str(location["path"])
+                    if location.get("line"):
+                        source += f":{location['line']}"
+                state = "TOP" if row.get("top") else "INSTANCE"
+                elaborated_tree.insert(
+                    "",
+                    "end",
+                    text=row.get("path") or row.get("name") or "-",
+                    values=(row.get("module") or "-", source, state),
+                )
+        else:
+            elaborated_tree.insert(
+                "",
+                "end",
+                text=elaborated["status"],
+                values=(
+                    "-",
+                    elaborated.get("error") or elaborated["path"],
+                    elaborated["status"],
+                ),
+            )
 
         _clear(evidence_tree)
         assertions = current["assertions"]
