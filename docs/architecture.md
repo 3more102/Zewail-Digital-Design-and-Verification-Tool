@@ -245,6 +245,13 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+Explicit `id_widths` metadata can independently provide `ID_W_WIDTH` for AWID/BID
+and `ID_R_WIDTH` for ARID/RID, each in the Arm-defined range 0..32. Width zero
+means the associated ID signals are not present. A nonzero property requires an
+observed ID on an active associated channel and constrains that value to the
+configured unsigned width. The contract is opt-in: traces that omit `id_widths`
+retain the existing logical ID-zero compatibility behavior.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
@@ -271,9 +278,13 @@ the same standard AXI data width, verifies that WSTRB has one bit per data byte,
 derives `data_width_bits`, and records the declared VCD widths for USER signals
 that are actually present in the selected scope. Those observed widths feed the
 same core USER-width consistency checks; an undumped USER signal is not interpreted
-as proof of a zero-width physical signal. Physical waveform timestamps are recorded
-alongside logical sample cycles. The burst analyzer then propagates those timestamps
-into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
+as proof of a zero-width physical signal. The extractor also derives `ID_W_WIDTH`
+only when AWID and BID are both present with the same declared width, and
+`ID_R_WIDTH` only when ARID and RID are both present with the same declared width.
+A partial or undumped ID pair remains unknown rather than being interpreted as a
+zero-width physical interface. Physical waveform timestamps are recorded alongside
+logical sample cycles. The burst analyzer then propagates those timestamps into
+violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
 an input adapter; protocol semantics remain simulator-independent in the AXI4 core.
 
 The data-width and WSTRB rules follow Arm AMBA AXI and ACE Protocol Specification
