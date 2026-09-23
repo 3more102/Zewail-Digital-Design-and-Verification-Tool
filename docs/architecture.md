@@ -252,6 +252,13 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+Transaction-ID width follows the same explicit-evidence rule. Optional `id_widths`
+metadata can provide `ID_W_WIDTH` for AWID/BID and `ID_R_WIDTH` for ARID/RID.
+Each property is 0..32 bits; zero explicitly declares the associated pair absent.
+A positive request-ID width cannot be combined with an `absent_master_signals`
+declaration for AWID or ARID. Missing `id_widths` metadata remains unknown rather
+than being inferred from observed transaction values.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
@@ -275,9 +282,10 @@ signals; automatic selection succeeds only when exactly one complete AXI4 scope 
 The extractor streams selected VCD identifiers only, preserves optional transaction IDs,
 address sidebands, and USER sidebands when present, requires WDATA and RDATA to use
 the same standard AXI data width, verifies that WSTRB has one bit per data byte,
-derives `data_width_bits`, and records the declared VCD widths for USER signals
-that are actually present in the selected scope. Those observed widths feed the
-same core USER-width consistency checks; an undumped USER signal is not interpreted
+derives `data_width_bits`, records the declared VCD widths for USER signals,
+and records an AXI ID-width property only when both members of its AWID/BID or
+ARID/RID pair are dumped with matching widths. Those observed widths feed the
+same core consistency checks; an undumped USER or ID signal is not interpreted
 as proof of a zero-width physical signal. Physical waveform timestamps are recorded
 alongside logical sample cycles. The burst analyzer then propagates those timestamps
 into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
