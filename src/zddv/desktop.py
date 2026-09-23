@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
@@ -14,6 +15,8 @@ from zddv.storage import (
     run_statistics,
 )
 from zddv.triage import group_failure_records
+from zddv.waveform import build_waveform_index, select_waveform_run
+from zddv.waveform_probe import probe_vcd_signals
 
 
 def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
@@ -56,6 +59,42 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
+def _latest_waveform(project: ProjectConfig) -> dict[str, Any] | None:
+    """Build a read-only in-memory index for the newest recorded waveform."""
+    try:
+        selected = select_waveform_run(project)
+    except RuntimeError:
+        return None
+
+    waveform_path = Path(str(selected["waveform_path"])).resolve()
+    try:
+        index = build_waveform_index(
+            waveform_path,
+            run_id=str(selected["run_id"]),
+            project_name=project.name,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        return {
+            "status": "UNAVAILABLE",
+            "run_id": str(selected["run_id"]),
+            "artifact": {"path": str(waveform_path)},
+            "error": str(exc),
+            "signals": [],
+            "scopes": [],
+            "summary": {"scopes": 0, "signals": 0},
+        }
+
+    return {
+        **index,
+        "status": "READY" if index["parse_status"] == "indexed" else "METADATA_ONLY",
+        "selected_run": {
+            "run_id": selected["run_id"],
+            "test_name": selected.get("test_name"),
+            "status": selected["status"],
+        },
+    }
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -69,6 +108,7 @@ def build_desktop_snapshot(
     formal_rows = list_formal_result_snapshots(project, limit=1)
     uvm_rows = list_uvm_log_snapshots(project, limit=1)
     design = build_design_index(project)
+    waveform = _latest_waveform(project)
 
     return {
         "project": {
@@ -91,6 +131,7 @@ def build_desktop_snapshot(
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
         "design": design,
+        "waveform": waveform,
     }
 
 
@@ -151,11 +192,13 @@ def launch_desktop_gui(
     evidence_tab = ttk.Frame(notebook, padding=8)
     sources_tab = ttk.Frame(notebook, padding=8)
     hierarchy_tab = ttk.Frame(notebook, padding=8)
+    waveform_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
+    notebook.add(waveform_tab, text="Waveform")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -236,6 +279,68 @@ def launch_desktop_gui(
         hierarchy_tree.column(column, width=width, anchor="w")
     hierarchy_tree.pack(fill="both", expand=True)
 
+
+    waveform_status = tk.StringVar(value="No recorded waveform.")
+    ttk.Label(waveform_tab, textvariable=waveform_status).pack(fill="x", pady=(0, 6))
+
+    waveform_pane = ttk.PanedWindow(waveform_tab, orient="horizontal")
+    waveform_pane.pack(fill="both", expand=True)
+
+    signal_frame = ttk.LabelFrame(waveform_pane, text="Signals", padding=6)
+    probe_frame = ttk.LabelFrame(waveform_pane, text="Targeted probe", padding=6)
+    waveform_pane.add(signal_frame, weight=3)
+    waveform_pane.add(probe_frame, weight=2)
+
+    waveform_columns = ("scope", "name", "width", "type", "path")
+    waveform_tree = ttk.Treeview(
+        signal_frame,
+        columns=waveform_columns,
+        show="headings",
+        selectmode="browse",
+    )
+    for column, title, width in (
+        ("scope", "Scope", 220),
+        ("name", "Signal", 170),
+        ("width", "Bits", 60),
+        ("type", "Type", 90),
+        ("path", "Full path", 360),
+    ):
+        waveform_tree.heading(column, text=title)
+        waveform_tree.column(column, width=width, anchor="w")
+    waveform_tree.pack(fill="both", expand=True)
+
+    controls = ttk.Frame(probe_frame)
+    controls.pack(fill="x")
+    probe_start = tk.StringVar(value="")
+    probe_end = tk.StringVar(value="")
+    probe_limit = tk.StringVar(value="200")
+    for column, (label, variable, width) in enumerate((
+        ("Start", probe_start, 10),
+        ("End", probe_end, 10),
+        ("Max changes", probe_limit, 12),
+    )):
+        ttk.Label(controls, text=label).grid(row=0, column=column * 2, sticky="w")
+        ttk.Entry(controls, textvariable=variable, width=width).grid(
+            row=0,
+            column=column * 2 + 1,
+            padx=(4, 12),
+            sticky="w",
+        )
+
+    probe_status = tk.StringVar(value="Select a VCD signal, then probe it.")
+    ttk.Label(probe_frame, textvariable=probe_status).pack(fill="x", pady=(8, 6))
+
+    probe_tree = ttk.Treeview(
+        probe_frame,
+        columns=("time", "value"),
+        show="headings",
+    )
+    probe_tree.heading("time", text="Time")
+    probe_tree.heading("value", text="Value")
+    probe_tree.column("time", width=140, anchor="e")
+    probe_tree.column("value", width=280, anchor="w")
+    probe_tree.pack(fill="both", expand=True)
+
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
     ttk.Label(
@@ -251,6 +356,58 @@ def launch_desktop_gui(
     def _clear(tree) -> None:
         for item in tree.get_children():
             tree.delete(item)
+
+
+    def _optional_nonnegative_int(label: str, raw: str) -> int | None:
+        value = raw.strip()
+        if not value:
+            return None
+        parsed = int(value)
+        if parsed < 0:
+            raise ValueError(f"{label} must be >= 0")
+        return parsed
+
+    def _probe_selected_waveform(_event=None) -> None:
+        waveform = current.get("waveform")
+        selected = waveform_tree.selection()
+        if not waveform or not selected:
+            probe_status.set("Select an indexed VCD signal first.")
+            return
+        values = waveform_tree.item(selected[0], "values")
+        signal_path = str(values[4]) if len(values) >= 5 else ""
+        if not signal_path:
+            probe_status.set("Selected row has no waveform signal path.")
+            return
+        try:
+            start_time = _optional_nonnegative_int("Start", probe_start.get())
+            end_time = _optional_nonnegative_int("End", probe_end.get())
+            max_changes = int(probe_limit.get().strip() or "200")
+            result = probe_vcd_signals(
+                waveform["artifact"]["path"],
+                [signal_path],
+                start_time=start_time,
+                end_time=end_time,
+                max_changes=max_changes,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            probe_status.set(f"Probe error: {exc}")
+            return
+
+        _clear(probe_tree)
+        signal = result["signals"][0]
+        for change in signal["changes"]:
+            probe_tree.insert(
+                "",
+                "end",
+                values=(change["time"], change["value"]),
+            )
+        suffix = " · truncated" if signal["truncated"] else ""
+        probe_status.set(
+            f"{signal['path']} · {len(signal['changes'])} changes · "
+            f"timescale={result['timescale'] or '-'}{suffix}"
+        )
+
+    waveform_tree.bind("<Double-1>", _probe_selected_waveform)
 
     def refresh() -> None:
         nonlocal current
@@ -354,6 +511,46 @@ def launch_desktop_gui(
 
         _insert_hierarchy("", design["hierarchy"])
 
+
+        waveform = current["waveform"]
+        _clear(waveform_tree)
+        _clear(probe_tree)
+        if waveform is None:
+            waveform_status.set("No run with an existing waveform artifact was found.")
+            probe_status.set("No waveform is available to probe.")
+        elif waveform.get("status") == "UNAVAILABLE":
+            waveform_status.set(
+                f"Waveform unavailable for run {waveform.get('run_id', '-')}: "
+                f"{waveform.get('error', 'unknown error')}"
+            )
+            probe_status.set("Waveform probing is unavailable.")
+        else:
+            selected_run = waveform.get("selected_run") or {}
+            summary = waveform.get("summary") or {}
+            waveform_status.set(
+                f"run={selected_run.get('run_id', waveform.get('run_id', '-'))} · "
+                f"format={waveform.get('format', '-')} · "
+                f"status={waveform.get('parse_status', '-')} · "
+                f"signals={summary.get('signals', 0)} · "
+                f"timescale={waveform.get('timescale') or '-'}"
+            )
+            for signal in waveform.get("signals", []):
+                waveform_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        signal.get("scope", ""),
+                        signal.get("name", ""),
+                        signal.get("width", ""),
+                        signal.get("var_type", ""),
+                        signal.get("path", ""),
+                    ),
+                )
+            if waveform.get("format") == "vcd" and waveform.get("parse_status") == "indexed":
+                probe_status.set("Select a VCD signal, then click Probe selected.")
+            else:
+                probe_status.set("Targeted probing currently requires an indexed VCD.")
+
         _clear(evidence_tree)
         assertions = current["assertions"]
         evidence_tree.insert(
@@ -417,6 +614,7 @@ def launch_desktop_gui(
             f"{design['summary']['instances']} instances"
         )
 
+    ttk.Button(probe_frame, text="Probe selected", command=_probe_selected_waveform).pack(anchor="e", pady=(8, 0))
     ttk.Button(header, text="Refresh", command=refresh).pack(side="right", padx=(0, 12))
     refresh()
     window.mainloop()
