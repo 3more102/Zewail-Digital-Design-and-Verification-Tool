@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from zddv.cli import main
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop import build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -94,6 +95,8 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
         "executes_verification": False,
         "invokes_ai": False,
         "applies_generated_artifacts": False,
+        "executes_elaboration": False,
+        "edits_sources": False,
     }
 
 
@@ -131,3 +134,80 @@ def test_desktop_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+
+def test_desktop_snapshot_indexes_sources_without_writing_design_artifact(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    source = project.root / "rtl" / "top.sv"
+    source.write_text(
+        """
+module leaf;
+endmodule
+
+module top;
+    leaf u_leaf();
+endmodule
+""".lstrip(),
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    snapshot = build_desktop_snapshot(project)
+    source_index = snapshot["design"]["source_index"]
+
+    assert source_index["summary"] == {
+        "files": 1,
+        "units": 2,
+        "instances": 1,
+        "duplicate_unit_names": 0,
+    }
+    assert source_index["hierarchy"]["path"] == "top"
+    assert source_index["hierarchy"]["children"][0]["path"] == "top.u_leaf"
+    assert snapshot["design"]["elaborated"] is None
+    assert not (project.root / ".zddv" / "design" / "index.json").exists()
+
+
+def test_desktop_snapshot_reads_existing_elaborated_hierarchy_without_execution(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    source = project.root / "rtl" / "top.sv"
+    source.write_text("module top; endmodule\n", encoding="utf-8")
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    artifact = design_dir / "elaborated.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "instances": [
+                    {
+                        "path": "top",
+                        "name": "top",
+                        "module": "top",
+                        "top": True,
+                        "location": {"path": "rtl/top.sv", "line": 1},
+                    }
+                ],
+                "modules": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project)
+    elaborated = snapshot["design"]["elaborated"]
+
+    assert elaborated["status"] == "AVAILABLE"
+    assert elaborated["path"] == str(artifact.resolve())
+    assert elaborated["index"]["instances"][0]["path"] == "top"
