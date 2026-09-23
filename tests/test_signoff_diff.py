@@ -94,6 +94,41 @@ def test_signoff_diff_identical_bundles_are_stable(tmp_path: Path):
     assert first["provenance"]["diff_sha256"] == second["provenance"]["diff_sha256"]
 
 
+    assert first["baseline"]["path"] == ".zddv/signoff/baseline.json"
+    assert first["current"]["path"] == ".zddv/signoff/current.json"
+
+
+def test_signoff_diff_hash_is_portable_across_project_roots(tmp_path: Path):
+    results = []
+    for root_name in ("workspace-a", "workspace-b"):
+        project = initialize_project(tmp_path / root_name / "demo")
+        record_run(project, _run_record("run-pass"))
+        write_verification_signoff_bundle(
+            project,
+            run_ids=["run-pass"],
+            output=".zddv/signoff/baseline.json",
+        )
+        write_verification_signoff_bundle(
+            project,
+            run_ids=["run-pass"],
+            output=".zddv/signoff/current.json",
+        )
+        results.append(
+            compare_verification_signoff_bundles(
+                project,
+                ".zddv/signoff/baseline.json",
+                ".zddv/signoff/current.json",
+            )
+        )
+
+    assert results[0]["baseline"]["path"] == ".zddv/signoff/baseline.json"
+    assert results[1]["baseline"]["path"] == ".zddv/signoff/baseline.json"
+    assert (
+        results[0]["provenance"]["diff_sha256"]
+        == results[1]["provenance"]["diff_sha256"]
+    )
+
+
 def test_signoff_diff_reports_exact_policy_and_evidence_changes(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     record_run(project, _run_record("run-a", seed=1))
