@@ -5,6 +5,7 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
+from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
     assertion_statistics,
     list_coverage_score_snapshots,
@@ -196,6 +197,7 @@ def launch_desktop_gui(
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
     notebook.add(elaborated_tab, text="Elaborated")
+    attach_desktop_waveform_tab(notebook, project)
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
