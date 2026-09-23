@@ -1977,6 +1977,36 @@ def test_axi4_zero_id_width_accepts_declared_absent_master_id_default():
 
 
 @pytest.mark.parametrize(
+    ("property_name", "signal"),
+    [
+        ("ID_W_WIDTH", "AWID"),
+        ("ID_W_WIDTH", "BID"),
+        ("ID_R_WIDTH", "ARID"),
+        ("ID_R_WIDTH", "RID"),
+    ],
+)
+def test_axi4_zero_id_width_rejects_observed_signal_without_channel_activity(
+    property_name,
+    signal,
+):
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {property_name: 0},
+            "samples": [{"cycle": 0, signal: 0}],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == signal
+    assert violation["expected"] == "signal absent"
+
+
+@pytest.mark.parametrize(
     ("property_name", "manager_signal"),
     [("ID_W_WIDTH", "AWID"), ("ID_R_WIDTH", "ARID")],
 )
