@@ -225,7 +225,8 @@ generated code automatically.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
-- [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.\n- [x] Review-gated generated-artifact stage/preview/apply using exact content SHA-256 and existing core safeguards.
+- [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+- [x] Review-gated generated-artifact stage/preview/apply using exact content SHA-256 and existing core safeguards.
 
 ## Long-Term Direction
 
