@@ -22,6 +22,7 @@
 
 ### Elaborated boundary connectivity
 
+- Validate the trusted persisted direct pin-binding contract and item semantics before cross-probing, including expression status, endpoint identity, generated-scope shape, and unsupported-count consistency.
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
 - Keep unavailable or ambiguous direction explicitly unclassified, and keep unsupported complex pin expressions outside driver/load role inference.
 - Preserve the boundary-only scope: this does not claim complete simulator-elaborated internal drivers or loads.
