@@ -190,6 +190,149 @@ def test_parse_verilator_json_normalizes_documented_module_io_direction(tmp_path
     )
 
 
+def test_parse_verilator_json_normalizes_simple_cell_pin_bindings(tmp_path: Path):
+    rtl = tmp_path / "rtl" / "bindings.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module leaf(input logic a, input logic b, input logic c); endmodule\n"
+        "module top(input logic src); leaf u_leaf(.a(src), .b(src[0]), .c()); endmodule\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "topModule": True,
+                "level": 1,
+                "loc": "d,2:8,2:76",
+                "stmtsp": [
+                    {
+                        "type": "VAR",
+                        "name": "src",
+                        "verilogName": "src",
+                        "loc": "d,2:24,2:27",
+                    },
+                    {
+                        "type": "CELL",
+                        "name": "u_leaf",
+                        "origName": "u_leaf",
+                        "verilogName": "u_leaf",
+                        "modName": "leaf",
+                        "modp": "(B)",
+                        "loc": "d,2:34,2:74",
+                        "pinsp": [
+                            {
+                                "type": "PIN",
+                                "name": "a",
+                                "modVarp": "(PA)",
+                                "loc": "d,2:46,2:47",
+                                "exprp": [
+                                    {
+                                        "type": "VARREF",
+                                        "name": "src",
+                                        "access": "RD",
+                                        "varp": "(VS)",
+                                        "loc": "d,2:48,2:51",
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "PIN",
+                                "name": "b",
+                                "modVarp": "(PB)",
+                                "loc": "d,2:55,2:56",
+                                "exprp": [
+                                    {
+                                        "type": "SEL",
+                                        "name": "",
+                                        "loc": "d,2:57,2:63",
+                                        "fromp": [
+                                            {
+                                                "type": "VARREF",
+                                                "name": "src",
+                                                "access": "RD",
+                                                "varp": "(VS)",
+                                                "loc": "d,2:57,2:60",
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "PIN",
+                                "name": "c",
+                                "modVarp": "(PC)",
+                                "loc": "d,2:67,2:68",
+                                "exprp": [],
+                            },
+                        ],
+                    },
+                ],
+            },
+            {
+                "type": "MODULE",
+                "name": "leaf",
+                "origName": "leaf",
+                "verilogName": "leaf",
+                "addr": "(B)",
+                "level": 2,
+                "loc": "d,1:8,1:60",
+            },
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/bindings.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert result["pin_binding_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_cell_pin_single_varref",
+        "normalized": 1,
+        "unsupported": 1,
+        "unconnected": 1,
+    }
+    assert [item["status"] for item in result["pin_bindings"]] == [
+        "NORMALIZED",
+        "UNSUPPORTED",
+        "UNCONNECTED",
+    ]
+    normalized = result["pin_bindings"][0]
+    assert normalized["instance"] == "top.u_leaf"
+    assert normalized["module"] == "leaf"
+    assert normalized["port"] == "a"
+    assert normalized["port_var_pointer"] == "(PA)"
+    assert normalized["signal"] == "src"
+    assert normalized["signal_var_pointer"] == "(VS)"
+    assert normalized["access"] == "RD"
+    assert normalized["pin_location"]["path"] == "rtl/bindings.sv"
+    assert result["pin_bindings"][1]["expression_types"] == ["SEL"]
+    assert result["pin_bindings"][2]["reason"] == "no_pin_expression"
+
+
 def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
     rtl = tmp_path / "rtl" / "design.sv"
     rtl.parent.mkdir()
@@ -327,6 +470,12 @@ def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
         "source_format": "xml",
         "reason": "legacy_xml_port_schema_not_normalized",
     }
+    assert result["pin_bindings"] == []
+    assert result["pin_binding_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_pin_binding_schema_not_normalized",
+    }
 
 
 def test_elaborated_hierarchy_lines_and_version_detection():
@@ -442,11 +591,25 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
     assert Path(result["path"]).exists()
     assert Path(result["source_index"]).exists()
     assert Path(result["hierarchy_path"]).read_text(encoding="utf-8") == "top: top\n"
-    assert result["summary"] == {"modules": 1, "instances": 1, "ports": 0}
+    assert result["summary"] == {
+        "modules": 1,
+        "instances": 1,
+        "ports": 0,
+        "pin_bindings": 0,
+    }
     assert result["ports"] == []
     assert result["port_evidence"] == {
         "status": "NORMALIZED",
         "source_format": "json",
         "contract": "verilator_module_var_io_direction",
+    }
+    assert result["pin_bindings"] == []
+    assert result["pin_binding_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_cell_pin_single_varref",
+        "normalized": 0,
+        "unsupported": 0,
+        "unconnected": 0,
     }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)
