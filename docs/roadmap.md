@@ -51,7 +51,8 @@ targeted waveform value-change probing, source-level structural drivers/loads na
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
 preference and simulator-elaborated instance qualification, conservative direct
 CELL-pin-to-VARREF elaborated connectivity with complex expressions retained as
-unsupported evidence, assertion-to-waveform correlation, and the
+unsupported evidence and bidirectional waveform cross-probing across those exact
+bindings, assertion-to-waveform correlation, and the
 first protocol transaction reconstruction path (normalized APB traces) are
 implemented. Exact elaborated drivers/loads remain future enrichment work.
 
@@ -65,6 +66,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
+- [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
