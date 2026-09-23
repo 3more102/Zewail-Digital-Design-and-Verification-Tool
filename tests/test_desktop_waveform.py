@@ -281,3 +281,29 @@ def test_desktop_crossprobe_rows_bound_and_deduplicate_elaborated_pin_endpoints(
         "parent_signal_to_child_input"
     )
     assert pin_rows[6] == "2 additional binding(s) hidden"
+
+def test_desktop_crossprobe_rows_suppress_untrusted_elaborated_connectivity():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "unknown",
+                "parent_signal_bindings": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "relationship": "child_output_to_parent_signal",
+                    }
+                ],
+                "instance_port_bindings": [],
+            }
+        }
+    )
+
+    assert not any(
+        kind in {"Elaborated connectivity", "Elaborated pin"}
+        for kind, _details in rows
+    )
+
