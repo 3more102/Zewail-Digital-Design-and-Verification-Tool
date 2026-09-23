@@ -298,10 +298,11 @@ def build_crossprobe(
     elaborated_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Correlate a waveform signal with elaborated/source hierarchy and RTL evidence."""
-    if waveform_index.get("parse_status") != "indexed":
+    parse_status = waveform_index.get("parse_status")
+    if parse_status not in {"indexed", "indexed-via-fst2vcd"}:
         raise RuntimeError(
             "Cross-probing requires a signal-indexed waveform. "
-            f"Current parse status: {waveform_index.get('parse_status', 'unknown')}"
+            f"Current parse status: {parse_status or 'unknown'}"
         )
 
     design = design_index or build_design_index(project)
@@ -455,7 +456,9 @@ def build_crossprobe(
         "waveform": {
             "run_id": waveform_index.get("run_id"),
             "format": waveform_index.get("format"),
+            "parse_status": waveform_index.get("parse_status"),
             "artifact": waveform_index.get("artifact"),
+            "adapter": waveform_index.get("adapter"),
             "signal": signal,
         },
         "hierarchy": hierarchy_payload,
@@ -474,6 +477,8 @@ def write_crossprobe_report(
     run_id: str | None = None,
     input_path: str | Path | None = None,
     output: str | Path = ".zddv/debug/crossprobe.json",
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     design = write_design_index(project)
     connectivity = write_connectivity_index(project)
@@ -481,6 +486,8 @@ def write_crossprobe_report(
         project,
         run_id=run_id,
         input_path=input_path,
+        fst_converter=fst_converter,
+        fst_converter_timeout_s=fst_converter_timeout_s,
     )
     elaborated_evidence = load_persisted_elaborated_evidence(project)
     elaborated_index = (
