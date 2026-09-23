@@ -343,7 +343,19 @@ def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
 def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     project = _project(tmp_path)
     waveform_path = project.root / "trace.vcd"
-    waveform_path.write_text(VCD, encoding="utf-8")
+    boundary_vcd = VCD.replace(
+        "$var wire 1 ! clk $end\n$scope module dut $end",
+        "$var wire 1 ! clk $end\n"
+        "$var wire 4 @ count [3:0] $end\n"
+        "$scope module dut $end",
+    ).replace(
+        "$var wire 4 # count [3:0] $end",
+        "$var wire 1 % clk $end\n$var wire 4 # count [3:0] $end",
+    ).replace(
+        "#0\n0!\nb0000 #",
+        "#0\n0!\nb0000 @\n0%\nb0000 #",
+    )
+    waveform_path.write_text(boundary_vcd, encoding="utf-8")
 
     elaborated = {
         "schema_version": 1,
@@ -434,6 +446,28 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["parent_signal"] == "clk"
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
+    assert parent_connectivity["boundary_drivers"] == []
+    assert len(parent_connectivity["boundary_loads"]) == 1
+    assert parent_connectivity["boundary_loads"][0]["query_side"] == "parent_signal"
+    assert parent_connectivity["boundary_unclassified_bindings"] == []
+
+    parent_count = build_crossprobe(
+        project, "TOP.tb_top.count", waveform,
+        design_index=design, elaborated_index=elaborated,
+    )
+    parent_count_connectivity = parent_count["elaborated_connectivity"]
+    assert len(parent_count_connectivity["boundary_drivers"]) == 1
+    assert parent_count_connectivity["boundary_loads"] == []
+    assert parent_count_connectivity["boundary_drivers"][0]["query_side"] == "parent_signal"
+
+    child_clk = build_crossprobe(
+        project, "tb_top.dut.clk", waveform,
+        design_index=design, elaborated_index=elaborated,
+    )
+    child_clk_connectivity = child_clk["elaborated_connectivity"]
+    assert len(child_clk_connectivity["boundary_drivers"]) == 1
+    assert child_clk_connectivity["boundary_loads"] == []
+    assert child_clk_connectivity["boundary_drivers"][0]["query_side"] == "child_port"
 
     parent_correlation = parent["elaborated_source_correlation"]
     assert parent_correlation["analysis_level"] == (
@@ -467,6 +501,10 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+    assert child_connectivity["boundary_drivers"] == []
+    assert len(child_connectivity["boundary_loads"]) == 1
+    assert child_connectivity["boundary_loads"][0]["query_side"] == "child_port"
+    assert child_connectivity["boundary_unclassified_bindings"] == []
 
     child_correlation = child["elaborated_source_correlation"]
     assert child_correlation["role_semantics"] == "source_structural_only"
@@ -493,9 +531,13 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         design_index=design,
         elaborated_index=elaborated,
     )
-    ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
+    ungated_connectivity = ungated["elaborated_connectivity"]
+    ungated_binding = ungated_connectivity["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    assert ungated_connectivity["boundary_drivers"] == []
+    assert ungated_connectivity["boundary_loads"] == []
+    assert len(ungated_connectivity["boundary_unclassified_bindings"]) == 1
     assert ungated["elaborated_source_correlation"]["correlations"][0][
         "status"
     ] == "MATCHED"
@@ -537,6 +579,9 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert unsupported_pin["expression_type"] == "AND"
     assert "parent_signal" not in unsupported_pin
     assert "relationship" not in unsupported_pin
+    assert unsupported_connectivity["boundary_drivers"] == []
+    assert unsupported_connectivity["boundary_loads"] == []
+    assert unsupported_connectivity["boundary_unclassified_bindings"] == []
 
 
 def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
