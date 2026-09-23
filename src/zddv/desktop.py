@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.design_index import build_design_index
 from zddv.storage import (
     assertion_statistics,
     list_coverage_score_snapshots,
@@ -55,6 +57,90 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
+def _flatten_source_hierarchy(
+    node: dict[str, Any],
+    units_by_name: dict[str, dict[str, Any]],
+    *,
+    parent_path: str | None = None,
+) -> list[dict[str, Any]]:
+    unit = units_by_name.get(str(node.get("type") or ""))
+    row = {
+        "path": str(node.get("path") or ""),
+        "parent_path": parent_path,
+        "instance": str(node.get("instance") or ""),
+        "type": str(node.get("type") or ""),
+        "resolved": bool(node.get("resolved", True)),
+        "recursive": bool(node.get("recursive", False)),
+        "file": None if unit is None else unit.get("file"),
+        "line": None if unit is None else unit.get("line"),
+    }
+    rows = [row]
+    for child in node.get("children", []):
+        rows.extend(
+            _flatten_source_hierarchy(
+                child,
+                units_by_name,
+                parent_path=row["path"] or parent_path,
+            )
+        )
+    return rows
+
+
+def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, Any]:
+    path = project.root / ".zddv" / "design" / "elaborated.json"
+    if not path.exists():
+        return {"status": "NOT_PRESENT", "path": str(path), "instances": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": str(exc),
+            "instances": [],
+        }
+    if not isinstance(payload, dict) or not isinstance(payload.get("instances", []), list):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy payload must contain an instances list",
+            "instances": [],
+        }
+    return {
+        "status": "PRESENT",
+        "path": str(path),
+        "created_at": payload.get("created_at"),
+        "simulator": payload.get("simulator"),
+        "simulator_version": payload.get("simulator_version"),
+        "source_format": payload.get("source_format"),
+        "summary": payload.get("summary") or {},
+        "instances": payload.get("instances", []),
+    }
+
+
+def _build_design_view(project: ProjectConfig) -> dict[str, Any]:
+    index = build_design_index(project)
+    units_by_name: dict[str, dict[str, Any]] = {}
+    for unit in index["units"]:
+        units_by_name.setdefault(unit["name"], unit)
+    return {
+        "summary": index["summary"],
+        "files": index["files"],
+        "units": [
+            {
+                "kind": unit["kind"],
+                "name": unit["name"],
+                "file": unit["file"],
+                "line": unit["line"],
+                "end_line": unit["end_line"],
+            }
+            for unit in index["units"]
+        ],
+        "hierarchy": _flatten_source_hierarchy(index["hierarchy"], units_by_name),
+        "elaborated": _load_persisted_elaborated_hierarchy(project),
+    }
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -88,6 +174,7 @@ def build_desktop_snapshot(
         "latest_coverage": _latest_coverage(project),
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
+        "design": _build_design_view(project),
     }
 
 
@@ -146,9 +233,11 @@ def launch_desktop_gui(
     run_tab = ttk.Frame(notebook, padding=8)
     failure_tab = ttk.Frame(notebook, padding=8)
     evidence_tab = ttk.Frame(notebook, padding=8)
+    design_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
+    notebook.add(design_tab, text="Design")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -194,6 +283,60 @@ def launch_desktop_gui(
         evidence_tree.heading(column, text=title)
         evidence_tree.column(column, width=width, anchor="w")
     evidence_tree.pack(fill="both", expand=True)
+
+
+    design_notebook = ttk.Notebook(design_tab)
+    design_notebook.pack(fill="both", expand=True)
+    units_tab = ttk.Frame(design_notebook, padding=6)
+    source_hierarchy_tab = ttk.Frame(design_notebook, padding=6)
+    elaborated_tab = ttk.Frame(design_notebook, padding=6)
+    design_notebook.add(units_tab, text="Source Units")
+    design_notebook.add(source_hierarchy_tab, text="Source Hierarchy")
+    design_notebook.add(elaborated_tab, text="Persisted Elaborated")
+
+    unit_columns = ("kind", "name", "file", "line", "end_line")
+    unit_tree = ttk.Treeview(units_tab, columns=unit_columns, show="headings")
+    for column, title, width in (
+        ("kind", "Kind", 100),
+        ("name", "Unit", 180),
+        ("file", "Source file", 420),
+        ("line", "Line", 80),
+        ("end_line", "End", 80),
+    ):
+        unit_tree.heading(column, text=title)
+        unit_tree.column(column, width=width, anchor="w")
+    unit_tree.pack(fill="both", expand=True)
+
+    hierarchy_tree = ttk.Treeview(
+        source_hierarchy_tab,
+        columns=("type", "source", "path"),
+        show="tree headings",
+    )
+    hierarchy_tree.heading("#0", text="Instance")
+    hierarchy_tree.column("#0", width=220, anchor="w")
+    for column, title, width in (
+        ("type", "Type", 180),
+        ("source", "Source", 360),
+        ("path", "Hierarchy path", 360),
+    ):
+        hierarchy_tree.heading(column, text=title)
+        hierarchy_tree.column(column, width=width, anchor="w")
+    hierarchy_tree.pack(fill="both", expand=True)
+
+    elaborated_columns = ("path", "module", "source")
+    elaborated_tree = ttk.Treeview(
+        elaborated_tab,
+        columns=elaborated_columns,
+        show="headings",
+    )
+    for column, title, width in (
+        ("path", "Hierarchy path", 420),
+        ("module", "Module", 220),
+        ("source", "Source", 360),
+    ):
+        elaborated_tree.heading(column, text=title)
+        elaborated_tree.column(column, width=width, anchor="w")
+    elaborated_tree.pack(fill="both", expand=True)
 
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
@@ -308,6 +451,60 @@ def launch_desktop_gui(
                 "",
                 "end",
                 values=("UVM", uvm["status"], details, uvm["snapshot_id"]),
+            )
+
+        _clear(unit_tree)
+        for row in current["design"]["units"]:
+            unit_tree.insert(
+                "",
+                "end",
+                values=(
+                    row["kind"],
+                    row["name"],
+                    row["file"],
+                    row["line"],
+                    row["end_line"],
+                ),
+            )
+
+        _clear(hierarchy_tree)
+        hierarchy_items: dict[str, str] = {}
+        for row in current["design"]["hierarchy"]:
+            parent_item = hierarchy_items.get(row["parent_path"] or "", "")
+            state = "UNRESOLVED" if not row["resolved"] else ("RECURSIVE" if row["recursive"] else "")
+            source = "-"
+            if row["file"]:
+                source = f"{row['file']}:{row['line']}" if row["line"] else str(row["file"])
+            label = row["instance"] + (f" [{state}]" if state else "")
+            item = hierarchy_tree.insert(
+                parent_item,
+                "end",
+                text=label,
+                values=(row["type"], source, row["path"]),
+                open=True,
+            )
+            hierarchy_items[row["path"]] = item
+
+        _clear(elaborated_tree)
+        elaborated = current["design"]["elaborated"]
+        if elaborated["status"] == "PRESENT":
+            for row in elaborated["instances"]:
+                location = row.get("location") or {}
+                source = "-"
+                if location.get("path"):
+                    source = str(location["path"])
+                    if location.get("line"):
+                        source += f":{location['line']}"
+                elaborated_tree.insert(
+                    "",
+                    "end",
+                    values=(row.get("path") or "-", row.get("module") or "-", source),
+                )
+        else:
+            elaborated_tree.insert(
+                "",
+                "end",
+                values=(elaborated["status"], "-", elaborated.get("error") or elaborated["path"]),
             )
 
         status_text.set(
