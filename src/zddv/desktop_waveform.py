@@ -270,24 +270,20 @@ def desktop_crossprobe_evidence_rows(
             "boundary_loads",
             "boundary_unclassified_bindings",
         )
-        if any(key in elaborated_connectivity for key in boundary_role_keys):
-            boundary_drivers = [
-                item
-                for item in elaborated_connectivity.get("boundary_drivers", [])
-                if isinstance(item, dict)
-            ]
-            boundary_loads = [
-                item
-                for item in elaborated_connectivity.get("boundary_loads", [])
-                if isinstance(item, dict)
-            ]
-            boundary_unclassified = [
-                item
-                for item in elaborated_connectivity.get(
-                    "boundary_unclassified_bindings", []
-                )
-                if isinstance(item, dict)
-            ]
+        boundary_role_values = [
+            elaborated_connectivity.get(key) for key in boundary_role_keys
+        ]
+        boundary_roles_normalized = all(
+            isinstance(value, list)
+            and all(isinstance(item, dict) for item in value)
+            for value in boundary_role_values
+        )
+        if boundary_roles_normalized:
+            boundary_drivers = list(elaborated_connectivity["boundary_drivers"])
+            boundary_loads = list(elaborated_connectivity["boundary_loads"])
+            boundary_unclassified = list(
+                elaborated_connectivity["boundary_unclassified_bindings"]
+            )
             rows.append(
                 (
                     "Elaborated boundary roles",
