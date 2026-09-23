@@ -2693,7 +2693,8 @@ def cmd_rerun(args) -> int:
     if not rows:
         return 0
 
-    summary = rerun_records(project, rows)
+    backend = _backend(project.simulator)
+    summary = rerun_records(project, rows, backend=backend)
     if summary["status"] == "BUILD_FAIL":
         print(f"BUILD FAIL: {summary['build']['log_path']}")
         return int(summary["build"]["returncode"]) or 1
