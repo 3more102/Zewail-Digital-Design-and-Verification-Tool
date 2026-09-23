@@ -50,6 +50,7 @@ def test_audit_classifies_verified_and_unverified_sections():
     assert result["summary"]["sections"] == 5
     assert result["summary"]["verified_sections"] == 3
     assert result["summary"]["unverified_sections"] == 2
+    assert result["summary"]["layout_fingerprinted_sections"] == 5
     assert result["summary"]["metrics"] == [
         "block",
         "expression",
@@ -67,6 +68,14 @@ def test_audit_classifies_verified_and_unverified_sections():
     assert all(len(section["section_sha256"]) == 64 for section in result["sections"])
     assert by_metric["block"]["start_line"] < by_metric["fsm"]["start_line"]
     assert any("State | Hits" == cue for cue in by_metric["fsm"]["schema_cues"])
+    fsm_layout = by_metric["fsm"]["layout"]
+    assert len(fsm_layout["fingerprint_sha256"]) == 64
+    assert fsm_layout["structured_rows"] == 4
+    assert fsm_layout["delimiter_counts"] == {"field-cue": 1, "pipe": 3}
+    assert fsm_layout["max_fields"] == 2
+    assert "BUSY" not in json.dumps(fsm_layout["sample_rows"])
+    assert "IDLE" not in json.dumps(fsm_layout["sample_rows"])
+    assert "do not verify an IMC vendor schema" in fsm_layout["semantics"]
     assert result["limitations"]
 
 
@@ -77,6 +86,28 @@ def test_audit_section_hash_is_deterministic_and_content_sensitive():
 
     assert first["sections"][3]["section_sha256"] == second["sections"][3]["section_sha256"]
     assert first["sections"][3]["section_sha256"] != changed["sections"][3]["section_sha256"]
+    assert (
+        first["sections"][3]["layout"]["fingerprint_sha256"]
+        == changed["sections"][3]["layout"]["fingerprint_sha256"]
+    )
+
+
+def test_layout_fingerprint_changes_when_structured_shape_changes():
+    original = audit_xcelium_imc_detail(IMC_DETAIL)
+    changed = audit_xcelium_imc_detail(
+        IMC_DETAIL.replace("State | Hits", "State | Hits | Extra")
+    )
+
+    original_fsm = original["sections"][3]
+    changed_fsm = changed["sections"][3]
+    assert original_fsm["normalization_status"] == "schema-unverified"
+    assert changed_fsm["normalization_status"] == "schema-unverified"
+    assert (
+        original_fsm["layout"]["fingerprint_sha256"]
+        != changed_fsm["layout"]["fingerprint_sha256"]
+    )
+    assert original_fsm["layout"]["max_fields"] == 2
+    assert changed_fsm["layout"]["max_fields"] == 3
 
 
 def test_no_section_headers_remain_evidence_only():
@@ -84,6 +115,7 @@ def test_no_section_headers_remain_evidence_only():
     assert result["summary"]["sections"] == 0
     assert result["summary"]["verified_sections"] == 0
     assert result["summary"]["unverified_sections"] == 0
+    assert result["summary"]["layout_fingerprinted_sections"] == 0
     assert result["preamble_line_count"] == 2
     assert "evidence-only" in result["limitations"][0]
 
@@ -124,6 +156,7 @@ def test_cli_audits_default_xcelium_detail_path(tmp_path: Path, capsys):
     terminal = capsys.readouterr().out
     assert "XCELIUM DETAIL AUDIT: 5 section(s); verified=3 unverified=2" in terminal
     assert "schema-unverified" in terminal
+    assert "layout=" in terminal
     assert "no item-level schema is inferred" in terminal
 
     report = (
