@@ -68,7 +68,13 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
 def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, Any]:
     path = project.root / ".zddv" / "design" / "elaborated.json"
     if not path.exists():
-        return {"status": "NOT_PRESENT", "path": str(path), "instances": []}
+        return {
+            "status": "NOT_PRESENT",
+            "path": str(path),
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "NOT_PRESENT"},
+        }
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -78,6 +84,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "path": str(path),
             "error": str(exc),
             "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
         }
 
     instances = payload.get("instances") if isinstance(payload, dict) else None
@@ -87,6 +95,44 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "path": str(path),
             "error": "elaborated hierarchy payload must contain an instances list",
             "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+        }
+
+    ports = payload.get("ports", [])
+    if not isinstance(ports, list):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy payload ports must be a list",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+        }
+
+    port_evidence = payload.get("port_evidence")
+    if port_evidence is None:
+        port_evidence = {
+            "status": "UNAVAILABLE",
+            "reason": "port_evidence_metadata_missing",
+        }
+    elif not isinstance(port_evidence, dict):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy port_evidence must be an object",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+        }
+    elif port_evidence.get("status") == "NORMALIZED" and "ports" not in payload:
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "normalized port_evidence requires a ports list",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
         }
 
     identity_errors: list[str] = []
@@ -123,6 +169,11 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "design_fingerprint": stored_fingerprint,
             "current_design_fingerprint": current_fingerprint,
             "instances": [],
+            "ports": [],
+            "port_evidence": {
+                "status": "STALE",
+                "reason": "elaborated_evidence_identity_mismatch",
+            },
         }
 
     return {
@@ -136,6 +187,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
         "design_fingerprint": stored_fingerprint,
         "current_design_fingerprint": current_fingerprint,
         "instances": instances,
+        "ports": ports,
+        "port_evidence": port_evidence,
     }
 
 
@@ -417,7 +470,7 @@ def launch_desktop_gui(
     hierarchy_tree.pack(fill="both", expand=True)
 
 
-    elaborated_columns = ("module", "source", "state")
+    elaborated_columns = ("module", "direction", "source", "state")
     elaborated_tree = ttk.Treeview(
         elaborated_tab,
         columns=elaborated_columns,
@@ -426,8 +479,9 @@ def launch_desktop_gui(
     elaborated_tree.heading("#0", text="Hierarchy path")
     elaborated_tree.column("#0", width=420, anchor="w")
     for column, title, width in (
-        ("module", "Module", 220),
-        ("source", "Source", 320),
+        ("module", "Module", 200),
+        ("direction", "Direction", 100),
+        ("source", "Source", 300),
         ("state", "State", 120),
     ):
         elaborated_tree.heading(column, text=title)
@@ -668,6 +722,12 @@ def launch_desktop_gui(
         _clear(elaborated_tree)
         elaborated = current["elaborated_hierarchy"]
         if elaborated["status"] == "PRESENT":
+            ports_by_module: dict[str, list[dict[str, Any]]] = {}
+            for port in elaborated.get("ports", []):
+                module_name = str(port.get("module") or "")
+                if module_name:
+                    ports_by_module.setdefault(module_name, []).append(port)
+
             for row in elaborated["instances"]:
                 location = row.get("location") or {}
                 source = "-"
@@ -680,19 +740,64 @@ def launch_desktop_gui(
                     "",
                     "end",
                     text=row.get("path") or row.get("name") or "-",
-                    values=(row.get("module") or "-", source, state),
+                    values=(row.get("module") or "-", "-", source, state),
+                    open=True,
                 )
                 if location.get("path"):
                     elaborated_targets[item_id] = (
                         str(location["path"]),
                         int(location["line"]) if location.get("line") else None,
                     )
+
+                module_name = str(row.get("module") or "")
+                for port in ports_by_module.get(module_name, []):
+                    port_location = port.get("location") or {}
+                    port_source = "-"
+                    if port_location.get("path"):
+                        port_source = str(port_location["path"])
+                        if port_location.get("line"):
+                            port_source += f":{port_location['line']}"
+                    port_item_id = elaborated_tree.insert(
+                        item_id,
+                        "end",
+                        text=port.get("name") or "-",
+                        values=(
+                            port.get("module") or "-",
+                            port.get("direction") or "-",
+                            port_source,
+                            "PORT",
+                        ),
+                    )
+                    if port_location.get("path"):
+                        elaborated_targets[port_item_id] = (
+                            str(port_location["path"]),
+                            int(port_location["line"])
+                            if port_location.get("line")
+                            else None,
+                        )
+
+            port_evidence = elaborated.get("port_evidence") or {}
+            if port_evidence.get("status") != "NORMALIZED":
+                elaborated_tree.insert(
+                    "",
+                    "end",
+                    text="Module-port evidence",
+                    values=(
+                        "-",
+                        "-",
+                        port_evidence.get("reason")
+                        or port_evidence.get("source_format")
+                        or "-",
+                        port_evidence.get("status") or "UNAVAILABLE",
+                    ),
+                )
         else:
             elaborated_tree.insert(
                 "",
                 "end",
                 text=elaborated["status"],
                 values=(
+                    "-",
                     "-",
                     elaborated.get("error") or elaborated["path"],
                     elaborated["status"],
