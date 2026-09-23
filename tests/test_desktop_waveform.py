@@ -240,8 +240,41 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
         "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
         "instance-port bindings=1 · relationships=child_output_to_parent_signal"
     )
+    assert not any(
+        kind == "Elaborated boundary roles" for kind, _detail in rows
+    )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
+
+def test_desktop_crossprobe_rows_surface_trusted_boundary_role_summary():
+    rows = dict(
+        desktop_crossprobe_evidence_rows(
+            {
+                "elaborated_connectivity": {
+                    "analysis_level": "simulator_elaborated_direct_pin_varref",
+                    "parent_signal_bindings": [],
+                    "instance_port_bindings": [],
+                    "unsupported_instance_port_bindings": [
+                        {"status": "UNSUPPORTED"}
+                    ],
+                    "boundary_drivers": [
+                        {"query_side": "parent_signal"}
+                    ],
+                    "boundary_loads": [
+                        {"query_side": "child_port"},
+                        {"query_side": "parent_signal"},
+                    ],
+                    "boundary_unclassified_bindings": [
+                        {"query_side": "child_port"}
+                    ],
+                }
+            }
+        )
+    )
+
+    assert rows["Elaborated boundary roles"] == (
+        "drivers=1 · loads=2 · unclassified=1 · unsupported=1"
+    )
 
 
 def test_desktop_crossprobe_rows_render_exact_pin_relationships_and_unsupported_evidence():
@@ -315,7 +348,11 @@ def test_desktop_crossprobe_rows_fail_closed_on_unknown_elaborated_contract():
     )
 
     assert not any(
-        kind in {"Elaborated connectivity", "Elaborated pin"}
+        kind in {
+            "Elaborated connectivity",
+            "Elaborated boundary roles",
+            "Elaborated pin",
+        }
         for kind, _detail in rows
     )
 
