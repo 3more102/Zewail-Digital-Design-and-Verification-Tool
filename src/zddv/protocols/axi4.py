@@ -725,6 +725,34 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         }
         return False
 
+    def validate_zero_width_id_presence(
+        sample: dict[str, Any],
+        raw_sample: dict[str, Any],
+    ) -> None:
+        observed = {str(key).upper() for key in raw_sample}
+        channel_by_signal = {
+            "AWID": "AW",
+            "BID": "B",
+            "ARID": "AR",
+            "RID": "R",
+        }
+        for property_name, width in id_widths.items():
+            if width != 0:
+                continue
+            for field in _AXI4_ID_WIDTH_PROPERTIES[property_name]:
+                if field not in observed:
+                    continue
+                add_violation(
+                    "id_signal_present_when_width_zero",
+                    sample,
+                    f"{field} is physically observed although {property_name}=0 "
+                    "declares the ID signal absent",
+                    channel=channel_by_signal[field],
+                    signal=field,
+                    expected="signal absent",
+                    actual=sample.get(field),
+                )
+
     def id_value(sample: dict[str, Any], field: str, channel: str) -> int:
         property_name = (
             "ID_W_WIDTH" if channel in {"AW", "B"} else "ID_R_WIDTH"
@@ -732,20 +760,6 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         configured_width = id_widths.get(property_name)
 
         if configured_width == 0:
-            # A manager signal explicitly declared absent is normalized to its
-            # protocol default value. That injected value is not physical signal
-            # presence and must not contradict width-zero metadata.
-            physically_observed = field in sample and field not in master_defaults
-            if physically_observed:
-                add_violation(
-                    "id_signal_present_when_width_zero",
-                    sample,
-                    f"{field} is present although {property_name}=0 declares the ID signal absent",
-                    channel=channel,
-                    signal=field,
-                    expected="signal absent",
-                    actual=sample.get(field),
-                )
             return 0
 
         if configured_width is not None and field not in sample:
@@ -1335,8 +1349,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
         transactions.append(tx)
 
-    for sample in samples:
+    for sample, raw_sample in zip(samples, raw_samples, strict=True):
         validate_user_sidebands(sample)
+        validate_zero_width_id_presence(sample, raw_sample)
         aw_hs = channel_event(sample, "AW")
         w_hs = channel_event(sample, "W")
         b_hs = channel_event(sample, "B")
