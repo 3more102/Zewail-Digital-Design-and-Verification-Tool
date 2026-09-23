@@ -22,6 +22,14 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["data_width_bits"] == 16
     assert trace["waveform"]["rdata_width_bits"] == 16
     assert trace["waveform"]["wstrb_width"] == 2
+    assert trace["user_signal_widths"] == {
+        "AWUSER": 4,
+        "WUSER": 4,
+        "BUSER": 2,
+        "ARUSER": 4,
+        "RUSER": 6,
+    }
+    assert trace["waveform"]["user_signal_widths"] == trace["user_signal_widths"]
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
     assert trace["samples"][0]["AWLEN"] == 1
@@ -68,6 +76,13 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert read["response_time"] == 65
     assert read["aruser"] == 0xB
     assert read["ruser"] == [0x4, 0x5]
+    assert result["user_signal_widths"] == {
+        "ARUSER": 4,
+        "AWUSER": 4,
+        "BUSER": 2,
+        "RUSER": 6,
+        "WUSER": 4,
+    }
 
     assert Path(result["trace_path"]).is_file()
     assert Path(result["report_path"]).is_file()
@@ -132,4 +147,22 @@ def test_rejects_nonstandard_axi4_vcd_data_width(tmp_path: Path):
         assert "8, 16, 32, 64, 128, 256, 512, or 1024" in str(exc)
     else:
         raise AssertionError("Expected nonstandard AXI4 VCD data width to fail")
+
+
+def test_axi4_waveform_user_widths_are_checked_against_axi_properties(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 6 I RUSER [5:0] $end",
+        "$var wire 5 I RUSER [4:0] $end",
+    )
+    bad = tmp_path / "bad_user_widths.vcd"
+    bad.write_text(source, encoding="utf-8")
+    project = initialize_project(tmp_path / "demo-user-widths")
+
+    try:
+        analyze_axi4_waveform(project, input_path=bad)
+    except ValueError as exc:
+        assert "USER_DATA_WIDTH + USER_RESP_WIDTH" in str(exc)
+    else:
+        raise AssertionError("Expected inconsistent AXI4 USER VCD widths to fail")
 
