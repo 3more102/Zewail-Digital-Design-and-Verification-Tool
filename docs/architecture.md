@@ -163,8 +163,18 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+
+For Verilator JSON elaboration, ZDDV can additionally consume normalized direct
+module `VAR.ioDirection` evidence. Qualified boundary-port edges validate against
+the resolved parent module, and qualified instance-port edges validate against an
+exact resolved child module. The report records matched, mismatched, ambiguous, or
+unavailable port-direction evidence without changing the source-derived driver/load
+role. Legacy Verilator XML reports this port schema as unavailable rather than
+guessing an equivalent field.
+
+This qualification is hierarchy and documented port-direction context only: exact
+elaborated net signal drivers/loads and connection-expression resolution remain a
+separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
