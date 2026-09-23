@@ -2222,3 +2222,25 @@ def test_axi4_id_width_metadata_checks_value_range_before_handshake():
     assert result["status"] == "FAIL"
     assert violation["cycle"] == 0
     assert violation["signal"] == "ARID"
+
+
+def test_axi4_positive_id_width_ignores_payload_value_when_channel_is_inactive():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_R_WIDTH": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 0,
+                    "ARID": 4,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert not {
+        item["code"]
+        for item in result["violations"]
+        if item["code"] in {"invalid_transaction_id", "invalid_transaction_id_width"}
+    }
