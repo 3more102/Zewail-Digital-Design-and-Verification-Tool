@@ -168,8 +168,17 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+When normalized Verilator direct CELL pin evidence is available, cross-probing also
+matches the resolved instance path and waveform signal name against pin aliases in
+the persisted `pin_bindings` list. A unique direct `VARREF` binding is reported as
+`MATCHED` with the exact retained binding record. A known complex expression remains
+`UNSUPPORTED_EXPRESSION`; absent, ambiguous, invalid, or legacy-XML-unavailable
+evidence is reported explicitly instead of being inferred. This pin evidence describes
+the elaborated child boundary connection only and does not prove downstream internal
+drivers or loads.
+
+This qualification is hierarchy and boundary-connection context only: general exact
+elaborated signal drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
