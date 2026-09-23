@@ -257,6 +257,29 @@ def _elaborated_identity_errors(
         and not isinstance(pin_bindings, list)
     ):
         errors.append("normalized pin_binding_evidence requires a pin_bindings list")
+
+    internal_assignments = index.get("internal_assignments")
+    if internal_assignments is not None and not isinstance(
+        internal_assignments,
+        list,
+    ):
+        errors.append("internal_assignments is not a list")
+
+    internal_assignment_evidence = index.get("internal_assignment_evidence")
+    if internal_assignment_evidence is not None and not isinstance(
+        internal_assignment_evidence,
+        dict,
+    ):
+        errors.append("internal_assignment_evidence is not an object")
+    elif (
+        isinstance(internal_assignment_evidence, dict)
+        and internal_assignment_evidence.get("status") == "NORMALIZED"
+        and not isinstance(internal_assignments, list)
+    ):
+        errors.append(
+            "normalized internal_assignment_evidence requires an "
+            "internal_assignments list"
+        )
     return errors
 
 
@@ -591,6 +614,150 @@ def _elaborated_pin_connectivity(
     }
 
 
+def _elaborated_internal_assignment_connectivity(
+    elaborated_index: dict[str, Any],
+    *,
+    instance_path: str,
+    instance_module: str | None,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    """Project normalized direct module assignments onto one exact instance."""
+    evidence = elaborated_index.get("internal_assignment_evidence")
+    assignments = elaborated_index.get("internal_assignments")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "NORMALIZED"
+        or not isinstance(assignments, list)
+        or not instance_module
+    ):
+        return None
+
+    module_records = [
+        item
+        for item in assignments
+        if isinstance(item, dict)
+        and item.get("module") == instance_module
+    ]
+    if not module_records:
+        return None
+
+    variants = {
+        str(item["module_elaborated_name"])
+        for item in module_records
+        if item.get("module_elaborated_name")
+    }
+    if len(variants) > 1:
+        return {
+            "analysis_level": "simulator_elaborated_direct_assignment_varref",
+            "evidence_contract": evidence.get("contract"),
+            "status": "UNAVAILABLE",
+            "reason": "module_elaborated_variant_ambiguous",
+            "query_instance_path": instance_path,
+            "query_module": instance_module,
+            "query_signal": signal_name,
+            "module_elaborated_candidates": sorted(variants),
+            "direct_assignment_drivers": [],
+            "direct_assignment_loads": [],
+            "unsupported_assignments": [],
+            "completeness": "subset_only",
+        }
+
+    drivers: list[dict[str, Any]] = []
+    loads: list[dict[str, Any]] = []
+    unsupported: list[dict[str, Any]] = []
+    for item in module_records:
+        if item.get("status") == "NORMALIZED":
+            lhs = item.get("lhs_signal")
+            rhs = item.get("rhs_signal")
+            if not lhs or not rhs:
+                continue
+            edge = {
+                "instance_path": instance_path,
+                "module": instance_module,
+                "module_elaborated_name": item.get("module_elaborated_name"),
+                "assignment_type": item.get("assignment_type"),
+                "lhs_signal": str(lhs),
+                "rhs_signal": str(rhs),
+                "location": item.get("location"),
+                "lhs_location": item.get("lhs_location"),
+                "rhs_location": item.get("rhs_location"),
+            }
+            if str(lhs) == signal_name:
+                drivers.append(
+                    {
+                        **edge,
+                        "source_signal": str(rhs),
+                        "sink_signal": str(lhs),
+                        "query_role": "sink",
+                    }
+                )
+            if str(rhs) == signal_name:
+                loads.append(
+                    {
+                        **edge,
+                        "source_signal": str(rhs),
+                        "sink_signal": str(lhs),
+                        "query_role": "source",
+                    }
+                )
+            continue
+
+        if item.get("status") != "UNSUPPORTED":
+            continue
+        referenced = [
+            str(value)
+            for value in item.get("referenced_signals", [])
+            if value
+        ]
+        if signal_name not in referenced:
+            continue
+        unsupported.append(
+            {
+                "instance_path": instance_path,
+                "module": instance_module,
+                "module_elaborated_name": item.get("module_elaborated_name"),
+                "assignment_type": item.get("assignment_type"),
+                "lhs_expression_type": item.get("lhs_expression_type"),
+                "rhs_expression_type": item.get("rhs_expression_type"),
+                "referenced_signals": sorted(set(referenced)),
+                "location": item.get("location"),
+            }
+        )
+
+    if not drivers and not loads and not unsupported:
+        return None
+
+    edge_key = lambda item: (
+        str(item.get("assignment_type") or ""),
+        str(item.get("lhs_signal") or ""),
+        str(item.get("rhs_signal") or ""),
+        str((item.get("location") or {}).get("path") or ""),
+        int((item.get("location") or {}).get("line") or 0),
+    )
+    return {
+        "analysis_level": "simulator_elaborated_direct_assignment_varref",
+        "evidence_contract": evidence.get("contract"),
+        "status": "MATCHED",
+        "query_instance_path": instance_path,
+        "query_module": instance_module,
+        "query_signal": signal_name,
+        "module_elaborated_name": (
+            next(iter(variants)) if len(variants) == 1 else None
+        ),
+        "direct_assignment_drivers": sorted(drivers, key=edge_key),
+        "direct_assignment_loads": sorted(loads, key=edge_key),
+        "unsupported_assignments": sorted(
+            unsupported,
+            key=lambda item: (
+                str(item.get("assignment_type") or ""),
+                str((item.get("location") or {}).get("path") or ""),
+                int((item.get("location") or {}).get("line") or 0),
+            ),
+        ),
+        "completeness": "subset_only",
+    }
+
+
 def _correlate_elaborated_pin_bindings_with_source(
     elaborated_connectivity: dict[str, Any] | None,
     *,
@@ -916,6 +1083,7 @@ def build_crossprobe(
     source: dict[str, Any] | None = None
     connectivity_payload: dict[str, Any] | None = None
     elaborated_connectivity_payload: dict[str, Any] | None = None
+    elaborated_internal_connectivity_payload: dict[str, Any] | None = None
     elaborated_source_correlation: dict[str, Any] | None = None
     source_connectivity_index = connectivity_index
     status = "PARTIAL"
@@ -926,6 +1094,18 @@ def build_crossprobe(
             elaborated_index,
             instance_path=str(elaborated_node["path"]),
             signal_name=str(signal.get("name", "")),
+        )
+        elaborated_internal_connectivity_payload = (
+            _elaborated_internal_assignment_connectivity(
+                elaborated_index,
+                instance_path=str(elaborated_node["path"]),
+                instance_module=(
+                    str(elaborated_node["module"])
+                    if elaborated_node.get("module")
+                    else None
+                ),
+                signal_name=str(signal.get("name", "")),
+            )
         )
 
     if elaborated_node is None and source_hierarchy_node is None:
@@ -1064,6 +1244,9 @@ def build_crossprobe(
         "source": source,
         "connectivity": connectivity_payload,
         "elaborated_connectivity": elaborated_connectivity_payload,
+        "elaborated_internal_connectivity": (
+            elaborated_internal_connectivity_payload
+        ),
         "elaborated_source_correlation": elaborated_source_correlation,
         "note": note,
     }
