@@ -130,16 +130,12 @@ def extract_axi4_trace_from_vcd(
         property_name: str,
         request_signal: str,
         response_signal: str,
-    ) -> int:
-        request_present = request_signal in scoped_signals
-        response_present = response_signal in scoped_signals
-        if request_present != response_present:
-            raise RuntimeError(
-                f"AXI4 {property_name} requires {request_signal} and "
-                f"{response_signal} to be both present or both absent"
-            )
-        if not request_present:
-            return 0
+    ) -> int | None:
+        # A VCD declaration is positive evidence that a signal is present, but
+        # omission is not proof that the physical interface signal is absent.
+        # Promote an AXI ID width property only from a complete declared pair.
+        if request_signal not in scoped_signals or response_signal not in scoped_signals:
+            return None
 
         request_width = int(scoped_signals[request_signal]["width"])
         response_width = int(scoped_signals[response_signal]["width"])
@@ -151,14 +147,18 @@ def extract_axi4_trace_from_vcd(
             )
         if not 1 <= request_width <= 32:
             raise RuntimeError(
-                f"AXI4 {property_name} must be in the range 0..32 bits; "
+                f"AXI4 {property_name} must be in the range 0..32 bits when present; "
                 f"got {request_width}"
             )
         return request_width
 
     id_widths = {
-        "ID_W_WIDTH": id_width_property("ID_W_WIDTH", "AWID", "BID"),
-        "ID_R_WIDTH": id_width_property("ID_R_WIDTH", "ARID", "RID"),
+        name: width
+        for name, width in (
+            ("ID_W_WIDTH", id_width_property("ID_W_WIDTH", "AWID", "BID")),
+            ("ID_R_WIDTH", id_width_property("ID_R_WIDTH", "ARID", "RID")),
+        )
+        if width is not None
     }
 
     actual_clock = available[clock.upper()]
