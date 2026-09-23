@@ -60,6 +60,33 @@ def _resolve_project_path(
     return candidate
 
 
+def _identity(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "project": payload.get("project"),
+        "simulator": payload.get("simulator"),
+        "top": payload.get("top"),
+    }
+
+
+def _project_identity(project: ProjectConfig) -> dict[str, str]:
+    return {
+        "project": project.name,
+        "simulator": project.simulator,
+        "top": project.top,
+    }
+
+
+def _validate_signoff_project_identity(
+    project: ProjectConfig,
+    signoff: dict[str, Any],
+) -> None:
+    if _identity(signoff) != _project_identity(project):
+        raise ValueError(
+            "Release signoff project/simulator/top identity does not match "
+            "the active project configuration"
+        )
+
+
 def _validate_signoff_payload(payload: dict[str, Any]) -> None:
     if payload.get("analysis") != "verification_signoff_bundle":
         raise ValueError("Release input is not a ZDDV verification signoff bundle")
@@ -262,6 +289,7 @@ def export_verification_release(
         raise ValueError("key_id must be non-empty")
 
     _, signoff_payload, signoff_bytes = _load_signoff(project, signoff)
+    _validate_signoff_project_identity(project, signoff_payload)
     review_state = str(signoff_payload.get("summary", {}).get("review_state", ""))
     if review_state != "READY_FOR_REVIEW":
         raise ValueError(
@@ -425,6 +453,12 @@ def verify_verification_release(
         raise ValueError("Release manifest file inventory or SHA-256 verification failed")
 
     _validate_signoff_payload(signoff)
+    if _identity(manifest) != _identity(signoff):
+        raise ValueError(
+            "Release manifest project/simulator/top identity does not match "
+            "the bundled signoff"
+        )
+
     signoff_meta = manifest.get("signoff")
     if not isinstance(signoff_meta, dict):
         raise ValueError("Release manifest signoff metadata is missing")
