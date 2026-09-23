@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Xcelium coverage evidence
+
+- Add schema-neutral lexical layout fingerprints for captured IMC detail sections using only structured delimiters, field counts, and token classes; unverified FSM/functional layouts remain evidence-only and are not normalized.
+- Show the layout fingerprint in `xcelium-detail-audit` output alongside the exact section-content SHA-256.
+
 ### Desktop Debug Studio
 
 - Add bounded detail panes for normalized assertion events, formal property results,
