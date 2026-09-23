@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated debug correlation
+
+- Extend direct pin-to-source edge correlation to generated instances only when
+  the exact elaborated child path is already present in the source edge's
+  explicit ambiguous candidate set; preserve source-only driver/load semantics.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
