@@ -191,3 +191,52 @@ endmodule
     # The desktop view uses the in-memory design index and must not create
     # the normal CLI design-index artifact merely by viewing the project.
     assert not index_artifact.exists()
+
+
+def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "elaborated-demo")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    elaborated_path = design_dir / "elaborated.json"
+    elaborated_path.write_text(
+        """{
+  "created_at": "2026-09-23T06:45:00+00:00",
+  "simulator": "verilator",
+  "simulator_version": "Verilator test",
+  "source_format": "json",
+  "summary": {"modules": 2, "instances": 2},
+  "instances": [
+    {
+      "path": "tb_top",
+      "name": "tb_top",
+      "module": "tb_top",
+      "top": true,
+      "location": {"path": "tb/tb_top.sv", "line": 1}
+    },
+    {
+      "path": "tb_top.dut",
+      "name": "dut",
+      "module": "dut",
+      "top": false,
+      "location": {"path": "rtl/dut.sv", "line": 12}
+    }
+  ]
+}""",
+        encoding="utf-8",
+    )
+    before = elaborated_path.read_bytes()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    evidence = snapshot["elaborated_hierarchy"]
+    assert evidence["status"] == "PRESENT"
+    assert evidence["simulator"] == "verilator"
+    assert evidence["instances"][1]["path"] == "tb_top.dut"
+    assert evidence["instances"][1]["location"] == {
+        "path": "rtl/dut.sv",
+        "line": 12,
+    }
+    assert elaborated_path.read_bytes() == before
+    assert not (design_dir / "elaborated-hierarchy.txt").exists()
