@@ -561,6 +561,7 @@ def build_crossprobe(
         "waveform": {
             "run_id": waveform_index.get("run_id"),
             "format": waveform_index.get("format"),
+            "parse_status": waveform_index.get("parse_status"),
             "artifact": waveform_index.get("artifact"),
             "adapter": waveform_index.get("adapter"),
             "signal": signal,
