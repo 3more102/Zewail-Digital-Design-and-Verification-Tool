@@ -24,25 +24,37 @@ The desktop provides:
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
 - a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+  timestamp, log line, and message;
+- recorded waveform signal browsing with bounded in-memory VCD value probing;
+- an Actions pane for structured lint/build/run requests that requires exact SHA-256
+  confirmation of the reviewed request before execution.
 
 Formal-property and UVM-message database reads are explicitly bounded by the GUI
 limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Browsing and Refresh read persisted verification evidence and rebuild the in-memory
+design index. They do not launch simulations or formal jobs, invoke or transmit data
+to an AI provider, stage/apply generated artifacts, or edit RTL, testbench sources,
+or project configuration.
+
+The Actions pane is a separate explicit execution boundary. It accepts only the
+structured actions `lint`, `build`, and `run`; it exposes no arbitrary shell-command
+field. Preparing an action computes a canonical request SHA-256. Execution is rejected
+unless the user re-enters that exact SHA-256 and the reviewed project identity still
+matches the active project. A `run` may build through the existing simulator backend
+when its normal core API requires it.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
 Therefore "display-only" describes verification/project actions rather than a
 guarantee of zero filesystem writes.
 
-## Remaining desktop milestones
+## v1.1 desktop milestone
 
-The roadmap still includes waveform navigation/targeted probing and review-gated
-project actions. These should continue to call the existing core APIs rather than
-duplicate simulator-specific logic in the GUI.
+The planned v1.1 desktop slices are implemented: evidence/detail views, deterministic
+source and hierarchy navigation, persisted elaborated hierarchy browsing, recorded
+waveform probing, and review-gated structured project actions. Future desktop work
+should continue to reuse the existing core APIs rather than duplicate simulator-
+specific logic in the GUI.
