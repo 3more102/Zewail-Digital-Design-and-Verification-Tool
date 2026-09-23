@@ -20,6 +20,9 @@ The desktop provides:
 - deterministic failure-signature groups;
 - an evidence overview for assertions, normalized coverage, formal, and UVM;
 - deterministic source-file and source-level hierarchy navigation;
+- read-only RTL source preview with source-unit selection and hierarchy-to-source cross-navigation;
+- persisted simulator-elaborated hierarchy browsing;
+- recorded waveform signal browsing with bounded in-memory VCD probing;
 - a detailed Assertions pane with status, assertion name, run, log line, and message;
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
@@ -31,10 +34,10 @@ limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Refresh reads persisted verification evidence, current project source files for preview,
+and rebuilds the in-memory design index. It does not launch simulations or formal jobs,
+invoke or transmit data to an AI provider, stage/apply generated artifacts, or edit RTL,
+testbench sources, or project configuration.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
@@ -43,6 +46,7 @@ guarantee of zero filesystem writes.
 
 ## Remaining desktop milestones
 
-The roadmap still includes waveform navigation/targeted probing and review-gated
-project actions. These should continue to call the existing core APIs rather than
-duplicate simulator-specific logic in the GUI.
+Waveform navigation, bounded targeted VCD probing, RTL source preview, and hierarchy
+cross-navigation are now integrated read-only. The remaining desktop milestone is
+review-gated project actions, which must continue to call existing core APIs rather
+than duplicate simulator-specific logic in the GUI.
