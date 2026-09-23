@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot, build_waveform_navigation_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_snapshot,
+    probe_desktop_waveform_signal,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -193,101 +197,69 @@ endmodule
     assert not index_artifact.exists()
 
 
-def test_waveform_navigation_indexes_recorded_vcd_without_materializing_artifact(
-    tmp_path: Path,
-):
-    project = initialize_project(tmp_path / "wave-demo")
-    run_dir = project.root / ".zddv" / "runs" / "run-wave"
-    run_dir.mkdir(parents=True)
-    waveform = run_dir / "waveform.vcd"
-    waveform.write_text(
-        """$timescale 1ns $end
-$scope module tb_top $end
+def test_desktop_waveform_navigation_and_probe_are_in_memory(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    vcd = project.root / "trace.vcd"
+    vcd.write_text(
+        """$date today $end
+$version zddv-test $end
+$timescale 1ns $end
+$scope module tb $end
 $var wire 1 ! clk $end
-$scope module dut $end
-$var wire 4 # count [3:0] $end
-$upscope $end
+$var wire 8 " data [7:0] $end
 $upscope $end
 $enddefinitions $end
 #0
 0!
-b0000 #
+b00000000 "
+#5
+1!
+b00000001 "
+#10
+0!
+b00000010 "
 """,
         encoding="utf-8",
     )
 
-    row = _run_record("run-wave", "PASS", seed=3)
-    row["run_dir"] = str(run_dir)
-    row["log"] = str(run_dir / "simulation.log")
-    row["waveform"] = str(waveform)
-    record_run(project, row)
+    record = _run_record("run-wave", "PASS", seed=3)
+    record["waveform"] = str(vcd)
+    record_run(project, record)
 
-    state = build_waveform_navigation_snapshot(project, run_id="run-wave")
+    navigation = build_desktop_waveform_snapshot(project)
 
-    assert state["waveform_state"] == "INDEXED"
-    assert state["waveform"]["format"] == "vcd"
-    assert state["waveform"]["summary"]["signals"] == 2
-    assert [item["path"] for item in state["waveform"]["signals"]] == [
-        "tb_top.clk",
-        "tb_top.dut.count",
+    assert navigation["run_id"] == "run-wave"
+    assert navigation["format"] == "vcd"
+    assert navigation["parse_status"] == "indexed"
+    assert navigation["timescale"] == "1ns"
+    assert navigation["summary"]["signals"] == 2
+    assert [signal["path"] for signal in navigation["signals"]] == [
+        "tb.clk",
+        "tb.data",
     ]
-    assert state["probe_report"] is None
+
+    probe = probe_desktop_waveform_signal(
+        project,
+        "tb.data",
+        run_id="run-wave",
+        start_time=0,
+        end_time=10,
+        max_changes=10,
+    )
+
+    assert probe["run_id"] == "run-wave"
+    assert probe["summary"]["signals"] == 1
+    assert probe["signals"][0]["changes"] == [
+        {"time": 0, "value": "00000000"},
+        {"time": 5, "value": "00000001"},
+        {"time": 10, "value": "00000010"},
+    ]
     assert not (project.root / ".zddv" / "waveforms").exists()
 
 
-def test_waveform_navigation_surfaces_existing_probe_suggestions_without_execution(
-    tmp_path: Path,
-    monkeypatch,
-):
-    project = initialize_project(tmp_path / "probe-demo")
-    run_dir = project.root / ".zddv" / "runs" / "run-fail"
-    run_dir.mkdir(parents=True)
-    waveform = run_dir / "waveform.vcd"
-    waveform.write_text(
-        """$timescale 1ns $end
-$scope module tb_top $end
-$var wire 1 ! clk $end
-$enddefinitions $end
-#0
-0!
-""",
-        encoding="utf-8",
-    )
-    row = _run_record("run-fail", "FAIL", seed=4)
-    row["run_dir"] = str(run_dir)
-    row["log"] = str(run_dir / "simulation.log")
-    row["waveform"] = str(waveform)
-    record_run(project, row)
+def test_desktop_waveform_navigation_reports_missing_evidence(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    record_run(project, _run_record("run-no-wave", "PASS", seed=4))
 
-    calls = []
-
-    def fake_suggest(project_arg, *, run_id):
-        calls.append((project_arg.root, run_id))
-        return {
-            "suggestions": [
-                {
-                    "rank": 1,
-                    "signal": "tb_top.clk",
-                    "source_candidate_kind": "assertion_anchor",
-                    "source_evidence_score": 7,
-                    "reason": "explicit recorded signal evidence",
-                    "argv": ["waveform-probe", "tb_top.clk", "--run", run_id],
-                }
-            ],
-            "blockers": [],
-        }
-
-    monkeypatch.setattr("zddv.desktop.suggest_debug_probes", fake_suggest)
-
-    state = build_waveform_navigation_snapshot(project, run_id="run-fail")
-
-    assert calls == [(project.root, "run-fail")]
-    assert state["waveform_state"] == "INDEXED"
-    assert state["probe_error"] is None
-    assert state["probe_report"]["suggestions"][0]["signal"] == "tb_top.clk"
-    assert state["probe_report"]["suggestions"][0]["argv"] == [
-        "waveform-probe",
-        "tb_top.clk",
-        "--run",
-        "run-fail",
-    ]
+    with pytest.raises(RuntimeError, match="No run with an existing waveform artifact"):
+        build_desktop_waveform_snapshot(project)
