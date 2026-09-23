@@ -414,9 +414,131 @@ def _pin_relationship(direction: str | None) -> str:
     return "direct_pin_varref"
 
 
+def _source_structural_pin_correlation(
+    connectivity_index: dict[str, Any],
+    elaborated_index: dict[str, Any],
+    binding: dict[str, Any],
+) -> dict[str, Any]:
+    """Correlate one exact elaborated pin binding to source instance-port edges.
+
+    Driver/load roles remain the original source-structural roles. Direct pin
+    evidence only qualifies which elaborated child instance the source edge reaches.
+    """
+    parent_path = str(binding.get("parent_instance_path") or "")
+    child_path = str(binding.get("instance_path") or "")
+    parent_signal = str(binding.get("signal") or "")
+    pin = str(binding.get("pin") or "")
+    child_module = binding.get("instance_module")
+    if not parent_path or not child_path or not parent_signal or not pin:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "pin_binding_identity_incomplete",
+        }
+
+    parent_instances = [
+        item
+        for item in elaborated_index.get("instances", [])
+        if isinstance(item, dict) and str(item.get("path") or "") == parent_path
+    ]
+    if len(parent_instances) != 1:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": (
+                "parent_instance_not_found"
+                if not parent_instances
+                else "parent_instance_ambiguous"
+            ),
+            "parent_instance_path": parent_path,
+        }
+
+    parent_module = parent_instances[0].get("module")
+    if not parent_module:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "parent_instance_has_no_module",
+            "parent_instance_path": parent_path,
+        }
+
+    try:
+        navigation = signal_navigation(
+            connectivity_index,
+            unit=str(parent_module),
+            signal=parent_signal,
+        )
+    except ValueError:
+        return {
+            "status": "NOT_FOUND",
+            "reason": "parent_source_signal_not_indexed",
+            "parent_unit": str(parent_module),
+            "parent_instance_path": parent_path,
+            "signal": parent_signal,
+        }
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path=parent_path,
+        elaborated_instances=list(elaborated_index.get("instances", [])),
+    )
+
+    edges: list[dict[str, Any]] = []
+    match_bases: set[str] = set()
+    for edge in qualified["drivers"] + qualified["loads"]:
+        if edge.get("kind") != "instance_port":
+            continue
+        if str(edge.get("port") or "") != pin:
+            continue
+        if (
+            child_module
+            and edge.get("child_type")
+            and str(edge.get("child_type")) != str(child_module)
+        ):
+            continue
+
+        resolution = edge.get("elaborated_child_resolution")
+        exact_child = str(edge.get("elaborated_child_path") or "")
+        candidates = {
+            str(value)
+            for value in edge.get("elaborated_child_candidates", [])
+            if value
+        }
+        if resolution == "exact" and exact_child == child_path:
+            match_bases.add("source_edge_exact_child_path")
+        elif resolution == "ambiguous" and child_path in candidates:
+            match_bases.add("direct_pin_resolves_source_generated_candidate")
+        else:
+            continue
+        edges.append(edge)
+
+    if not edges:
+        return {
+            "status": "NOT_FOUND",
+            "reason": "no_matching_source_instance_port_edge",
+            "parent_unit": str(parent_module),
+            "parent_instance_path": parent_path,
+            "child_instance_path": child_path,
+            "signal": parent_signal,
+            "pin": pin,
+        }
+
+    return {
+        "status": "MATCHED",
+        "analysis_level": "source_structural_instance_port",
+        "parent_unit": str(parent_module),
+        "parent_instance_path": parent_path,
+        "child_instance_path": child_path,
+        "signal": parent_signal,
+        "pin": pin,
+        "match_basis": sorted(match_bases),
+        "roles": sorted({str(edge.get("role")) for edge in edges}),
+        "edges": edges,
+        "role_semantics": "source_structural_unchanged",
+    }
+
+
 def _elaborated_pin_connectivity(
     elaborated_index: dict[str, Any],
     *,
+    connectivity_index: dict[str, Any],
     instance_path: str,
     signal_name: str,
 ) -> dict[str, Any] | None:
@@ -487,6 +609,11 @@ def _elaborated_pin_connectivity(
             "generate_scopes": list(binding.get("generate_scopes", [])),
             "pin_location": binding.get("pin_location"),
             "signal_location": binding.get("signal_location"),
+            "source_structural_correlation": _source_structural_pin_correlation(
+                connectivity_index,
+                elaborated_index,
+                binding,
+            ),
         }
 
         if str(parent_path) == instance_path and str(parent_signal) == signal_name:
@@ -593,6 +720,7 @@ def build_crossprobe(
         )
 
     design = design_index or build_design_index(project)
+    connectivity = connectivity_index or build_connectivity_index(project)
     if elaborated_index is not None:
         identity_errors = _elaborated_identity_errors(project, elaborated_index)
         if identity_errors:
@@ -643,6 +771,7 @@ def build_crossprobe(
     if elaborated_node is not None and elaborated_index is not None:
         elaborated_connectivity_payload = _elaborated_pin_connectivity(
             elaborated_index,
+            connectivity_index=connectivity,
             instance_path=str(elaborated_node["path"]),
             signal_name=str(signal.get("name", "")),
         )
@@ -672,7 +801,6 @@ def build_crossprobe(
             "declaration": declaration,
         }
 
-        connectivity = connectivity_index or build_connectivity_index(project)
         try:
             navigation = signal_navigation(
                 connectivity,
