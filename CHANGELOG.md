@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Elaborated debug correlation
+
+- Correlate normalized direct CELL pin bindings with matching source-structural
+  instance-port edges while retaining the original source driver/load roles.
+- Use exact elaborated child paths, or explicit generated-candidate membership,
+  as the boundary match evidence; malformed normalized pin metadata fails closed.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
