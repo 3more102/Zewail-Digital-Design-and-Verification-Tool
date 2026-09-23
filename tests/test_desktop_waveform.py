@@ -659,6 +659,9 @@ def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
                     "parent_signal": "count",
                     "source_unit": "tb_top",
                     "source_roles": ["driver"],
+                    "match_basis": [
+                        "direct_pin_resolves_source_generated_candidate"
+                    ],
                     "source_edge": {
                         "file": "tb/tb_top.sv",
                         "line": 4,
@@ -678,7 +681,9 @@ def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
     )
     assert rows["Correlated source edge"] == (
         "tb_top.count ↔ tb_top.dut.count · binding_side=instance_port · "
-        "source=tb_top · source_roles=driver · location=tb/tb_top.sv:4"
+        "source=tb_top · source_roles=driver · "
+        "basis=direct_pin_resolves_source_generated_candidate · "
+        "location=tb/tb_top.sv:4"
     )
 
 
@@ -732,6 +737,66 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
         for kind, _detail in wrong_roles
     )
 
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correlation():
+    malformed = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
+                        "source_roles": ["driver"],
+                        "source_edge": {
+                            "file": "tb/tb_top.sv",
+                            "line": 4,
+                        },
+                    }
+                ],
+            }
+        }
+    )
+    empty = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [],
+            }
+        }
+    )
+    unknown_status = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [{"status": "FUTURE_STATUS"}],
+            }
+        }
+    )
+
+    for rows in (malformed, empty, unknown_status):
+        assert not any(
+            kind in {
+                "Elaborated/source correlation",
+                "Correlated source edge",
+            }
+            for kind, _detail in rows
+        )
 
 
 def test_desktop_crossprobe_rows_fail_closed_on_semantically_invalid_boundary_roles():
