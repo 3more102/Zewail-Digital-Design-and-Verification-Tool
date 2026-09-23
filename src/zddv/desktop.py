@@ -259,11 +259,13 @@ def launch_desktop_gui(
     evidence_tab = ttk.Frame(notebook, padding=8)
     sources_tab = ttk.Frame(notebook, padding=8)
     hierarchy_tab = ttk.Frame(notebook, padding=8)
+    waveform_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
+    notebook.add(waveform_tab, text="Waveforms")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -344,6 +346,93 @@ def launch_desktop_gui(
         hierarchy_tree.column(column, width=width, anchor="w")
     hierarchy_tree.pack(fill="both", expand=True)
 
+    waveform_tab.rowconfigure(0, weight=1)
+    waveform_tab.rowconfigure(2, weight=1)
+    waveform_tab.rowconfigure(4, weight=1)
+    waveform_tab.columnconfigure(0, weight=1)
+
+    waveform_tree = ttk.Treeview(
+        waveform_tab,
+        columns=("run_id", "test", "status", "format", "bytes", "path"),
+        show="headings",
+        height=5,
+    )
+    for column, title, width in (
+        ("run_id", "Run ID", 260),
+        ("test", "Test", 150),
+        ("status", "Status", 90),
+        ("format", "Format", 80),
+        ("bytes", "Bytes", 90),
+        ("path", "Artifact", 360),
+    ):
+        waveform_tree.heading(column, text=title)
+        waveform_tree.column(column, width=width, anchor="w")
+    waveform_tree.grid(row=0, column=0, sticky="nsew")
+
+    waveform_controls = ttk.Frame(waveform_tab, padding=(0, 6))
+    waveform_controls.grid(row=1, column=0, sticky="ew")
+    ttk.Button(
+        waveform_controls,
+        text="Index selected",
+        command=lambda: _index_selected_waveform(),
+    ).pack(side="left")
+    waveform_status = tk.StringVar(value="Select a recorded VCD/FST artifact.")
+    ttk.Label(waveform_controls, textvariable=waveform_status).pack(
+        side="left",
+        padx=(10, 0),
+    )
+
+    signal_tree = ttk.Treeview(
+        waveform_tab,
+        columns=("path", "type", "width", "range"),
+        show="headings",
+        height=8,
+    )
+    for column, title, width in (
+        ("path", "Signal", 440),
+        ("type", "Type", 120),
+        ("width", "Width", 80),
+        ("range", "Range", 120),
+    ):
+        signal_tree.heading(column, text=title)
+        signal_tree.column(column, width=width, anchor="w")
+    signal_tree.grid(row=2, column=0, sticky="nsew")
+
+    probe_controls = ttk.Frame(waveform_tab, padding=(0, 6))
+    probe_controls.grid(row=3, column=0, sticky="ew")
+    signal_query = tk.StringVar(value="")
+    start_time_text = tk.StringVar(value="")
+    end_time_text = tk.StringVar(value="")
+    ttk.Label(probe_controls, text="Signal").pack(side="left")
+    ttk.Entry(probe_controls, textvariable=signal_query, width=36).pack(
+        side="left", padx=(4, 10)
+    )
+    ttk.Label(probe_controls, text="Start").pack(side="left")
+    ttk.Entry(probe_controls, textvariable=start_time_text, width=10).pack(
+        side="left", padx=(4, 10)
+    )
+    ttk.Label(probe_controls, text="End").pack(side="left")
+    ttk.Entry(probe_controls, textvariable=end_time_text, width=10).pack(
+        side="left", padx=(4, 10)
+    )
+    ttk.Button(
+        probe_controls,
+        text="Probe",
+        command=lambda: _probe_selected_waveform(),
+    ).pack(side="left")
+
+    change_tree = ttk.Treeview(
+        waveform_tab,
+        columns=("time", "value"),
+        show="headings",
+        height=8,
+    )
+    change_tree.heading("time", text="Time")
+    change_tree.heading("value", text="Value")
+    change_tree.column("time", width=180, anchor="w")
+    change_tree.column("value", width=500, anchor="w")
+    change_tree.grid(row=4, column=0, sticky="nsew")
+
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
     ttk.Label(
@@ -359,6 +448,100 @@ def launch_desktop_gui(
     def _clear(tree) -> None:
         for item in tree.get_children():
             tree.delete(item)
+
+    def _selected_waveform_run_id() -> str:
+        selection = waveform_tree.selection()
+        if not selection:
+            raise RuntimeError("Select a waveform artifact first.")
+        values = waveform_tree.item(selection[0], "values")
+        if not values:
+            raise RuntimeError("Selected waveform row has no run ID.")
+        return str(values[0])
+
+    def _optional_time(value: str, label: str) -> int | None:
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = int(text)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be an integer waveform time") from exc
+        if parsed < 0:
+            raise ValueError(f"{label} must be >= 0")
+        return parsed
+
+    def _index_selected_waveform() -> None:
+        try:
+            run_id = _selected_waveform_run_id()
+            index = build_desktop_waveform_index(project, run_id)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            waveform_status.set(f"Index error: {exc}")
+            return
+
+        _clear(signal_tree)
+        _clear(change_tree)
+        signal_query.set("")
+        for signal in index["signals"]:
+            signal_tree.insert(
+                "",
+                "end",
+                values=(
+                    signal["path"],
+                    signal["var_type"],
+                    signal["width"],
+                    signal["range"] or "",
+                ),
+            )
+
+        summary = index["summary"]
+        note = index.get("note")
+        detail = (
+            f"{index['format'].upper()} · {summary['signals']} signals · "
+            f"{summary['scopes']} scopes · sha256={index['artifact']['sha256']}"
+        )
+        if note:
+            detail += f" · {note}"
+        waveform_status.set(detail)
+
+    def _select_signal(_event=None) -> None:
+        selection = signal_tree.selection()
+        if not selection:
+            return
+        values = signal_tree.item(selection[0], "values")
+        if values:
+            signal_query.set(str(values[0]))
+
+    def _probe_selected_waveform() -> None:
+        try:
+            run_id = _selected_waveform_run_id()
+            result = probe_desktop_waveform(
+                project,
+                run_id,
+                signal_query.get(),
+                start_time=_optional_time(start_time_text.get(), "start time"),
+                end_time=_optional_time(end_time_text.get(), "end time"),
+                max_changes=1_000,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            waveform_status.set(f"Probe error: {exc}")
+            return
+
+        _clear(change_tree)
+        selected = result["signals"][0]
+        for change in selected["changes"]:
+            change_tree.insert(
+                "",
+                "end",
+                values=(change["time"], change["value"]),
+            )
+        suffix = " · truncated" if selected["truncated"] else ""
+        waveform_status.set(
+            f"{selected['path']} · {len(selected['changes'])} changes · "
+            f"timescale={result.get('timescale') or 'unknown'}{suffix}"
+        )
+
+    waveform_tree.bind("<Double-1>", lambda _event: _index_selected_waveform())
+    signal_tree.bind("<<TreeviewSelect>>", _select_signal)
 
     def refresh() -> None:
         nonlocal current
@@ -403,6 +586,24 @@ def launch_desktop_gui(
                 ),
             )
 
+        _clear(waveform_tree)
+        _clear(signal_tree)
+        _clear(change_tree)
+        signal_query.set("")
+        waveform_status.set("Select a recorded VCD/FST artifact.")
+        for artifact in current["waveforms"]:
+            waveform_tree.insert(
+                "",
+                "end",
+                values=(
+                    artifact["run_id"],
+                    artifact["test_name"] or "(default)",
+                    artifact["status"],
+                    artifact["format"],
+                    "-" if artifact["bytes"] is None else artifact["bytes"],
+                    artifact["project_path"],
+                ),
+            )
 
         design = current["design"]
         units_by_file: dict[str, list[dict[str, Any]]] = {}
@@ -522,7 +723,8 @@ def launch_desktop_gui(
             f"{project.simulator} · top={project.top} · "
             f"showing {len(current['recent_runs'])} runs · "
             f"{design['summary']['files']} source files · "
-            f"{design['summary']['instances']} instances"
+            f"{design['summary']['instances']} instances · "
+            f"{len(current['waveforms'])} waveforms"
         )
 
     ttk.Button(header, text="Refresh", command=refresh).pack(side="right", padx=(0, 12))
