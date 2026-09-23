@@ -177,8 +177,16 @@ binding is `UNSUPPORTED` is retained separately as
 location but no inferred parent signal or relationship. Malformed normalized
 pin-binding containers are rejected before cross-probing.
 
-This qualification is hierarchy/boundary evidence only: exact elaborated internal
-signal drivers and loads remain a separate enrichment milestone.
+The same normalized direct-pin evidence can also qualify a source-structural
+`instance_port` edge after its child instance resolves exactly. ZDDV matches the
+child path plus port name, attaches the retained direct pin record, and reports
+whether the elaborated parent signal agrees with the source signal. A complex pin
+record remains `unsupported_expression`; ambiguous, missing, or invalid records
+remain explicit evidence states. This comparison never rewrites the source-derived
+driver/load role or port direction.
+
+This qualification is hierarchy/boundary consistency evidence only: exact
+elaborated internal signal drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
