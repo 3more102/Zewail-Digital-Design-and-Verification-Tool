@@ -740,10 +740,14 @@ navigation does not silently select the wrong signal.
 
 The report records the waveform signal, matched hierarchy path, RTL unit,
 source declaration, source-level driver/load evidence, match type, and the
-design/connectivity/waveform index artifacts used as evidence. Source lookup is
-intentionally conservative: when the scope matches but a declaration cannot be
-identified on a single source line, ZDDV returns a partial result instead of
-claiming an exact source location.
+design/connectivity/waveform index artifacts used as evidence. When valid persisted
+elaboration resolves the waveform scope, the source-structural connectivity is
+qualified with that exact parent instance path; instance-port edges include an
+exact child instance only when the elaborated hierarchy proves one unique match,
+otherwise candidate ambiguity remains explicit. This does not relabel the evidence
+as exact elaborated net connectivity. Source lookup is intentionally conservative:
+when the scope matches but a declaration cannot be identified on a single source
+line, ZDDV returns a partial result instead of claiming an exact source location.
 
 ### Assertion-to-Waveform Debug Correlation
 
