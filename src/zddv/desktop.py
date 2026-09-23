@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.design_index import build_design_index
 from zddv.storage import (
     assertion_statistics,
     list_coverage_score_snapshots,
@@ -67,6 +68,7 @@ def build_desktop_snapshot(
     runs = list_run_records(project, limit=limit)
     formal_rows = list_formal_result_snapshots(project, limit=1)
     uvm_rows = list_uvm_log_snapshots(project, limit=1)
+    design = build_design_index(project)
 
     return {
         "project": {
@@ -80,6 +82,7 @@ def build_desktop_snapshot(
             "executes_verification": False,
             "invokes_ai": False,
             "applies_generated_artifacts": False,
+            "mutates_project_files": False,
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
@@ -88,6 +91,7 @@ def build_desktop_snapshot(
         "latest_coverage": _latest_coverage(project),
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
+        "design": design,
     }
 
 
@@ -145,9 +149,13 @@ def launch_desktop_gui(
 
     run_tab = ttk.Frame(notebook, padding=8)
     failure_tab = ttk.Frame(notebook, padding=8)
+    sources_tab = ttk.Frame(notebook, padding=8)
+    hierarchy_tab = ttk.Frame(notebook, padding=8)
     evidence_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
+    notebook.add(sources_tab, text="Sources")
+    notebook.add(hierarchy_tab, text="Hierarchy")
     notebook.add(evidence_tab, text="Evidence")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
@@ -195,13 +203,46 @@ def launch_desktop_gui(
         evidence_tree.column(column, width=width, anchor="w")
     evidence_tree.pack(fill="both", expand=True)
 
+    sources_tree = ttk.Treeview(
+        sources_tab,
+        columns=("kind", "location", "details"),
+        show="tree headings",
+    )
+    sources_tree.heading("#0", text="Name")
+    sources_tree.column("#0", width=300, anchor="w")
+    for column, title, width in (
+        ("kind", "Kind", 110),
+        ("location", "Location", 320),
+        ("details", "Evidence", 560),
+    ):
+        sources_tree.heading(column, text=title)
+        sources_tree.column(column, width=width, anchor="w")
+    sources_tree.pack(fill="both", expand=True)
+
+    hierarchy_tree = ttk.Treeview(
+        hierarchy_tab,
+        columns=("type", "source", "state"),
+        show="tree headings",
+    )
+    hierarchy_tree.heading("#0", text="Instance")
+    hierarchy_tree.column("#0", width=300, anchor="w")
+    for column, title, width in (
+        ("type", "Type", 220),
+        ("source", "Source", 420),
+        ("state", "State", 130),
+    ):
+        hierarchy_tree.heading(column, text=title)
+        hierarchy_tree.column(column, width=width, anchor="w")
+    hierarchy_tree.pack(fill="both", expand=True)
+
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence; it does not run "
-            "verification, invoke AI, or apply generated artifacts."
+            "Display-only viewer: refresh reads project sources and persisted evidence; "
+            "it does not run verification, invoke AI, apply generated artifacts, or "
+            "mutate project files."
         ),
     ).pack(side="left")
 
@@ -210,6 +251,28 @@ def launch_desktop_gui(
     def _clear(tree) -> None:
         for item in tree.get_children():
             tree.delete(item)
+
+    def _insert_hierarchy_node(parent: str, node: dict[str, Any]) -> None:
+        if not node.get("resolved", True):
+            state = "UNRESOLVED"
+        elif node.get("recursive"):
+            state = "RECURSIVE"
+        else:
+            state = "RESOLVED"
+
+        source = "-"
+        if node.get("file") is not None and node.get("line") is not None:
+            source = f"{node['file']}:{node['line']}"
+
+        item = hierarchy_tree.insert(
+            parent,
+            "end",
+            text=node.get("instance", "-"),
+            values=(node.get("type", "-"), source, state),
+            open=True,
+        )
+        for child in node.get("children", []):
+            _insert_hierarchy_node(item, child)
 
     def refresh() -> None:
         nonlocal current
@@ -253,6 +316,41 @@ def launch_desktop_gui(
                     group["signature"],
                 ),
             )
+
+        design = current["design"]
+        units_by_file: dict[str, list[dict[str, Any]]] = {}
+        for unit in design["units"]:
+            units_by_file.setdefault(unit["file"], []).append(unit)
+
+        _clear(sources_tree)
+        for source in design["files"]:
+            file_item = sources_tree.insert(
+                "",
+                "end",
+                text=source["path"],
+                values=(
+                    "file",
+                    "",
+                    f"{source['lines']} lines · {source['bytes']} bytes · "
+                    f"sha256={source['sha256']}",
+                ),
+                open=True,
+            )
+            for unit in units_by_file.get(source["path"], []):
+                sources_tree.insert(
+                    file_item,
+                    "end",
+                    text=unit["name"],
+                    values=(
+                        unit["kind"],
+                        f"{unit['file']}:{unit['line']}",
+                        f"lines {unit['line']}-{unit['end_line']} · "
+                        f"{len(unit['instances'])} child instance(s)",
+                    ),
+                )
+
+        _clear(hierarchy_tree)
+        _insert_hierarchy_node("", design["hierarchy"])
 
         _clear(evidence_tree)
         assertions = current["assertions"]
@@ -310,9 +408,12 @@ def launch_desktop_gui(
                 values=("UVM", uvm["status"], details, uvm["snapshot_id"]),
             )
 
+        design_summary = current["design"]["summary"]
         status_text.set(
             f"{project.simulator} · top={project.top} · "
-            f"showing {len(current['recent_runs'])} runs"
+            f"showing {len(current['recent_runs'])} runs · "
+            f"{design_summary['files']} source file(s) · "
+            f"{design_summary['instances']} instance(s)"
         )
 
     ttk.Button(header, text="Refresh", command=refresh).pack(side="right", padx=(0, 12))
