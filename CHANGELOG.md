@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Release verification hardening
+
+- Require the signed manifest `project`, `simulator`, and `top` identity to match
+  the bundled verified signoff exactly.
+- Reject signed manifests whose `key_id` is empty or non-canonical due to leading or
+  trailing whitespace.
+
 ### Signoff change review
 
 - Add deterministic `signoff-diff` comparison for two validated signoff bundles.
