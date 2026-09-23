@@ -461,6 +461,21 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         raw_samples,
         data_bus_bytes=data_bus_bytes,
     )
+    for property_name, manager_signal in (
+        ("ID_W_WIDTH", "AWID"),
+        ("ID_R_WIDTH", "ARID"),
+    ):
+        configured_width = id_widths.get(property_name)
+        if (
+            configured_width is not None
+            and configured_width > 0
+            and manager_signal in master_defaults
+        ):
+            raise ValueError(
+                f"id_widths[{property_name}]={configured_width} requires "
+                f"{manager_signal} to be present, but absent_master_signals "
+                f"declares it physically absent"
+            )
     samples = [
         _normalize_sample(
             sample,
@@ -640,7 +655,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         configured_width = id_widths.get(property_name)
 
         if configured_width == 0:
-            if field in sample:
+            # Manager-side absent-signal defaults are normalized into the sample
+            # as protocol default values. Do not mistake those injected values
+            # for physical ID signal presence when the width property is zero.
+            physically_observed = field in sample and field not in master_defaults
+            if physically_observed:
                 add_violation(
                     "id_signal_present_when_width_zero",
                     sample,
