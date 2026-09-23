@@ -197,8 +197,18 @@ rather than protocol violations.
 Observed optional AXI4 request sidebands are validated at the interface boundary.
 ZDDV width-checks AxCACHE (4 bits), AxPROT (3 bits), AxQOS (4 bits), and AxREGION
 (4 bits), preserves them in reconstructed transactions, and exposes both generic
-metadata keys and channel-specific AR/AW aliases. When AxREGION is present, its
-observed value must remain constant for requests in the same 4KB address space.
+metadata keys and channel-specific AR/AW aliases. AxCACHE decoding follows the AXI4
+directional definitions: ARCACHE[2]/AWCACHE[3] are the current transaction's
+Allocate bit, while ARCACHE[3]/AWCACHE[2] are Other Allocate. The analyzer reports
+these semantics, their source bit positions, cache-lookup requirement, and the
+observable memory-class family (Device, Normal Non-cacheable, Write-Through, or
+Write-Back). Legacy read-allocate/write-allocate raw-bit fields remain in the report
+for schema compatibility. It does not infer downstream cache topology or whether an
+allocation actually occurred. When AxREGION is present, its observed value must
+remain constant for requests in the same 4KB address space.
+
+This decoding follows Arm AMBA AXI and ACE Protocol Specification IHI 0022H,
+Tables A4-3, A4-4, and A4-5.
 
 Optional AWUSER, WUSER, BUSER, ARUSER, and RUSER values are transported as opaque
 channel payload. When present, they participate in the same VALID/READY stability
