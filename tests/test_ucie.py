@@ -249,3 +249,22 @@ def test_ucie_rejects_unmodeled_public_spec_version():
     )
     assert violation["scope"] == "negotiated"
     assert violation["expected"] == "1.0/1.1/2.0/3.0"
+
+
+
+def test_ucie_rejects_nonfinite_or_boolean_data_rate():
+    for bad_rate in ("nan", "inf", True):
+        result = analyze_ucie_trace(
+            {
+                "negotiated": {
+                    "spec_version": "3.0",
+                    "data_rate_gt_s": bad_rate,
+                },
+                "flits": [],
+            }
+        )
+
+        assert result["status"] == "FAIL"
+        assert "invalid_negotiated_data_rate" in {
+            item["code"] for item in result["violations"]
+        }
