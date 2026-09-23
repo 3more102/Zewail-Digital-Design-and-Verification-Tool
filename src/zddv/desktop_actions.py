@@ -8,7 +8,7 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.lint import lint_project
-from zddv.rerun import historical_run_snapshot, rerun_run_id
+from zddv.rerun import historical_run_snapshot, rerun_snapshot
 from zddv.simulator import get_backend
 
 
@@ -140,8 +140,9 @@ def prepare_desktop_action(
             "Creates a persisted run record and may create log, waveform, and coverage artifacts.",
         ],
         "rerun": [
-            f"Builds with the configured {project.simulator} backend.",
-            "Reruns the selected historical run using its recorded test, seed, plusargs, and timeout.",
+            f"Builds the current project with the configured {project.simulator} backend.",
+            "Uses the reviewed historical run's recorded test, seed, plusargs, and timeout exactly.",
+            "The recorded historical command is review evidence and is not replayed verbatim.",
             "Creates a new persisted run record and may create log, waveform, and coverage artifacts.",
         ],
     }[normalized]
@@ -150,7 +151,7 @@ def prepare_desktop_action(
         "lint": "zddv.lint.lint_project",
         "build": "zddv.simulator.get_backend(...).build",
         "run": "zddv.simulator.get_backend(...).run",
-        "rerun": "zddv.rerun.rerun_run_id",
+        "rerun": "zddv.rerun.rerun_snapshot",
     }[normalized]
 
     payload = {
@@ -255,7 +256,7 @@ def execute_desktop_action(
         }
 
     if action == "rerun":
-        summary = rerun_run_id(project, str(parameters["run_id"]))
+        summary = rerun_snapshot(project, reviewed["historical_run"])
         return {
             "action": action,
             "review_sha256": reviewed["review_sha256"],
