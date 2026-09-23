@@ -217,7 +217,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [ ] Source/hierarchy navigation panes.
 - [ ] Waveform navigation and targeted probe integration.
-- [ ] Detailed assertion/UVM/formal evidence panes.
+- [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
 
 ## Long-Term Direction
