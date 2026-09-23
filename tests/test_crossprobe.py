@@ -343,7 +343,13 @@ def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
 def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     project = _project(tmp_path)
     waveform_path = project.root / "trace.vcd"
-    waveform_path.write_text(VCD, encoding="utf-8")
+    expanded_vcd = VCD.replace(
+        "$var wire 1 ! clk $end\n$scope module dut $end",
+        "$var wire 1 ! clk $end\n"
+        "$var wire 4 $ count [3:0] $end\n"
+        "$scope module dut $end",
+    )
+    waveform_path.write_text(expanded_vcd, encoding="utf-8")
 
     elaborated = {
         "schema_version": 1,
@@ -424,6 +430,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_connectivity["analysis_level"] == (
         "simulator_elaborated_direct_pin_varref"
     )
+    assert parent_connectivity["driver_load_scope"] == "direct_instance_boundary_only"
     assert parent_connectivity["instance_port_bindings"] == []
     assert len(parent_connectivity["parent_signal_bindings"]) == 1
     child_pin = parent_connectivity["parent_signal_bindings"][0]
@@ -432,6 +439,29 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["parent_signal"] == "clk"
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
+    assert child_pin["query_side"] == "parent_signal"
+    assert child_pin["query_role"] == "load"
+    assert parent_connectivity["drivers"] == []
+    assert parent_connectivity["loads"] == [child_pin]
+    assert parent_connectivity["bidirectional"] == []
+    assert parent_connectivity["unclassified"] == []
+
+    parent_count = build_crossprobe(
+        project,
+        "TOP.tb_top.count",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    parent_count_connectivity = parent_count["elaborated_connectivity"]
+    assert len(parent_count_connectivity["drivers"]) == 1
+    count_driver = parent_count_connectivity["drivers"][0]
+    assert count_driver["instance_path"] == "tb_top.dut"
+    assert count_driver["pin"] == "count"
+    assert count_driver["port_direction"] == "output"
+    assert count_driver["query_side"] == "parent_signal"
+    assert count_driver["query_role"] == "driver"
+    assert parent_count_connectivity["loads"] == []
 
     child = build_crossprobe(
         project,
@@ -448,6 +478,10 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+    assert parent_binding["query_side"] == "instance_port"
+    assert parent_binding["query_role"] == "load"
+    assert child_connectivity["drivers"] == []
+    assert child_connectivity["loads"] == [parent_binding]
 
     elaborated["port_evidence"] = {
         "status": "UNAVAILABLE",
@@ -461,9 +495,15 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         design_index=design,
         elaborated_index=elaborated,
     )
-    ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
+    ungated_connectivity = ungated["elaborated_connectivity"]
+    ungated_binding = ungated_connectivity["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    assert ungated_binding["query_role"] == "unclassified"
+    assert ungated_connectivity["drivers"] == []
+    assert ungated_connectivity["loads"] == []
+    assert ungated_connectivity["bidirectional"] == []
+    assert ungated_connectivity["unclassified"] == [ungated_binding]
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
     project = _project(tmp_path)
