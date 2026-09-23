@@ -680,7 +680,10 @@ def qualify_signal_navigation_with_elaboration(
         and item.get("direction")
     ]
     evidence_meta = dict(port_evidence or {})
-    port_contract_available = bool(ports) or evidence_meta.get("status") == "NORMALIZED"
+    if evidence_meta:
+        port_contract_available = evidence_meta.get("status") == "NORMALIZED"
+    else:
+        port_contract_available = bool(ports)
 
     parent_matches = [
         item for item in instances if str(item.get("path") or "") == parent_path
