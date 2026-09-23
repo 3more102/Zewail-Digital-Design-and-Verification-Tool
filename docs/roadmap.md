@@ -58,12 +58,12 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata by default).
 - [x] Explicit opt-in FST scope/signal indexing and bounded probing through `fst2vcd`.
-- [x] Waveform-to-source cross-probing.
+- [x] Waveform-to-source cross-probing (VCD direct; FST through explicit `fst2vcd`).
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
-- [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
+- [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
 
