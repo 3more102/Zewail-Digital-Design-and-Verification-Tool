@@ -97,6 +97,91 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
     }
 
 
+def test_desktop_snapshot_loads_bounded_formal_and_uvm_details(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "demo")
+    formal = {
+        "snapshot_id": "formal-detail",
+        "status": "FAIL",
+        "mode": "bmc",
+        "property_count": 2,
+    }
+    uvm = {
+        "snapshot_id": "uvm-detail",
+        "status": "FAIL",
+        "test_name": "stress",
+        "error_count": 1,
+        "fatal_count": 0,
+    }
+    calls = {}
+
+    monkeypatch.setattr(
+        "zddv.desktop.list_formal_result_snapshots",
+        lambda project_arg, *, limit: [formal],
+    )
+    monkeypatch.setattr(
+        "zddv.desktop.list_uvm_log_snapshots",
+        lambda project_arg, *, limit: [uvm],
+    )
+
+    def fake_formal_properties(project_arg, snapshot_id, *, limit):
+        calls["formal"] = (snapshot_id, limit)
+        return [
+            {
+                "snapshot_id": snapshot_id,
+                "property_index": 0,
+                "name": "p_ready",
+                "kind": "assert",
+                "status": "FAIL",
+                "interpretation": "COUNTEREXAMPLE",
+                "depth": 12,
+                "effective_depth": 12,
+                "message": "counterexample found",
+                "trace_path": "trace.vcd",
+                "trace_role": "COUNTEREXAMPLE",
+            }
+        ]
+
+    def fake_uvm_messages(project_arg, snapshot_id, *, limit):
+        calls["uvm"] = (snapshot_id, limit)
+        return [
+            {
+                "snapshot_id": snapshot_id,
+                "event_index": 0,
+                "severity": "UVM_ERROR",
+                "report_id": "MISMATCH",
+                "component": "uvm_test_top.env.scoreboard",
+                "message": "expected 42 got 41",
+                "time_text": "120ns",
+                "source_location": "scoreboard.sv(88)",
+                "log_line": 44,
+                "raw": "UVM_ERROR ...",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "zddv.desktop.list_formal_property_results",
+        fake_formal_properties,
+    )
+    monkeypatch.setattr(
+        "zddv.desktop.list_uvm_report_messages",
+        fake_uvm_messages,
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=7)
+
+    assert calls == {
+        "formal": ("formal-detail", 7),
+        "uvm": ("uvm-detail", 7),
+    }
+    assert snapshot["latest_formal"] == formal
+    assert snapshot["formal_properties"][0]["name"] == "p_ready"
+    assert snapshot["latest_uvm"] == uvm
+    assert snapshot["uvm_messages"][0]["report_id"] == "MISMATCH"
+
+
 def test_desktop_snapshot_rejects_nonpositive_limit(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     with pytest.raises(ValueError, match="limit must be >= 1"):

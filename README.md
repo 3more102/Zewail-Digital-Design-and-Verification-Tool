@@ -56,7 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries, plus optional version-aware public data-rate ceiling evidence through UCIe 3.0
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
-- Read-only desktop Debug Studio using Python Tk/ttk, backed by persisted verification evidence plus deterministic source and hierarchy navigation
+- Read-only desktop Debug Studio using Python Tk/ttk, backed by persisted verification evidence plus deterministic source and hierarchy navigation plus bounded assertion, formal-property, and UVM-message detail panes
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
@@ -826,7 +826,7 @@ bundle is review-required before any external use.
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
-- [x] Desktop Debug Studio read-only foundation (Tk/ttk summary, runs, failures, coverage, and evidence views)
+- [x] Desktop Debug Studio read-only foundation (summary, runs, failures, coverage, evidence, sources/hierarchy, and detailed assertion/formal/UVM views)
 - [x] Source/hierarchy RTL preview and cross-navigation, including persisted elaborated-hierarchy source links
 - [ ] Interactive waveform/UVM panes and review-gated project actions
 
@@ -847,6 +847,7 @@ bundle is review-required before any external use.
 - [Generated Verification Review Workflow](docs/generated-verification.md)
 - [AI Provenance Chain Audit](docs/ai-chain-audit.md)
 - [AI RCA Context](docs/ai-rca-context.md)
+- [Desktop Debug Studio](docs/desktop-debug-studio.md)
 
 ## License
 
