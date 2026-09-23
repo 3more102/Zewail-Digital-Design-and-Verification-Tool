@@ -236,6 +236,31 @@ $enddefinitions $end
                 "location": {"path": "rtl/leaf.sv", "line": 3, "column": 18},
             }
         ],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
+        "pin_bindings": [
+            {
+                "instance_path": "tb_top.g[0].u_leaf",
+                "instance_name": "u_leaf",
+                "instance_module": "leaf",
+                "parent_instance_path": "tb_top",
+                "generate_scopes": ["g[0]"],
+                "pin": "count",
+                "pin_elaborated_name": "count",
+                "pin_verilog_name": "count",
+                "pin_original_name": "count",
+                "status": "NORMALIZED",
+                "expression_type": "VARREF",
+                "signal": "count",
+                "signal_elaborated_name": "count",
+                "signal_verilog_name": "count",
+                "signal_original_name": "count",
+            }
+        ],
         "instances": [
             {
                 "path": "tb_top",
@@ -275,6 +300,18 @@ $enddefinitions $end
     assert result["elaborated_port"]["signal"] == "count"
     assert result["elaborated_port"]["port"]["direction"] == "output"
     assert result["elaborated_port"]["port"]["direction_field"] == "ioDirection"
+    assert result["elaborated_pin_binding"]["status"] == "MATCHED"
+    assert (
+        result["elaborated_pin_binding"]["instance_path"]
+        == "tb_top.g[0].u_leaf"
+    )
+    assert result["elaborated_pin_binding"]["signal"] == "count"
+    assert result["elaborated_pin_binding"]["binding"]["pin"] == "count"
+    assert result["elaborated_pin_binding"]["binding"]["signal"] == "count"
+    assert (
+        result["elaborated_pin_binding"]["evidence"]["contract"]
+        == "verilator_cell_pin_direct_varref_only"
+    )
     assert result["source"]["unit"] == "leaf"
     assert result["source"]["file"] == "rtl/leaf.sv"
     assert result["source"]["declaration"]["line"] == 3
@@ -312,6 +349,12 @@ def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
             "reason": "legacy_xml_port_schema_not_normalized",
         },
         "ports": [],
+        "pin_binding_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_pin_binding_schema_not_normalized",
+        },
+        "pin_bindings": [],
         "instances": [
             {
                 "path": "tb_top.dut",
@@ -338,6 +381,67 @@ def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
         "source_format": "xml",
         "reason": "legacy_xml_port_schema_not_normalized",
     }
+    assert result["elaborated_pin_binding"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_pin_binding_schema_not_normalized",
+    }
+
+
+def test_crossprobe_preserves_unsupported_pin_expression(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "simulator_version": "Verilator test",
+        "source_format": "json",
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 1,
+        },
+        "pin_bindings": [
+            {
+                "instance_path": "tb_top.dut",
+                "instance_name": "dut",
+                "instance_module": "counter",
+                "parent_instance_path": "tb_top",
+                "generate_scopes": [],
+                "pin": "count",
+                "status": "UNSUPPORTED",
+                "expression_type": "AND",
+                "signal": None,
+            }
+        ],
+        "instances": [
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "rtl/counter.sv", "line": 1},
+            }
+        ],
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["elaborated_pin_binding"]["status"] == "UNSUPPORTED_EXPRESSION"
+    assert result["elaborated_pin_binding"]["binding"]["expression_type"] == "AND"
+    assert result["elaborated_pin_binding"]["binding"]["signal"] is None
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
