@@ -496,3 +496,93 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
         for kind, _detail in malformed_item_rows
     )
 
+
+
+
+def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
+    report = {
+        "elaborated_source_correlation": {
+            "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+            "role_semantics": "source_structural_only",
+            "correlations": [
+                {
+                    "status": "MATCHED",
+                    "binding_side": "instance_port",
+                    "instance_path": "tb_top.dut",
+                    "pin": "count",
+                    "parent_instance_path": "tb_top",
+                    "parent_signal": "count",
+                    "source_unit": "tb_top",
+                    "source_roles": ["driver"],
+                    "source_edge": {
+                        "file": "tb/tb_top.sv",
+                        "line": 4,
+                        "kind": "instance_port",
+                    },
+                }
+            ],
+        }
+    }
+
+    rows = dict(desktop_crossprobe_evidence_rows(report))
+
+    assert rows["Elaborated/source correlation"] == (
+        "simulator_elaborated_to_source_structural_correlation · correlations=1 · "
+        "matched=1 · not-found=0 · ambiguous=0 · unavailable=0 · "
+        "roles=source_structural_only"
+    )
+    assert rows["Correlated source edge"] == (
+        "tb_top.count ↔ tb_top.dut.count · binding_side=instance_port · "
+        "source=tb_top · source_roles=driver · location=tb/tb_top.sv:4"
+    )
+
+
+def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlation():
+    uncertain = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {"status": "AMBIGUOUS"},
+                    {"status": "NOT_FOUND"},
+                    {"status": "UNAVAILABLE"},
+                ],
+            }
+        }
+    )
+    uncertain_map = dict(uncertain)
+    assert uncertain_map["Elaborated/source correlation"] == (
+        "simulator_elaborated_to_source_structural_correlation · correlations=3 · "
+        "matched=0 · not-found=1 · ambiguous=1 · unavailable=1 · "
+        "roles=source_structural_only"
+    )
+    assert "Correlated source edge" not in uncertain_map
+
+    untrusted = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": "future_correlation_contract",
+                "role_semantics": "source_structural_only",
+                "correlations": [{"status": "MATCHED", "source_edge": {}}],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated/source correlation", "Correlated source edge"}
+        for kind, _detail in untrusted
+    )
+
+    wrong_roles = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+                "role_semantics": "simulator_elaborated",
+                "correlations": [{"status": "MATCHED", "source_edge": {}}],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated/source correlation", "Correlated source edge"}
+        for kind, _detail in wrong_roles
+    )
