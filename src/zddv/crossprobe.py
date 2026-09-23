@@ -330,12 +330,20 @@ def _match_elaborated_boundary_binding(
         "input": "parent_to_child",
         "output": "child_to_parent",
         "inout": "bidirectional",
-    }.get(direction, "unknown")
+    }.get(direction)
+    if flow is None:
+        return {
+            **common,
+            "status": "INVALID_DIRECTION",
+            "port_direction": direction or None,
+            "reason": "normalized_module_port_direction_is_not_supported",
+            "binding": binding,
+        }
 
     return {
         **common,
         "status": "MATCHED",
-        "port_direction": direction or None,
+        "port_direction": direction,
         "flow": flow,
         "binding": binding,
     }
