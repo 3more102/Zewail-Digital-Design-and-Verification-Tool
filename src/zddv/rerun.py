@@ -33,6 +33,8 @@ def historical_run_snapshot(
         "run_id": str(source["run_id"]),
         "created_at": source["created_at"],
         "status": source["status"],
+        "returncode": source["returncode"],
+        "duration_ms": source["duration_ms"],
         "identity": {
             "project": source["project"],
             "simulator": source["simulator"],
