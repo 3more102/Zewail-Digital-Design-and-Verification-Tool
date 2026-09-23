@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated boundary connectivity
+
+- Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
+- Keep direct bindings with unavailable or ambiguous direction evidence explicitly unclassified rather than inferring flow.
+- Preserve the boundary-only scope: this does not claim complete simulator-elaborated internal drivers or loads.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
