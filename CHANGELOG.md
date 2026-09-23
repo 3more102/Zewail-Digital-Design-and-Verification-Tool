@@ -4,6 +4,9 @@
 
 ### Desktop Debug Studio
 
+- Add an explicit-review historical rerun action: exact persisted test/seed/plusargs/
+  timeout preview, deterministic SHA-256 confirmation, stale project identity checks,
+  and a second confirmation before build/simulation side effects.
 - Add bounded detail panes for normalized assertion events, formal property results,
   and UVM report messages while preserving source, source-level hierarchy, and
   persisted simulator-elaborated hierarchy views.
