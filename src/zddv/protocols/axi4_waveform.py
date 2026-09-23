@@ -130,16 +130,13 @@ def extract_axi4_trace_from_vcd(
         property_name: str,
         request_signal: str,
         response_signal: str,
-    ) -> int:
+    ) -> int | None:
         request_present = request_signal in scoped_signals
         response_present = response_signal in scoped_signals
-        if request_present != response_present:
-            raise RuntimeError(
-                f"AXI4 {property_name} requires {request_signal} and "
-                f"{response_signal} to be both present or both absent"
-            )
-        if not request_present:
-            return 0
+        if not (request_present and response_present):
+            # VCD omission is observation absence, not proof of a zero-width
+            # physical interface property.
+            return None
 
         request_width = int(scoped_signals[request_signal]["width"])
         response_width = int(scoped_signals[response_signal]["width"])
@@ -156,10 +153,14 @@ def extract_axi4_trace_from_vcd(
             )
         return request_width
 
-    id_widths = {
-        "ID_W_WIDTH": id_width_property("ID_W_WIDTH", "AWID", "BID"),
-        "ID_R_WIDTH": id_width_property("ID_R_WIDTH", "ARID", "RID"),
-    }
+    id_widths: dict[str, int] = {}
+    for property_name, request_signal, response_signal in (
+        ("ID_W_WIDTH", "AWID", "BID"),
+        ("ID_R_WIDTH", "ARID", "RID"),
+    ):
+        width = id_width_property(property_name, request_signal, response_signal)
+        if width is not None:
+            id_widths[property_name] = width
 
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
