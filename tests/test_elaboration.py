@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from zddv.config import initialize_project, save_project
@@ -229,6 +230,54 @@ def test_elaborated_hierarchy_lines_and_version_detection():
     assert VerilatorBackend._version_tuple("Verilator 5.052 devel") == (5, 52)
     assert VerilatorBackend._version_tuple("Verilator 5.043") < (5, 44)
     assert VerilatorBackend._version_tuple("Verilator 5.044") >= (5, 44)
+
+
+def test_verilator_export_uses_documented_json_version_boundary(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "version-boundary")
+    source = project.root / "rtl" / "top.sv"
+    source.write_text("module top; endmodule\\n", encoding="utf-8")
+    project.rtl = ["rtl/*.sv"]
+    project.tb = []
+    project.top = "top"
+    save_project(project)
+
+    for version, expected_format, expected_flag in (
+        ("Verilator 5.043", "xml", "--xml-only"),
+        ("Verilator 5.044", "json", "--json-only"),
+    ):
+        backend = VerilatorBackend()
+        monkeypatch.setattr(backend, "_tool", lambda: "verilator")
+        monkeypatch.setattr(backend, "version", lambda version=version: version)
+
+        seen: list[str] = []
+
+        def fake_run(command, **kwargs):
+            seen[:] = command
+            if "--json-only-output" in command:
+                ast_path = Path(command[command.index("--json-only-output") + 1])
+                meta_path = Path(
+                    command[command.index("--json-only-meta-output") + 1]
+                )
+                ast_path.write_text('{"type":"NETLIST","modulesp":[]}', encoding="utf-8")
+                meta_path.write_text('{"files":{}}', encoding="utf-8")
+            else:
+                ast_path = Path(command[command.index("--xml-output") + 1])
+                ast_path.write_text("<verilator_xml/>", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="")
+
+        monkeypatch.setattr(
+            "zddv.simulator.verilator.subprocess.run",
+            fake_run,
+        )
+        result = backend.export_design_tree(
+            project,
+            project.root / ".zddv" / expected_format,
+        )
+        assert result["format"] == expected_format
+        assert expected_flag in seen
 
 
 class _FakeBackend:
