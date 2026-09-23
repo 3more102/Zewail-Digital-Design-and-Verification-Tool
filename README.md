@@ -54,7 +54,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
-- Read-only desktop Debug Studio foundation using Python Tk/ttk, with live summary, recent runs, failure groups, coverage, and per-test views backed by the same verification database
+- Read-only desktop Debug Studio foundation using Python Tk/ttk, with live summary, recent runs, failure groups, per-test views, normalized assertion status, newest formal/UVM evidence, and both point-count and native percentage-score coverage backed by the same verification database
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
@@ -812,8 +812,8 @@ bundle is review-required before any external use.
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
-- [x] Desktop Debug Studio read-only foundation (Tk/ttk summary, runs, failures, coverage, and per-test views)
-- [ ] Interactive source/hierarchy/waveform/UVM panes and review-gated project actions
+- [x] Desktop Debug Studio read-only foundation (Tk/ttk summary, runs, failures, per-test results, point/native-score coverage, assertions, formal, and UVM evidence)
+- [ ] Interactive source/hierarchy/waveform/protocol panes and review-gated project actions
 
 ## Design Principles
 
@@ -832,6 +832,7 @@ bundle is review-required before any external use.
 - [Generated Verification Review Workflow](docs/generated-verification.md)
 - [AI Provenance Chain Audit](docs/ai-chain-audit.md)
 - [AI RCA Context](docs/ai-rca-context.md)
+- [Desktop Debug Studio](docs/desktop-debug-studio.md)
 
 ## License
 
