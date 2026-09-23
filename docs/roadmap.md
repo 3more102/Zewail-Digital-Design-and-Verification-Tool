@@ -206,7 +206,8 @@ project files, or invent verification state from the UI.
 - [x] Latest normalized coverage breakdown.
 - [x] Per-test pass/fail/timeout summary.
 - [x] Refresh from the shared backend without duplicating verification logic.
-- [ ] Source/hierarchy navigation panes.
+- [x] Source-level source/hierarchy navigation panes from the in-memory deterministic design index.
+- [ ] Simulator-elaborated hierarchy selection in the GUI when elaborated evidence is available.
 - [ ] Waveform navigation and targeted probe integration.
 - [x] Assertion/UVM/formal evidence panes, plus native percentage-score coverage support.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
