@@ -1948,3 +1948,138 @@ def test_axi4_rejects_invalid_id_width_metadata(width):
                 "samples": [],
             }
         )
+
+
+def test_user_width_guidance_is_advisory_only():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 64,
+            "user_signal_widths": {
+                "AWUSER": 129,
+                "ARUSER": 129,
+                "WUSER": 42,
+                "BUSER": 17,
+                "RUSER": 59,
+            },
+            "samples": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["violations"] == []
+    assert result["summary"]["advisories"] == 4
+    assert {item["code"] for item in result["advisories"]} == {
+        "user_req_width_above_guidance",
+        "user_data_width_above_guidance",
+        "user_data_width_granularity_recommendation",
+        "user_resp_width_above_guidance",
+    }
+    assert all(item["kind"] == "recommendation" for item in result["advisories"])
+
+
+def test_ruser_response_bit_stability_recommendation_is_non_failing():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "user_signal_widths": {
+                "WUSER": 4,
+                "BUSER": 2,
+                "RUSER": 6,
+            },
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": 3,
+                    "ARADDR": 0x400,
+                    "ARLEN": 1,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 3,
+                    "RDATA": 0x11,
+                    "RRESP": "OKAY",
+                    "RLAST": 0,
+                    "RUSER": 0b010001,
+                },
+                {
+                    "cycle": 2,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 3,
+                    "RDATA": 0x22,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                    "RUSER": 0b010010,
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["violations"] == []
+    advisory = next(
+        item
+        for item in result["advisories"]
+        if item["code"] == "ruser_response_bits_vary_across_read_beats"
+    )
+    assert advisory["kind"] == "recommendation"
+    assert advisory["transaction_index"] == 0
+    assert advisory["signal"] == "RUSER"
+    assert advisory["actual"] == [1, 2]
+
+
+def test_stable_ruser_response_bits_do_not_emit_advisory():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "user_signal_widths": {
+                "WUSER": 4,
+                "BUSER": 2,
+                "RUSER": 6,
+            },
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": 4,
+                    "ARADDR": 0x500,
+                    "ARLEN": 1,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 4,
+                    "RDATA": 0x33,
+                    "RRESP": "OKAY",
+                    "RLAST": 0,
+                    "RUSER": 0b010001,
+                },
+                {
+                    "cycle": 2,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 4,
+                    "RDATA": 0x44,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                    "RUSER": 0b100001,
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert not any(
+        item["code"] == "ruser_response_bits_vary_across_read_beats"
+        for item in result["advisories"]
+    )
