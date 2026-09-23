@@ -111,6 +111,102 @@ def crossprobe_desktop_waveform_signal(
     return report
 
 
+def desktop_crossprobe_evidence_rows(
+    report: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Format cross-probe evidence for the desktop without adding new inference."""
+    rows: list[tuple[str, str]] = []
+
+    hierarchy = report.get("hierarchy") or {}
+    hierarchy_detail = report.get("note") or "No hierarchy match."
+    if isinstance(hierarchy, dict) and hierarchy:
+        hierarchy_detail = (
+            f"{report.get('hierarchy_resolution') or 'unknown'} · "
+            f"{hierarchy.get('design_path') or '-'} · "
+            f"{hierarchy.get('type') or '-'}"
+        )
+    rows.append(("Hierarchy", str(hierarchy_detail)))
+
+    source = report.get("source") or {}
+    source_detail = "No RTL declaration match."
+    if isinstance(source, dict) and source:
+        declaration = source.get("declaration") or {}
+        location = str(source.get("file") or "-")
+        if isinstance(declaration, dict) and declaration.get("line") is not None:
+            location += f":{declaration['line']}"
+        source_detail = f"{source.get('unit') or '-'} · {location}"
+    rows.append(("RTL source", source_detail))
+
+    connectivity = report.get("connectivity") or {}
+    drivers = connectivity.get("drivers") or [] if isinstance(connectivity, dict) else []
+    loads = connectivity.get("loads") or [] if isinstance(connectivity, dict) else []
+    rows.append(("Drivers", f"{len(drivers)} source-structural item(s)"))
+    rows.append(("Loads", f"{len(loads)} source-structural item(s)"))
+
+    elaborated = report.get("elaborated_evidence") or {}
+    elaborated_detail = (
+        str(elaborated.get("status") or "NOT_PRESENT")
+        if isinstance(elaborated, dict)
+        else "NOT_PRESENT"
+    )
+    if isinstance(elaborated, dict) and elaborated.get("error"):
+        elaborated_detail += f" · {elaborated['error']}"
+    rows.append(("Elaboration", elaborated_detail))
+
+    elaborated_port = report.get("elaborated_port")
+    if isinstance(elaborated_port, dict):
+        port_detail = str(elaborated_port.get("status") or "UNKNOWN")
+        port = elaborated_port.get("port")
+        if elaborated_port.get("status") == "MATCHED" and isinstance(port, dict):
+            port_detail += (
+                f" · {port.get('module') or '-'}."
+                f"{port.get('name') or elaborated_port.get('signal') or '-'}"
+                f" · direction={port.get('direction') or 'unknown'}"
+            )
+        elif elaborated_port.get("reason"):
+            port_detail += f" · {elaborated_port['reason']}"
+        rows.append(("Elaborated port", port_detail))
+
+    elaborated_connectivity = report.get("elaborated_connectivity")
+    if isinstance(elaborated_connectivity, dict):
+        parent_bindings = [
+            item
+            for item in elaborated_connectivity.get("parent_signal_bindings", [])
+            if isinstance(item, dict)
+        ]
+        instance_bindings = [
+            item
+            for item in elaborated_connectivity.get("instance_port_bindings", [])
+            if isinstance(item, dict)
+        ]
+        connectivity_detail = (
+            f"{elaborated_connectivity.get('analysis_level') or 'direct_pin_varref'} · "
+            f"parent-signal bindings={len(parent_bindings)} · "
+            f"instance-port bindings={len(instance_bindings)}"
+        )
+        relationships = sorted(
+            {
+                str(item.get("relationship"))
+                for item in parent_bindings + instance_bindings
+                if item.get("relationship")
+            }
+        )
+        if relationships:
+            connectivity_detail += f" · relationships={','.join(relationships)}"
+        rows.append(("Elaborated connectivity", connectivity_detail))
+
+    elaborated_boundary = report.get("elaborated_boundary")
+    if isinstance(elaborated_boundary, dict):
+        boundary_detail = str(elaborated_boundary.get("status") or "UNKNOWN")
+        if elaborated_boundary.get("flow"):
+            boundary_detail += f" · flow={elaborated_boundary['flow']}"
+        if elaborated_boundary.get("reason"):
+            boundary_detail += f" · {elaborated_boundary['reason']}"
+        rows.append(("Elaborated boundary", boundary_detail))
+
+    return rows
+
+
 def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     """Attach a self-contained read-only waveform navigation tab to a Tk notebook."""
     try:
@@ -277,45 +373,8 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
                 "end",
                 values=(change["time"], change["value"]),
             )
-        hierarchy = crossprobe.get("hierarchy") or {}
-        source = crossprobe.get("source") or {}
-        declaration = source.get("declaration") or {}
-        connectivity = crossprobe.get("connectivity") or {}
-        elaborated = crossprobe.get("elaborated_evidence") or {}
-
-        hierarchy_detail = crossprobe.get("note") or "No hierarchy match."
-        if hierarchy:
-            hierarchy_detail = (
-                f"{crossprobe.get('hierarchy_resolution') or 'unknown'} · "
-                f"{hierarchy.get('design_path') or '-'} · "
-                f"{hierarchy.get('type') or '-'}"
-            )
-        evidence_tree.insert("", "end", values=("Hierarchy", hierarchy_detail))
-
-        source_detail = "No RTL declaration match."
-        if source:
-            location = source.get("file") or "-"
-            if declaration.get("line") is not None:
-                location += f":{declaration['line']}"
-            source_detail = f"{source.get('unit') or '-'} · {location}"
-        evidence_tree.insert("", "end", values=("RTL source", source_detail))
-
-        drivers = connectivity.get("drivers") or []
-        loads = connectivity.get("loads") or []
-        evidence_tree.insert(
-            "",
-            "end",
-            values=("Drivers", f"{len(drivers)} source-structural item(s)"),
-        )
-        evidence_tree.insert(
-            "",
-            "end",
-            values=("Loads", f"{len(loads)} source-structural item(s)"),
-        )
-        elaborated_detail = elaborated.get("status") or "NOT_PRESENT"
-        if elaborated.get("error"):
-            elaborated_detail += f" · {elaborated['error']}"
-        evidence_tree.insert("", "end", values=("Elaboration", elaborated_detail))
+        for kind, details in desktop_crossprobe_evidence_rows(crossprobe):
+            evidence_tree.insert("", "end", values=(kind, details))
 
         suffix = " (truncated)" if signal["truncated"] else ""
         info_var.set(
