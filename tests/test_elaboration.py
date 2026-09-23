@@ -576,6 +576,12 @@ def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
         "source_format": "xml",
         "reason": "legacy_xml_pin_binding_schema_not_normalized",
     }
+    assert result["internal_assignments"] == []
+    assert result["internal_assignment_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_internal_assignment_schema_not_normalized",
+    }
 
 
 def test_elaborated_hierarchy_lines_and_version_detection():
@@ -696,6 +702,7 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "instances": 1,
         "ports": 0,
         "pin_bindings": 0,
+        "internal_assignments": 0,
     }
     assert result["ports"] == []
     assert result["port_evidence"] == {
@@ -708,6 +715,14 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "status": "NORMALIZED",
         "source_format": "json",
         "contract": "verilator_cell_pin_direct_varref_only",
+        "unsupported_expression_count": 0,
+    }
+    assert result["internal_assignments"] == []
+    assert result["internal_assignment_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_direct_assign_varref_only",
+        "supported_assignment_types": ["ASSIGN", "ASSIGNW"],
         "unsupported_expression_count": 0,
     }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)
