@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Desktop Debug Studio
+
+- Add bounded detail panes for normalized assertion events, formal property results,
+  and UVM report messages while preserving the existing Sources and Hierarchy views.
+- Add optional query limits to formal-property and UVM-message storage readers so the
+  desktop does not materialize an unbounded evidence set.
+- Keep refresh display-only with respect to verification execution, AI invocation,
+  and generated-artifact application.
+
 ### Release verification hardening
 
 - Require the signed manifest `project`, `simulator`, and `top` identity to match
