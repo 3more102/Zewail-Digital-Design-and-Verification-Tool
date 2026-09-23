@@ -76,8 +76,11 @@ The Debug Studio core uses a normalized design index at
 
 The source-level index is deliberately separate from simulator elaboration.
 Simulator-resolved evidence is written to `.zddv/design/elaborated.json`.
-The Verilator adapter exports JSON AST data on Verilator 5.022+ and falls back
-to legacy XML on older supported releases. ZDDV normalizes both forms into
+The Verilator adapter exports JSON AST data on Verilator 5.044+ and falls back
+to legacy XML on older supported releases. Verilator 5.044 introduced
+`--json-only`; later releases removed the deprecated XML-only path, so the
+version split keeps each supported release on an available native export.
+ZDDV normalizes both forms into
 module records, source locations, and full instance paths while preserving the
 source-index contract for CLI/GUI consumers.
 
@@ -140,9 +143,10 @@ connectivity, and waveform index paths used as evidence. Results remain
 `PARTIAL` when the waveform scope maps to a design unit but an exact declaration
 cannot be proven.
 
-This contract is source-level. Generated hierarchy, parameter-specialized
-instances, binds, macros, and simulator-resolved objects remain enrichment work
-for simulator AST/elaboration adapters.
+This cross-probe contract remains source-level. Simulator-resolved hierarchy,
+including generated scopes, is captured separately in
+`.zddv/design/elaborated.json`; consuming that hierarchy in cross-probing,
+plus exact elaborated drivers/loads, remains enrichment work.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
@@ -329,7 +333,7 @@ hidden queues, lock/grab state, and vendor transcript semantics are still not in
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Enrich source/connectivity/hierarchy/waveform cross-probing with simulator elaboration and generated hierarchy.
+5. Feed simulator-elaborated/generated hierarchy into waveform cross-probing and add exact elaborated drivers/loads.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
