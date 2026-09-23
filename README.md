@@ -17,6 +17,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
 - Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, isolated per-run native coverage databases, IMC multi-run merge/report evidence, normalized Overall Average/Covered score history, and conservative item-level block/expression/toggle `coverage-holes` from verified native detail tables, plus an evidence-preserving `xcelium-detail-audit` that inventories native report sections and fingerprints unverified FSM/functional layouts before parser support is added
 - Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and source-linked `coverage-holes` for statement/branch, scalar condition/expression FEC, documented multibit-expression input-term-bit FEC, and FSM state/transition items; by-instance toggle text/XML evidence is retained, while toggle item normalization remains pending until an exact offline `vcover report` item schema is verified
+- Evidence-preserving Questa detail-schema audit across captured text/XML artifacts, with exact SHA-256 fingerprints, existing-parser point counts, explicit pending multibit-condition targets, and enumerated/unknown toggle-tag inventory without inferred semantics
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -176,6 +177,7 @@ zddv --project my_project release-verify .zddv/signoff/release.zip --public-key 
 zddv --project my_project report --limit 100
 zddv --project my_project coverage
 zddv --project my_project coverage-history --limit 20
+zddv --project my_project questa-detail-audit
 zddv --project my_project xcelium-detail-audit
 zddv --project my_project coverage-holes --show 20
 zddv --project my_project coverage-holes --type line --output .zddv/coverage/line-holes.json
