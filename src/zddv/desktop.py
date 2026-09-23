@@ -202,6 +202,17 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
     # persisted evidence contract itself is normalized.
     if pin_binding_evidence.get("status") != "NORMALIZED":
         pin_bindings = []
+    elif any(not isinstance(binding, dict) for binding in pin_bindings):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "normalized pin_bindings must contain objects only",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
+        }
 
     identity_errors: list[str] = []
     for field, expected in (
@@ -799,13 +810,37 @@ def launch_desktop_gui(
         if elaborated["status"] == "PRESENT":
             ports_by_module: dict[str, list[dict[str, Any]]] = {}
             port_directions: dict[tuple[str, str], str] = {}
+            ambiguous_port_directions: set[tuple[str, str]] = set()
             for port in elaborated.get("ports", []):
                 module_name = str(port.get("module") or "")
-                port_name = str(port.get("name") or "")
                 if module_name:
                     ports_by_module.setdefault(module_name, []).append(port)
-                if module_name and port_name and port.get("direction"):
-                    port_directions[(module_name, port_name)] = str(port["direction"])
+
+                direction = str(port.get("direction") or "")
+                aliases = {
+                    str(value)
+                    for value in (
+                        port.get("name"),
+                        port.get("elaborated_name"),
+                        port.get("verilog_name"),
+                        port.get("original_name"),
+                    )
+                    if value
+                }
+                for alias in aliases:
+                    if not module_name or not direction:
+                        continue
+                    key = (module_name, alias)
+                    current_direction = port_directions.get(key)
+                    if (
+                        current_direction is not None
+                        and current_direction != direction
+                    ):
+                        ambiguous_port_directions.add(key)
+                    else:
+                        port_directions[key] = direction
+            for key in ambiguous_port_directions:
+                port_directions.pop(key, None)
 
             pin_bindings_by_instance: dict[str, list[dict[str, Any]]] = {}
             for binding in elaborated.get("pin_bindings", []):
@@ -890,7 +925,14 @@ def launch_desktop_gui(
                         values=(
                             binding.get("instance_module") or row.get("module") or "-",
                             port_directions.get(
-                                (str(row.get("module") or ""), pin),
+                                (
+                                    str(
+                                        binding.get("instance_module")
+                                        or row.get("module")
+                                        or ""
+                                    ),
+                                    pin,
+                                ),
                                 "-",
                             ),
                             binding_source,
