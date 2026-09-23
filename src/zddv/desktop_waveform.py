@@ -138,8 +138,12 @@ def desktop_crossprobe_evidence_rows(
     rows.append(("RTL source", source_detail))
 
     connectivity = report.get("connectivity") or {}
-    drivers = connectivity.get("drivers") or [] if isinstance(connectivity, dict) else []
-    loads = connectivity.get("loads") or [] if isinstance(connectivity, dict) else []
+    if isinstance(connectivity, dict):
+        drivers = connectivity.get("drivers") or []
+        loads = connectivity.get("loads") or []
+    else:
+        drivers = []
+        loads = []
     rows.append(("Drivers", f"{len(drivers)} source-structural item(s)"))
     rows.append(("Loads", f"{len(loads)} source-structural item(s)"))
 
