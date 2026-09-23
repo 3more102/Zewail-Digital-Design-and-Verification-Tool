@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from zddv.assertions import ingest_assertion_log
@@ -184,3 +185,70 @@ def test_assertion_waveform_cli(tmp_path: Path, capsys):
     assert "ASSERTION/WAVEFORM: 1 event(s)" in output
     assert "tb_top.dut.count" in output
     assert (project.root / ".zddv" / "debug" / "assertion-waveform.json").is_file()
+
+
+def test_assertion_waveform_fst_requires_opt_in_and_indexes_with_explicit_adapter(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-fst"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT counter_sequence FAIL final_count=8\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    without_adapter = correlate_assertions(project, run_id=run_id, status="FAIL")
+    assert without_adapter["summary"]["with_waveform"] == 1
+    assert without_adapter["summary"]["with_indexed_waveform"] == 0
+    assert without_adapter["summary"]["with_signal_hints"] == 0
+    assert (
+        without_adapter["events"][0]["waveform"]["parse_status"]
+        == "metadata-only"
+    )
+
+    @contextmanager
+    def fake_converted_fst_vcd(path, *, executable, timeout_s):
+        converted = tmp_path / "converted-assertions.vcd"
+        converted.write_text(VCD, encoding="utf-8")
+        yield converted, {
+            "adapter": "fst2vcd",
+            "executable": str(executable),
+            "returncode": 0,
+            "temporary_vcd": True,
+            "security_policy": "test adapter",
+        }
+
+    monkeypatch.setattr(
+        "zddv.waveform.converted_fst_vcd",
+        fake_converted_fst_vcd,
+    )
+
+    with_adapter = correlate_assertions(
+        project,
+        run_id=run_id,
+        status="FAIL",
+        fst_converter="fake-fst2vcd",
+    )
+
+    assert with_adapter["summary"]["with_waveform"] == 1
+    assert with_adapter["summary"]["with_indexed_waveform"] == 1
+    assert with_adapter["summary"]["with_signal_hints"] == 1
+    event_waveform = with_adapter["events"][0]["waveform"]
+    assert event_waveform["format"] == "fst"
+    assert event_waveform["parse_status"] == "indexed-via-fst2vcd"
+    assert event_waveform["adapter"]["adapter"] == "fst2vcd"
+    assert event_waveform["adapter"]["executable"] == "fake-fst2vcd"
+    assert event_waveform["signal_hints"][0]["path"] == "tb_top.dut.count"
