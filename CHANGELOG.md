@@ -8,6 +8,8 @@
   the bundled verified signoff exactly.
 - Reject signed manifests whose `key_id` is empty or non-canonical due to leading or
   trailing whitespace.
+- Reject otherwise-valid signoff bundles at release export when their `project`,
+  `simulator`, or `top` identity does not match the active project configuration.
 
 ### Signoff change review
 
