@@ -232,8 +232,8 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
     )
     sources_tree = make_tree(
         make_tab("Sources"),
-        ("kind", "unit", "file", "line", "instances"),
-        ("Kind", "Unit", "File", "Line", "Instances"),
+        ("kind", "name", "location", "details"),
+        ("Kind", "Name", "Location", "Evidence"),
     )
 
     hierarchy_tab = make_tab("Hierarchy")
@@ -372,6 +372,18 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
             )
 
         clear(sources_tree)
+        for source in snapshot["design"]["files"]:
+            sources_tree.insert(
+                "",
+                "end",
+                values=(
+                    "file",
+                    source["path"],
+                    "",
+                    f"{source['lines']} lines · {source['bytes']} bytes · "
+                    f"sha256={source['sha256']}",
+                ),
+            )
         for unit in snapshot["design"]["units"]:
             sources_tree.insert(
                 "",
@@ -379,9 +391,9 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
                 values=(
                     unit["kind"],
                     unit["name"],
-                    unit["file"],
-                    unit["line"],
-                    len(unit["instances"]),
+                    f"{unit['file']}:{unit['line']}",
+                    f"lines {unit['line']}-{unit['end_line']} · "
+                    f"{len(unit['instances'])} child instances",
                 ),
             )
 
