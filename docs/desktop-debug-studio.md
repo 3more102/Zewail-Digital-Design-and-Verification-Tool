@@ -75,8 +75,14 @@ and unclassified) are present as normalized lists of mapping records. Each role 
 also carry non-empty parent/child endpoints, a recognized query side, the core
 direction-to-relationship pairing, and a direction that is semantically valid for its
 DRIVER/LOAD/UNCLASSIFIED bucket. Partial, malformed, or internally inconsistent role
-evidence is suppressed rather than converted into trusted counts or rows. Unknown future
-contracts are not interpreted by the desktop. The elaborated hierarchy
+evidence is suppressed rather than converted into trusted counts or rows. Elaborated/source
+correlation is rendered only for the core
+`simulator_elaborated_to_source_structural_correlation` contract when
+`role_semantics=source_structural_only`, the correlation list is non-empty and
+well-typed, every status is recognized, and every MATCHED item preserves complete
+source-edge identity plus non-empty `match_basis` provenance. Multiple MATCHED items
+remain summary-only; the desktop does not choose one. Unknown future contracts are not
+interpreted by the desktop. The elaborated hierarchy
 browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
 unbounded evidence set in the GUI.
