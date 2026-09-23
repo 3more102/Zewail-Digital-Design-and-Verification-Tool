@@ -99,6 +99,7 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
         "invokes_ai": False,
         "applies_generated_artifacts": True,
         "automatic_generated_artifact_apply": False,
+        "executes_generated_artifacts": False,
         "review_gated_project_actions": True,
     }
 
