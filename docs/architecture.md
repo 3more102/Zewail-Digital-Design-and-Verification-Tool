@@ -168,8 +168,17 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+Direct normalized CELL PIN-to-VARREF records add a separate
+`elaborated_connectivity` view. Normalized bindings can relate an exact parent
+signal to a child pin and attach module-port direction only when the persisted
+port-direction evidence is itself normalized. A child-pin query whose persisted
+binding is `UNSUPPORTED` is retained separately as
+`unsupported_instance_port_bindings`, including the expression type and pin
+location but no inferred parent signal or relationship. Malformed normalized
+pin-binding containers are rejected before cross-probing.
+
+This qualification is hierarchy/boundary evidence only: exact elaborated internal
+signal drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 

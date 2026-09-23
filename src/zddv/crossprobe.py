@@ -240,6 +240,23 @@ def _elaborated_identity_errors(
         and not isinstance(ports, list)
     ):
         errors.append("normalized port_evidence requires a ports list")
+
+    pin_bindings = index.get("pin_bindings")
+    if pin_bindings is not None and not isinstance(pin_bindings, list):
+        errors.append("pin_bindings is not a list")
+
+    pin_binding_evidence = index.get("pin_binding_evidence")
+    if pin_binding_evidence is not None and not isinstance(
+        pin_binding_evidence,
+        dict,
+    ):
+        errors.append("pin_binding_evidence is not an object")
+    elif (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and not isinstance(pin_bindings, list)
+    ):
+        errors.append("normalized pin_binding_evidence requires a pin_bindings list")
     return errors
 
 
@@ -347,26 +364,41 @@ def _elaborated_port_directions(
     elaborated_index: dict[str, Any],
 ) -> dict[tuple[str, str], str]:
     evidence = elaborated_index.get("port_evidence")
-    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+    ports = elaborated_index.get("ports")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "NORMALIZED"
+        or not isinstance(ports, list)
+    ):
         return {}
 
     directions: dict[tuple[str, str], str] = {}
     ambiguous: set[tuple[str, str]] = set()
-    for port in elaborated_index.get("ports", []):
+    for port in ports:
         if not isinstance(port, dict):
             continue
         module = port.get("module")
-        name = port.get("name")
         direction = port.get("direction")
-        if not module or not name or not direction:
+        if not module or not direction:
             continue
-        key = (str(module), str(name))
-        value = str(direction).lower()
-        current = directions.get(key)
-        if current is not None and current != value:
-            ambiguous.add(key)
-            continue
-        directions[key] = value
+        aliases = {
+            str(value)
+            for value in (
+                port.get("name"),
+                port.get("elaborated_name"),
+                port.get("verilog_name"),
+                port.get("original_name"),
+            )
+            if value
+        }
+        direction_value = str(direction).lower()
+        for alias in aliases:
+            key = (str(module), alias)
+            current = directions.get(key)
+            if current is not None and current != direction_value:
+                ambiguous.add(key)
+                continue
+            directions[key] = direction_value
     for key in ambiguous:
         directions.pop(key, None)
     return directions
@@ -395,15 +427,49 @@ def _elaborated_pin_connectivity(
     port_directions = _elaborated_port_directions(elaborated_index)
     parent_signal_bindings: list[dict[str, Any]] = []
     instance_port_bindings: list[dict[str, Any]] = []
+    unsupported_instance_port_bindings: list[dict[str, Any]] = []
 
     for binding in elaborated_index.get("pin_bindings", []):
-        if not isinstance(binding, dict) or binding.get("status") != "NORMALIZED":
+        if not isinstance(binding, dict):
             continue
         child_path = binding.get("instance_path")
         parent_path = binding.get("parent_instance_path")
         pin = binding.get("pin")
-        parent_signal = binding.get("signal")
         child_module = binding.get("instance_module")
+
+        if binding.get("status") != "NORMALIZED":
+            if (
+                binding.get("status") == "UNSUPPORTED"
+                and child_path
+                and pin
+                and str(child_path) == instance_path
+                and str(pin) == signal_name
+            ):
+                direction = port_directions.get((str(child_module), str(pin)))
+                unsupported_instance_port_bindings.append(
+                    {
+                        "status": "UNSUPPORTED",
+                        "instance_path": str(child_path),
+                        "instance_module": (
+                            str(child_module)
+                            if child_module is not None
+                            else None
+                        ),
+                        "pin": str(pin),
+                        "parent_instance_path": (
+                            str(parent_path) if parent_path is not None else None
+                        ),
+                        "port_direction": direction,
+                        "expression_type": binding.get("expression_type"),
+                        "generate_scopes": list(
+                            binding.get("generate_scopes", [])
+                        ),
+                        "pin_location": binding.get("pin_location"),
+                    }
+                )
+            continue
+
+        parent_signal = binding.get("signal")
         if not child_path or not parent_path or not pin or not parent_signal:
             continue
 
@@ -428,7 +494,11 @@ def _elaborated_pin_connectivity(
         if str(child_path) == instance_path and str(pin) == signal_name:
             instance_port_bindings.append(normalized)
 
-    if not parent_signal_bindings and not instance_port_bindings:
+    if (
+        not parent_signal_bindings
+        and not instance_port_bindings
+        and not unsupported_instance_port_bindings
+    ):
         return None
 
     return {
@@ -448,6 +518,14 @@ def _elaborated_pin_connectivity(
             key=lambda item: (
                 item["parent_instance_path"],
                 item["parent_signal"],
+            ),
+        ),
+        "unsupported_instance_port_bindings": sorted(
+            unsupported_instance_port_bindings,
+            key=lambda item: (
+                item["instance_path"],
+                item["pin"],
+                str(item.get("expression_type") or ""),
             ),
         ),
     }
