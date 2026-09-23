@@ -68,9 +68,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-elaborated hierarchy normalized from Verilator JSON/XML parser output
 - VCD waveform scope/signal index with FST artifact metadata by default and explicit opt-in `fst2vcd` scope/signal indexing
 - Targeted VCD signal value probing plus explicit opt-in FST probing through `fst2vcd`, with exact/unique-name resolution, time windows, and bounded change capture
-- Assertion-to-waveform run correlation with conservative signal hints
+- Assertion-to-waveform run correlation with conservative signal hints and explicit opt-in FST indexing through `--fst2vcd`
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
-- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
+- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution and explicit opt-in FST indexing through `--fst2vcd`
 
 ## Quick Start
 
@@ -757,7 +757,9 @@ complex lvalues, and other constructs require later simulator-AST enrichment.
 
 `zddv crossprobe <signal>` correlates a waveform signal with the normalized
 source hierarchy and searches the resolved SystemVerilog design unit for the
-signal declaration. Full waveform paths, source-style suffix paths, and unique
+signal declaration. VCD is consumed directly; FST remains metadata-only unless
+`--fst2vcd [PATH]` is supplied explicitly. Opt-in conversion records both the
+adapter provenance and the `indexed-via-fst2vcd` parse status in the report. Full waveform paths, source-style suffix paths, and unique
 short signal names are supported. Ambiguous short names are rejected so debug
 navigation does not silently select the wrong signal.
 
@@ -777,8 +779,10 @@ line, ZDDV returns a partial result instead of claiming an exact source location
 `zddv assertion-waveform` joins stored assertion events to the exact simulation
 run and its waveform index. The JSON report includes run/test/seed context,
 waveform format and timescale, and conservative signal hints when assertion text
-contains an exact waveform signal name or hierarchical path. Missing waveforms
-remain visible as uncorrelated events rather than being silently dropped.
+contains an exact waveform signal name or hierarchical path. FST runs remain
+metadata-only by default; `--fst2vcd [PATH]` explicitly enables temporary
+conversion and records converter provenance. Missing waveforms remain visible as
+uncorrelated events rather than being silently dropped.
 
 ### Evidence-Ranked Root-Cause Candidates
 
