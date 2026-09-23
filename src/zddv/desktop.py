@@ -99,11 +99,17 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
 
 
 def _read_source(project: ProjectConfig, value: str) -> str:
-    """Read one indexed/project source file for display without mutating state."""
+    """Read one configured project source file without arbitrary-path access."""
+    root = project.root.resolve()
     path = Path(value)
-    if not path.is_absolute():
-        path = project.root / path
-    return path.resolve().read_text(encoding="utf-8", errors="replace")
+    candidate = (path if path.is_absolute() else root / path).resolve()
+
+    configured = {source.resolve() for source in project.source_files()}
+    if candidate not in configured:
+        raise ValueError(
+            f"Source is not part of the configured ZDDV project: {value}"
+        )
+    return candidate.read_text(encoding="utf-8", errors="replace")
 
 
 def build_desktop_snapshot(
@@ -420,7 +426,7 @@ def launch_desktop_gui(
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence and source files; "
+            "Display-only viewer: refresh reads persisted evidence and configured source "
             "it does not run verification, invoke AI, write design indexes, or apply "
             "generated artifacts."
         ),
@@ -438,7 +444,7 @@ def launch_desktop_gui(
     def _show_source(path_value: str, line: int | None = None) -> None:
         try:
             text = _read_source(project, path_value)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             source_title_text.set(f"{path_value} · unavailable: {exc}")
             text = ""
             line = None
