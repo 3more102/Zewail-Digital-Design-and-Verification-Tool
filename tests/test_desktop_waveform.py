@@ -242,3 +242,34 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
     )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
+
+
+
+def test_desktop_crossprobe_rows_surface_unsupported_pin_expression_without_relation():
+    report = {
+        "elaborated_connectivity": {
+            "analysis_level": "simulator_elaborated_direct_pin_varref",
+            "parent_signal_bindings": [],
+            "instance_port_bindings": [],
+            "unsupported_instance_port_bindings": [
+                {
+                    "status": "UNSUPPORTED",
+                    "instance_path": "tb_top.dut",
+                    "pin": "count",
+                    "port_direction": "output",
+                    "expression_type": "AND",
+                }
+            ],
+        }
+    }
+
+    rows = dict(desktop_crossprobe_evidence_rows(report))
+
+    assert rows["Elaborated connectivity"] == (
+        "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
+        "instance-port bindings=0 · unsupported-instance-port bindings=1"
+    )
+    assert rows["Unsupported elaborated pin"] == (
+        "1 evidence item(s) · tb_top.dut.count · expression=AND · "
+        "direction=output · no direct VARREF relation"
+    )
