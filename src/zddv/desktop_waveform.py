@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.connectivity import build_connectivity_index
+from zddv.crossprobe import build_crossprobe, load_persisted_elaborated_evidence
+from zddv.design_index import build_design_index
 from zddv.waveform import build_waveform_index, select_waveform_run
 from zddv.waveform_probe import probe_vcd_signals
 
@@ -64,6 +67,48 @@ def probe_desktop_waveform_signal(
     result["test_name"] = navigation["test_name"]
     return result
 
+
+
+def crossprobe_desktop_waveform_signal(
+    project: ProjectConfig,
+    signal: str,
+    *,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Cross-probe one recorded signal entirely in memory for the desktop viewer."""
+    navigation = build_desktop_waveform_snapshot(project, run_id=run_id)
+    if navigation["parse_status"] != "indexed":
+        raise RuntimeError(
+            "Desktop waveform cross-probing requires an indexed waveform artifact."
+        )
+
+    elaborated_evidence = load_persisted_elaborated_evidence(project)
+    elaborated_index = (
+        elaborated_evidence.get("index")
+        if elaborated_evidence.get("status") == "PRESENT"
+        else None
+    )
+    waveform_index = {
+        "parse_status": navigation["parse_status"],
+        "run_id": navigation["run_id"],
+        "format": navigation["format"],
+        "artifact": navigation["artifact"],
+        "signals": navigation["signals"],
+    }
+    report = build_crossprobe(
+        project,
+        signal,
+        waveform_index,
+        design_index=build_design_index(project),
+        connectivity_index=build_connectivity_index(project),
+        elaborated_index=elaborated_index,
+    )
+    report["elaborated_evidence"] = {
+        key: value
+        for key, value in elaborated_evidence.items()
+        if key != "index"
+    }
+    return report
 
 
 def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
@@ -129,6 +174,18 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     probe_tree.column("value", width=700, anchor="w")
     probe_tree.pack(fill="both", expand=True)
 
+    evidence_tree = ttk.Treeview(
+        tab,
+        columns=("kind", "details"),
+        show="headings",
+        height=6,
+    )
+    evidence_tree.heading("kind", text="Cross-probe evidence")
+    evidence_tree.heading("details", text="Resolved detail")
+    evidence_tree.column("kind", width=150, anchor="w")
+    evidence_tree.column("details", width=760, anchor="w")
+    evidence_tree.pack(fill="both", expand=True, pady=(8, 0))
+
     state: dict[str, Any] = {"waveform": None}
 
     def clear(tree: Any) -> None:
@@ -151,6 +208,7 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     def refresh_waveform() -> None:
         clear(signal_tree)
         clear(probe_tree)
+        clear(evidence_tree)
         try:
             navigation = build_desktop_waveform_snapshot(project)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
@@ -201,11 +259,17 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
                 end_time=end_time,
                 max_changes=max_changes,
             )
+            crossprobe = crossprobe_desktop_waveform_signal(
+                project,
+                signal_path,
+                run_id=navigation["run_id"],
+            )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             info_var.set(f"Probe error: {exc}")
             return
 
         clear(probe_tree)
+        clear(evidence_tree)
         signal = result["signals"][0]
         for change in signal["changes"]:
             probe_tree.insert(
@@ -213,6 +277,46 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
                 "end",
                 values=(change["time"], change["value"]),
             )
+        hierarchy = crossprobe.get("hierarchy") or {}
+        source = crossprobe.get("source") or {}
+        declaration = source.get("declaration") or {}
+        connectivity = crossprobe.get("connectivity") or {}
+        elaborated = crossprobe.get("elaborated_evidence") or {}
+
+        hierarchy_detail = crossprobe.get("note") or "No hierarchy match."
+        if hierarchy:
+            hierarchy_detail = (
+                f"{crossprobe.get('hierarchy_resolution') or 'unknown'} · "
+                f"{hierarchy.get('design_path') or '-'} · "
+                f"{hierarchy.get('type') or '-'}"
+            )
+        evidence_tree.insert("", "end", values=("Hierarchy", hierarchy_detail))
+
+        source_detail = "No RTL declaration match."
+        if source:
+            location = source.get("file") or "-"
+            if declaration.get("line") is not None:
+                location += f":{declaration['line']}"
+            source_detail = f"{source.get('unit') or '-'} · {location}"
+        evidence_tree.insert("", "end", values=("RTL source", source_detail))
+
+        drivers = connectivity.get("drivers") or []
+        loads = connectivity.get("loads") or []
+        evidence_tree.insert(
+            "",
+            "end",
+            values=("Drivers", f"{len(drivers)} source-structural item(s)"),
+        )
+        evidence_tree.insert(
+            "",
+            "end",
+            values=("Loads", f"{len(loads)} source-structural item(s)"),
+        )
+        elaborated_detail = elaborated.get("status") or "NOT_PRESENT"
+        if elaborated.get("error"):
+            elaborated_detail += f" · {elaborated['error']}"
+        evidence_tree.insert("", "end", values=("Elaboration", elaborated_detail))
+
         suffix = " (truncated)" if signal["truncated"] else ""
         info_var.set(
             f"{result['run_id']} · {signal_path} · "
@@ -223,7 +327,7 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     ttk.Button(controls, text="Refresh waveform", command=refresh_waveform).pack(
         side="right"
     )
-    ttk.Button(controls, text="Probe selected", command=probe_selected).pack(
+    ttk.Button(controls, text="Probe + cross-probe", command=probe_selected).pack(
         side="left"
     )
 
