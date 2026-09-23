@@ -369,6 +369,7 @@ def test_desktop_crossprobe_rows_surface_bounded_boundary_role_evidence():
                         "parent_instance_path": "tb_top",
                         "parent_signal": "count",
                         "port_direction": "output",
+                        "relationship": "child_output_to_parent_signal",
                         "query_side": "parent_signal",
                     }
                 ],
@@ -379,6 +380,7 @@ def test_desktop_crossprobe_rows_surface_bounded_boundary_role_evidence():
                         "parent_instance_path": "tb_top",
                         "parent_signal": "clk",
                         "port_direction": "input",
+                        "relationship": "parent_signal_to_child_input",
                         "query_side": "parent_signal",
                     }
                 ],
@@ -389,6 +391,7 @@ def test_desktop_crossprobe_rows_surface_bounded_boundary_role_evidence():
                         "parent_instance_path": "tb_top",
                         "parent_signal": "ready",
                         "port_direction": None,
+                        "relationship": "direct_pin_varref",
                         "query_side": "parent_signal",
                     }
                 ],
@@ -450,6 +453,7 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
         "parent_instance_path": "tb_top",
         "parent_signal": "count",
         "port_direction": "output",
+        "relationship": "child_output_to_parent_signal",
         "query_side": "parent_signal",
     }
 
@@ -585,4 +589,70 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
     assert not any(
         kind in {"Elaborated/source correlation", "Correlated source edge"}
         for kind, _detail in wrong_roles
+    )
+
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_semantically_invalid_boundary_roles():
+    base = {
+        "analysis_level": "simulator_elaborated_direct_pin_varref",
+        "parent_signal_bindings": [],
+        "instance_port_bindings": [],
+        "unsupported_instance_port_bindings": [],
+    }
+    valid_driver = {
+        "instance_path": "tb_top.u_out",
+        "pin": "count",
+        "parent_instance_path": "tb_top",
+        "parent_signal": "count",
+        "port_direction": "output",
+        "relationship": "child_output_to_parent_signal",
+        "query_side": "parent_signal",
+    }
+    invalid_drivers = [
+        {**valid_driver, "query_side": "unknown"},
+        {
+            **valid_driver,
+            "port_direction": "input",
+            "relationship": "parent_signal_to_child_input",
+        },
+        {**valid_driver, "relationship": "direct_pin_varref"},
+        {key: value for key, value in valid_driver.items() if key != "parent_signal"},
+    ]
+
+    for invalid_driver in invalid_drivers:
+        rows = desktop_crossprobe_evidence_rows(
+            {
+                "elaborated_connectivity": {
+                    **base,
+                    "boundary_drivers": [invalid_driver],
+                    "boundary_loads": [],
+                    "boundary_unclassified_bindings": [],
+                }
+            }
+        )
+        assert not any(
+            kind in {"Elaborated boundary roles", "Elaborated role"}
+            for kind, _detail in rows
+        )
+
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                **base,
+                "boundary_drivers": [],
+                "boundary_loads": [],
+                "boundary_unclassified_bindings": [
+                    {
+                        **valid_driver,
+                        "port_direction": None,
+                        "relationship": "child_output_to_parent_signal",
+                    }
+                ],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated boundary roles", "Elaborated role"}
+        for kind, _detail in rows
     )
