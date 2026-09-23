@@ -203,10 +203,13 @@ def build_desktop_snapshot(
             "simulator": project.simulator,
         },
         "policy": {
+            "scope": "snapshot_refresh",
             "display_only": True,
             "executes_verification": False,
             "invokes_ai": False,
             "applies_generated_artifacts": False,
+            "review_gated_execution_available": True,
+            "review_gated_generated_apply_available": True,
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
