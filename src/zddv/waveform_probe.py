@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.fst_adapter import converted_fst_vcd
 from zddv.waveform import build_waveform_index, select_waveform_run
 
 
@@ -174,6 +175,67 @@ def probe_vcd_signals(
     }
 
 
+def probe_waveform_signals(
+    path: str | Path,
+    signals: list[str],
+    *,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    max_changes: int = 10_000,
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
+) -> dict[str, Any]:
+    """Probe VCD directly or FST through an explicit fst2vcd adapter."""
+
+    source = Path(path).resolve()
+    suffix = source.suffix.lower()
+    if suffix == ".vcd":
+        return probe_vcd_signals(
+            source,
+            signals,
+            start_time=start_time,
+            end_time=end_time,
+            max_changes=max_changes,
+        )
+
+    if suffix == ".fst":
+        if fst_converter is None:
+            raise RuntimeError(
+                "FST probing requires an explicit fst2vcd adapter. "
+                "Pass --fst2vcd, or provide fst_converter through the core API."
+            )
+
+        source_index = build_waveform_index(source)
+        with converted_fst_vcd(
+            source,
+            executable=fst_converter,
+            timeout_s=fst_converter_timeout_s,
+        ) as (converted_vcd, adapter):
+            result = probe_vcd_signals(
+                converted_vcd,
+                signals,
+                start_time=start_time,
+                end_time=end_time,
+                max_changes=max_changes,
+            )
+
+        converted_artifact = dict(result["artifact"])
+        result["format"] = "fst"
+        result["artifact"] = source_index["artifact"]
+        result["adapter"] = adapter
+        result["derived_vcd"] = {
+            "bytes": converted_artifact["bytes"],
+            "sha256": converted_artifact["sha256"],
+            "temporary": True,
+        }
+        return result
+
+    raise RuntimeError(
+        f"Unsupported waveform format '{suffix or '(no extension)'}'. "
+        "Waveform probing accepts VCD directly and FST through --fst2vcd."
+    )
+
+
 def write_waveform_probe(
     project: ProjectConfig,
     signals: list[str],
@@ -184,6 +246,8 @@ def write_waveform_probe(
     end_time: int | None = None,
     max_changes: int = 10_000,
     output: str | Path | None = None,
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     if run_id is not None and input_path is not None:
         raise ValueError("run_id and input_path are mutually exclusive")
@@ -200,12 +264,14 @@ def write_waveform_probe(
         waveform_path = waveform_path.resolve()
         effective_run_id = None
 
-    result = probe_vcd_signals(
+    result = probe_waveform_signals(
         waveform_path,
         signals,
         start_time=start_time,
         end_time=end_time,
         max_changes=max_changes,
+        fst_converter=fst_converter,
+        fst_converter_timeout_s=fst_converter_timeout_s,
     )
     result["project"] = project.name
     result["run_id"] = effective_run_id
