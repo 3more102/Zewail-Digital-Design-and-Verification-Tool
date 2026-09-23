@@ -183,11 +183,23 @@ def desktop_crossprobe_evidence_rows(
             for item in elaborated_connectivity.get("instance_port_bindings", [])
             if isinstance(item, dict)
         ]
+        unsupported_bindings = [
+            item
+            for item in elaborated_connectivity.get(
+                "unsupported_instance_port_bindings",
+                [],
+            )
+            if isinstance(item, dict)
+        ]
         connectivity_detail = (
             f"{elaborated_connectivity.get('analysis_level') or 'direct_pin_varref'} · "
             f"parent-signal bindings={len(parent_bindings)} · "
             f"instance-port bindings={len(instance_bindings)}"
         )
+        if unsupported_bindings:
+            connectivity_detail += (
+                f" · unsupported-instance-port bindings={len(unsupported_bindings)}"
+            )
         relationships = sorted(
             {
                 str(item.get("relationship"))
@@ -198,6 +210,29 @@ def desktop_crossprobe_evidence_rows(
         if relationships:
             connectivity_detail += f" · relationships={','.join(relationships)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
+
+        if unsupported_bindings:
+            details: list[str] = []
+            for binding in unsupported_bindings[:4]:
+                child = (
+                    f"{binding.get('instance_path') or '-'}."
+                    f"{binding.get('pin') or '-'}"
+                )
+                expression = binding.get("expression_type") or "unknown"
+                direction = binding.get("port_direction") or "unknown"
+                details.append(
+                    f"{child} · expression={expression} · direction={direction}"
+                )
+            unsupported_detail = (
+                f"{len(unsupported_bindings)} evidence item(s) · "
+                + "; ".join(details)
+                + " · no direct VARREF relation"
+            )
+            if len(unsupported_bindings) > len(details):
+                unsupported_detail += (
+                    f" · +{len(unsupported_bindings) - len(details)} more"
+                )
+            rows.append(("Unsupported elaborated pin", unsupported_detail))
 
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
