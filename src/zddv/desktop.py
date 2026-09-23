@@ -8,6 +8,7 @@ from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
 from zddv.design_revision import design_revision_fingerprint
 from zddv.desktop_actions import attach_desktop_actions_tab
+from zddv.desktop_review import attach_desktop_review_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
     assertion_statistics,
@@ -227,7 +228,7 @@ def launch_desktop_gui(
     *,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Launch a read-only Tk desktop dashboard and return the last shown snapshot."""
+    """Launch Debug Studio evidence views plus explicit review-gated actions."""
     try:
         import tkinter as tk
         from tkinter import ttk
@@ -294,6 +295,7 @@ def launch_desktop_gui(
     notebook.add(elaborated_tab, text="Elaborated")
     attach_desktop_waveform_tab(notebook, project)
     attach_desktop_actions_tab(notebook, project)
+    attach_desktop_review_tab(notebook, project, limit=limit)
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -475,9 +477,9 @@ def launch_desktop_gui(
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence and source files; "
-            "it does not run verification, invoke AI, write design indexes, or apply "
-            "generated artifacts."
+            "Evidence refresh/source preview are read-only. Actions and generated-artifact "
+            "apply require explicit SHA-confirmed review; the GUI never auto-invokes AI "
+            "or silently executes generated code."
         ),
     ).pack(side="left")
 
