@@ -171,9 +171,15 @@ multiple generated candidates are reported as ambiguous rather than selecting on
 Direct normalized CELL PIN-to-VARREF records add a separate
 `elaborated_connectivity` view. Normalized bindings can relate an exact parent
 signal to a child pin and attach module-port direction only when the persisted
-port-direction evidence is itself normalized. A child-pin query whose persisted
-binding is `UNSUPPORTED` is retained separately as
-`unsupported_instance_port_bindings`, including the expression type and pin
+port-direction evidence is itself normalized. Each normalized direct binding is
+also correlated back to matching source-structural `instance_port` edges for its
+parent signal. Correlation requires the same child port/module plus either an
+exact elaborated child path or explicit membership in the source edge's generated
+candidate set. The returned source edge keeps its original driver/load `role`;
+the direct binding qualifies boundary identity and does not relabel role semantics.
+
+A child-pin query whose persisted binding is `UNSUPPORTED` is retained separately
+as `unsupported_instance_port_bindings`, including the expression type and pin
 location but no inferred parent signal or relationship. Malformed normalized
 pin-binding containers are rejected before cross-probing.
 
