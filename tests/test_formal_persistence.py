@@ -137,6 +137,13 @@ def test_formal_analysis_persists_snapshot_and_property_rows(tmp_path: Path):
     assert properties[2]["interpretation"] == "COVERED"
     assert properties[2]["trace_role"] == "WITNESS"
 
+    limited = list_formal_property_results(
+        project,
+        record["snapshot_id"],
+        limit=2,
+    )
+    assert [item["name"] for item in limited] == ["p_safe", "p_failure"]
+
 
 def test_formal_snapshot_filters_preserve_mode_and_status(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
