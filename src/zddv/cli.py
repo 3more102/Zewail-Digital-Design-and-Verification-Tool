@@ -246,6 +246,7 @@ def cmd_waveform_index(args) -> int:
         run_id=args.run_id,
         input_path=args.input,
         output=args.output,
+        fst_converter=args.fst2vcd,
     )
     summary = result["summary"]
     print(
@@ -259,6 +260,8 @@ def cmd_waveform_index(args) -> int:
     print(f"Waveform: {result['artifact']['path']}")
     if result.get("timescale"):
         print(f"Timescale: {result['timescale']}")
+    if result.get("adapter"):
+        print(f"Adapter: {result['adapter']['adapter']} ({result['adapter']['executable']})")
     if result.get("note"):
         print(f"Note: {result['note']}")
     print(f"Index: {result['path']}")
@@ -279,6 +282,7 @@ def cmd_waveform_probe(args) -> int:
         end_time=args.end,
         max_changes=args.max_changes,
         output=args.output,
+        fst_converter=args.fst2vcd,
     )
     summary = result["summary"]
     print(
@@ -289,6 +293,8 @@ def cmd_waveform_probe(args) -> int:
         print(f"Run: {result['run_id']}")
     if result.get("timescale"):
         print(f"Timescale: {result['timescale']}")
+    if result.get("adapter"):
+        print(f"Adapter: {result['adapter']['adapter']} ({result['adapter']['executable']})")
     for signal in result["signals"]:
         marker = " [TRUNCATED]" if signal["truncated"] else ""
         print(f"{signal['path']}: {len(signal['changes'])} change(s){marker}")
@@ -3005,11 +3011,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional JSON output path; default is .zddv/waveforms/<run>.json",
     )
+    p_waveform_index.add_argument(
+        "--fst2vcd",
+        nargs="?",
+        const="fst2vcd",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicitly allow FST-to-VCD conversion for indexing; optionally provide "
+            "the fst2vcd executable path"
+        ),
+    )
     p_waveform_index.set_defaults(func=cmd_waveform_index)
 
     p_waveform_probe = sub.add_parser(
         "waveform-probe",
-        help="Stream selected VCD signal value changes",
+        help="Stream selected waveform signal value changes",
     )
     p_waveform_probe.add_argument(
         "signals",
@@ -3026,19 +3043,19 @@ def build_parser() -> argparse.ArgumentParser:
     probe_source.add_argument(
         "--input",
         default=None,
-        help="VCD path relative to the project, independent of run history",
+        help="VCD/FST path relative to the project, independent of run history",
     )
     p_waveform_probe.add_argument(
         "--start",
         type=int,
         default=None,
-        help="Optional inclusive VCD start timestamp",
+        help="Optional inclusive waveform timestamp",
     )
     p_waveform_probe.add_argument(
         "--end",
         type=int,
         default=None,
-        help="Optional inclusive VCD end timestamp",
+        help="Optional inclusive waveform end timestamp",
     )
     p_waveform_probe.add_argument(
         "--max-changes",
@@ -3050,6 +3067,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default=None,
         help="Optional JSON output path; default is .zddv/waveforms/probes/<run>.json",
+    )
+    p_waveform_probe.add_argument(
+        "--fst2vcd",
+        nargs="?",
+        const="fst2vcd",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicitly allow FST-to-VCD conversion for probing; optionally provide "
+            "the fst2vcd executable path"
+        ),
     )
     p_waveform_probe.set_defaults(func=cmd_waveform_probe)
 
