@@ -2202,3 +2202,165 @@ def test_axi4_rejects_invalid_address_width_metadata(width):
                 "samples": [],
             }
         )
+
+
+
+def test_axi4_id_width_metadata_checks_missing_id_while_valid_is_stalled():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 0,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+            ],
+        }
+    )
+
+    missing = [
+        item
+        for item in result["violations"]
+        if item["code"] == "missing_transaction_id"
+    ]
+    assert result["status"] == "FAIL"
+    assert len(missing) == 1
+    assert missing[0]["cycle"] == 0
+    assert missing[0]["signal"] == "AWID"
+
+
+def test_axi4_zero_id_width_rejects_observed_id_during_stall():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 0,
+                    "AWID": 0,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["cycle"] == 0
+    assert violation["signal"] == "AWID"
+
+
+def test_axi4_zero_id_width_uses_raw_presence_not_synthesized_master_default():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["id"] == 0
+    assert not {
+        item["code"]
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    }
+
+
+def test_axi4_id_width_metadata_checks_value_range_before_handshake():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_R_WIDTH": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 0,
+                    "ARID": 4,
+                    "ARADDR": 0x200,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "invalid_transaction_id_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["cycle"] == 0
+    assert violation["signal"] == "ARID"
+
+
+def test_axi4_positive_id_width_ignores_payload_value_when_channel_is_inactive():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_R_WIDTH": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 0,
+                    "ARID": 4,
+                }
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert not {
+        item["code"]
+        for item in result["violations"]
+        if item["code"] in {"invalid_transaction_id", "invalid_transaction_id_width"}
+    }
