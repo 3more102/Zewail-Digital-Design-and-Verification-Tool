@@ -218,9 +218,9 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
-- [ ] Waveform navigation and targeted probe integration.
+- [x] Waveform navigation and bounded in-memory targeted VCD probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
-- [ ] Review-gated project actions using the existing CLI/core APIs.
+- [x] Review-gated lint/build/run actions using existing core APIs, exact request SHA-256 confirmation, and no arbitrary shell command surface.
 
 ## Long-Term Direction
 
