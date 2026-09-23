@@ -236,6 +236,17 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+Transaction-ID width/presence evidence is opt-in through `id_widths`. The
+`ID_W_WIDTH` property applies to AWID/BID and `ID_R_WIDTH` applies to ARID/RID,
+with the protocol-defined 0..32-bit range. A zero property means the paired
+signals are physically absent; a positive property requires the relevant ID on an
+active channel and constrains observed values to that width. Traces without this
+metadata keep the existing logical-ID-zero fallback and are not reinterpreted.
+
+The VCD adapter emits an ID-width property only when both signals in the
+corresponding pair are dumped and their declared widths match. One missing member
+is treated as incomplete waveform evidence, not proof of a zero-width interface.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
