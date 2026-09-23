@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop_waveform import (
     build_desktop_waveform_snapshot,
+    crossprobe_desktop_waveform_signal,
     probe_desktop_waveform_signal,
 )
 from zddv.storage import record_run
@@ -109,3 +110,75 @@ def test_desktop_waveform_navigation_reports_missing_evidence(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="No run with an existing waveform artifact"):
         build_desktop_waveform_snapshot(project)
+
+
+def test_desktop_waveform_crossprobe_is_read_only(tmp_path: Path):
+    project = initialize_project(tmp_path / "crossprobe")
+    rtl = project.root / "rtl"
+    tb = project.root / "tb"
+    rtl.mkdir(exist_ok=True)
+    tb.mkdir(exist_ok=True)
+    (rtl / "counter.sv").write_text(
+        """module counter(
+    input logic clk,
+    output logic [3:0] count
+);
+    always_ff @(posedge clk)
+        count <= count + 1'b1;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (tb / "tb_top.sv").write_text(
+        """module tb_top;
+    logic clk;
+    logic [3:0] count;
+    counter dut(.clk(clk), .count(count));
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = ["tb/*.sv"]
+    project.top = "tb_top"
+    save_project(project)
+
+    vcd = project.root / "crossprobe.vcd"
+    vcd.write_text(
+        """$timescale 1ns $end
+$scope module TOP $end
+$scope module tb_top $end
+$scope module dut $end
+$var wire 4 ! count [3:0] $end
+$upscope $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+b0000 !
+#5
+b0001 !
+""",
+        encoding="utf-8",
+    )
+    record_run(
+        project,
+        _run_record("run-crossprobe", seed=5, waveform=str(vcd)),
+    )
+
+    result = crossprobe_desktop_waveform_signal(
+        project,
+        "TOP.tb_top.dut.count",
+        run_id="run-crossprobe",
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["hierarchy_resolution"] == "source_structural"
+    assert result["hierarchy"]["design_path"] == "tb_top.dut"
+    assert result["source"]["file"] == "rtl/counter.sv"
+    assert result["source"]["declaration"]["line"] == 3
+    assert result["connectivity"]["analysis_level"] == "source_structural"
+    assert len(result["connectivity"]["drivers"]) == 1
+    assert result["elaborated_evidence"]["status"] == "NOT_PRESENT"
+    assert not (project.root / ".zddv" / "design" / "connectivity.json").exists()
+    assert not (project.root / ".zddv" / "debug" / "crossprobe.json").exists()
