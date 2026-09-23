@@ -348,3 +348,15 @@ def test_desktop_source_reader_rejects_paths_outside_project(tmp_path: Path):
 
     with pytest.raises(ValueError, match="inside the project root"):
         _read_source(project, "../outside.sv")
+
+
+def test_desktop_source_reader_rejects_unconfigured_in_root_file(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-preview-boundary")
+    configured = project.root / "rtl" / "preview.sv"
+    configured.write_text("module preview; endmodule\n", encoding="utf-8")
+    unconfigured = project.root / "private-not-source.txt"
+    unconfigured.write_text("not HDL evidence\n", encoding="utf-8")
+
+    assert _read_source(project, "rtl/preview.sv") == "module preview; endmodule\n"
+    with pytest.raises(ValueError, match="configured project sources"):
+        _read_source(project, "private-not-source.txt")
