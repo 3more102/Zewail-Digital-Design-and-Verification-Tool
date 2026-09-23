@@ -2138,3 +2138,66 @@ def test_stable_ruser_response_bits_do_not_emit_advisory():
         item["code"] == "ruser_response_bits_vary_across_read_beats"
         for item in result["advisories"]
     )
+
+def test_axi4_address_width_metadata_accepts_values_within_addr_width():
+    result = analyze_axi4_trace(
+        {
+            "address_width_bits": 12,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARADDR": 0xFFF,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    assert result["address_width_bits"] == 12
+    assert "invalid_address_width" not in {
+        item["code"] for item in result["violations"]
+    }
+
+
+def test_axi4_address_width_metadata_reports_out_of_range_address():
+    result = analyze_axi4_trace(
+        {
+            "address_width_bits": 12,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x1000,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item for item in result["violations"]
+        if item["code"] == "invalid_address_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "AWADDR"
+    assert violation["expected"] == "0..4095"
+    assert violation["actual"] == 0x1000
+
+
+@pytest.mark.parametrize("width", [0, 65, True, "bad"])
+def test_axi4_rejects_invalid_address_width_metadata(width):
+    with pytest.raises(ValueError, match="1..64"):
+        analyze_axi4_trace(
+            {
+                "address_width_bits": width,
+                "samples": [],
+            }
+        )
+
