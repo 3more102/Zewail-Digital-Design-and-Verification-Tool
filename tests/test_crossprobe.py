@@ -407,5 +407,21 @@ def test_crossprobe_cli_supports_explicit_fst2vcd(tmp_path: Path, capsys, monkey
         )
     )
     assert report["waveform"]["format"] == "fst"
+    assert report["waveform"]["parse_status"] == "indexed-via-fst2vcd"
+    assert report["waveform"]["artifact"]["path"] == str(waveform_path.resolve())
     assert report["waveform"]["adapter"]["adapter"] == "fst2vcd"
     assert report["waveform"]["signal"]["path"] == "TOP.tb_top.dut.count"
+
+
+
+def test_crossprobe_fst_is_not_converted_without_explicit_adapter(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    with pytest.raises(RuntimeError, match="signal-indexed waveform"):
+        write_crossprobe_report(
+            project,
+            "tb_top.dut.count",
+            input_path="trace.fst",
+        )
