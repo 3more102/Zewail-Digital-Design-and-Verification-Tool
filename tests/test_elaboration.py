@@ -718,6 +718,7 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "instances": 1,
         "ports": 0,
         "pin_bindings": 0,
+        "direct_assignments": 0,
     }
     assert result["ports"] == []
     assert result["port_evidence"] == {
@@ -731,5 +732,12 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
         "source_format": "json",
         "contract": "verilator_cell_pin_direct_varref_only",
         "unsupported_expression_count": 0,
+    }
+    assert result["direct_assignments"] == []
+    assert result["direct_assignment_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_root_assignw_direct_varref_only",
+        "unsupported_assignment_count": 0,
     }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)
