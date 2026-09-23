@@ -222,6 +222,31 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
                 }
             ],
         },
+        "elaborated_source_correlation": {
+            "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+            "role_semantics": "source_structural_only",
+            "correlations": [
+                {
+                    "status": "MATCHED",
+                    "binding_side": "instance_port",
+                    "instance_path": "tb_top.dut",
+                    "instance_module": "counter",
+                    "pin": "count",
+                    "parent_instance_path": "tb_top",
+                    "parent_signal": "count",
+                    "source_unit": "tb_top",
+                    "source_roles": ["driver"],
+                    "source_edge": {
+                        "kind": "instance_port",
+                        "file": "tb/tb_top.sv",
+                        "line": 4,
+                        "instance": "dut",
+                        "child_type": "counter",
+                        "port": "count",
+                    },
+                }
+            ],
+        },
         "elaborated_boundary": {
             "status": "MATCHED",
             "flow": "child_to_parent",
@@ -240,5 +265,39 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
         "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
         "instance-port bindings=1 · relationships=child_output_to_parent_signal"
     )
+    assert rows["Elaborated/source correlation"] == (
+        "simulator_elaborated_to_source_structural_correlation · correlations=1 · "
+        "matched=1 · not-found=0 · ambiguous=0 · unavailable=0 · "
+        "roles=source_structural_only"
+    )
+    assert rows["Correlated source edge"] == (
+        "tb_top.count ↔ tb_top.dut.count · binding_side=instance_port · "
+        "source=tb_top · source_roles=driver · location=tb/tb_top.sv:4"
+    )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
+
+
+def test_desktop_crossprobe_rows_do_not_promote_uncertain_source_correlation():
+    report = {
+        "connectivity": {"drivers": [], "loads": []},
+        "elaborated_source_correlation": {
+            "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+            "role_semantics": "source_structural_only",
+            "correlations": [
+                {"status": "AMBIGUOUS"},
+                {"status": "NOT_FOUND"},
+                {"status": "UNAVAILABLE"},
+            ],
+        },
+    }
+
+    rows = desktop_crossprobe_evidence_rows(report)
+    row_map = dict(rows)
+
+    assert row_map["Elaborated/source correlation"] == (
+        "simulator_elaborated_to_source_structural_correlation · correlations=3 · "
+        "matched=0 · not-found=1 · ambiguous=1 · unavailable=1 · "
+        "roles=source_structural_only"
+    )
+    assert "Correlated source edge" not in row_map
 
