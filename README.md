@@ -56,6 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
+- Read-only desktop Debug Studio with persisted verification evidence plus in-memory source and hierarchy navigation
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
@@ -105,6 +106,7 @@ zddv --project examples/async_fifo lint
 zddv --project examples/async_fifo run --test async_fifo_smoke --seed 42
 zddv --project examples/async_fifo regress examples/async_fifo/regression.toml
 zddv --project examples/async_fifo coverage
+zddv --project examples/async_fifo gui
 ```
 
 For a Questa project, setting `coverage = true` in `[run]` enables native
@@ -817,7 +819,8 @@ bundle is review-required before any external use.
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
-- [ ] Desktop debug GUI
+- [x] Read-only Desktop Debug Studio foundation with runs, failures, coverage, per-test, evidence, source, and hierarchy panes
+- [ ] Waveform navigation, targeted probe integration, assertion/UVM/formal cross-probing, and review-gated project actions
 
 ## Design Principles
 
