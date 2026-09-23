@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated boundary connectivity
+
+- Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
+- Keep unavailable or ambiguous direction explicitly unclassified, and keep unsupported complex pin expressions outside driver/load role inference.
+- Preserve the boundary-only scope: this does not claim complete simulator-elaborated internal drivers or loads.
+
 ### AXI4 USER guidance evidence
 
 - Report Arm USER width maxima and USER data-width granularity as explicit non-failing advisories when sufficient interface metadata is present.
