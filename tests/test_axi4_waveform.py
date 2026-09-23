@@ -208,7 +208,7 @@ def test_axi4_waveform_does_not_infer_zero_id_width_from_omitted_declarations(
     tmp_path: Path,
 ):
     source = FIXTURE.read_text(encoding="utf-8")
-    source = source.replace("$var wire 2 e AWID [1:0] $end\n", "")
+    source = source.replace("$var wire 2 d AWID [1:0] $end\n", "")
     source = source.replace("$var wire 2 p BID [1:0] $end\n", "")
     partial = tmp_path / "undumped_write_ids.vcd"
     partial.write_text(source, encoding="utf-8")
