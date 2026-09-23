@@ -177,6 +177,12 @@ binding is `UNSUPPORTED` is retained separately as
 location but no inferred parent signal or relationship. Malformed normalized
 pin-binding containers are rejected before cross-probing.
 
+For source-structural instance-port edges, normalized direct pin evidence can also
+correlate the exact source edge when parent path, child path, child module, port
+name, and parent signal all agree. Duplicate exact bindings remain ambiguous, and
+unnormalized or unavailable evidence is ignored. This correlation never relabels
+the source-derived driver/load role.
+
 This qualification is hierarchy/boundary evidence only: exact elaborated internal
 signal drivers and loads remain a separate enrichment milestone.
 
