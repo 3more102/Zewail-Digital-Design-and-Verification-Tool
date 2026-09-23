@@ -194,6 +194,14 @@ uncollected verification objectives passed.
 - [x] Explicit snapshot/run ID pinning for release-candidate manifests.
 - [x] Signed release manifest and reproducible archive export (Ed25519, exact signoff-SHA confirmation, deterministic ZIP).
 
+## v1.1 — Signoff Change Review
+
+- [x] Fail-closed validation of baseline/current signoff provenance before comparison.
+- [x] Deterministic policy/evidence/check diff with its own canonical SHA-256.
+- [x] Exact simulation run added/removed/changed reporting.
+- [x] Coverage/formal/UVM evidence-change summaries without quality inference.
+- [x] CLI JSON artifact for release/review change inspection.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
