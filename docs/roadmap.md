@@ -72,7 +72,6 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
 - [x] Fail-closed normalized pin-binding schema validation and explicit unsupported child-pin query evidence without inferred parent relationships.
-- [x] Exact direct pin-binding to source instance-port edge correlation without promoting source roles to elaborated semantics.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
@@ -84,7 +83,7 @@ burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/
 foundation. Core AXI4 exclusive-access semantics plus address-sideband width and AxREGION 4KB
 consistency checks, reserved AxCACHE encoding validation, B/M plus direction-aware
 Allocate/Other-Allocate memory-class evidence (with legacy RA/WA bit compatibility),
-optional USER-sideband transport evidence with explicit per-signal width/presence metadata, data-width-aware AxSIZE/WSTRB byte-lane
+optional USER-sideband transport evidence with explicit per-signal width/presence metadata, explicit ID_W_WIDTH/ID_R_WIDTH transaction-ID presence and range evidence, data-width-aware AxSIZE/WSTRB byte-lane
 validation, and explicit absent-master-signal default normalization are implemented;
 exhaustive optional AXI4 sideband/coherency semantics,
 structural CDC signoff, and specification-complete UCIe checking remain planned.
@@ -100,6 +99,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 explicit USER width/presence validation from `user_signal_widths` interface metadata.
 - [x] AXI4 USER_REQ_WIDTH/RUSER composition consistency and VCD USER-width evidence capture.
+- [x] AXI4 ID_W_WIDTH/ID_R_WIDTH metadata validation and VCD width/presence evidence for AWID/BID and ARID/RID.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
