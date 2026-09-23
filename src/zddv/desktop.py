@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
@@ -8,12 +9,15 @@ from zddv.storage import (
     assertion_statistics,
     list_coverage_score_snapshots,
     list_coverage_snapshots,
+    get_run_record,
     list_formal_result_snapshots,
     list_run_records,
     list_uvm_log_snapshots,
     run_statistics,
 )
 from zddv.triage import group_failure_records
+from zddv.waveform import build_waveform_index
+from zddv.waveform_probe import probe_vcd_signals
 
 
 def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
@@ -56,6 +60,109 @@ def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
     return max(candidates, key=lambda item: str(item["created_at"]))
 
 
+def _resolve_waveform_path(project: ProjectConfig, value: str | Path) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = project.root / path
+    return path.resolve()
+
+
+def _project_relative_path(project: ProjectConfig, path: Path) -> str:
+    try:
+        return str(path.relative_to(project.root.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def _waveform_artifacts(
+    project: ProjectConfig,
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    for row in runs:
+        value = row.get("waveform_path")
+        if not value:
+            continue
+        path = _resolve_waveform_path(project, str(value))
+        exists = path.is_file()
+        artifacts.append(
+            {
+                "run_id": row["run_id"],
+                "created_at": row["created_at"],
+                "test_name": row.get("test_name"),
+                "status": row["status"],
+                "simulator": row["simulator"],
+                "format": path.suffix.lower().lstrip(".") or "unknown",
+                "path": str(path),
+                "project_path": _project_relative_path(project, path),
+                "exists": exists,
+                "bytes": path.stat().st_size if exists else None,
+            }
+        )
+    return artifacts
+
+
+def _waveform_run(
+    project: ProjectConfig,
+    run_id: str,
+) -> tuple[dict[str, Any], Path]:
+    row = get_run_record(project, run_id)
+    if row is None:
+        raise RuntimeError(f"Run '{run_id}' was not found in the verification database.")
+    value = row.get("waveform_path")
+    if not value:
+        raise RuntimeError(f"Run '{run_id}' has no recorded waveform artifact.")
+    path = _resolve_waveform_path(project, str(value))
+    if not path.is_file():
+        raise RuntimeError(
+            f"Recorded waveform for run '{run_id}' does not exist: {path}"
+        )
+    return row, path
+
+
+def build_desktop_waveform_index(
+    project: ProjectConfig,
+    run_id: str,
+) -> dict[str, Any]:
+    """Read and index one recorded waveform without materializing index artifacts."""
+    row, path = _waveform_run(project, run_id)
+    index = build_waveform_index(
+        path,
+        run_id=str(row["run_id"]),
+        project_name=project.name,
+    )
+    index["artifact"]["project_path"] = _project_relative_path(project, path)
+    return index
+
+
+def probe_desktop_waveform(
+    project: ProjectConfig,
+    run_id: str,
+    signal: str,
+    *,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    max_changes: int = 1_000,
+) -> dict[str, Any]:
+    """Read VCD signal changes for the desktop viewer without writing probe artifacts."""
+    query = signal.strip()
+    if not query:
+        raise ValueError("signal must not be empty")
+
+    row, path = _waveform_run(project, run_id)
+    result = probe_vcd_signals(
+        path,
+        [query],
+        start_time=start_time,
+        end_time=end_time,
+        max_changes=max_changes,
+    )
+    result["project"] = project.name
+    result["run_id"] = str(row["run_id"])
+    result["artifact"]["project_path"] = _project_relative_path(project, path)
+    return result
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -91,6 +198,7 @@ def build_desktop_snapshot(
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
         "design": design,
+        "waveforms": _waveform_artifacts(project, runs),
     }
 
 
