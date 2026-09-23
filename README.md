@@ -53,7 +53,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, AxCACHE/AxPROT/AxQOS/AxREGION validation, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence, and data-width-aware WSTRB byte-lane checks
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
-- Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries
+- Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries, plus optional version-aware public data-rate ceiling evidence through UCIe 3.0
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
 - Read-only desktop Debug Studio foundation using Python Tk/ttk, backed by persisted verification evidence
@@ -581,11 +581,18 @@ The default report is `.zddv/protocols/ucie/latest.json`. Trace validity and lin
 health are separate: malformed normalized evidence returns FAIL, while observed NAKs
 or CRC errors produce `health=DEGRADED` without claiming a protocol violation.
 
+Optional `negotiated.spec_version` and `negotiated.data_rate_gt_s` fields add a
+public-generation consistency check. ZDDV models 32 GT/s as the public maximum through
+UCIe 2.0 and 64 GT/s for UCIe 3.0; the historical `frequency_gt_s` input remains
+accepted and is aliased to `data_rate_gt_s`. This is deliberately a generation
+ceiling check, not complete speed-negotiation or package-profile validation.
+
 This is not a UCIe conformance checker. PHY behavior, training-state timing, retry
 rules, protocol mappings, exact CRC construction, and other specification-only rules
 remain outside this public foundation. Public references:
-https://www.uciexpress.org/specifications and
-https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap.
+https://www.uciexpress.org/specifications,
+https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap, and
+https://www.uciexpress.org/post/ucie-3-0-specification-redefining-chiplet-interconnects.
 
 ### Asynchronous FIFO / CDC Dynamic Invariant Analysis
 
