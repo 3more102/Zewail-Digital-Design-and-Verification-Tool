@@ -300,7 +300,27 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
                 "simulator_version": "Verilator test",
                 "source_format": "json",
                 "design_fingerprint": design_revision_fingerprint(project),
-                "summary": {"modules": 2, "instances": 2},
+                "summary": {"modules": 2, "instances": 2, "ports": 1},
+                "port_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_module_var_io_direction",
+                },
+                "ports": [
+                    {
+                        "module": "dut",
+                        "module_elaborated_name": "dut",
+                        "name": "ready",
+                        "elaborated_name": "ready",
+                        "verilog_name": "ready",
+                        "original_name": "ready",
+                        "direction": "output",
+                        "direction_raw": "OUTPUT",
+                        "direction_field": "ioDirection",
+                        "var_type": "PORT",
+                        "location": {"path": "rtl/dut.sv", "line": 14, "column": 5},
+                    }
+                ],
                 "instances": [
                     {
                         "path": "tb_top",
@@ -334,6 +354,14 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
         "path": "rtl/dut.sv",
         "line": 12,
     }
+    assert evidence["port_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_var_io_direction",
+    }
+    assert evidence["ports"][0]["name"] == "ready"
+    assert evidence["ports"][0]["direction"] == "output"
+    assert evidence["ports"][0]["direction_field"] == "ioDirection"
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
 
@@ -375,6 +403,8 @@ def test_desktop_snapshot_rejects_elaboration_after_rtl_revision(tmp_path: Path)
 
     assert evidence["status"] == "STALE"
     assert evidence["instances"] == []
+    assert evidence["ports"] == []
+    assert evidence["port_evidence"]["status"] == "STALE"
     assert evidence["design_fingerprint"] == original_fingerprint
     assert evidence["current_design_fingerprint"] == design_revision_fingerprint(project)
     assert evidence["current_design_fingerprint"] != original_fingerprint
