@@ -121,6 +121,30 @@ def test_release_export_rejects_blocked_signoff(tmp_path: Path):
         )
 
 
+def test_release_verification_rejects_repacked_archive_metadata(tmp_path: Path):
+    project, signoff = _ready_signoff(tmp_path)
+    private_key, public_key = _write_keypair(tmp_path)
+    release = export_verification_release(
+        project,
+        expected_signoff_sha256=signoff["provenance"]["signoff_sha256"],
+        private_key=private_key,
+        key_id="test-release-key",
+    )
+
+    archive_path = Path(release["path"])
+    repacked = tmp_path / "repacked.zip"
+    with zipfile.ZipFile(archive_path, "r") as source, zipfile.ZipFile(
+        repacked,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as target:
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+
+    with pytest.raises(ValueError, match="canonical deterministic"):
+        verify_verification_release(repacked, public_key=public_key)
+
+
 def test_release_verification_detects_tampered_signoff(tmp_path: Path):
     project, signoff = _ready_signoff(tmp_path)
     private_key, public_key = _write_keypair(tmp_path)
@@ -142,6 +166,10 @@ def test_release_verification_detects_tampered_signoff(tmp_path: Path):
                 data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.extra = b""
+            info.comment = b""
             target.writestr(info, data)
 
     with pytest.raises(ValueError, match="inventory|SHA-256|metadata"):

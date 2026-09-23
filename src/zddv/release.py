@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import json
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -14,6 +15,12 @@ from zddv.config import ProjectConfig
 _RELEASE_MANIFEST_PATH = "release/manifest.json"
 _RELEASE_SIGNOFF_PATH = "release/signoff.json"
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+_EXPECTED_REPRODUCIBILITY = {
+    "archive_format": "zip-stored",
+    "member_order": "lexicographic",
+    "member_timestamp": "1980-01-01T00:00:00",
+    "deterministic": True,
+}
 
 
 def _canonical_json_bytes(payload: Any) -> bytes:
@@ -201,12 +208,7 @@ def _unsigned_manifest(
             "key_id": key_id,
             "public_key_sha256": public_key_sha256,
         },
-        "reproducibility": {
-            "archive_format": "zip-stored",
-            "member_order": "lexicographic",
-            "member_timestamp": "1980-01-01T00:00:00",
-            "deterministic": True,
-        },
+        "reproducibility": dict(_EXPECTED_REPRODUCIBILITY),
     }
 
 
@@ -230,6 +232,16 @@ def _zip_member(name: str, data: bytes) -> tuple[zipfile.ZipInfo, bytes]:
     info.extra = b""
     info.comment = b""
     return info, data
+
+
+def _canonical_release_archive_bytes(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.comment = b""
+        for name in sorted(members):
+            info, data = _zip_member(name, members[name])
+            archive.writestr(info, data)
+    return buffer.getvalue()
 
 
 def export_verification_release(
@@ -283,13 +295,8 @@ def export_verification_release(
         _RELEASE_MANIFEST_PATH: manifest_bytes,
         _RELEASE_SIGNOFF_PATH: signoff_bytes,
     }
-    with zipfile.ZipFile(destination, "w") as archive:
-        archive.comment = b""
-        for name in sorted(members):
-            info, data = _zip_member(name, members[name])
-            archive.writestr(info, data)
-
-    archive_bytes = destination.read_bytes()
+    archive_bytes = _canonical_release_archive_bytes(members)
+    destination.write_bytes(archive_bytes)
     return {
         "path": str(destination),
         "archive_sha256": _sha256_bytes(archive_bytes),
@@ -333,6 +340,18 @@ def verify_verification_release(
     except zipfile.BadZipFile as exc:
         raise ValueError(f"Invalid release ZIP archive: {source}") from exc
 
+    archive_bytes = source.read_bytes()
+    canonical_archive_bytes = _canonical_release_archive_bytes(
+        {
+            _RELEASE_MANIFEST_PATH: manifest_bytes,
+            _RELEASE_SIGNOFF_PATH: signoff_bytes,
+        }
+    )
+    if archive_bytes != canonical_archive_bytes:
+        raise ValueError(
+            "Release archive does not use the canonical deterministic ZDDV ZIP layout"
+        )
+
     try:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
         signoff = json.loads(signoff_bytes.decode("utf-8"))
@@ -341,8 +360,15 @@ def verify_verification_release(
     if not isinstance(manifest, dict) or not isinstance(signoff, dict):
         raise ValueError("Release manifest and signoff must be JSON objects")
 
+    if manifest.get("schema_version") != 1:
+        raise ValueError("Unsupported release manifest schema version")
     if manifest.get("artifact") != "zddv_verification_release":
         raise ValueError("Archive manifest is not a ZDDV verification release")
+    if manifest.get("reproducibility") != _EXPECTED_REPRODUCIBILITY:
+        raise ValueError(
+            "Release manifest reproducibility metadata does not match "
+            "the canonical ZDDV archive contract"
+        )
     signature = manifest.get("signature")
     if not isinstance(signature, dict) or signature.get("algorithm") != "ed25519":
         raise ValueError("Release manifest does not contain an Ed25519 signature")
@@ -419,7 +445,7 @@ def verify_verification_release(
     return {
         "status": "VERIFIED",
         "path": str(source),
-        "archive_sha256": _sha256_bytes(source.read_bytes()),
+        "archive_sha256": _sha256_bytes(archive_bytes),
         "manifest_sha256": _sha256_bytes(manifest_bytes),
         "signoff_sha256": expected_meta["signoff_sha256"],
         "key_id": signature.get("key_id"),
