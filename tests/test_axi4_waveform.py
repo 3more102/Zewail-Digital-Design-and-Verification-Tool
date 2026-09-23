@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.protocols.axi4_waveform import (
@@ -22,6 +24,11 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["data_width_bits"] == 16
     assert trace["waveform"]["rdata_width_bits"] == 16
     assert trace["waveform"]["wstrb_width"] == 2
+    assert trace["id_widths"] == {
+        "ID_W_WIDTH": 2,
+        "ID_R_WIDTH": 2,
+    }
+    assert trace["waveform"]["id_widths"] == trace["id_widths"]
     assert trace["user_signal_widths"] == {
         "AWUSER": 4,
         "WUSER": 4,
@@ -76,6 +83,10 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert read["response_time"] == 65
     assert read["aruser"] == 0xB
     assert read["ruser"] == [0x4, 0x5]
+    assert result["id_widths"] == {
+        "ID_R_WIDTH": 2,
+        "ID_W_WIDTH": 2,
+    }
     assert result["user_signal_widths"] == {
         "ARUSER": 4,
         "AWUSER": 4,
@@ -166,3 +177,26 @@ def test_axi4_waveform_user_widths_are_checked_against_axi_properties(tmp_path: 
     else:
         raise AssertionError("Expected inconsistent AXI4 USER VCD widths to fail")
 
+
+
+def test_axi4_waveform_rejects_mismatched_write_id_widths(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 2 p BID [1:0] $end",
+        "$var wire 3 p BID [2:0] $end",
+    )
+    bad = tmp_path / "mismatched_write_id_width.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="ID_W_WIDTH"):
+        extract_axi4_trace_from_vcd(bad)
+
+
+def test_axi4_waveform_rejects_partial_id_signal_pair(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace("$var wire 2 p BID [1:0] $end\n", "")
+    bad = tmp_path / "partial_write_id_pair.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="both present or both absent"):
+        extract_axi4_trace_from_vcd(bad)

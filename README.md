@@ -50,7 +50,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, direction-aware AxCACHE Allocate/Other-Allocate memory-class evidence, AxPROT/AxQOS/AxREGION validation, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence with explicit interface-width validation, and data-width-aware WSTRB byte-lane checks
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, direction-aware AxCACHE Allocate/Other-Allocate memory-class evidence, AxPROT/AxQOS/AxREGION validation, explicit ID_W_WIDTH/ID_R_WIDTH presence and range evidence, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence with explicit interface-width validation, and data-width-aware WSTRB byte-lane checks
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries, plus optional version-aware public data-rate ceiling evidence through UCIe 3.0
@@ -554,7 +554,12 @@ The normalized trace is written to
 `.zddv/protocols/axi4/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4/waveform-latest.json`. AW, W-beat, AR, R-beat, and
 response timestamps are retained so protocol violations and reconstructed bursts
-can be cross-referenced to the waveform.
+can be cross-referenced to the waveform. VCD extraction also records `ID_W_WIDTH`
+from matching AWID/BID declarations and `ID_R_WIDTH` from matching ARID/RID
+declarations. Both signals in each pair must be present with the same width or
+both absent; absence is represented as width 0. The normalized analyzer accepts
+the same optional `id_widths` metadata and validates 0..32-bit bounds, width-zero
+signal absence, and observed ID values without inferring widths from transaction data.
 
 ZDDV can also decode APB directly from a VCD waveform. `apb-waveform` samples
 signals on PCLK edges, emits the same normalized trace model, then runs the same
