@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### FST debug correlation
+
+- Allow `crossprobe` to consume FST scope/signal evidence only when `--fst2vcd [PATH]` is explicitly supplied; default FST handling remains metadata-only.
+- Allow `assertion-waveform` to opt in to the same temporary conversion path, count converted FST as fully indexed correlation evidence, and retain adapter provenance.
+- Keep converter execution fail-closed and non-implicit across both debug flows.
+
 ### Xcelium coverage evidence
 
 - Add schema-neutral lexical layout fingerprints for captured IMC detail sections using only structured delimiters, field counts, and token classes; unverified FSM/functional layouts remain evidence-only and are not normalized.
