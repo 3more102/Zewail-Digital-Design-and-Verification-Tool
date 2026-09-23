@@ -652,12 +652,17 @@ def qualify_signal_navigation_with_elaboration(
     *,
     instance_path: str,
     elaborated_instances: list[dict[str, Any]],
+    elaborated_pin_bindings: list[dict[str, Any]] | None = None,
+    pin_binding_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach deterministic elaborated-instance context to source connectivity.
 
-    The driver/load roles remain source-structural evidence.  This helper only
+    The driver/load roles remain source-structural evidence. This helper only
     qualifies that evidence with an already-resolved elaborated parent instance
     and, for instance-port edges, exact or ambiguous child-instance candidates.
+    When normalized direct pin-binding evidence is supplied, a source
+    instance-port edge is correlated only when the parent path, exact child
+    path, child module, port, and parent signal all agree.
     """
     parent_path = str(instance_path).strip()
     if not parent_path:
@@ -668,6 +673,20 @@ def qualify_signal_navigation_with_elaboration(
         for item in elaborated_instances
         if isinstance(item, dict) and item.get("path")
     ]
+    normalized_pin_bindings: list[dict[str, Any]] | None = None
+    pin_binding_contract: str | None = None
+    if (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and isinstance(elaborated_pin_bindings, list)
+    ):
+        normalized_pin_bindings = [
+            item
+            for item in elaborated_pin_bindings
+            if isinstance(item, dict) and item.get("status") == "NORMALIZED"
+        ]
+        contract = pin_binding_evidence.get("contract")
+        pin_binding_contract = str(contract) if contract is not None else None
 
     def child_candidates(entry: dict[str, Any]) -> list[str]:
         if entry.get("kind") != "instance_port" or not entry.get("instance"):
@@ -697,6 +716,36 @@ def qualify_signal_navigation_with_elaboration(
                 matches.append(candidate_path)
         return sorted(set(matches))
 
+    def direct_pin_candidates(
+        entry: dict[str, Any],
+        *,
+        child_path: str,
+    ) -> list[dict[str, Any]] | None:
+        if normalized_pin_bindings is None:
+            return None
+
+        port = entry.get("port")
+        child_type = entry.get("child_type")
+        parent_signal = navigation.get("signal")
+        if not port or not parent_signal:
+            return []
+
+        matches: list[dict[str, Any]] = []
+        for binding in normalized_pin_bindings:
+            if str(binding.get("parent_instance_path") or "") != parent_path:
+                continue
+            if str(binding.get("instance_path") or "") != child_path:
+                continue
+            binding_module = binding.get("instance_module")
+            if child_type and binding_module and binding_module != child_type:
+                continue
+            if str(binding.get("pin") or "") != str(port):
+                continue
+            if str(binding.get("signal") or "") != str(parent_signal):
+                continue
+            matches.append(dict(binding))
+        return matches
+
     def enrich(entry: dict[str, Any]) -> dict[str, Any]:
         item = {**entry, "instance_path": parent_path}
         if entry.get("kind") != "instance_port":
@@ -704,8 +753,21 @@ def qualify_signal_navigation_with_elaboration(
 
         candidates = child_candidates(entry)
         if len(candidates) == 1:
+            child_path = candidates[0]
             item["elaborated_child_resolution"] = "exact"
-            item["elaborated_child_path"] = candidates[0]
+            item["elaborated_child_path"] = child_path
+
+            pin_candidates = direct_pin_candidates(entry, child_path=child_path)
+            if pin_candidates is not None:
+                item["elaborated_pin_evidence_contract"] = pin_binding_contract
+                if len(pin_candidates) == 1:
+                    item["elaborated_pin_resolution"] = "exact"
+                    item["elaborated_pin_binding"] = pin_candidates[0]
+                elif pin_candidates:
+                    item["elaborated_pin_resolution"] = "ambiguous"
+                    item["elaborated_pin_candidates"] = pin_candidates
+                else:
+                    item["elaborated_pin_resolution"] = "not_found"
         elif candidates:
             item["elaborated_child_resolution"] = "ambiguous"
             item["elaborated_child_candidates"] = candidates
@@ -721,7 +783,6 @@ def qualify_signal_navigation_with_elaboration(
         "drivers": [enrich(item) for item in navigation["drivers"]],
         "loads": [enrich(item) for item in navigation["loads"]],
     }
-
 
 def write_connectivity_index(
     project: ProjectConfig,
