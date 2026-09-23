@@ -14,8 +14,11 @@
   persisted simulator-elaborated hierarchy views.
 - Add optional query limits to formal-property and UVM-message storage readers so the
   desktop does not materialize an unbounded evidence set.
-- Keep refresh display-only with respect to verification execution, AI invocation,
-  and generated-artifact application.
+- Keep refresh/navigation display-only with respect to verification execution, AI
+  invocation, and generated-artifact application.
+- Add SHA-confirmed lint/build/run project actions with project/source revalidation.
+- Add exact historical rerun as a reviewed action, binding the selected persisted
+  run record and recorded test/seed/plusargs/timeout into the review SHA-256.
 
 ### Release verification hardening
 
