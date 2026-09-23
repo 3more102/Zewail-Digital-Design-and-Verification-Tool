@@ -554,12 +554,24 @@ def test_desktop_crossprobe_rows_do_not_promote_non_unique_source_correlation():
                 "correlations": [
                     {
                         "status": "MATCHED",
+                        "binding_side": "parent_signal",
+                        "instance_path": "tb_top.u0",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
                         "source_roles": ["driver"],
                         "match_basis": ["source_edge_exact_child_path"],
                         "source_edge": {"file": "tb/tb_top.sv", "line": 4},
                     },
                     {
                         "status": "MATCHED",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.genblk1[1].u1",
+                        "pin": "ready",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "ready",
+                        "source_unit": "tb_top",
                         "source_roles": ["load"],
                         "match_basis": [
                             "direct_pin_resolves_source_generated_candidate"
@@ -622,8 +634,24 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_source_correlation():
             }
         }
     )
+    empty_contract = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [],
+            }
+        }
+    )
 
-    for candidate in (malformed_matched, unknown_status, wrong_roles):
+    for candidate in (
+        malformed_matched,
+        unknown_status,
+        wrong_roles,
+        empty_contract,
+    ):
         assert not any(
             kind in {
                 "Elaborated/source correlation",
