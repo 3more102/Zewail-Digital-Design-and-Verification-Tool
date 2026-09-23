@@ -30,6 +30,11 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
         "RUSER": 6,
     }
     assert trace["waveform"]["user_signal_widths"] == trace["user_signal_widths"]
+    assert trace["id_widths"] == {
+        "ID_R_WIDTH": 2,
+        "ID_W_WIDTH": 2,
+    }
+    assert trace["waveform"]["id_widths"] == trace["id_widths"]
     assert trace["samples"][0]["time"] == 5
     assert trace["samples"][0]["AWID"] == 1
     assert trace["samples"][0]["AWLEN"] == 1
@@ -82,6 +87,10 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
         "BUSER": 2,
         "RUSER": 6,
         "WUSER": 4,
+    }
+    assert result["id_widths"] == {
+        "ID_R_WIDTH": 2,
+        "ID_W_WIDTH": 2,
     }
 
     assert Path(result["trace_path"]).is_file()
@@ -166,3 +175,34 @@ def test_axi4_waveform_user_widths_are_checked_against_axi_properties(tmp_path: 
     else:
         raise AssertionError("Expected inconsistent AXI4 USER VCD widths to fail")
 
+
+
+def test_axi4_waveform_rejects_mismatched_paired_id_widths(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 2 p BID [1:0] $end",
+        "$var wire 3 p BID [2:0] $end",
+    )
+    bad = tmp_path / "bad_id_widths.vcd"
+    bad.write_text(source, encoding="utf-8")
+
+    try:
+        extract_axi4_trace_from_vcd(bad)
+    except RuntimeError as exc:
+        assert "AWID and BID widths must match ID_W_WIDTH" in str(exc)
+    else:
+        raise AssertionError("Expected mismatched AXI4 write ID widths to fail")
+
+
+def test_axi4_waveform_does_not_infer_zero_width_from_undumped_id_pair(
+    tmp_path: Path,
+):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace("$var wire 2 p BID [1:0] $end\n", "")
+    partial = tmp_path / "partial_id_pair.vcd"
+    partial.write_text(source, encoding="utf-8")
+
+    trace = extract_axi4_trace_from_vcd(partial)
+
+    assert "ID_W_WIDTH" not in trace["id_widths"]
+    assert trace["id_widths"]["ID_R_WIDTH"] == 2
