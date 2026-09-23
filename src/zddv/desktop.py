@@ -6,6 +6,7 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
+from zddv.desktop_actions import attach_desktop_actions_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
     assertion_statistics,
@@ -243,6 +244,7 @@ def launch_desktop_gui(
     notebook.add(uvm_tab, text="UVM")
     notebook.add(elaborated_tab, text="Elaborated")
     attach_desktop_waveform_tab(notebook, project)
+    attach_desktop_actions_tab(notebook, project)
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -424,9 +426,9 @@ def launch_desktop_gui(
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence and source files; "
-            "it does not run verification, invoke AI, write design indexes, or apply "
-            "generated artifacts."
+            "Browsing and refresh remain read-only. The Actions tab may copy one "
+            "reviewed generated draft into project sources only after explicit approval "
+            "and an exact SHA-256 match; it never compiles or executes that draft."
         ),
     ).pack(side="left")
 
