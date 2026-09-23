@@ -113,6 +113,85 @@ def _json_module_aliases(node: dict[str, Any]) -> set[str]:
     return aliases
 
 
+def _json_module_ports(
+    module_node: dict[str, Any],
+    *,
+    files: dict[str, dict[str, Any]],
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    """Normalize direct module VAR nodes only from documented ioDirection evidence."""
+    module_name = (
+        module_node.get("origName")
+        or module_node.get("verilogName")
+        or module_node.get("name")
+    )
+    if not module_name:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    for child in module_node.values():
+        if isinstance(child, dict):
+            if str(child.get("type", "")).upper() == "VAR":
+                candidates.append(child)
+        elif isinstance(child, list):
+            candidates.extend(
+                item
+                for item in child
+                if isinstance(item, dict)
+                and str(item.get("type", "")).upper() == "VAR"
+            )
+
+    ports: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str | None, int | None, int | None]] = set()
+    for node in candidates:
+        direction_raw = str(node.get("ioDirection") or "").strip()
+        if not direction_raw or direction_raw.upper() == "NONE":
+            continue
+
+        name = node.get("verilogName") or node.get("name") or node.get("origName")
+        if not name:
+            continue
+
+        location = _decode_location(node.get("loc"), files, project_root)
+        location_key = location or {}
+        key = (
+            str(name),
+            direction_raw.upper(),
+            location_key.get("path"),
+            location_key.get("line"),
+            location_key.get("column"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+
+        ports.append(
+            {
+                "module": str(module_name),
+                "module_elaborated_name": module_node.get("name"),
+                "name": str(name),
+                "elaborated_name": node.get("name"),
+                "verilog_name": node.get("verilogName"),
+                "original_name": node.get("origName"),
+                "direction": direction_raw.lower(),
+                "direction_raw": direction_raw,
+                "direction_field": "ioDirection",
+                "var_type": node.get("varType"),
+                "location": location,
+            }
+        )
+
+    return sorted(
+        ports,
+        key=lambda item: (
+            item["module"],
+            str(item.get("module_elaborated_name") or ""),
+            item["name"],
+            item["direction"],
+        ),
+    )
+
+
 def _json_direct_cells(
     value: Any,
     *,
@@ -213,6 +292,7 @@ def parse_verilator_json(
     module_by_addr: dict[str, str] = {}
     module_node_by_addr: dict[str, dict[str, Any]] = {}
     module_nodes: list[dict[str, Any]] = []
+    ports: list[dict[str, Any]] = []
     for node in nodes:
         if str(node.get("type", "")).upper() != "MODULE":
             continue
@@ -225,6 +305,13 @@ def parse_verilator_json(
             module_by_addr[str(address)] = name
             module_node_by_addr[str(address)] = node
         module_nodes.append(node)
+        ports.extend(
+            _json_module_ports(
+                node,
+                files=files,
+                project_root=root,
+            )
+        )
         modules.append(
             {
                 "name": name,
@@ -374,7 +461,25 @@ def parse_verilator_json(
             )
 
     modules, instances = _deduplicate(modules, instances)
-    return {"modules": modules, "instances": instances}
+    ports = sorted(
+        ports,
+        key=lambda item: (
+            item["module"],
+            str(item.get("module_elaborated_name") or ""),
+            item["name"],
+            item["direction"],
+        ),
+    )
+    return {
+        "modules": modules,
+        "instances": instances,
+        "ports": ports,
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+    }
 
 
 def parse_verilator_xml(
@@ -435,7 +540,16 @@ def parse_verilator_xml(
         )
 
     modules, instances = _deduplicate(modules, instances)
-    return {"modules": modules, "instances": instances}
+    return {
+        "modules": modules,
+        "instances": instances,
+        "ports": [],
+        "port_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_port_schema_not_normalized",
+        },
+    }
 
 
 def hierarchy_lines(index: dict[str, Any]) -> list[str]:
@@ -501,9 +615,12 @@ def write_elaborated_index(
         "design_fingerprint": design_revision_fingerprint(project),
         "modules": parsed["modules"],
         "instances": parsed["instances"],
+        "ports": parsed["ports"],
+        "port_evidence": parsed["port_evidence"],
         "summary": {
             "modules": len(parsed["modules"]),
             "instances": len(parsed["instances"]),
+            "ports": len(parsed["ports"]),
         },
         "tool_log": export["log"],
     }

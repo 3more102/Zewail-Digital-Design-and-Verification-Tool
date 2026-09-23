@@ -79,6 +79,117 @@ def test_parse_verilator_json_elaborated_hierarchy(tmp_path: Path):
     assert result["instances"][1]["location"]["line"] == 5
 
 
+def test_parse_verilator_json_normalizes_documented_module_io_direction(tmp_path: Path):
+    rtl = tmp_path / "rtl" / "ports.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module top(input logic clk, output logic done); endmodule\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "topModule": True,
+                "loc": "d,1:1,1:55",
+                "stmtsp": [
+                    {
+                        "type": "VAR",
+                        "name": "clk",
+                        "origName": "clk",
+                        "verilogName": "clk",
+                        "ioDirection": "INPUT",
+                        "varType": "PORT",
+                        "loc": "d,1:12,1:27",
+                    },
+                    {
+                        "type": "VAR",
+                        "name": "done",
+                        "origName": "done",
+                        "verilogName": "done",
+                        "ioDirection": "OUTPUT",
+                        "varType": "PORT",
+                        "loc": "d,1:29,1:46",
+                    },
+                    {
+                        "type": "VAR",
+                        "name": "internal",
+                        "ioDirection": "NONE",
+                        "varType": "VAR",
+                        "loc": "d,1:47,1:54",
+                    },
+                    {
+                        "type": "VAR",
+                        "name": "undocumented_direction_only",
+                        "direction": "INPUT",
+                        "declDirection": "INPUT",
+                        "varType": "PORT",
+                        "loc": "d,1:47,1:54",
+                    },
+                    {
+                        "type": "TASK",
+                        "name": "helper",
+                        "stmtsp": [
+                            {
+                                "type": "VAR",
+                                "name": "arg",
+                                "verilogName": "arg",
+                                "ioDirection": "INPUT",
+                                "varType": "PORT",
+                                "loc": "d,1:47,1:50",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/ports.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert result["port_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_var_io_direction",
+    }
+    assert [(item["name"], item["direction"]) for item in result["ports"]] == [
+        ("clk", "input"),
+        ("done", "output"),
+    ]
+    assert all(item["direction_field"] == "ioDirection" for item in result["ports"])
+    assert result["ports"][0]["module"] == "top"
+    assert result["ports"][0]["location"]["path"] == "rtl/ports.sv"
+    assert all(item["name"] != "arg" for item in result["ports"])
+    assert all(
+        item["name"] != "undocumented_direction_only"
+        for item in result["ports"]
+    )
+
+
 def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
     rtl = tmp_path / "rtl" / "design.sv"
     rtl.parent.mkdir()
@@ -210,6 +321,12 @@ def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
     ]
     assert result["instances"][1]["module"] == "counter"
     assert result["instances"][1]["location"]["column"] == 3
+    assert result["ports"] == []
+    assert result["port_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_port_schema_not_normalized",
+    }
 
 
 def test_elaborated_hierarchy_lines_and_version_detection():
@@ -325,5 +442,11 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
     assert Path(result["path"]).exists()
     assert Path(result["source_index"]).exists()
     assert Path(result["hierarchy_path"]).read_text(encoding="utf-8") == "top: top\n"
-    assert result["summary"] == {"modules": 1, "instances": 1}
+    assert result["summary"] == {"modules": 1, "instances": 1, "ports": 0}
+    assert result["ports"] == []
+    assert result["port_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_var_io_direction",
+    }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)
