@@ -21,6 +21,8 @@ def _record(
     seed: int = 7,
     simulator: str | None = None,
     top: str | None = None,
+    command: list[object] | None = None,
+    plusargs: list[object] | None = None,
 ) -> None:
     record_run(
         project,
@@ -41,8 +43,12 @@ def _record(
             "waveform": f".zddv/runs/{run_id}/trace.vcd",
             "coverage": None,
             "timeout_s": 30.0,
-            "command": ["sim", "+MODE=stress"],
-            "plusargs": ["+MODE=stress", "+COUNT=4"],
+            "command": (
+                ["sim", "+MODE=stress"] if command is None else command
+            ),
+            "plusargs": (
+                ["+MODE=stress", "+COUNT=4"] if plusargs is None else plusargs
+            ),
         },
     )
 
@@ -181,3 +187,48 @@ def test_rerun_run_id_rejects_unknown_or_incompatible_run(tmp_path: Path):
     _record(project, run_id="wrong-simulator", simulator="questa")
     with pytest.raises(ValueError, match="Historical run identity mismatch"):
         historical_run_snapshot(project, "wrong-simulator")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("test_name", 123, "test_name must be a string or None"),
+        ("seed", True, "seed must be an integer or None"),
+        ("plusargs", ["+MODE=stress", 7], "plusargs must be a list of strings"),
+        ("timeout_s", True, "timeout_s must be > 0 or None"),
+    ],
+)
+def test_rerun_snapshot_rejects_malformed_runtime_inputs(
+    tmp_path: Path,
+    field,
+    value,
+    message,
+):
+    project = initialize_project(tmp_path / "demo")
+    _record(project)
+    snapshot = historical_run_snapshot(project, "run-fail")
+    snapshot["recorded_inputs"][field] = value
+
+    with pytest.raises(ValueError, match=message):
+        rerun_snapshot(project, snapshot, backend=_Backend(project.root))
+
+
+@pytest.mark.parametrize(
+    ("run_id", "command", "plusargs", "message"),
+    [
+        ("bad-command", ["sim", 7], None, "command must be a list of strings"),
+        ("bad-plusargs", None, ["+MODE=stress", 7], "plusargs must be a list of strings"),
+    ],
+)
+def test_historical_snapshot_rejects_non_string_recorded_lists(
+    tmp_path: Path,
+    run_id,
+    command,
+    plusargs,
+    message,
+):
+    project = initialize_project(tmp_path / "demo")
+    _record(project, run_id=run_id, command=command, plusargs=plusargs)
+
+    with pytest.raises(ValueError, match=message):
+        historical_run_snapshot(project, run_id)
