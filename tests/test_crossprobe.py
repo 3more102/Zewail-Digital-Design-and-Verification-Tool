@@ -425,6 +425,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         "simulator_elaborated_direct_pin_varref"
     )
     assert parent_connectivity["instance_port_bindings"] == []
+    assert parent_connectivity["unsupported_instance_port_bindings"] == []
     assert len(parent_connectivity["parent_signal_bindings"]) == 1
     child_pin = parent_connectivity["parent_signal_bindings"][0]
     assert child_pin["instance_path"] == "tb_top.dut"
@@ -442,6 +443,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     )
     child_connectivity = child["elaborated_connectivity"]
     assert child_connectivity["parent_signal_bindings"] == []
+    assert child_connectivity["unsupported_instance_port_bindings"] == []
     assert len(child_connectivity["instance_port_bindings"]) == 1
     parent_binding = child_connectivity["instance_port_bindings"][0]
     assert parent_binding["parent_instance_path"] == "tb_top"
@@ -464,6 +466,76 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+
+    elaborated["port_evidence"] = {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_var_io_direction",
+    }
+    elaborated["pin_bindings"][1] = {
+        "status": "UNSUPPORTED",
+        "instance_path": "tb_top.dut",
+        "instance_module": "counter",
+        "pin": "count",
+        "parent_instance_path": "tb_top",
+        "signal": None,
+        "expression_type": "AND",
+        "generate_scopes": [],
+        "pin_location": {"path": "tb/tb_top.sv", "line": 6, "column": 9},
+    }
+    unsupported = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    unsupported_connectivity = unsupported["elaborated_connectivity"]
+    assert unsupported_connectivity["instance_port_bindings"] == []
+    assert len(
+        unsupported_connectivity["unsupported_instance_port_bindings"]
+    ) == 1
+    unsupported_pin = unsupported_connectivity[
+        "unsupported_instance_port_bindings"
+    ][0]
+    assert unsupported_pin["status"] == "UNSUPPORTED"
+    assert unsupported_pin["pin"] == "count"
+    assert unsupported_pin["port_direction"] == "output"
+    assert unsupported_pin["expression_type"] == "AND"
+    assert "parent_signal" not in unsupported_pin
+    assert "relationship" not in unsupported_pin
+
+
+def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "instances": [],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+        },
+        "pin_bindings": {},
+    }
+
+    with pytest.raises(ValueError, match="pin_bindings is not a list"):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index=elaborated,
+        )
+
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
     project = _project(tmp_path)
