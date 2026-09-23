@@ -8,6 +8,7 @@ from typing import Any
 from zddv.config import ProjectConfig
 from zddv.connectivity import build_connectivity_index, signal_navigation, write_connectivity_index
 from zddv.design_index import build_design_index, write_design_index
+from zddv.design_revision import design_revision_fingerprint
 from zddv.waveform import write_waveform_index
 
 
@@ -168,11 +169,22 @@ def _load_persisted_elaborated_evidence(
         }
 
     identity_errors = _elaborated_identity_errors(project, payload)
+    current_fingerprint = design_revision_fingerprint(project)
+    stored_fingerprint = payload.get("design_fingerprint")
+    if stored_fingerprint != current_fingerprint:
+        if stored_fingerprint is None:
+            identity_errors.append("design_fingerprint is missing")
+        else:
+            identity_errors.append(
+                "design_fingerprint does not match the current RTL/config revision"
+            )
     if identity_errors:
         return {
             **evidence,
             "status": "STALE",
             "error": "; ".join(identity_errors),
+            "design_fingerprint": stored_fingerprint,
+            "current_design_fingerprint": current_fingerprint,
         }
 
     return {
@@ -181,6 +193,8 @@ def _load_persisted_elaborated_evidence(
         "index": payload,
         "simulator_version": payload.get("simulator_version"),
         "source_format": payload.get("source_format"),
+        "design_fingerprint": stored_fingerprint,
+        "current_design_fingerprint": current_fingerprint,
     }
 
 
