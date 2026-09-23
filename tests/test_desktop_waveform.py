@@ -496,3 +496,165 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
         for kind, _detail in malformed_item_rows
     )
 
+
+def test_desktop_crossprobe_rows_surface_trusted_source_correlation():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
+                        "source_roles": ["driver"],
+                        "match_basis": ["source_edge_exact_child_path"],
+                        "source_edge": {
+                            "kind": "instance_port",
+                            "file": "tb/tb_top.sv",
+                            "line": 4,
+                        },
+                    },
+                    {
+                        "status": "NOT_FOUND",
+                        "binding_side": "parent_signal",
+                        "instance_path": "tb_top.u_aux",
+                        "pin": "ready",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "ready",
+                    },
+                ],
+            }
+        }
+    )
+
+    summary = next(
+        detail
+        for kind, detail in rows
+        if kind == "Elaborated/source correlation"
+    )
+    assert summary == (
+        "simulator_elaborated_to_source_structural_correlation · "
+        "correlations=2 · matched=1 · not-found=1 · ambiguous=0 · "
+        "unavailable=0 · roles=source_structural_only"
+    )
+
+    source_edge = next(
+        detail for kind, detail in rows if kind == "Correlated source edge"
+    )
+    assert source_edge == (
+        "tb_top.count ↔ tb_top.dut.count · binding_side=instance_port · "
+        "source=tb_top · source_roles=driver · "
+        "basis=source_edge_exact_child_path · location=tb/tb_top.sv:4"
+    )
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_untrusted_source_correlation():
+    cases = [
+        {
+            "analysis_level": "future_unverified_contract",
+            "role_semantics": "source_structural_only",
+            "correlations": [],
+        },
+        {
+            "analysis_level": (
+                "simulator_elaborated_to_source_structural_correlation"
+            ),
+            "role_semantics": "future_role_semantics",
+            "correlations": [],
+        },
+        {
+            "analysis_level": (
+                "simulator_elaborated_to_source_structural_correlation"
+            ),
+            "role_semantics": "source_structural_only",
+            "correlations": {},
+        },
+        {
+            "analysis_level": (
+                "simulator_elaborated_to_source_structural_correlation"
+            ),
+            "role_semantics": "source_structural_only",
+            "correlations": [{"status": "FUTURE_STATUS"}],
+        },
+    ]
+
+    for correlation in cases:
+        rows = desktop_crossprobe_evidence_rows(
+            {"elaborated_source_correlation": correlation}
+        )
+        assert not any(
+            kind
+            in {
+                "Elaborated/source correlation",
+                "Correlated source edge",
+            }
+            for kind, _detail in rows
+        )
+
+
+def test_desktop_crossprobe_rows_require_unique_valid_matched_source_edge():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "source_roles": ["driver"],
+                        "match_basis": ["source_edge_exact_child_path"],
+                        "source_edge": {"file": "tb/a.sv", "line": 1},
+                    },
+                    {
+                        "status": "MATCHED",
+                        "source_roles": ["load"],
+                        "match_basis": ["source_edge_exact_child_path"],
+                        "source_edge": {"file": "tb/b.sv", "line": 2},
+                    },
+                ],
+            }
+        }
+    )
+
+    assert any(
+        kind == "Elaborated/source correlation" for kind, _detail in rows
+    )
+    assert not any(
+        kind == "Correlated source edge" for kind, _detail in rows
+    )
+
+
+def test_desktop_crossprobe_rows_deduplicate_normalized_pin_endpoints():
+    binding = {
+        "instance_path": "tb_top.dut",
+        "pin": "clk",
+        "parent_instance_path": "tb_top",
+        "parent_signal": "clk",
+        "port_direction": "input",
+        "relationship": "parent_signal_to_child_input",
+    }
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "parent_signal_bindings": [binding],
+                "instance_port_bindings": [dict(binding)],
+                "unsupported_instance_port_bindings": [],
+            }
+        }
+    )
+
+    pin_rows = [detail for kind, detail in rows if kind == "Elaborated pin"]
+    assert pin_rows == [
+        "tb_top.clk -> tb_top.dut.clk · input · parent_signal_to_child_input"
+    ]
