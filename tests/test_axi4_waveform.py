@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.protocols.axi4_waveform import (
