@@ -343,6 +343,135 @@ def _design_unit_for_elaborated_instance(
     return None
 
 
+def _elaborated_port_directions(
+    elaborated_index: dict[str, Any],
+) -> dict[tuple[str, str], str]:
+    """Return trusted module-port directions keyed by all normalized port aliases."""
+    evidence = elaborated_index.get("port_evidence")
+    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+        return {}
+
+    ports = elaborated_index.get("ports")
+    if not isinstance(ports, list):
+        return {}
+
+    directions: dict[tuple[str, str], str] = {}
+    ambiguous: set[tuple[str, str]] = set()
+    for port in ports:
+        if not isinstance(port, dict):
+            continue
+        module = port.get("module")
+        direction = port.get("direction")
+        if not module or not direction:
+            continue
+
+        aliases = {
+            str(value)
+            for value in (
+                port.get("name"),
+                port.get("elaborated_name"),
+                port.get("verilog_name"),
+                port.get("original_name"),
+            )
+            if value
+        }
+        value = str(direction).lower()
+        for alias in aliases:
+            key = (str(module), alias)
+            current = directions.get(key)
+            if current is not None and current != value:
+                ambiguous.add(key)
+                continue
+            directions[key] = value
+
+    for key in ambiguous:
+        directions.pop(key, None)
+    return directions
+
+
+def _pin_relationship(direction: str | None) -> str:
+    if direction == "input":
+        return "parent_signal_to_child_input"
+    if direction == "output":
+        return "child_output_to_parent_signal"
+    if direction == "inout":
+        return "bidirectional_child_port"
+    return "direct_pin_varref"
+
+
+def _elaborated_pin_connectivity(
+    elaborated_index: dict[str, Any],
+    *,
+    instance_path: str,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    """Expose only normalized direct CELL-pin-to-VARREF interface evidence."""
+    evidence = elaborated_index.get("pin_binding_evidence")
+    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+        return None
+
+    bindings = elaborated_index.get("pin_bindings")
+    if not isinstance(bindings, list):
+        return None
+
+    port_directions = _elaborated_port_directions(elaborated_index)
+    parent_signal_bindings: list[dict[str, Any]] = []
+    instance_port_bindings: list[dict[str, Any]] = []
+
+    for binding in bindings:
+        if not isinstance(binding, dict) or binding.get("status") != "NORMALIZED":
+            continue
+        child_path = binding.get("instance_path")
+        parent_path = binding.get("parent_instance_path")
+        pin = binding.get("pin")
+        parent_signal = binding.get("signal")
+        child_module = binding.get("instance_module")
+        if not child_path or not parent_path or not pin or not parent_signal:
+            continue
+
+        direction = port_directions.get((str(child_module), str(pin)))
+        normalized = {
+            "instance_path": str(child_path),
+            "instance_module": (
+                str(child_module) if child_module is not None else None
+            ),
+            "pin": str(pin),
+            "parent_instance_path": str(parent_path),
+            "parent_signal": str(parent_signal),
+            "port_direction": direction,
+            "relationship": _pin_relationship(direction),
+            "generate_scopes": list(binding.get("generate_scopes", [])),
+            "pin_location": binding.get("pin_location"),
+            "signal_location": binding.get("signal_location"),
+        }
+
+        if str(parent_path) == instance_path and str(parent_signal) == signal_name:
+            parent_signal_bindings.append(normalized)
+        if str(child_path) == instance_path and str(pin) == signal_name:
+            instance_port_bindings.append(normalized)
+
+    if not parent_signal_bindings and not instance_port_bindings:
+        return None
+
+    return {
+        "analysis_level": "simulator_elaborated_direct_pin_varref",
+        "evidence_contract": evidence.get("contract"),
+        "query_instance_path": instance_path,
+        "query_signal": signal_name,
+        "parent_signal_bindings": sorted(
+            parent_signal_bindings,
+            key=lambda item: (item["instance_path"], item["pin"]),
+        ),
+        "instance_port_bindings": sorted(
+            instance_port_bindings,
+            key=lambda item: (
+                item["parent_instance_path"],
+                item["parent_signal"],
+            ),
+        ),
+    }
+
+
 def _source_path(project: ProjectConfig, file_value: str) -> Path:
     path = Path(file_value)
     if not path.is_absolute():
@@ -448,8 +577,16 @@ def build_crossprobe(
 
     source: dict[str, Any] | None = None
     connectivity_payload: dict[str, Any] | None = None
+    elaborated_connectivity_payload: dict[str, Any] | None = None
     status = "PARTIAL"
     note: str | None = None
+
+    if elaborated_node is not None and elaborated_index is not None:
+        elaborated_connectivity_payload = _elaborated_pin_connectivity(
+            elaborated_index,
+            instance_path=str(elaborated_node["path"]),
+            signal_name=str(signal.get("name", "")),
+        )
 
     if elaborated_node is None and source_hierarchy_node is None:
         note = (
@@ -572,6 +709,7 @@ def build_crossprobe(
         "elaborated_port": elaborated_port,
         "source": source,
         "connectivity": connectivity_payload,
+        "elaborated_connectivity": elaborated_connectivity_payload,
         "note": note,
     }
 
