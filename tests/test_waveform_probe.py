@@ -1,10 +1,15 @@
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.waveform_probe import probe_vcd_signals, write_waveform_probe
+from zddv.waveform_probe import (
+    probe_vcd_signals,
+    probe_waveform_signals,
+    write_waveform_probe,
+)
 
 
 VCD = """$timescale 1ns $end
@@ -96,6 +101,50 @@ $enddefinitions $end
 
     with pytest.raises(RuntimeError, match="ambiguous"):
         probe_vcd_signals(waveform, ["valid"])
+
+
+def test_fst_probe_requires_explicit_converter(tmp_path: Path):
+    waveform = tmp_path / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+
+    with pytest.raises(RuntimeError, match="explicit fst2vcd adapter"):
+        probe_waveform_signals(waveform, ["count"])
+
+
+def test_fst_probe_uses_explicit_converter_and_keeps_source_artifact(
+    tmp_path: Path,
+    monkeypatch,
+):
+    waveform = tmp_path / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd",
+    )
+
+    def fake_run(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    result = probe_waveform_signals(
+        waveform,
+        ["count"],
+        start_time=5,
+        end_time=10,
+        fst_converter="fst2vcd",
+    )
+
+    assert result["format"] == "fst"
+    assert result["artifact"]["path"] == str(waveform.resolve())
+    assert result["adapter"]["adapter"] == "fst2vcd"
+    assert result["derived_vcd"]["temporary"] is True
+    assert result["signals"][0]["path"] == "tb_top.dut.count"
+    assert result["signals"][0]["changes"] == [
+        {"time": 5, "value": "0001"},
+        {"time": 10, "value": "0010"},
+    ]
 
 
 def test_write_waveform_probe_and_cli_direct_input(tmp_path: Path, capsys):
