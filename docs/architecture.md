@@ -236,6 +236,14 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+The normalized report additionally exposes `user_width_property_evidence`. It
+projects explicit per-signal width evidence onto the `USER_REQ_WIDTH`,
+`USER_DATA_WIDTH`, and `USER_RESP_WIDTH` properties and records RUSER composition
+evidence. The maxima in Issue K A13.5.1 (128, DATA_WIDTH/2, and 16 bits) are marked
+as guidance-only evidence, matching the specification's statement that these
+maximum widths are guidance for configurable interfaces. Exceeding that guidance
+does not by itself change the protocol PASS/FAIL verdict.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
