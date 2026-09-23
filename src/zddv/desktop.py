@@ -135,6 +135,11 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "port_evidence": {"status": "INVALID"},
         }
 
+    # Fail closed: persisted port rows are displayable only when the evidence
+    # contract explicitly says they were normalized from the supported schema.
+    if port_evidence.get("status") != "NORMALIZED":
+        ports = []
+
     identity_errors: list[str] = []
     for field, expected in (
         ("project", project.name),
