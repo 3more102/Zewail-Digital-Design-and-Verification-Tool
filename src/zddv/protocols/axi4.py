@@ -350,6 +350,85 @@ def _configured_user_signal_widths(payload: dict[str, Any]) -> dict[str, int]:
     return normalized
 
 
+def _user_width_property_evidence(
+    user_signal_widths: dict[str, int],
+    *,
+    data_width_bits: int | None,
+) -> dict[str, Any]:
+    """Expose AXI USER configuration-property evidence without turning guidance into failures."""
+    request_signals = [
+        name for name in ("AWUSER", "ARUSER") if name in user_signal_widths
+    ]
+    request_width = (
+        user_signal_widths[request_signals[0]] if request_signals else None
+    )
+    data_width = user_signal_widths.get("WUSER")
+    response_width = user_signal_widths.get("BUSER")
+    data_guidance_max = (
+        data_width_bits // 2 if data_width_bits is not None else None
+    )
+
+    def property_evidence(
+        value: int | None,
+        *,
+        evidence_signals: list[str],
+        guidance_max_bits: int | None,
+        guidance_basis: str,
+    ) -> dict[str, Any]:
+        return {
+            "value_bits": value,
+            "evidence_signals": evidence_signals,
+            "guidance_max_bits": guidance_max_bits,
+            "guidance_basis": guidance_basis,
+            "guidance_only": True,
+            "guidance_exceeded": (
+                value > guidance_max_bits
+                if value is not None and guidance_max_bits is not None
+                else None
+            ),
+        }
+
+    ruser_width = user_signal_widths.get("RUSER")
+    expected_ruser_width = (
+        data_width + response_width
+        if data_width is not None and response_width is not None
+        else None
+    )
+    return {
+        "USER_REQ_WIDTH": property_evidence(
+            request_width,
+            evidence_signals=request_signals,
+            guidance_max_bits=128,
+            guidance_basis="Arm IHI 0022 Issue K A13.5.1",
+        ),
+        "USER_DATA_WIDTH": property_evidence(
+            data_width,
+            evidence_signals=["WUSER"] if data_width is not None else [],
+            guidance_max_bits=data_guidance_max,
+            guidance_basis=(
+                "Arm IHI 0022 Issue K A13.5.1: 0..DATA_WIDTH/2; "
+                "requires data_width_bits for a numeric maximum"
+            ),
+        ),
+        "USER_RESP_WIDTH": property_evidence(
+            response_width,
+            evidence_signals=["BUSER"] if response_width is not None else [],
+            guidance_max_bits=16,
+            guidance_basis="Arm IHI 0022 Issue K A13.5.1",
+        ),
+        "RUSER": {
+            "value_bits": ruser_width,
+            "expected_from_components_bits": expected_ruser_width,
+            "composition_confirmed": (
+                ruser_width == expected_ruser_width
+                if ruser_width is not None and expected_ruser_width is not None
+                else None
+            ),
+            "composition": "USER_DATA_WIDTH + USER_RESP_WIDTH",
+        },
+    }
+
+
 def _normalize_sample(
     raw: dict[str, Any],
     index: int,
@@ -414,6 +493,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         data_bus_bytes = data_width_bits // 8
 
     user_signal_widths = _configured_user_signal_widths(payload)
+    user_width_property_evidence = _user_width_property_evidence(
+        user_signal_widths,
+        data_width_bits=data_width_bits,
+    )
     master_defaults = _master_default_signals(
         payload,
         raw_samples,
@@ -1429,6 +1512,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
         "user_signal_widths": user_signal_widths,
+        "user_width_property_evidence": user_width_property_evidence,
         "absent_master_signals": sorted(master_defaults),
         "master_signal_defaults": {
             name: master_defaults[name] for name in sorted(master_defaults)
@@ -1460,7 +1544,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
-            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits.",
+            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits. Arm's USER_REQ_WIDTH/USER_DATA_WIDTH/USER_RESP_WIDTH maxima are exposed as guidance evidence only and do not independently create protocol violations.",
             "Topology-dependent AxCACHE reachability, cross-master memory-attribute consistency, the AxREGION downstream-address-decode placement requirement, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled without explicit system topology metadata.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
