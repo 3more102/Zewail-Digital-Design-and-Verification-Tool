@@ -53,9 +53,10 @@ preference and simulator-elaborated instance qualification, documented Verilator
 module-port direction evidence surfaced without unsupported schema inference, and
 conservative direct CELL-pin-to-VARREF elaborated connectivity with complex expressions
 retained as unsupported evidence plus bidirectional waveform cross-probing across exact
-normalized pin bindings, assertion-to-waveform correlation, and the
-first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Exact elaborated drivers/loads remain future enrichment work.
+normalized pin bindings and direction-qualified boundary driver/load roles,
+assertion-to-waveform correlation, and the first protocol transaction reconstruction
+path (normalized APB traces) are implemented. Exact internal elaborated drivers/loads
+remain future enrichment work.
 
 - [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
@@ -70,6 +71,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Elaborated module-port direction/source evidence in waveform cross-probing and the Desktop elaborated browser.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
+- [x] Direction-qualified boundary driver/load evidence for direct normalized pin bindings, with unknown direction kept unclassified.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
