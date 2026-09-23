@@ -6,6 +6,7 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
+from zddv.design_revision import design_revision_fingerprint
 from zddv.desktop_actions import attach_desktop_actions_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
@@ -87,6 +88,42 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
         }
 
+    identity_errors: list[str] = []
+    for field, expected in (
+        ("project", project.name),
+        ("top", project.top),
+        ("simulator", project.simulator),
+    ):
+        actual = payload.get(field)
+        if actual != expected:
+            identity_errors.append(
+                f"{field} mismatch: expected {expected!r}, found {actual!r}"
+            )
+
+    current_fingerprint = design_revision_fingerprint(project)
+    stored_fingerprint = payload.get("design_fingerprint")
+    if stored_fingerprint != current_fingerprint:
+        if stored_fingerprint is None:
+            identity_errors.append("design_fingerprint is missing")
+        else:
+            identity_errors.append(
+                "design_fingerprint does not match the current RTL/config revision"
+            )
+
+    if identity_errors:
+        return {
+            "status": "STALE",
+            "path": str(path),
+            "error": "; ".join(identity_errors),
+            "created_at": payload.get("created_at"),
+            "simulator": payload.get("simulator"),
+            "simulator_version": payload.get("simulator_version"),
+            "source_format": payload.get("source_format"),
+            "design_fingerprint": stored_fingerprint,
+            "current_design_fingerprint": current_fingerprint,
+            "instances": [],
+        }
+
     return {
         "status": "PRESENT",
         "path": str(path),
@@ -95,6 +132,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
         "simulator_version": payload.get("simulator_version"),
         "source_format": payload.get("source_format"),
         "summary": payload.get("summary") or {},
+        "design_fingerprint": stored_fingerprint,
+        "current_design_fingerprint": current_fingerprint,
         "instances": instances,
     }
 
