@@ -219,10 +219,12 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Latest normalized coverage, assertion, formal, and UVM evidence overview.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
+- [x] Read-only RTL preview and hierarchy-to-source cross-navigation restricted to files authorized by the current design index.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+- [x] Review-gated exact historical rerun using the persisted run's test/seed/plusargs/timeout, with the run record bound into the reviewed SHA-256 payload.
 
 ## Long-Term Direction
 
