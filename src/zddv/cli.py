@@ -38,6 +38,7 @@ from zddv.coverage_suggestions import write_coverage_test_suggestions
 from zddv.questa_detail_audit import write_questa_coverage_evidence_audit
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
+from zddv.gui import launch_debug_gui
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.elaboration import hierarchy_lines as elaborated_hierarchy_lines
 from zddv.elaboration import write_elaborated_index
@@ -2873,6 +2874,11 @@ def cmd_release_verify(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    project = load_project(_project_arg(args))
+    return launch_debug_gui(project, limit=args.limit)
+
+
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -4788,6 +4794,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Trusted Ed25519 public key PEM path",
     )
     p_release_verify.set_defaults(func=cmd_release_verify)
+
+    p_gui = sub.add_parser(
+        "gui",
+        help="Launch the read-only ZDDV desktop Debug Studio",
+    )
+    p_gui.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum recent persisted runs to show",
+    )
+    p_gui.set_defaults(func=cmd_gui)
 
     p_report = sub.add_parser(
         "report",
