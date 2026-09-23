@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -16,16 +17,23 @@ from zddv.desktop_actions import (
 def _proposal(project_root: Path) -> Path:
     path = project_root / "proposal.json"
     path.write_text(
-        """{
-  "kind": "assertion",
-  "language": "systemverilog",
-  "name": "ready_stable",
-  "content": "property p_ready_stable; @(posedge clk) ready |=> ready; endproperty\nassert property (p_ready_stable);\n",
-  "target_path": "tb/generated/ready_stable.sv",
-  "source": "desktop-test",
-  "evidence": {"run_id": "run-1"}
-}
-""",
+        json.dumps(
+            {
+                "kind": "assertion",
+                "language": "systemverilog",
+                "name": "ready_stable",
+                "content": (
+                    "property p_ready_stable; @(posedge clk) ready |=> ready; "
+                    "endproperty\n"
+                    "assert property (p_ready_stable);\n"
+                ),
+                "target_path": "tb/generated/ready_stable.sv",
+                "source": "desktop-test",
+                "evidence": {"run_id": "run-1"},
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return path
