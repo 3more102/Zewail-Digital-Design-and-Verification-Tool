@@ -155,6 +155,74 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["elaborated_pin_source_consistent"] is True
 
 
+def test_elaborated_pin_mismatch_does_not_relabel_source_edge(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="dst")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[
+            {
+                "status": "NORMALIZED",
+                "instance_path": "top.u_child",
+                "instance_module": "child",
+                "pin": "y",
+                "parent_instance_path": "top",
+                "signal": "mid",
+            },
+        ],
+    )
+
+    edge = next(
+        item for item in qualified["drivers"] if item["kind"] == "instance_port"
+    )
+    assert edge["role"] == "driver"
+    assert edge["direction"] == "output"
+    assert edge["signal"] == "dst"
+    assert edge["elaborated_pin_resolution"] == "matched"
+    assert edge["elaborated_pin_binding"]["signal"] == "mid"
+    assert edge["elaborated_pin_source_consistent"] is False
+
+
+def test_unsupported_elaborated_pin_expression_stays_evidence_only(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[
+            {
+                "status": "UNSUPPORTED",
+                "instance_path": "top.u_child",
+                "instance_module": "child",
+                "pin": "a",
+                "parent_instance_path": "top",
+                "signal": None,
+                "expression_type": "AND",
+            },
+        ],
+    )
+
+    edge = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert edge["elaborated_pin_resolution"] == "unsupported_expression"
+    assert edge["elaborated_pin_binding"]["expression_type"] == "AND"
+    assert "elaborated_pin_source_consistent" not in edge
+
+
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
     project = _connectivity_project(tmp_path)
     index = build_connectivity_index(project)
