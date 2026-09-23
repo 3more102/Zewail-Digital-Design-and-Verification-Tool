@@ -506,6 +506,15 @@ permitted by the write beat's address and transfer size. Narrow and unaligned
 writes are handled per beat, and any subset of valid lanes, including WSTRB=0,
 is legal.
 
+A trace can also provide `absent_master_signals` when interface metadata proves
+that an optional AXI4 master-output signal is physically not implemented. ZDDV
+then applies the AMBA AXI4 master-interface default for the declared signal
+(AxID/AxREGION/AxLEN/AxBURST/AxLOCK/AxCACHE/AxQOS, width-derived AxSIZE, or
+width-derived all-ones WSTRB). This is explicit interface evidence: ordinary
+missing sample fields are not treated as absent signals, and a signal declared
+absent is rejected if it appears anywhere in the trace. Width-derived defaults
+require `data_width_bits`.
+
 This is a normalized-trace foundation, not a claim of exhaustive AXI/ACE/AXI5
 coverage. Topology-dependent cache reachability and optional coherency/domain/
 snoop/MMU attributes remain outside the current model.
@@ -845,7 +854,7 @@ bundle is review-required before any external use.
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
 - [x] Desktop Debug Studio read-only foundation with source/hierarchy navigation, persisted elaborated hierarchy, bounded waveform probing, and detailed assertion/formal/UVM evidence panes
-- [x] Review-gated lint/build/run project actions with exact SHA-256 approval and project/source revalidation
+- [x] Review-gated lint/build/run and exact historical-rerun actions with exact SHA-256 approval and project/source/run-evidence revalidation
 
 ## Design Principles
 
