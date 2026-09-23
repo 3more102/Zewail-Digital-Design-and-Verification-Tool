@@ -335,16 +335,22 @@ def test_desktop_source_reader_resolves_project_relative_source(tmp_path: Path):
         "module preview;\n  logic value;\nendmodule\n",
         encoding="utf-8",
     )
+    project.rtl = ["rtl/*.sv"]
 
     assert _read_source(project, "rtl/preview.sv") == (
         "module preview;\n  logic value;\nendmodule\n"
     )
 
 
-def test_desktop_source_reader_rejects_paths_outside_project(tmp_path: Path):
+def test_desktop_source_reader_rejects_unconfigured_and_outside_paths(tmp_path: Path):
     project = initialize_project(tmp_path / "source-preview")
+
+    note = project.root / "notes.txt"
+    note.write_text("not HDL evidence", encoding="utf-8")
+    with pytest.raises(ValueError, match="not part of the configured ZDDV project"):
+        _read_source(project, "notes.txt")
+
     outside = tmp_path / "outside.sv"
     outside.write_text("module outside; endmodule\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="inside the project root"):
-        _read_source(project, "../outside.sv")
+    with pytest.raises(ValueError, match="not part of the configured ZDDV project"):
+        _read_source(project, str(outside))
