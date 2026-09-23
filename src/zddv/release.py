@@ -372,6 +372,15 @@ def verify_verification_release(
     signature = manifest.get("signature")
     if not isinstance(signature, dict) or signature.get("algorithm") != "ed25519":
         raise ValueError("Release manifest does not contain an Ed25519 signature")
+    key_id = signature.get("key_id")
+    if (
+        not isinstance(key_id, str)
+        or not key_id
+        or key_id != key_id.strip()
+    ):
+        raise ValueError(
+            "Release manifest key_id must be a canonical non-empty string"
+        )
 
     trusted_key = _load_ed25519_public_key(public_key)
     trusted_fingerprint = _public_key_sha256(trusted_key)
@@ -425,6 +434,21 @@ def verify_verification_release(
         raise ValueError("Release manifest file inventory or SHA-256 verification failed")
 
     _validate_signoff_payload(signoff)
+    manifest_identity = {
+        "project": manifest.get("project"),
+        "simulator": manifest.get("simulator"),
+        "top": manifest.get("top"),
+    }
+    signoff_identity = {
+        "project": signoff.get("project"),
+        "simulator": signoff.get("simulator"),
+        "top": signoff.get("top"),
+    }
+    if manifest_identity != signoff_identity:
+        raise ValueError(
+            "Release manifest project/simulator/top identity does not match bundled signoff"
+        )
+
     signoff_meta = manifest.get("signoff")
     if not isinstance(signoff_meta, dict):
         raise ValueError("Release manifest signoff metadata is missing")
@@ -448,6 +472,6 @@ def verify_verification_release(
         "archive_sha256": _sha256_bytes(archive_bytes),
         "manifest_sha256": _sha256_bytes(manifest_bytes),
         "signoff_sha256": expected_meta["signoff_sha256"],
-        "key_id": signature.get("key_id"),
+        "key_id": key_id,
         "public_key_sha256": trusted_fingerprint,
     }
