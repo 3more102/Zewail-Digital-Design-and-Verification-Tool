@@ -1,7 +1,8 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The v1.1 desktop Debug Studio uses the same persisted ZDDV verification evidence,
+deterministic design index, and core execution APIs used by the CLI. Debug/navigation
+views are read-only; project actions are isolated behind explicit SHA-confirmed review.
 
 Launch it with:
 
@@ -19,13 +20,15 @@ The desktop provides:
 - verification summary cards and recent simulation runs;
 - deterministic failure-signature groups;
 - an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
+- deterministic source-file and source-level hierarchy navigation with read-only RTL preview;
+- hierarchy-to-source cross-navigation limited to files authorized by the current design index;
 - read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
 - a detailed Assertions pane with status, assertion name, run, log line, and message;
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
 - a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+  timestamp, log line, and message;
+- an Actions pane for SHA-confirmed lint, build, run, and exact historical rerun.
 
 Formal-property and UVM-message database reads are explicitly bounded by the GUI
 limit. Assertion events already use the existing bounded history query. Persisted
@@ -35,10 +38,16 @@ reported as `STALE` and is not regenerated implicitly.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Refresh and navigation read persisted verification evidence, the in-memory design
+index, and explicitly indexed RTL sources. They do not launch simulations or formal
+jobs, invoke or transmit data to an AI provider, stage/apply generated artifacts, or
+edit RTL, testbench sources, or project configuration.
+
+The Actions pane is separate from refresh/navigation. Preparing an action does not
+execute it. Execution requires the exact reviewed SHA-256 plus explicit approval,
+then revalidates project configuration and source fingerprints. Historical rerun
+also binds the selected persisted run record and recorded test/seed/plusargs/timeout
+into the reviewed payload before delegating to the shared rerun core.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
@@ -49,4 +58,6 @@ guarantee of zero filesystem writes.
 
 The planned v1.1 desktop milestones are implemented: evidence browsing, source and
 elaborated hierarchy navigation, bounded waveform probing and cross-probing, detailed
-assertion/formal/UVM views, and SHA-confirmed review-gated project actions.
+assertion/formal/UVM views, SHA-confirmed lint/build/run actions, and SHA-confirmed
+exact historical rerun. Generated-verification artifact application remains in its
+existing review-gated core/CLI workflow rather than an automatic desktop action.
