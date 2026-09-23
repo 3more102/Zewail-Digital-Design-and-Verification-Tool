@@ -179,7 +179,7 @@ int main(int argc, char** argv) {{
 
     @staticmethod
     def _version_tuple(version: str) -> tuple[int, int]:
-        match = re.search(r"Verilator\\s+(\\d+)\\.(\\d+)", version)
+        match = re.search(r"Verilator\s+(\d+)\.(\d+)", version)
         if not match:
             return (0, 0)
         return int(match.group(1)), int(match.group(2))
