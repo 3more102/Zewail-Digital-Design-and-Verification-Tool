@@ -218,6 +218,32 @@ def desktop_crossprobe_evidence_rows(
             connectivity_detail += f" · unsupported={len(unsupported_bindings)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
 
+        boundary_drivers = elaborated_connectivity.get("boundary_drivers")
+        boundary_loads = elaborated_connectivity.get("boundary_loads")
+        boundary_unclassified = elaborated_connectivity.get(
+            "boundary_unclassified_bindings"
+        )
+        trusted_boundary_roles = all(
+            isinstance(items, list)
+            for items in (
+                boundary_drivers,
+                boundary_loads,
+                boundary_unclassified,
+            )
+        )
+        if trusted_boundary_roles:
+            rows.append(
+                (
+                    "Elaborated boundary roles",
+                    (
+                        f"drivers={len(boundary_drivers)} · "
+                        f"loads={len(boundary_loads)} · "
+                        f"unclassified={len(boundary_unclassified)} · "
+                        f"unsupported={len(unsupported_bindings)}"
+                    ),
+                )
+            )
+
         evidence_items: list[tuple[str, dict[str, Any]]] = [
             ("normalized", item) for item in parent_bindings + instance_bindings
         ]
