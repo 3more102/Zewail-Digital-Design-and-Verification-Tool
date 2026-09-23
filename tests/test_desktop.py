@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_snapshot,
+    probe_desktop_waveform_signal,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -240,3 +244,102 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+def _write_test_vcd(path: Path) -> None:
+    path.write_text(
+        """$date today $end
+$version zddv-test $end
+$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$var wire 2 " count [1:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b00 "
+#5
+1!
+b01 "
+#10
+0!
+b10 "
+""",
+        encoding="utf-8",
+    )
+
+
+def test_desktop_waveform_navigation_and_probe_are_in_memory(tmp_path: Path):
+    project = initialize_project(tmp_path / "wave-demo")
+    vcd = project.root / "trace.vcd"
+    _write_test_vcd(vcd)
+
+    record = _run_record("run-wave", "PASS", seed=3)
+    record["waveform"] = str(vcd)
+    record_run(project, record)
+
+    artifact_dir = project.root / ".zddv" / "waveforms"
+    assert not artifact_dir.exists()
+
+    navigation = build_desktop_waveform_snapshot(project)
+    assert navigation["run_id"] == "run-wave"
+    assert navigation["format"] == "vcd"
+    assert navigation["parse_status"] == "indexed"
+    assert navigation["timescale"] == "1ns"
+    assert [signal["path"] for signal in navigation["signals"]] == [
+        "tb_top.clk",
+        "tb_top.count",
+    ]
+
+    probe = probe_desktop_waveform_signal(
+        project,
+        "tb_top.count",
+        run_id="run-wave",
+        start_time=5,
+        end_time=10,
+        max_changes=10,
+    )
+    assert probe["run_id"] == "run-wave"
+    assert probe["signals"][0]["changes"] == [
+        {"time": 5, "value": "01"},
+        {"time": 10, "value": "10"},
+    ]
+    assert not artifact_dir.exists()
+
+
+def test_desktop_waveform_selection_is_independent_of_run_display_limit(tmp_path: Path):
+    project = initialize_project(tmp_path / "wave-limit-demo")
+    vcd = project.root / "older.vcd"
+    _write_test_vcd(vcd)
+
+    older = _run_record("run-with-wave", "PASS", seed=1)
+    older["waveform"] = str(vcd)
+    record_run(project, older)
+    record_run(project, _run_record("run-newer-no-wave", "PASS", seed=2))
+
+    snapshot = build_desktop_snapshot(project, limit=1)
+    assert [row["run_id"] for row in snapshot["recent_runs"]] == [
+        "run-newer-no-wave"
+    ]
+
+    navigation = build_desktop_waveform_snapshot(project)
+    assert navigation["run_id"] == "run-with-wave"
+    assert navigation["summary"]["signals"] == 2
+
+
+def test_desktop_waveform_probe_rejects_non_vcd_evidence(tmp_path: Path):
+    project = initialize_project(tmp_path / "fst-demo")
+    fst = project.root / "trace.fst"
+    fst.write_bytes(b"FST metadata placeholder")
+
+    record = _run_record("run-fst", "PASS", seed=4)
+    record["waveform"] = str(fst)
+    record_run(project, record)
+
+    navigation = build_desktop_waveform_snapshot(project)
+    assert navigation["format"] == "fst"
+    assert navigation["parse_status"] == "metadata-only"
+
+    with pytest.raises(RuntimeError, match="requires a recorded indexed VCD"):
+        probe_desktop_waveform_signal(project, "tb_top.clk", run_id="run-fst")
