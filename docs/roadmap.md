@@ -216,7 +216,8 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Failure-group browser backed by normalized failure signatures.
 - [x] Latest normalized coverage, assertion, formal, and UVM evidence overview.
 - [x] Refresh from the shared backend without duplicating verification logic.
-- [ ] Source/hierarchy navigation panes.
+- [x] Source-level source/hierarchy navigation panes from the in-memory deterministic design index.
+- [ ] Simulator-elaborated hierarchy selection in the GUI when elaborated evidence is available.
 - [ ] Waveform navigation and targeted probe integration.
 - [ ] Detailed assertion/UVM/formal evidence panes.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
