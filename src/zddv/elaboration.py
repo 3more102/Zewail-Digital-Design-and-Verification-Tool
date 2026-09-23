@@ -95,6 +95,106 @@ def _deduplicate(
     )
 
 
+def _json_node_name(node: dict[str, Any]) -> str | None:
+    for key in ("origName", "verilogName", "name"):
+        value = node.get(key)
+        if value:
+            return str(value).strip()
+    return None
+
+
+def _json_module_aliases(node: dict[str, Any]) -> set[str]:
+    aliases: set[str] = set()
+    for key in ("name", "origName", "verilogName"):
+        value = node.get(key)
+        if value:
+            aliases.add(str(value).strip())
+    return aliases
+
+
+def _json_direct_cells(
+    value: Any,
+    *,
+    files: dict[str, dict[str, Any]],
+    project_root: Path,
+    generate_scopes: tuple[str, ...] = (),
+    root: bool = True,
+) -> list[dict[str, Any]]:
+    cells: list[dict[str, Any]] = []
+    if isinstance(value, list):
+        for item in value:
+            cells.extend(
+                _json_direct_cells(
+                    item,
+                    files=files,
+                    project_root=project_root,
+                    generate_scopes=generate_scopes,
+                    root=False,
+                )
+            )
+        return cells
+    if not isinstance(value, dict):
+        return cells
+
+    node_type = str(value.get("type", "")).upper()
+    if not root and node_type in {"MODULE", "PACKAGE"}:
+        return cells
+
+    next_scopes = generate_scopes
+    if node_type == "GENBLOCK":
+        scope_name = _json_node_name(value)
+        if scope_name:
+            next_scopes = (*generate_scopes, scope_name)
+
+    if node_type == "CELL":
+        name = _json_node_name(value)
+        if not name:
+            return cells
+        module_pointer = value.get("modp")
+        cells.append(
+            {
+                "name": name,
+                "elaborated_name": value.get("name"),
+                "declared_module": value.get("modName") or value.get("submodname"),
+                "module_pointer": (
+                    str(module_pointer) if module_pointer is not None else None
+                ),
+                "generate_scopes": list(generate_scopes),
+                "hier": value.get("hier"),
+                "location": _decode_location(
+                    value.get("loc"),
+                    files,
+                    project_root,
+                ),
+            }
+        )
+        return cells
+
+    for key, child in value.items():
+        if key in {
+            "type",
+            "name",
+            "origName",
+            "verilogName",
+            "addr",
+            "loc",
+            "modName",
+            "modp",
+        }:
+            continue
+        if isinstance(child, (dict, list)):
+            cells.extend(
+                _json_direct_cells(
+                    child,
+                    files=files,
+                    project_root=project_root,
+                    generate_scopes=next_scopes,
+                    root=False,
+                )
+            )
+    return cells
+
+
 def parse_verilator_json(
     ast_path: str | Path,
     meta_path: str | Path,
@@ -110,6 +210,8 @@ def parse_verilator_json(
 
     modules: list[dict[str, Any]] = []
     module_by_addr: dict[str, str] = {}
+    module_node_by_addr: dict[str, dict[str, Any]] = {}
+    module_nodes: list[dict[str, Any]] = []
     for node in nodes:
         if str(node.get("type", "")).upper() != "MODULE":
             continue
@@ -120,6 +222,8 @@ def parse_verilator_json(
         address = node.get("addr")
         if address is not None:
             module_by_addr[str(address)] = name
+            module_node_by_addr[str(address)] = node
+        module_nodes.append(node)
         modules.append(
             {
                 "name": name,
@@ -137,33 +241,136 @@ def parse_verilator_json(
             "module": top_module["name"] if top_module else top,
             "top": True,
             "location": top_module["location"] if top_module else None,
+            "generate_scopes": [],
         }
     ]
 
-    for node in nodes:
-        if str(node.get("type", "")).upper() != "CELL":
-            continue
-        hierarchy = node.get("hier") or node.get("name")
-        if not hierarchy:
-            continue
-        hierarchy = str(hierarchy)
-        instance_name = node.get("origName") or hierarchy.rsplit(".", 1)[-1]
+    structured_modules = [
+        node
+        for node in ast.get("modulesp", [])
+        if isinstance(node, dict)
+        and str(node.get("type", "")).upper() == "MODULE"
+    ]
+    aliases: dict[str, list[dict[str, Any]]] = {}
+    for node in module_nodes:
+        for alias in _json_module_aliases(node):
+            aliases.setdefault(alias, []).append(node)
 
-        module_name = None
-        module_pointer = node.get("modp")
-        if module_pointer is not None:
-            module_name = module_by_addr.get(str(module_pointer))
-        module_name = module_name or node.get("modName") or node.get("submodname")
+    def resolve_module_node(cell: dict[str, Any]) -> dict[str, Any] | None:
+        pointer = cell.get("module_pointer")
+        if pointer is not None and pointer in module_node_by_addr:
+            return module_node_by_addr[pointer]
+        declared = cell.get("declared_module")
+        if declared:
+            matches = aliases.get(str(declared).strip(), [])
+            if len(matches) == 1:
+                return matches[0]
+        return None
 
-        instances.append(
-            {
-                "path": hierarchy,
-                "name": str(instance_name),
-                "module": str(module_name) if module_name else None,
-                "top": hierarchy == top,
-                "location": _decode_location(node.get("loc"), files, root),
-            }
-        )
+    def select_top_node() -> dict[str, Any] | None:
+        candidates = [
+            node
+            for node in structured_modules
+            if bool(node.get("topModule")) or top in _json_module_aliases(node)
+        ]
+        explicit = [node for node in candidates if bool(node.get("topModule"))]
+        if len(explicit) == 1:
+            return explicit[0]
+        level_one = [node for node in candidates if node.get("level") == 1]
+        if len(level_one) == 1:
+            return level_one[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    top_node = select_top_node()
+    if top_node is not None:
+        def visit(
+            module_node: dict[str, Any],
+            parent_path: str,
+            stack: tuple[str, ...],
+        ) -> None:
+            module_key = str(
+                module_node.get("addr")
+                or module_node.get("name")
+                or module_node.get("origName")
+                or ""
+            )
+            if module_key in stack:
+                return
+            next_stack = (*stack, module_key)
+
+            for cell in _json_direct_cells(
+                module_node,
+                files=files,
+                project_root=root,
+            ):
+                hierarchy = cell.get("hier")
+                if (
+                    isinstance(hierarchy, str)
+                    and (hierarchy == top or hierarchy.startswith(top + "."))
+                ):
+                    path = hierarchy
+                else:
+                    path = ".".join(
+                        [
+                            parent_path,
+                            *cell.get("generate_scopes", []),
+                            str(cell["name"]),
+                        ]
+                    )
+
+                child_node = resolve_module_node(cell)
+                if child_node is not None:
+                    module_name = (
+                        child_node.get("origName")
+                        or child_node.get("verilogName")
+                        or child_node.get("name")
+                    )
+                else:
+                    module_name = cell.get("declared_module")
+                instances.append(
+                    {
+                        "path": path,
+                        "name": str(cell["name"]),
+                        "module": str(module_name) if module_name else None,
+                        "top": False,
+                        "location": cell.get("location"),
+                        "generate_scopes": list(cell.get("generate_scopes", [])),
+                    }
+                )
+                if child_node is not None:
+                    visit(child_node, path, next_stack)
+
+        visit(top_node, top, ())
+    else:
+        # Compatibility path for older/fixture JSON layouts where CELL records
+        # are already emitted with full hierarchy strings outside modulesp.
+        for node in nodes:
+            if str(node.get("type", "")).upper() != "CELL":
+                continue
+            hierarchy = node.get("hier") or node.get("name")
+            if not hierarchy:
+                continue
+            hierarchy = str(hierarchy)
+            instance_name = node.get("origName") or hierarchy.rsplit(".", 1)[-1]
+
+            module_name = None
+            module_pointer = node.get("modp")
+            if module_pointer is not None:
+                module_name = module_by_addr.get(str(module_pointer))
+            module_name = module_name or node.get("modName") or node.get("submodname")
+
+            instances.append(
+                {
+                    "path": hierarchy,
+                    "name": str(instance_name),
+                    "module": str(module_name) if module_name else None,
+                    "top": hierarchy == top,
+                    "location": _decode_location(node.get("loc"), files, root),
+                    "generate_scopes": [],
+                }
+            )
 
     modules, instances = _deduplicate(modules, instances)
     return {"modules": modules, "instances": instances}

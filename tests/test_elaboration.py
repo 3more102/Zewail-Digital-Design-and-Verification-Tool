@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from zddv.config import initialize_project, save_project
@@ -77,6 +78,102 @@ def test_parse_verilator_json_elaborated_hierarchy(tmp_path: Path):
     assert result["instances"][1]["location"]["line"] == 5
 
 
+def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
+    rtl = tmp_path / "rtl" / "design.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module leaf; endmodule\\n"
+        "module top; genvar i; for (i = 0; i < 2; i++) begin: g "
+        "leaf u_leaf(); end endmodule\\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "level": 1,
+                "loc": "d,2:8,2:11",
+                "stmtsp": [
+                    {
+                        "type": "GENBLOCK",
+                        "name": "g[0]",
+                        "itemsp": [
+                            {
+                                "type": "CELL",
+                                "name": "u_leaf",
+                                "origName": "u_leaf",
+                                "verilogName": "u_leaf",
+                                "modName": "leaf",
+                                "modp": "(B)",
+                                "loc": "d,2:47,2:53",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "GENBLOCK",
+                        "name": "g[1]",
+                        "itemsp": [
+                            {
+                                "type": "CELL",
+                                "name": "u_leaf",
+                                "origName": "u_leaf",
+                                "verilogName": "u_leaf",
+                                "modName": "leaf",
+                                "modp": "(B)",
+                                "loc": "d,2:47,2:53",
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "type": "MODULE",
+                "name": "leaf",
+                "origName": "leaf",
+                "verilogName": "leaf",
+                "addr": "(B)",
+                "level": 2,
+                "loc": "d,1:8,1:12",
+            },
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/design.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert [item["path"] for item in result["instances"]] == [
+        "top",
+        "top.g[0].u_leaf",
+        "top.g[1].u_leaf",
+    ]
+    assert result["instances"][1]["module"] == "leaf"
+    assert result["instances"][1]["generate_scopes"] == ["g[0]"]
+    assert result["instances"][2]["generate_scopes"] == ["g[1]"]
+
+
 def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
     xml_path = tmp_path / "tree.xml"
     xml_path.write_text(
@@ -131,6 +228,56 @@ def test_elaborated_hierarchy_lines_and_version_detection():
     ]
     assert VerilatorBackend._version_tuple("Verilator 5.020 2024-01-01") == (5, 20)
     assert VerilatorBackend._version_tuple("Verilator 5.052 devel") == (5, 52)
+    assert VerilatorBackend._version_tuple("Verilator 5.021") < (5, 22)
+    assert VerilatorBackend._version_tuple("Verilator 5.022") >= (5, 22)
+
+
+def test_verilator_export_uses_documented_json_version_boundary(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "version-boundary")
+    source = project.root / "rtl" / "top.sv"
+    source.write_text("module top; endmodule\\n", encoding="utf-8")
+    project.rtl = ["rtl/*.sv"]
+    project.tb = []
+    project.top = "top"
+    save_project(project)
+
+    for version, expected_format, expected_flag in (
+        ("Verilator 5.021", "xml", "--xml-only"),
+        ("Verilator 5.022", "json", "--json-only"),
+    ):
+        backend = VerilatorBackend()
+        monkeypatch.setattr(backend, "_tool", lambda: "verilator")
+        monkeypatch.setattr(backend, "version", lambda version=version: version)
+
+        seen: list[str] = []
+
+        def fake_run(command, **kwargs):
+            seen[:] = command
+            if "--json-only-output" in command:
+                ast_path = Path(command[command.index("--json-only-output") + 1])
+                meta_path = Path(
+                    command[command.index("--json-only-meta-output") + 1]
+                )
+                ast_path.write_text('{"type":"NETLIST","modulesp":[]}', encoding="utf-8")
+                meta_path.write_text('{"files":{}}', encoding="utf-8")
+            else:
+                ast_path = Path(command[command.index("--xml-output") + 1])
+                ast_path.write_text("<verilator_xml/>", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="")
+
+        monkeypatch.setattr(
+            "zddv.simulator.verilator.subprocess.run",
+            fake_run,
+        )
+        result = backend.export_design_tree(
+            project,
+            project.root / ".zddv" / expected_format,
+        )
+        assert result["format"] == expected_format
+        assert expected_flag in seen
 
 
 class _FakeBackend:
