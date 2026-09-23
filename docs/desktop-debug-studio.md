@@ -25,6 +25,9 @@ The desktop provides:
   the design-revision fingerprint match the current RTL/config state;
 - normalized Verilator JSON module ports displayed beneath matching elaborated instances,
   including direction and source evidence derived only from documented `ioDirection`;
+- normalized direct Verilator CELL-pin-to-VARREF bindings displayed beneath the exact
+  elaborated instance, while explicitly unsupported complex expressions remain evidence
+  rather than inferred connectivity;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
   hierarchy/source/connectivity cross-probing, including explicit module-port matches when
   normalized elaboration evidence is available;
@@ -61,9 +64,10 @@ bytes into an allowed new project source path; it does not compile or simulate t
 
 Refreshing evidence does not launch simulation, elaboration, or formal work, invoke or
 transmit data to an AI provider, or edit RTL/testbench sources. Stale elaborated evidence
-is reported as `STALE` and is never regenerated implicitly. Module-port direction is
-shown only when the persisted evidence contract is `NORMALIZED`; legacy XML or missing
-port metadata remains explicitly unavailable rather than being inferred.
+is reported as `STALE` and is never regenerated implicitly. Module-port direction and direct pin-binding rows are shown only when their persisted
+evidence contracts are `NORMALIZED`; legacy XML or missing metadata remains explicitly
+unavailable rather than being inferred. Unsupported complex pin expressions can be shown
+only as unsupported evidence and are never promoted to exact connectivity.
 
 The only desktop paths that intentionally perform project/tool actions are the explicit
 SHA-confirmed action panes described above. They reuse the existing core APIs rather than
