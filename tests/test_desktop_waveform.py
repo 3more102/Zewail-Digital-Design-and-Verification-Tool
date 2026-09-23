@@ -242,3 +242,26 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
     )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
+def test_desktop_crossprobe_rows_suppress_untrusted_elaborated_connectivity():
+    rows = dict(
+        desktop_crossprobe_evidence_rows(
+            {
+                "elaborated_connectivity": {
+                    "analysis_level": "unknown",
+                    "parent_signal_bindings": [
+                        {
+                            "instance_path": "tb_top.dut",
+                            "pin": "count",
+                            "parent_instance_path": "tb_top",
+                            "parent_signal": "count",
+                            "relationship": "child_output_to_parent_signal",
+                        }
+                    ],
+                    "instance_port_bindings": [],
+                }
+            }
+        )
+    )
+
+    assert "Elaborated connectivity" not in rows
+
