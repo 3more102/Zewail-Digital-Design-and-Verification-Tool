@@ -382,6 +382,24 @@ def _pin_relationship(direction: str | None) -> str:
     return "direct_pin_varref"
 
 
+def _elaborated_binding_role(
+    direction: str | None,
+    *,
+    query_side: str,
+) -> str:
+    """Classify one direct boundary binding relative to the queried signal."""
+    if query_side not in {"parent_signal", "instance_port"}:
+        raise ValueError("query_side must be parent_signal or instance_port")
+    if direction == "inout":
+        return "bidirectional"
+    if direction not in {"input", "output"}:
+        return "unclassified"
+
+    if query_side == "parent_signal":
+        return "load" if direction == "input" else "driver"
+    return "driver" if direction == "input" else "load"
+
+
 def _elaborated_pin_connectivity(
     elaborated_index: dict[str, Any],
     *,
@@ -395,6 +413,35 @@ def _elaborated_pin_connectivity(
     port_directions = _elaborated_port_directions(elaborated_index)
     parent_signal_bindings: list[dict[str, Any]] = []
     instance_port_bindings: list[dict[str, Any]] = []
+    drivers: list[dict[str, Any]] = []
+    loads: list[dict[str, Any]] = []
+    bidirectional: list[dict[str, Any]] = []
+    unclassified: list[dict[str, Any]] = []
+
+    role_buckets = {
+        "driver": drivers,
+        "load": loads,
+        "bidirectional": bidirectional,
+        "unclassified": unclassified,
+    }
+
+    def record_match(
+        normalized: dict[str, Any],
+        *,
+        query_side: str,
+        destination: list[dict[str, Any]],
+    ) -> None:
+        role = _elaborated_binding_role(
+            normalized.get("port_direction"),
+            query_side=query_side,
+        )
+        annotated = {
+            **normalized,
+            "query_side": query_side,
+            "query_role": role,
+        }
+        destination.append(annotated)
+        role_buckets[role].append(annotated)
 
     for binding in elaborated_index.get("pin_bindings", []):
         if not isinstance(binding, dict) or binding.get("status") != "NORMALIZED":
@@ -424,34 +471,49 @@ def _elaborated_pin_connectivity(
         }
 
         if str(parent_path) == instance_path and str(parent_signal) == signal_name:
-            parent_signal_bindings.append(normalized)
+            record_match(
+                normalized,
+                query_side="parent_signal",
+                destination=parent_signal_bindings,
+            )
         if str(child_path) == instance_path and str(pin) == signal_name:
-            instance_port_bindings.append(normalized)
+            record_match(
+                normalized,
+                query_side="instance_port",
+                destination=instance_port_bindings,
+            )
 
     if not parent_signal_bindings and not instance_port_bindings:
         return None
 
+    def binding_sort_key(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return (
+            str(item["instance_path"]),
+            str(item["pin"]),
+            str(item["parent_instance_path"]),
+            str(item["parent_signal"]),
+            str(item["query_side"]),
+        )
+
     return {
         "analysis_level": "simulator_elaborated_direct_pin_varref",
+        "driver_load_scope": "direct_instance_boundary_only",
         "evidence_contract": evidence.get("contract"),
         "query_instance_path": instance_path,
         "query_signal": signal_name,
         "parent_signal_bindings": sorted(
             parent_signal_bindings,
-            key=lambda item: (
-                item["instance_path"],
-                item["pin"],
-            ),
+            key=binding_sort_key,
         ),
         "instance_port_bindings": sorted(
             instance_port_bindings,
-            key=lambda item: (
-                item["parent_instance_path"],
-                item["parent_signal"],
-            ),
+            key=binding_sort_key,
         ),
+        "drivers": sorted(drivers, key=binding_sort_key),
+        "loads": sorted(loads, key=binding_sort_key),
+        "bidirectional": sorted(bidirectional, key=binding_sort_key),
+        "unclassified": sorted(unclassified, key=binding_sort_key),
     }
-
 
 def _source_path(project: ProjectConfig, file_value: str) -> Path:
     path = Path(file_value)
