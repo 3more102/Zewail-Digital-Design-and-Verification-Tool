@@ -209,6 +209,83 @@ def _match_elaborated_port_evidence(
     }
 
 
+def _direct_assignment_item_errors(
+    item: Any,
+    *,
+    index: int,
+) -> list[str]:
+    prefix = f"direct_assignments[{index}]"
+    if not isinstance(item, dict):
+        return [f"{prefix} is not an object"]
+
+    errors: list[str] = []
+    status = item.get("status")
+    if status not in {"NORMALIZED", "UNSUPPORTED"}:
+        errors.append(f"{prefix}.status is not NORMALIZED or UNSUPPORTED")
+
+    module = item.get("module")
+    if not isinstance(module, str) or not module:
+        errors.append(f"{prefix}.module is not a non-empty string")
+    if item.get("assignment_type") != "ASSIGNW":
+        errors.append(f"{prefix}.assignment_type is not ASSIGNW")
+
+    location = item.get("location")
+    if location is not None and not isinstance(location, dict):
+        errors.append(f"{prefix}.location is not an object or null")
+
+    for key in ("lhs_expression_type", "rhs_expression_type"):
+        value = item.get(key)
+        if value is not None and (not isinstance(value, str) or not value):
+            errors.append(f"{prefix}.{key} is not a non-empty string or null")
+
+    varrefs: dict[str, list[str]] = {}
+    for key in ("lhs_varrefs", "rhs_varrefs"):
+        values = item.get(key)
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) or not value for value in values
+        ):
+            errors.append(f"{prefix}.{key} is not a string list")
+            varrefs[key] = []
+        else:
+            varrefs[key] = [str(value) for value in values]
+
+    if status == "NORMALIZED":
+        if item.get("lhs_expression_type") != "VARREF":
+            errors.append(f"{prefix}.lhs_expression_type is not VARREF")
+        if item.get("rhs_expression_type") != "VARREF":
+            errors.append(f"{prefix}.rhs_expression_type is not VARREF")
+
+        for side in ("lhs", "rhs"):
+            signal_key = f"{side}_signal"
+            aliases_key = f"{side}_aliases"
+            refs_key = f"{side}_varrefs"
+            signal = item.get(signal_key)
+            if not isinstance(signal, str) or not signal:
+                errors.append(f"{prefix}.{signal_key} is not a non-empty string")
+                continue
+
+            aliases = item.get(aliases_key)
+            if not isinstance(aliases, list) or any(
+                not isinstance(value, str) or not value for value in aliases
+            ):
+                errors.append(f"{prefix}.{aliases_key} is not a string list")
+            elif signal not in aliases:
+                errors.append(f"{prefix}.{aliases_key} does not contain {signal_key}")
+
+            if varrefs.get(refs_key, []) != [signal]:
+                errors.append(
+                    f"{prefix}.{refs_key} does not match the direct VARREF signal"
+                )
+
+    elif status == "UNSUPPORTED":
+        if item.get("lhs_signal") is not None:
+            errors.append(f"{prefix}.lhs_signal must be null when UNSUPPORTED")
+        if item.get("rhs_signal") is not None:
+            errors.append(f"{prefix}.rhs_signal must be null when UNSUPPORTED")
+
+    return errors
+
+
 def _elaborated_identity_errors(
     project: ProjectConfig,
     index: dict[str, Any],
@@ -268,14 +345,64 @@ def _elaborated_identity_errors(
         dict,
     ):
         errors.append("direct_assignment_evidence is not an object")
-    elif (
-        isinstance(direct_assignment_evidence, dict)
-        and direct_assignment_evidence.get("status") == "NORMALIZED"
-        and not isinstance(direct_assignments, list)
-    ):
-        errors.append(
-            "normalized direct_assignment_evidence requires a direct_assignments list"
+    elif isinstance(direct_assignment_evidence, dict):
+        if (
+            direct_assignment_evidence.get("status") == "NORMALIZED"
+            and not isinstance(direct_assignments, list)
+        ):
+            errors.append(
+                "normalized direct_assignment_evidence requires a direct_assignments list"
+            )
+
+        trusted_contract = (
+            direct_assignment_evidence.get("status") == "NORMALIZED"
+            and direct_assignment_evidence.get("contract")
+            == "verilator_module_root_assignw_direct_varref_only"
         )
+        if trusted_contract:
+            if direct_assignment_evidence.get("source_format") != "json":
+                errors.append(
+                    "trusted direct_assignment_evidence source_format is not json"
+                )
+
+            unsupported_count = direct_assignment_evidence.get(
+                "unsupported_assignment_count"
+            )
+            valid_unsupported_count = (
+                isinstance(unsupported_count, int)
+                and not isinstance(unsupported_count, bool)
+                and unsupported_count >= 0
+            )
+            if not valid_unsupported_count:
+                errors.append(
+                    "trusted direct_assignment_evidence "
+                    "unsupported_assignment_count is not a non-negative integer"
+                )
+
+            if isinstance(direct_assignments, list):
+                for assignment_index, assignment in enumerate(direct_assignments):
+                    errors.extend(
+                        _direct_assignment_item_errors(
+                            assignment,
+                            index=assignment_index,
+                        )
+                    )
+
+                actual_unsupported_count = sum(
+                    1
+                    for assignment in direct_assignments
+                    if isinstance(assignment, dict)
+                    and assignment.get("status") == "UNSUPPORTED"
+                )
+                if (
+                    valid_unsupported_count
+                    and unsupported_count != actual_unsupported_count
+                ):
+                    errors.append(
+                        "trusted direct_assignment_evidence "
+                        "unsupported_assignment_count does not match "
+                        "direct_assignments"
+                    )
     return errors
 
 
