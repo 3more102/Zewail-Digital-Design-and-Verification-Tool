@@ -45,8 +45,9 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 ## v0.4 — Debug Studio Core
 
 Current status: deterministic source indexing, source-level hierarchy,
-simulator-resolved elaborated hierarchy, VCD waveform indexing, targeted VCD
-value-change probing, source-level structural drivers/loads navigation,
+simulator-resolved elaborated hierarchy, VCD waveform indexing, explicit opt-in
+FST indexing/probing through `fst2vcd`, targeted waveform value-change probing,
+source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
 preference and simulator-elaborated instance qualification, assertion-to-waveform
 correlation, and the
@@ -55,10 +56,11 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 
 - [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
-- [x] Waveform index (VCD scopes/signals; FST artifact metadata).
+- [x] Waveform index (VCD scopes/signals; FST artifact metadata by default).
+- [x] Explicit opt-in FST scope/signal indexing and bounded probing through `fst2vcd`.
 - [x] Waveform-to-source cross-probing.
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
-- [x] Targeted VCD value-change probing (time-windowed, bounded).
+- [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
