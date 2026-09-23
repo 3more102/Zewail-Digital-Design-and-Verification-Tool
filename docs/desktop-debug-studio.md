@@ -1,7 +1,7 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The v1.1 Desktop Debug Studio reuses the same persisted ZDDV evidence, deterministic
+design index, simulator adapters, and generated-artifact gates as the CLI.
 
 Launch it with:
 
@@ -10,43 +10,38 @@ zddv --project my_project gui
 zddv --project my_project gui --limit 100
 ```
 
-The `--limit` value bounds recent runs and each detailed evidence query.
+The `--limit` value bounds recent runs and detailed evidence queries.
 
-## Current views
+## Current views and actions
 
-The desktop provides:
+The desktop provides read-only verification summary, run/failure, source/hierarchy,
+elaborated hierarchy, waveform/cross-probe, assertion, formal, and UVM views.
+Persisted elaborated hierarchy is accepted only when its project/top/simulator identity
+and design-revision fingerprint still match the active project.
 
-- verification summary cards and recent simulation runs;
-- deterministic failure-signature groups;
-- an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
-- read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
-- a detailed Assertions pane with status, assertion name, run, log line, and message;
-- a detailed Formal pane for the newest formal snapshot with property kind, status,
-  interpretation, depth, and message;
-- a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+The **Actions** tab exposes lint, build, and one simulation run through existing core
+APIs. Preparing an action does not execute it. Execution requires explicit approval
+plus the exact review SHA-256, which binds project configuration, matched source bytes,
+the selected action, and runtime parameters. ZDDV rebuilds that review state immediately
+before execution and blocks execution if it changed.
 
-Formal-property and UVM-message database reads are explicitly bounded by the GUI
-limit. Assertion events already use the existing bounded history query. Persisted
-simulator-elaborated hierarchy is displayed only when its project/top/simulator identity
-and design-revision fingerprint match the active RTL/config state; stale evidence is
-reported as `STALE` and is not regenerated implicitly.
+The **Review Actions** tab exposes the generated-verification workflow. Proposals are
+staged through the authoritative staging API under `.zddv/generated/drafts`. The tab
+previews and re-hashes the exact staged bytes. Applying a draft requires explicit
+approval and the exact content SHA-256, and final application is delegated to the
+existing core apply gate. Changed, missing, invalid, execution-enabled, or already
+applied drafts are refused.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Evidence refresh, source preview, hierarchy navigation, waveform probing, and persisted
+evidence inspection remain read-only. Source preview is authorized by the current
+deterministic design index rather than arbitrary filesystem paths.
 
-The shared SQLite helpers may initialize or upgrade the local
-`.zddv/results.db` schema when opened, consistent with existing reporting commands.
-Therefore "display-only" describes verification/project actions rather than a
-guarantee of zero filesystem writes.
+Lint/build/run can execute only through the SHA-confirmed Actions gate. Generated
+artifacts can modify project sources only through the separate exact-content
+SHA-confirmed apply gate. The desktop does not invoke AI, does not automatically run
+verification, and does not automatically apply or execute generated code.
 
-## v1.1 desktop milestone status
-
-The planned v1.1 desktop milestones are implemented: evidence browsing, source and
-elaborated hierarchy navigation, bounded waveform probing and cross-probing, detailed
-assertion/formal/UVM views, and SHA-confirmed review-gated project actions.
+The shared SQLite helpers may initialize or upgrade the local `.zddv/results.db`
+schema when opened, consistent with existing reporting commands.
