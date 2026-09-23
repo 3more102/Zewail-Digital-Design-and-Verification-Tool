@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from zddv.config import ProjectConfig
@@ -10,11 +11,14 @@ from zddv.storage import (
     list_coverage_score_snapshots,
     list_coverage_snapshots,
     list_formal_result_snapshots,
+    get_run_record,
     list_run_records,
     list_uvm_log_snapshots,
     run_statistics,
 )
 from zddv.triage import group_failure_records
+from zddv.waveform import build_waveform_index
+from zddv.waveform_probe import probe_vcd_signals
 
 
 def _latest_coverage(project: ProjectConfig) -> dict[str, Any] | None:
@@ -93,6 +97,101 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
     }
 
 
+def _waveform_path(project: ProjectConfig, value: Any) -> Path:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = project.root / path
+    return path.resolve()
+
+
+def _waveform_rows(project: ProjectConfig, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for run in runs:
+        value = run.get("waveform_path")
+        if not value:
+            continue
+        path = _waveform_path(project, value)
+        rows.append(
+            {
+                "run_id": run["run_id"],
+                "test_name": run.get("test_name"),
+                "status": run["status"],
+                "created_at": run["created_at"],
+                "path": str(path),
+                "format": path.suffix.lower().lstrip(".") or "unknown",
+                "available": path.is_file(),
+            }
+        )
+    return rows
+
+
+def build_desktop_waveform_snapshot(
+    project: ProjectConfig,
+    run_id: str,
+) -> dict[str, Any]:
+    """Read one recorded waveform into the desktop model without writing artifacts."""
+    run = get_run_record(project, run_id)
+    if run is None:
+        raise RuntimeError(f"Run '{run_id}' was not found in the verification database.")
+    value = run.get("waveform_path")
+    if not value:
+        raise RuntimeError(f"Run '{run_id}' has no recorded waveform artifact.")
+
+    path = _waveform_path(project, value)
+    if not path.is_file():
+        raise RuntimeError(f"Recorded waveform for run '{run_id}' does not exist: {path}")
+
+    index = build_waveform_index(
+        path,
+        run_id=run_id,
+        project_name=project.name,
+    )
+    return {
+        **index,
+        "run": {
+            "run_id": run_id,
+            "test_name": run.get("test_name"),
+            "status": run["status"],
+            "created_at": run["created_at"],
+        },
+    }
+
+
+def probe_desktop_waveform(
+    project: ProjectConfig,
+    run_id: str,
+    signals: list[str],
+    *,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    max_changes: int = 200,
+) -> dict[str, Any]:
+    """Read bounded VCD changes for the desktop without persisting probe output."""
+    run = get_run_record(project, run_id)
+    if run is None:
+        raise RuntimeError(f"Run '{run_id}' was not found in the verification database.")
+    value = run.get("waveform_path")
+    if not value:
+        raise RuntimeError(f"Run '{run_id}' has no recorded waveform artifact.")
+
+    path = _waveform_path(project, value)
+    if not path.is_file():
+        raise RuntimeError(f"Recorded waveform for run '{run_id}' does not exist: {path}")
+
+    result = probe_vcd_signals(
+        path,
+        signals,
+        start_time=start_time,
+        end_time=end_time,
+        max_changes=max_changes,
+    )
+    return {
+        **result,
+        "project": project.name,
+        "run_id": run_id,
+    }
+
+
 def build_desktop_snapshot(
     project: ProjectConfig,
     *,
@@ -129,6 +228,7 @@ def build_desktop_snapshot(
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
         "design": design,
         "elaborated_hierarchy": _load_persisted_elaborated_hierarchy(project),
+        "waveforms": _waveform_rows(project, runs),
     }
 
 
@@ -190,12 +290,14 @@ def launch_desktop_gui(
     sources_tab = ttk.Frame(notebook, padding=8)
     hierarchy_tab = ttk.Frame(notebook, padding=8)
     elaborated_tab = ttk.Frame(notebook, padding=8)
+    waveform_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
     notebook.add(elaborated_tab, text="Elaborated")
+    notebook.add(waveform_tab, text="Waveforms")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
@@ -294,24 +396,219 @@ def launch_desktop_gui(
         elaborated_tree.column(column, width=width, anchor="w")
     elaborated_tree.pack(fill="both", expand=True)
 
+    waveform_status = tk.StringVar(
+        value="Select a recorded waveform run to inspect its signal catalog."
+    )
+    ttk.Label(waveform_tab, textvariable=waveform_status).pack(fill="x", pady=(0, 6))
+
+    waveform_run_tree = ttk.Treeview(
+        waveform_tab,
+        columns=("test", "status", "format", "path"),
+        show="tree headings",
+        height=6,
+    )
+    waveform_run_tree.heading("#0", text="Run ID")
+    waveform_run_tree.column("#0", width=280, anchor="w")
+    for column, title, width in (
+        ("test", "Test", 170),
+        ("status", "Status", 90),
+        ("format", "Format", 80),
+        ("path", "Waveform", 500),
+    ):
+        waveform_run_tree.heading(column, text=title)
+        waveform_run_tree.column(column, width=width, anchor="w")
+    waveform_run_tree.pack(fill="x", pady=(0, 8))
+
+    waveform_controls = ttk.Frame(waveform_tab)
+    waveform_controls.pack(fill="x", pady=(0, 8))
+    ttk.Label(waveform_controls, text="Start").pack(side="left")
+    waveform_start = tk.StringVar(value="")
+    ttk.Entry(waveform_controls, textvariable=waveform_start, width=10).pack(
+        side="left", padx=(4, 10)
+    )
+    ttk.Label(waveform_controls, text="End").pack(side="left")
+    waveform_end = tk.StringVar(value="")
+    ttk.Entry(waveform_controls, textvariable=waveform_end, width=10).pack(
+        side="left", padx=(4, 10)
+    )
+    ttk.Label(waveform_controls, text="Max changes").pack(side="left")
+    waveform_max = tk.StringVar(value="200")
+    ttk.Entry(waveform_controls, textvariable=waveform_max, width=8).pack(
+        side="left", padx=(4, 10)
+    )
+
+    waveform_pane = ttk.Panedwindow(waveform_tab, orient="horizontal")
+    waveform_pane.pack(fill="both", expand=True)
+    waveform_signal_frame = ttk.Frame(waveform_pane)
+    waveform_change_frame = ttk.Frame(waveform_pane)
+    waveform_pane.add(waveform_signal_frame, weight=3)
+    waveform_pane.add(waveform_change_frame, weight=2)
+
+    waveform_signal_tree = ttk.Treeview(
+        waveform_signal_frame,
+        columns=("width", "type", "scope"),
+        show="tree headings",
+        selectmode="extended",
+    )
+    waveform_signal_tree.heading("#0", text="Signal")
+    waveform_signal_tree.column("#0", width=340, anchor="w")
+    for column, title, width in (
+        ("width", "Width", 70),
+        ("type", "Type", 100),
+        ("scope", "Scope", 260),
+    ):
+        waveform_signal_tree.heading(column, text=title)
+        waveform_signal_tree.column(column, width=width, anchor="w")
+    waveform_signal_tree.pack(fill="both", expand=True)
+
+    waveform_change_tree = ttk.Treeview(
+        waveform_change_frame,
+        columns=("time", "value"),
+        show="tree headings",
+    )
+    waveform_change_tree.heading("#0", text="Signal")
+    waveform_change_tree.column("#0", width=280, anchor="w")
+    waveform_change_tree.heading("time", text="Time")
+    waveform_change_tree.column("time", width=100, anchor="e")
+    waveform_change_tree.heading("value", text="Value")
+    waveform_change_tree.column("value", width=190, anchor="w")
+    waveform_change_tree.pack(fill="both", expand=True)
+
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
     ttk.Label(
         footer,
         text=(
-            "Display-only viewer: refresh reads persisted evidence; it does not run "
-            "verification, invoke AI, or apply generated artifacts."
+            "Display-only viewer: refresh reads project/persisted evidence and waveform "
+            "artifacts; it does not run verification, invoke AI, or apply generated artifacts."
         ),
     ).pack(side="left")
 
     current: dict[str, Any] = {}
+    waveform_run_items: dict[str, str] = {}
+    waveform_signal_items: dict[str, str] = {}
+    active_waveform_run: str | None = None
 
     def _clear(tree) -> None:
         for item in tree.get_children():
             tree.delete(item)
 
+    def _parse_optional_time(value: str, label: str) -> int | None:
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            parsed = int(stripped)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be an integer waveform time.") from exc
+        if parsed < 0:
+            raise ValueError(f"{label} must be >= 0.")
+        return parsed
+
+    def _select_waveform_run(_event=None) -> None:
+        nonlocal active_waveform_run
+        selection = waveform_run_tree.selection()
+        if not selection:
+            return
+        run_id = waveform_run_items.get(selection[0])
+        if not run_id:
+            return
+
+        _clear(waveform_signal_tree)
+        _clear(waveform_change_tree)
+        waveform_signal_items.clear()
+        try:
+            snapshot = build_desktop_waveform_snapshot(project, run_id)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            active_waveform_run = None
+            waveform_status.set(f"Waveform unavailable: {exc}")
+            return
+
+        active_waveform_run = run_id
+        summary = snapshot["summary"]
+        note = snapshot.get("note")
+        waveform_status.set(
+            f"{run_id} · {snapshot['format'].upper()} · "
+            f"timescale={snapshot.get('timescale') or '-'} · "
+            f"{summary['signals']} signals"
+            + (f" · {note}" if note else "")
+        )
+        for signal in snapshot["signals"]:
+            item_id = waveform_signal_tree.insert(
+                "",
+                "end",
+                text=signal["path"],
+                values=(signal["width"], signal["var_type"], signal["scope"]),
+            )
+            waveform_signal_items[item_id] = signal["path"]
+
+    def _probe_selected_waveform() -> None:
+        if active_waveform_run is None:
+            waveform_status.set("Select an available VCD run before probing.")
+            return
+        selected = waveform_signal_tree.selection()
+        signals = [
+            waveform_signal_items[item]
+            for item in selected
+            if item in waveform_signal_items
+        ]
+        if not signals:
+            waveform_status.set("Select one or more VCD signals before probing.")
+            return
+
+        try:
+            start_time = _parse_optional_time(waveform_start.get(), "Start")
+            end_time = _parse_optional_time(waveform_end.get(), "End")
+            max_changes = int(waveform_max.get().strip())
+            result = probe_desktop_waveform(
+                project,
+                active_waveform_run,
+                signals,
+                start_time=start_time,
+                end_time=end_time,
+                max_changes=max_changes,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            waveform_status.set(f"Probe unavailable: {exc}")
+            return
+
+        _clear(waveform_change_tree)
+        for signal in result["signals"]:
+            parent = waveform_change_tree.insert(
+                "",
+                "end",
+                text=signal["path"],
+                values=("", ""),
+                open=True,
+            )
+            for change in signal["changes"]:
+                waveform_change_tree.insert(
+                    parent,
+                    "end",
+                    text="",
+                    values=(change["time"], change["value"]),
+                )
+
+        summary = result["summary"]
+        waveform_status.set(
+            f"{active_waveform_run} · {result['timescale'] or '-'} · "
+            f"{summary['signals']} signal(s), {summary['total_changes']} change(s)"
+            + (
+                f" · {summary['truncated_signals']} signal(s) truncated"
+                if summary["truncated_signals"]
+                else ""
+            )
+        )
+
+    waveform_run_tree.bind("<<TreeviewSelect>>", _select_waveform_run)
+    ttk.Button(
+        waveform_controls,
+        text="Probe selected",
+        command=_probe_selected_waveform,
+    ).pack(side="left")
+
     def refresh() -> None:
-        nonlocal current
+        nonlocal current, active_waveform_run
         current = build_desktop_snapshot(project, limit=limit)
         stats = current["stats"]
         coverage = current["latest_coverage"]
@@ -440,6 +737,30 @@ def launch_desktop_gui(
                     elaborated["status"],
                 ),
             )
+
+        _clear(waveform_run_tree)
+        _clear(waveform_signal_tree)
+        _clear(waveform_change_tree)
+        waveform_run_items.clear()
+        waveform_signal_items.clear()
+        active_waveform_run = None
+        for row in current["waveforms"]:
+            item_id = waveform_run_tree.insert(
+                "",
+                "end",
+                text=row["run_id"],
+                values=(
+                    row["test_name"] or "(default)",
+                    row["status"],
+                    row["format"].upper(),
+                    row["path"] if row["available"] else f"MISSING: {row['path']}",
+                ),
+            )
+            waveform_run_items[item_id] = row["run_id"]
+        waveform_status.set(
+            f"{len(current['waveforms'])} recorded waveform run(s); "
+            "select one to inspect without creating artifacts."
+        )
 
         _clear(evidence_tree)
         assertions = current["assertions"]

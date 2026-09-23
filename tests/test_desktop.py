@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_snapshot,
+    probe_desktop_waveform,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -240,3 +244,99 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+DESKTOP_VCD = """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0001 #
+#10
+0!
+b0010 #
+"""
+
+
+def test_desktop_waveform_browser_is_read_only_and_probes_bounded_vcd(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "waveform.vcd"
+    waveform.write_text(DESKTOP_VCD, encoding="utf-8")
+
+    record = _run_record("run-wave", "FAIL", seed=8)
+    record["waveform"] = str(waveform)
+    record_run(project, record)
+
+    waveform_artifact_dir = project.root / ".zddv" / "waveforms"
+    assert not waveform_artifact_dir.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    assert snapshot["waveforms"] == [
+        {
+            "run_id": "run-wave",
+            "test_name": "smoke",
+            "status": "FAIL",
+            "created_at": "2026-09-23T06:08:00+00:00",
+            "path": str(waveform.resolve()),
+            "format": "vcd",
+            "available": True,
+        }
+    ]
+
+    waveform_snapshot = build_desktop_waveform_snapshot(project, "run-wave")
+    assert waveform_snapshot["format"] == "vcd"
+    assert waveform_snapshot["parse_status"] == "indexed"
+    assert waveform_snapshot["timescale"] == "1ns"
+    assert [signal["path"] for signal in waveform_snapshot["signals"]] == [
+        "tb_top.clk",
+        "tb_top.dut.count",
+    ]
+
+    probe = probe_desktop_waveform(
+        project,
+        "run-wave",
+        ["tb_top.dut.count"],
+        start_time=5,
+        end_time=10,
+        max_changes=1,
+    )
+    assert probe["run_id"] == "run-wave"
+    assert probe["summary"] == {
+        "signals": 1,
+        "total_changes": 1,
+        "truncated_signals": 1,
+    }
+    assert probe["signals"][0]["changes"] == [{"time": 5, "value": "0001"}]
+
+    # Desktop inspection/probing must not use the persistent write_* waveform APIs.
+    assert not waveform_artifact_dir.exists()
+
+
+def test_desktop_waveform_browser_retains_fst_metadata_only_boundary(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+
+    record = _run_record("run-fst", "PASS", seed=9)
+    record["waveform"] = str(waveform)
+    record_run(project, record)
+
+    snapshot = build_desktop_waveform_snapshot(project, "run-fst")
+
+    assert snapshot["format"] == "fst"
+    assert snapshot["parse_status"] == "metadata-only"
+    assert snapshot["signals"] == []
+    assert "requires a simulator or FST converter adapter" in snapshot["note"]
+
+    with pytest.raises(RuntimeError, match="requires an indexed VCD artifact"):
+        probe_desktop_waveform(project, "run-fst", ["clk"])
+
+    assert not (project.root / ".zddv" / "waveforms").exists()
