@@ -1939,6 +1939,24 @@ def test_axi4_zero_id_width_requires_absent_id_signals():
     }
 
 
+def test_axi4_zero_id_width_rejects_physically_observed_idle_id_signal():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "samples": [{"cycle": 0, "AWID": 0}],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "AWID"
+    assert violation["channel"] == "AW"
+
+
 def test_axi4_zero_id_width_accepts_declared_absent_master_id_default():
     result = analyze_axi4_trace(
         {
