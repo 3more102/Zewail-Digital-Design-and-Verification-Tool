@@ -50,7 +50,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - APB transaction extraction directly from VCD waveforms at configurable clock edges
 - AXI4-Lite transaction extraction directly from VCD waveforms with five-channel handshake sampling
 - AXI4-Lite normalized-trace reconstruction with independent channel handshake and backpressure checks
-- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, direction-aware AxCACHE Allocate/Other-Allocate memory-class evidence, AxPROT/AxQOS/AxREGION validation, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence, and data-width-aware WSTRB byte-lane checks
+- AXI4 burst analysis with IDs, lengths/types, WLAST/RLAST, 4KB-boundary checks, core exclusive-access semantics, direction-aware AxCACHE Allocate/Other-Allocate memory-class evidence, AxPROT/AxQOS/AxREGION validation, optional AWUSER/WUSER/BUSER/ARUSER/RUSER transport evidence with explicit interface-width validation, and data-width-aware WSTRB byte-lane checks
 - Asynchronous-FIFO CDC dynamic invariant analysis for local binary/Gray pointers and full/empty blocking behavior
 - Burst-aware AXI4 transaction extraction directly from VCD waveforms with timestamp preservation
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries, plus optional version-aware public data-rate ceiling evidence through UCIe 3.0
@@ -408,7 +408,7 @@ separately from Verilator's annotation threshold.
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checks
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency
 - [x] AXI4 reserved AxCACHE encoding checks and B/M/RA/WA attribute decoding
-- [x] AXI4 optional USER-sideband capture, backpressure-stability checking, and transaction evidence
+- [x] AXI4 optional USER-sideband capture, backpressure-stability checking, transaction evidence, and explicit interface-width validation
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics
 - [x] Async-FIFO CDC normalized-event invariant analysis
@@ -489,9 +489,11 @@ The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable
 
 Optional AWUSER, ARUSER, WUSER, RUSER, and BUSER values are preserved when
 present and participate in the same VALID/READY payload-stability checks as the
-rest of their channel payload. Their meaning and width are implementation-defined,
-so ZDDV does not invent USER semantic or width legality without explicit interface
-metadata.
+rest of their channel payload. Their meaning remains implementation-defined, so
+ZDDV never invents USER semantics. A normalized trace can opt into interface-width
+checks with a `user_signal_widths` object keyed by those five signal names. Each
+value is a non-negative bit width; zero declares the signal absent. When the
+metadata is omitted, existing USER transport behavior is unchanged.
 
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
