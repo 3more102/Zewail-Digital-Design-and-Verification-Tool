@@ -192,11 +192,26 @@ def test_axi4_waveform_rejects_mismatched_write_id_widths(tmp_path: Path):
         extract_axi4_trace_from_vcd(bad)
 
 
-def test_axi4_waveform_rejects_partial_id_signal_pair(tmp_path: Path):
+def test_axi4_waveform_keeps_partial_id_pair_unknown(tmp_path: Path):
     source = FIXTURE.read_text(encoding="utf-8")
     source = source.replace("$var wire 2 p BID [1:0] $end\n", "")
-    bad = tmp_path / "partial_write_id_pair.vcd"
-    bad.write_text(source, encoding="utf-8")
+    partial = tmp_path / "partial_write_id_pair.vcd"
+    partial.write_text(source, encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="both present or both absent"):
-        extract_axi4_trace_from_vcd(bad)
+    trace = extract_axi4_trace_from_vcd(partial)
+
+    assert "ID_W_WIDTH" not in trace["id_widths"]
+    assert trace["id_widths"]["ID_R_WIDTH"] == 2
+
+
+def test_axi4_waveform_keeps_undumped_id_pair_unknown(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace("$var wire 2 d AWID [1:0] $end\n", "")
+    source = source.replace("$var wire 2 p BID [1:0] $end\n", "")
+    partial = tmp_path / "undumped_write_id_pair.vcd"
+    partial.write_text(source, encoding="utf-8")
+
+    trace = extract_axi4_trace_from_vcd(partial)
+
+    assert "ID_W_WIDTH" not in trace["id_widths"]
+    assert trace["id_widths"]["ID_R_WIDTH"] == 2
