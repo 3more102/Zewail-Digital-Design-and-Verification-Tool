@@ -501,10 +501,19 @@ WUSER + BUSER, matching `USER_DATA_WIDTH + USER_RESP_WIDTH`. Partial metadata
 remains partial and does not cause missing widths to be guessed. When the metadata
 is omitted, existing USER transport behavior is unchanged.
 
+A normalized trace can also provide an `id_widths` object with the Arm interface
+properties `ID_R_WIDTH` and/or `ID_W_WIDTH`. Each property accepts 0 through 32
+bits. `ID_R_WIDTH` applies to ARID/RID and `ID_W_WIDTH` applies to AWID/BID.
+Zero declares the paired ID signals absent; a positive width requires the
+corresponding ID on an active channel and bounds every observed value to that
+unsigned width. Omitting `id_widths` preserves the legacy trace contract.
+
 `zddv axi4-waveform` records the declared widths of USER signals that are actually
-present in the selected VCD scope and feeds that evidence into the same checks. A
-USER signal missing from the VCD is not automatically treated as a zero-width
-physical interface signal.
+present in the selected VCD scope and feeds that evidence into the same checks. It
+also derives `ID_R_WIDTH` or `ID_W_WIDTH` only when both signals in the
+corresponding VCD pair are present and have the same declared width. A missing USER
+signal or incomplete ID pair is not automatically treated as a zero-width physical
+interface signal.
 
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
