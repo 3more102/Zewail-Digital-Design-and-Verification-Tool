@@ -17,6 +17,112 @@ _FIELD_CUE = re.compile(
 )
 _COUNT_CUE = re.compile(r"^\s*Number of\b", re.IGNORECASE)
 
+_INTEGER_TOKEN = re.compile(r"^[+-]?\d+$")
+_DECIMAL_TOKEN = re.compile(r"^[+-]?\d+\.\d+$")
+_PERCENT_TOKEN = re.compile(r"^[+-]?\d+(?:\.\d+)?%$")
+_RATIO_TOKEN = re.compile(r"^\(?\d+(?:/\d+)+\)?$")
+_HEX_TOKEN = re.compile(r"^0[xX][0-9a-fA-F]+$")
+
+
+def _lexical_token_class(token: str) -> str:
+    value = token.strip()
+    if not value:
+        return "empty"
+    if _INTEGER_TOKEN.fullmatch(value):
+        return "integer"
+    if _DECIMAL_TOKEN.fullmatch(value):
+        return "decimal"
+    if _PERCENT_TOKEN.fullmatch(value):
+        return "percent"
+    if _RATIO_TOKEN.fullmatch(value):
+        return "ratio"
+    if _HEX_TOKEN.fullmatch(value):
+        return "hex"
+    if "/" in value or "\\" in value:
+        return "pathlike"
+    if re.fullmatch(r"[^A-Za-z0-9_]+", value):
+        return "punctuation"
+    return "text"
+
+
+def _cell_token_classes(cell: str) -> list[str]:
+    tokens = cell.strip().split()
+    if not tokens:
+        return ["empty"]
+    return [_lexical_token_class(token) for token in tokens]
+
+
+def _layout_evidence(
+    section_lines: list[str],
+    *,
+    sample_limit: int = 20,
+) -> dict[str, Any]:
+    """Fingerprint lexical row shape without assigning vendor item semantics."""
+
+    row_shapes: list[dict[str, Any]] = []
+    delimiter_counts: dict[str, int] = {}
+
+    for raw_line in section_lines:
+        stripped = raw_line.strip()
+        if not stripped or _SECTION_HEADER.match(raw_line):
+            continue
+
+        delimiter: str | None = None
+        cells: list[str] = []
+        if "|" in stripped:
+            delimiter = "pipe"
+            cells = stripped.split("|")
+        elif _FIELD_CUE.match(raw_line):
+            delimiter = "field-cue"
+            cells = stripped.split(":", 1)
+        elif _COUNT_CUE.match(raw_line):
+            delimiter = "count-cue"
+            cells = stripped.split()
+        elif stripped.casefold().startswith(
+            ("count ", "hit(", "state ", "transition ")
+        ):
+            delimiter = "whitespace-cue"
+            cells = stripped.split()
+
+        if delimiter is None:
+            continue
+
+        shape = {
+            "delimiter": delimiter,
+            "field_count": len(cells),
+            "field_token_classes": [
+                _cell_token_classes(cell)
+                for cell in cells
+            ],
+        }
+        row_shapes.append(shape)
+        delimiter_counts[delimiter] = delimiter_counts.get(delimiter, 0) + 1
+
+    fingerprint = None
+    if row_shapes:
+        canonical = json.dumps(
+            row_shapes,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        fingerprint = _sha256(canonical)
+
+    return {
+        "structured_rows": len(row_shapes),
+        "delimiter_counts": dict(sorted(delimiter_counts.items())),
+        "max_fields": max(
+            (int(row["field_count"]) for row in row_shapes),
+            default=0,
+        ),
+        "fingerprint_sha256": fingerprint,
+        "sample_rows": row_shapes[:sample_limit],
+        "sample_truncated": len(row_shapes) > sample_limit,
+        "semantics": (
+            "Lexical layout evidence only: token classes, delimiters, and field counts "
+            "do not verify an IMC vendor schema or assign item-level meaning."
+        ),
+    }
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -90,6 +196,7 @@ def audit_xcelium_imc_detail(text: str) -> dict[str, Any]:
                 "line_count": end - start,
                 "section_sha256": _sha256(section_text.encode("utf-8")),
                 "schema_cues": _schema_cues(section_lines),
+                "layout": _layout_evidence(section_lines),
             }
         )
 
@@ -99,6 +206,11 @@ def audit_xcelium_imc_detail(text: str) -> dict[str, Any]:
         if section["normalization_status"] == "verified-parser-available"
     )
     unverified = len(sections) - verified
+    layout_fingerprinted = sum(
+        1
+        for section in sections
+        if section["layout"]["fingerprint_sha256"] is not None
+    )
     limitations: list[str] = []
     if not sections:
         limitations.append(
@@ -118,9 +230,10 @@ def audit_xcelium_imc_detail(text: str) -> dict[str, Any]:
         "analysis": "xcelium_imc_detail_schema_audit",
         "semantics": (
             "This report inventories captured native IMC sections and preserves "
-            "their decoded-text fingerprints. A verified-parser label only means "
-            "ZDDV already has a parser for that section family; unverified sections "
-            "remain evidence-only and are not interpreted."
+            "their decoded-text fingerprints plus schema-neutral lexical layout "
+            "fingerprints. A verified-parser label only means ZDDV already has a "
+            "parser for that section family; unverified sections remain evidence-only "
+            "and are not interpreted. Layout fingerprints do not verify vendor schemas."
         ),
         "line_count": len(lines),
         "first_section_line": first_section_line,
@@ -130,6 +243,7 @@ def audit_xcelium_imc_detail(text: str) -> dict[str, Any]:
             "sections": len(sections),
             "verified_sections": verified,
             "unverified_sections": unverified,
+            "layout_fingerprinted_sections": layout_fingerprinted,
             "metrics": sorted({str(section["metric"]) for section in sections}),
         },
         "limitations": limitations,

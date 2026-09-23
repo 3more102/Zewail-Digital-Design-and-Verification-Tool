@@ -1301,11 +1301,14 @@ def cmd_xcelium_detail_audit(args) -> int:
         f"unverified={summary['unverified_sections']}"
     )
     for section in result["sections"][: max(0, args.show)]:
+        layout_sha = section["layout"]["fingerprint_sha256"]
+        layout_label = "none" if layout_sha is None else layout_sha[:12]
         print(
             f"{section['ordinal']:>3} {section['metric']:<12} "
             f"{section['normalization_status']:<25} "
             f"lines {section['start_line']}-{section['end_line']} "
-            f"sha256={section['section_sha256'][:12]}"
+            f"sha256={section['section_sha256'][:12]} "
+            f"layout={layout_label}"
         )
         print(f"    {section['title']}")
     if summary["unverified_sections"]:
