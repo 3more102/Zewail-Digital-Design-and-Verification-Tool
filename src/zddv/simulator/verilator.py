@@ -178,6 +178,83 @@ int main(int argc, char** argv) {{
         )
 
     @staticmethod
+    def _version_tuple(version: str) -> tuple[int, int]:
+        match = re.search(r"Verilator\s+(\d+)\.(\d+)", version)
+        if not match:
+            return (0, 0)
+        return int(match.group(1)), int(match.group(2))
+
+    def export_design_tree(self, project: ProjectConfig, output_dir: Path) -> dict:
+        sources = project.source_files()
+        if not sources:
+            raise RuntimeError("No RTL/testbench sources matched the project configuration.")
+
+        output_dir = output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log_path = output_dir / "elaboration.log"
+        version = self.version()
+
+        command = [
+            self._tool(),
+            "--timing",
+            "--Wno-fatal",
+            "--top-module",
+            project.top,
+        ]
+
+        if self._version_tuple(version) >= (5, 22):
+            ast_path = output_dir / "verilator.tree.json"
+            meta_path = output_dir / "verilator.tree.meta.json"
+            command.extend(
+                [
+                    "--json-only",
+                    "--no-json-edit-nums",
+                    "--json-only-output",
+                    str(ast_path),
+                    "--json-only-meta-output",
+                    str(meta_path),
+                ]
+            )
+            output_format = "json"
+        else:
+            ast_path = output_dir / "verilator.xml"
+            meta_path = None
+            command.extend(
+                [
+                    "--xml-only",
+                    "--xml-output",
+                    str(ast_path),
+                ]
+            )
+            output_format = "xml"
+
+        command.extend(str(path) for path in sources)
+        completed = subprocess.run(
+            command,
+            cwd=project.root,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        log_path.write_text(completed.stdout, encoding="utf-8")
+
+        required = [ast_path]
+        if meta_path is not None:
+            required.append(meta_path)
+        if completed.returncode != 0 or any(not path.exists() for path in required):
+            raise RuntimeError(f"Verilator elaboration export failed. See {log_path}")
+
+        return {
+            "format": output_format,
+            "ast": str(ast_path),
+            "meta": str(meta_path) if meta_path is not None else None,
+            "log": str(log_path),
+            "command": command,
+            "simulator_version": version,
+        }
+
+    @staticmethod
     def _safe_label(value: str) -> str:
         label = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
         return label[:40] or "test"
