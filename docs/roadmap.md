@@ -46,8 +46,8 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 Current status: deterministic source indexing, source-level hierarchy,
 simulator-resolved elaborated hierarchy, VCD waveform indexing, explicit opt-in
-FST indexing/probing through `fst2vcd`, targeted waveform value-change probing,
-source-level structural drivers/loads navigation,
+FST indexing/probing/cross-probing/assertion correlation through `fst2vcd`,
+targeted waveform value-change probing, source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
 preference and simulator-elaborated instance qualification, assertion-to-waveform
 correlation, and the
@@ -58,6 +58,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata by default).
 - [x] Explicit opt-in FST scope/signal indexing and bounded probing through `fst2vcd`.
+- [x] Explicit opt-in FST waveform cross-probing and assertion correlation through `fst2vcd`.
 - [x] Waveform-to-source cross-probing.
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
