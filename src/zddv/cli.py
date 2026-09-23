@@ -37,6 +37,7 @@ from zddv.coverage import (
 from zddv.coverage_suggestions import write_coverage_test_suggestions
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
+from zddv.gui import launch_debug_gui
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
 from zddv.debug_probes import write_debug_probe_suggestions
@@ -2767,6 +2768,11 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    project = load_project(_project_arg(args))
+    return launch_debug_gui(project, limit=args.limit)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zddv",
@@ -4624,6 +4630,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.add_argument("--limit", type=int, default=100)
     p_report.set_defaults(func=cmd_report)
+
+    p_gui = sub.add_parser(
+        "gui",
+        help="Launch the read-only ZDDV desktop Debug Studio",
+    )
+    p_gui.add_argument("--limit", type=int, default=100)
+    p_gui.set_defaults(func=cmd_gui)
 
     return parser
 
