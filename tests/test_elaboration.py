@@ -318,6 +318,121 @@ def test_parse_verilator_json_normalizes_direct_cell_pin_varrefs_only(
     assert complex_expr["signal"] is None
 
 
+def test_parse_verilator_json_normalizes_direct_internal_varref_assignments(
+    tmp_path: Path,
+):
+    rtl = tmp_path / "rtl" / "assignments.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module top(input logic src, input logic enable, "
+        "output logic dst, output logic complex_out); "
+        "assign dst = src; assign complex_out = src & enable; endmodule\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "level": 1,
+                "topModule": True,
+                "loc": "d,1:1,1:140",
+                "stmtsp": [
+                    {
+                        "type": "ASSIGNW",
+                        "loc": "d,1:90,1:106",
+                        "lhsp": {
+                            "type": "VARREF",
+                            "name": "dst",
+                            "verilogName": "dst",
+                            "loc": "d,1:97,1:100",
+                        },
+                        "rhsp": {
+                            "type": "VARREF",
+                            "name": "src",
+                            "verilogName": "src",
+                            "loc": "d,1:103,1:106",
+                        },
+                    },
+                    {
+                        "type": "ASSIGNW",
+                        "loc": "d,1:108,1:137",
+                        "lhsp": {
+                            "type": "VARREF",
+                            "name": "complex_out",
+                            "loc": "d,1:115,1:126",
+                        },
+                        "rhsp": {
+                            "type": "AND",
+                            "lhsp": {"type": "VARREF", "name": "src"},
+                            "rhsp": {"type": "VARREF", "name": "enable"},
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/assignments.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert result["internal_assignment_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_direct_assign_varref_only",
+        "supported_assignment_types": ["ASSIGN", "ASSIGNW"],
+        "unsupported_expression_count": 1,
+    }
+    assert len(result["internal_assignments"]) == 2
+
+    direct = next(
+        item
+        for item in result["internal_assignments"]
+        if item["status"] == "NORMALIZED"
+    )
+    assert direct["module"] == "top"
+    assert direct["module_elaborated_name"] == "top"
+    assert direct["assignment_type"] == "ASSIGNW"
+    assert direct["lhs_signal"] == "dst"
+    assert direct["rhs_signal"] == "src"
+    assert direct["location"]["path"] == "rtl/assignments.sv"
+
+    unsupported = next(
+        item
+        for item in result["internal_assignments"]
+        if item["status"] == "UNSUPPORTED"
+    )
+    assert unsupported["lhs_expression_type"] == "VARREF"
+    assert unsupported["rhs_expression_type"] == "AND"
+    assert unsupported["referenced_signals"] == [
+        "complex_out",
+        "enable",
+        "src",
+    ]
+
+
 def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
     rtl = tmp_path / "rtl" / "design.sv"
     rtl.parent.mkdir()
