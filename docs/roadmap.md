@@ -208,7 +208,7 @@ project files, or invent verification state from the UI.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [ ] Source/hierarchy navigation panes.
 - [ ] Waveform navigation and targeted probe integration.
-- [ ] Assertion/UVM/formal evidence panes.
+- [x] Assertion/UVM/formal evidence panes, plus native percentage-score coverage support.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
 
 ## Long-Term Direction
