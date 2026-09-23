@@ -217,7 +217,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Latest normalized coverage, assertion, formal, and UVM evidence overview.
 - [x] Refresh from the shared backend without duplicating verification logic.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
-- [ ] Waveform navigation and targeted probe integration.
+- [x] Waveform navigation and evidence-backed targeted probe integration (display-only; no automatic probe execution).
 - [ ] Detailed assertion/UVM/formal evidence panes.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
 
