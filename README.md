@@ -827,7 +827,8 @@ bundle is review-required before any external use.
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
 - [x] Desktop Debug Studio read-only foundation (summary, runs, failures, coverage, evidence, sources/hierarchy, and detailed assertion/formal/UVM views)
-- [ ] Interactive source/hierarchy/waveform/UVM panes and review-gated project actions
+- [x] Interactive read-only source/hierarchy/waveform panes with RTL preview, hierarchy cross-navigation, and bounded VCD probes
+- [ ] Review-gated project actions using the existing CLI/core APIs
 
 ## Design Principles
 
