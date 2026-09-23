@@ -293,7 +293,13 @@ the same standard AXI data width, verifies that WSTRB has one bit per data byte,
 derives `data_width_bits`, and records the declared VCD widths for USER signals
 that are actually present in the selected scope. Those observed widths feed the
 same core USER-width consistency checks; an undumped USER signal is not interpreted
-as proof of a zero-width physical signal. Physical waveform timestamps are recorded
+as proof of a zero-width physical signal. AXI ID width evidence follows the same
+boundary: `ID_W_WIDTH` is derived only from a complete AWID/BID declaration pair
+and `ID_R_WIDTH` only from a complete ARID/RID pair; partial or fully undumped
+pairs remain unknown. For explicit normalized `id_widths=0` metadata, physical
+absence is checked against raw trace keys on every sample, independent of channel
+handshake activity, so injected logical defaults are never treated as observed
+interface signals. Physical waveform timestamps are recorded
 alongside logical sample cycles. The burst analyzer then propagates those timestamps
 into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
 an input adapter; protocol semantics remain simulator-independent in the AXI4 core.
