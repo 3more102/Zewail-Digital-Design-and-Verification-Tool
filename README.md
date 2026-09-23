@@ -506,6 +506,13 @@ present in the selected VCD scope and feeds that evidence into the same checks. 
 USER signal missing from the VCD is not automatically treated as a zero-width
 physical interface signal.
 
+Reports also expose `user_width_property_evidence` for `USER_REQ_WIDTH`,
+`USER_DATA_WIDTH`, and `USER_RESP_WIDTH`, plus the RUSER composition. Arm Issue K
+lists maxima of 128 bits, DATA_WIDTH/2, and 16 bits respectively, but explicitly
+describes those maxima as guidance for configurable interfaces. ZDDV therefore
+reports whether observed metadata exceeds that guidance without turning the
+guidance alone into a protocol failure.
+
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
 observed matching exclusive read before its write starts, matching observable
