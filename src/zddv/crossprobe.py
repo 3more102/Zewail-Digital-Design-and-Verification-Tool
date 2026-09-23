@@ -209,6 +209,139 @@ def _match_elaborated_port_evidence(
     }
 
 
+def _port_direction_for_binding(
+    elaborated_index: dict[str, Any],
+    *,
+    module_name: str,
+    pin_name: str,
+) -> str | None:
+    evidence = elaborated_index.get("port_evidence")
+    ports = elaborated_index.get("ports")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "NORMALIZED"
+        or not isinstance(ports, list)
+    ):
+        return None
+
+    matches: list[dict[str, Any]] = []
+    for port in ports:
+        if not isinstance(port, dict) or str(port.get("module") or "") != module_name:
+            continue
+        aliases = {
+            str(value)
+            for value in (
+                port.get("name"),
+                port.get("elaborated_name"),
+                port.get("verilog_name"),
+                port.get("original_name"),
+            )
+            if value
+        }
+        if pin_name in aliases:
+            matches.append(port)
+
+    if len(matches) != 1:
+        return None
+    direction = matches[0].get("direction")
+    return str(direction).lower() if direction else None
+
+
+def _pin_relationship(direction: str | None) -> str:
+    if direction == "input":
+        return "parent_signal_to_child_input"
+    if direction == "output":
+        return "child_output_to_parent_signal"
+    if direction == "inout":
+        return "bidirectional_child_port"
+    return "direct_pin_varref"
+
+
+def _elaborated_pin_connectivity(
+    elaborated_index: dict[str, Any] | None,
+    elaborated_node: dict[str, Any] | None,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    if elaborated_index is None or elaborated_node is None:
+        return None
+
+    evidence = elaborated_index.get("pin_binding_evidence")
+    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+        return None
+
+    bindings = elaborated_index.get("pin_bindings")
+    if not isinstance(bindings, list):
+        return None
+
+    instance_path = str(elaborated_node.get("path") or "")
+    if not instance_path:
+        return None
+
+    parent_signal_bindings: list[dict[str, Any]] = []
+    instance_port_bindings: list[dict[str, Any]] = []
+    for binding in bindings:
+        if not isinstance(binding, dict) or binding.get("status") != "NORMALIZED":
+            continue
+
+        child_path = binding.get("instance_path")
+        parent_path = binding.get("parent_instance_path")
+        pin = binding.get("pin")
+        parent_signal = binding.get("signal")
+        child_module = binding.get("instance_module")
+        if not child_path or not parent_path or not pin or not parent_signal:
+            continue
+
+        child_module_name = str(child_module) if child_module is not None else ""
+        pin_name = str(pin)
+        direction = (
+            _port_direction_for_binding(
+                elaborated_index,
+                module_name=child_module_name,
+                pin_name=pin_name,
+            )
+            if child_module_name
+            else None
+        )
+        normalized = {
+            "instance_path": str(child_path),
+            "instance_module": child_module_name or None,
+            "pin": pin_name,
+            "parent_instance_path": str(parent_path),
+            "parent_signal": str(parent_signal),
+            "port_direction": direction,
+            "relationship": _pin_relationship(direction),
+            "generate_scopes": list(binding.get("generate_scopes", [])),
+            "pin_location": binding.get("pin_location"),
+            "signal_location": binding.get("signal_location"),
+        }
+
+        if str(parent_path) == instance_path and str(parent_signal) == signal_name:
+            parent_signal_bindings.append(normalized)
+        if str(child_path) == instance_path and pin_name == signal_name:
+            instance_port_bindings.append(normalized)
+
+    if not parent_signal_bindings and not instance_port_bindings:
+        return None
+
+    return {
+        "analysis_level": "simulator_elaborated_direct_pin_varref",
+        "evidence_contract": evidence.get("contract"),
+        "query_instance_path": instance_path,
+        "query_signal": signal_name,
+        "parent_signal_bindings": sorted(
+            parent_signal_bindings,
+            key=lambda item: (item["instance_path"], item["pin"]),
+        ),
+        "instance_port_bindings": sorted(
+            instance_port_bindings,
+            key=lambda item: (
+                item["parent_instance_path"],
+                item["parent_signal"],
+            ),
+        ),
+    }
+
+
 def _elaborated_identity_errors(
     project: ProjectConfig,
     index: dict[str, Any],
@@ -240,6 +373,20 @@ def _elaborated_identity_errors(
         and not isinstance(ports, list)
     ):
         errors.append("normalized port_evidence requires a ports list")
+
+    pin_bindings = index.get("pin_bindings")
+    if pin_bindings is not None and not isinstance(pin_bindings, list):
+        errors.append("pin_bindings is not a list")
+
+    pin_binding_evidence = index.get("pin_binding_evidence")
+    if pin_binding_evidence is not None and not isinstance(pin_binding_evidence, dict):
+        errors.append("pin_binding_evidence is not an object")
+    elif (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and not isinstance(pin_bindings, list)
+    ):
+        errors.append("normalized pin_binding_evidence requires a pin_bindings list")
     return errors
 
 
@@ -435,6 +582,11 @@ def build_crossprobe(
         elaborated_node,
         str(signal.get("name", "")),
     )
+    elaborated_connectivity = _elaborated_pin_connectivity(
+        elaborated_index,
+        elaborated_node,
+        str(signal.get("name", "")),
+    )
 
     selected_kind: str | None = None
     unit: dict[str, Any] | None = None
@@ -570,6 +722,7 @@ def build_crossprobe(
         "source_hierarchy": source_hierarchy_payload,
         "elaborated_hierarchy": elaborated_hierarchy_payload,
         "elaborated_port": elaborated_port,
+        "elaborated_connectivity": elaborated_connectivity,
         "source": source,
         "connectivity": connectivity_payload,
         "note": note,
