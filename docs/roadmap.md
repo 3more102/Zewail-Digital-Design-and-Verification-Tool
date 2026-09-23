@@ -59,6 +59,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata by default).
 - [x] Explicit opt-in FST scope/signal indexing and bounded probing through `fst2vcd`.
+- [x] Explicit opt-in FST waveform cross-probing and assertion correlation through `fst2vcd`, retaining source-artifact identity and adapter provenance.
 - [x] Waveform-to-source cross-probing.
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
