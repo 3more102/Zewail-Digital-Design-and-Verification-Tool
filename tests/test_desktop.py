@@ -328,23 +328,27 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
 
 
 
-def test_desktop_source_reader_resolves_project_relative_source(tmp_path: Path):
+def test_desktop_source_reader_resolves_only_configured_sources(tmp_path: Path):
     project = initialize_project(tmp_path / "source-preview")
     source = project.root / "rtl" / "preview.sv"
     source.write_text(
         "module preview;\n  logic value;\nendmodule\n",
         encoding="utf-8",
     )
+    project.rtl = ["rtl/*.sv"]
 
+    before = source.read_bytes()
     assert _read_source(project, "rtl/preview.sv") == (
         "module preview;\n  logic value;\nendmodule\n"
     )
+    assert source.read_bytes() == before
 
+    project_note = project.root / "notes.txt"
+    project_note.write_text("not HDL evidence", encoding="utf-8")
+    with pytest.raises(ValueError, match="not part of the configured ZDDV project"):
+        _read_source(project, "notes.txt")
 
-def test_desktop_source_reader_rejects_paths_outside_project(tmp_path: Path):
-    project = initialize_project(tmp_path / "source-preview")
     outside = tmp_path / "outside.sv"
     outside.write_text("module outside; endmodule\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="inside the project root"):
-        _read_source(project, "../outside.sv")
+    with pytest.raises(ValueError, match="not part of the configured ZDDV project"):
+        _read_source(project, str(outside))
