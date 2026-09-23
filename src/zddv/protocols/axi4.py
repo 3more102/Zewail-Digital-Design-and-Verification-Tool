@@ -769,6 +769,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "prot": sidebands["prot"],
             "prot_attributes": sidebands["prot_attributes"],
             "qos": sidebands["qos"],
+            "qos_attributes": sidebands["qos_attributes"],
             "user": sample.get(f"{prefix}USER"),
         }
 
@@ -1005,8 +1006,6 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             tx["prot_attributes"] = request["prot_attributes"]
         if request.get("qos_attributes") is not None:
             tx["qos_attributes"] = request["qos_attributes"]
-        if request.get("qos_attributes") is not None:
-            tx["qos_attributes"] = request["qos_attributes"]
         if request.get("user") is not None:
             tx["aruser"] = request["user"]
         r_users = [beat.get("user") for beat in beats]
@@ -1155,6 +1154,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["cache_attributes"] = request["cache_attributes"]
                 if request.get("prot_attributes") is not None:
                     tx["prot_attributes"] = request["prot_attributes"]
+                if request.get("qos_attributes") is not None:
+                    tx["qos_attributes"] = request["qos_attributes"]
                 if request.get("user") is not None:
                     tx["awuser"] = request["user"]
                 w_users = [beat.get("user") for beat in beats]
