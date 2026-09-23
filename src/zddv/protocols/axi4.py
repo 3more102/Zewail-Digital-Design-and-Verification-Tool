@@ -67,6 +67,11 @@ _AXI4_USER_SIGNALS = frozenset({
     "AWUSER", "WUSER", "BUSER", "ARUSER", "RUSER",
 })
 
+_AXI4_ID_WIDTH_PROPERTIES = {
+    "ID_W_WIDTH": ("AWID", "BID"),
+    "ID_R_WIDTH": ("ARID", "RID"),
+}
+
 
 def _logic(value: Any, *, name: str) -> bool:
     if isinstance(value, bool):
@@ -293,6 +298,42 @@ def _master_default_signals(
     return {name: defaults[name] for name in absent}
 
 
+def _configured_id_widths(payload: dict[str, Any]) -> dict[str, int]:
+    """Normalize explicit AXI4 transaction-ID width interface metadata."""
+    raw = payload.get("id_widths", {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "id_widths must be an object mapping ID_W_WIDTH/ID_R_WIDTH "
+            "to integer bit widths in the range 0..32"
+        )
+
+    widths: dict[str, int] = {}
+    for raw_name, raw_width in raw.items():
+        name = str(raw_name).strip().upper()
+        if name not in _AXI4_ID_WIDTH_PROPERTIES:
+            raise ValueError(
+                f"unsupported AXI4 ID width property in id_widths: {raw_name!r}"
+            )
+        if name in widths:
+            raise ValueError(
+                f"id_widths contains duplicate property after normalization: {name}"
+            )
+        if isinstance(raw_width, bool):
+            raise ValueError(
+                f"id_widths[{name}] must be an integer bit width in the range 0..32"
+            )
+        width = _scalar(raw_width)
+        if not isinstance(width, int) or not 0 <= width <= 32:
+            raise ValueError(
+                f"id_widths[{name}] must be an integer bit width in the range 0..32"
+            )
+        widths[name] = width
+
+    return {name: widths[name] for name in sorted(widths)}
+
+
 def _configured_user_signal_widths(payload: dict[str, Any]) -> dict[str, int]:
     """Normalize explicit interface metadata for implementation-defined USER signals."""
     raw = payload.get("user_signal_widths", {})
@@ -413,6 +454,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             )
         data_bus_bytes = data_width_bits // 8
 
+    id_widths = _configured_id_widths(payload)
     user_signal_widths = _configured_user_signal_widths(payload)
     master_defaults = _master_default_signals(
         payload,
@@ -592,19 +634,62 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         return False
 
     def id_value(sample: dict[str, Any], field: str, channel: str) -> int:
-        value = sample.get(field, 0)
-        if isinstance(value, int) and value >= 0:
-            return value
-        add_violation(
-            "invalid_transaction_id",
-            sample,
-            f"{field} must be a non-negative integer",
-            channel=channel,
-            signal=field,
-            expected="non-negative integer",
-            actual=value,
+        property_name = (
+            "ID_W_WIDTH" if channel in {"AW", "B"} else "ID_R_WIDTH"
         )
-        return 0
+        configured_width = id_widths.get(property_name)
+
+        if configured_width == 0:
+            if field in sample:
+                add_violation(
+                    "id_signal_present_when_width_zero",
+                    sample,
+                    f"{field} is present although {property_name}=0 declares the ID signal absent",
+                    channel=channel,
+                    signal=field,
+                    expected="signal absent",
+                    actual=sample.get(field),
+                )
+            return 0
+
+        if configured_width is not None and field not in sample:
+            add_violation(
+                "missing_transaction_id",
+                sample,
+                f"{field} is required because {property_name}={configured_width}",
+                channel=channel,
+                signal=field,
+                expected=f"unsigned {configured_width}-bit transaction ID",
+                actual=None,
+            )
+            return 0
+
+        value = sample.get(field, 0)
+        if not isinstance(value, int) or value < 0:
+            add_violation(
+                "invalid_transaction_id",
+                sample,
+                f"{field} must be a non-negative integer",
+                channel=channel,
+                signal=field,
+                expected="non-negative integer",
+                actual=value,
+            )
+            return 0
+
+        if configured_width is not None and value >= (1 << configured_width):
+            add_violation(
+                "invalid_transaction_id_width",
+                sample,
+                f"{field} does not fit {property_name}={configured_width}",
+                channel=channel,
+                signal=field,
+                expected=f"0..{(1 << configured_width) - 1}",
+                actual=value,
+            )
+            return 0
+
+        return value
 
     def validate_response(
         sample: dict[str, Any],
@@ -1425,9 +1510,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_user_widths_write_strobes_master_defaults",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_id_widths_user_widths_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
+        "id_widths": id_widths,
         "user_signal_widths": user_signal_widths,
         "absent_master_signals": sorted(master_defaults),
         "master_signal_defaults": {
@@ -1458,6 +1544,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics and protocol-defined AxQOS recommendation/default evidence are decoded, and AxREGION default/capacity/address-space evidence plus 4KB-space consistency are modeled.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
+            "Optional id_widths metadata validates the AXI ID_W_WIDTH relationship across AWID/BID and ID_R_WIDTH across ARID/RID, including the protocol-defined width-zero signal-absence rule, without inferring interface widths from observed transaction values.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits.",
