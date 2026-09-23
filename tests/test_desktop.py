@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from zddv.cli import main
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop import build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -131,3 +131,36 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+def test_desktop_snapshot_includes_source_navigation_index(tmp_path: Path):
+    project = initialize_project(tmp_path / "design-demo")
+    (project.root / "rtl" / "design.sv").write_text(
+        """
+module leaf;
+endmodule
+
+module top;
+    leaf u_leaf();
+endmodule
+""".lstrip(),
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    snapshot = build_desktop_snapshot(project)
+    design = snapshot["design"]
+
+    assert design["summary"] == {
+        "files": 1,
+        "units": 2,
+        "instances": 1,
+        "duplicate_unit_names": 0,
+    }
+    assert design["files"][0]["path"] == "rtl/design.sv"
+    assert design["hierarchy"]["instance"] == "top"
+    assert design["hierarchy"]["file"] == "rtl/design.sv"
+    assert design["hierarchy"]["children"][0]["instance"] == "u_leaf"
+    assert design["hierarchy"]["children"][0]["type"] == "leaf"
