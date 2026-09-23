@@ -378,6 +378,20 @@ def _verilator_version(tool: str) -> str:
     return completed.stdout.strip()
 
 
+def _require_json_only_version(version: str) -> None:
+    match = re.search(r"\\b(\\d+)\\.(\\d+)\\b", version)
+    if match is None:
+        raise RuntimeError(
+            f"Unable to parse Verilator version from: {version!r}"
+        )
+    numeric = (int(match.group(1)), int(match.group(2)))
+    if numeric < (5, 44):
+        raise RuntimeError(
+            "Verilator JSON elaboration requires Verilator 5.044 or newer "
+            "because --json-only was introduced in 5.044."
+        )
+
+
 def write_verilator_elaboration(
     project: ProjectConfig,
     *,
@@ -397,6 +411,8 @@ def write_verilator_elaboration(
     meta_path = raw / "design.tree.meta.json"
     log_path = raw / "elaboration.log"
     tool = _verilator_tool()
+    simulator_version = _verilator_version(tool)
+    _require_json_only_version(simulator_version)
 
     command = [
         tool,
@@ -437,7 +453,7 @@ def write_verilator_elaboration(
         meta,
         project_name=project.name,
         top=project.top,
-        simulator_version=_verilator_version(tool),
+        simulator_version=simulator_version,
         tree_sha256=_sha256(tree_path),
         meta_sha256=_sha256(meta_path),
     )
