@@ -68,6 +68,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Evidence-gated Verilator JSON module-port normalization from documented `ioDirection` only; legacy XML remains explicitly unavailable.
 - [x] Elaborated module-port direction/source evidence in waveform cross-probing and the Desktop elaborated browser.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
+- [x] Elaborated direct pin-binding evidence in waveform cross-probing with explicit matched/unsupported/ambiguous/unavailable states.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
