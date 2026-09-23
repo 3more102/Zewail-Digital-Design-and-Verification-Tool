@@ -99,14 +99,16 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
 
 
 def _read_source(project: ProjectConfig, value: str) -> str:
-    """Read one project-owned source file for display without mutating project state."""
+    """Read one configured project source file without arbitrary-path access."""
     root = project.root.resolve()
     path = Path(value)
     candidate = (path if path.is_absolute() else root / path).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("source path must remain inside the project root") from exc
+
+    configured = {source.resolve() for source in project.source_files()}
+    if candidate not in configured:
+        raise ValueError(
+            f"Source is not part of the configured ZDDV project: {value}"
+        )
     return candidate.read_text(encoding="utf-8", errors="replace")
 
 
