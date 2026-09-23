@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -152,3 +153,156 @@ def test_write_crossprobe_report_can_use_direct_input(tmp_path: Path):
     assert result["connectivity"]["unit"] == "tb_top"
     assert result["connectivity_index_path"].endswith("connectivity.json")
     assert Path(result["report_path"]).is_file()
+
+
+def test_crossprobe_prefers_elaborated_generated_scope(tmp_path: Path):
+    project = initialize_project(tmp_path / "generated")
+    rtl = project.root / "rtl"
+    tb = project.root / "tb"
+    rtl.mkdir(exist_ok=True)
+    tb.mkdir(exist_ok=True)
+
+    (rtl / "leaf.sv").write_text(
+        """module leaf(
+    input logic clk,
+    output logic count
+);
+    always_ff @(posedge clk)
+        count <= ~count;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (tb / "tb_top.sv").write_text(
+        """module tb_top;
+    logic clk;
+    logic count;
+    for (genvar i = 0; i < 2; i++) begin : g
+        leaf u_leaf(.clk(clk), .count(count));
+    end
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = ["tb/*.sv"]
+    project.top = "tb_top"
+    save_project(project)
+
+    waveform_path = project.root / "generated.vcd"
+    waveform_path.write_text(
+        """$timescale 1ns $end
+$scope module TOP $end
+$scope module tb_top $end
+$scope module g[0] $end
+$scope module u_leaf $end
+$var wire 1 ! count $end
+$upscope $end
+$upscope $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+""",
+        encoding="utf-8",
+    )
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "simulator_version": "Verilator test",
+        "source_format": "json",
+        "instances": [
+            {
+                "path": "tb_top",
+                "name": "tb_top",
+                "module": "tb_top",
+                "top": True,
+                "location": {"path": "tb/tb_top.sv", "line": 1},
+            },
+            {
+                "path": "tb_top.g[0].u_leaf",
+                "name": "u_leaf",
+                "module": "leaf",
+                "top": False,
+                "generate_scopes": ["g[0]"],
+                "location": {"path": "tb/tb_top.sv", "line": 5},
+            },
+        ],
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.g[0].u_leaf.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["hierarchy_resolution"] == "simulator_elaborated"
+    assert result["hierarchy"]["design_path"] == "tb_top.g[0].u_leaf"
+    assert result["hierarchy"]["type"] == "leaf"
+    assert result["hierarchy"]["generate_scopes"] == ["g[0]"]
+    assert result["elaborated_hierarchy"]["match"] == "scope-suffix"
+    assert result["source"]["unit"] == "leaf"
+    assert result["source"]["file"] == "rtl/leaf.sv"
+    assert result["source"]["declaration"]["line"] == 3
+    assert result["connectivity"]["analysis_level"] == "source_structural"
+    assert result["connectivity"]["unit"] == "leaf"
+
+
+def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated_path = project.root / ".zddv" / "design" / "elaborated.json"
+    elaborated_path.parent.mkdir(parents=True, exist_ok=True)
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": project.name,
+                "top": "different_top",
+                "simulator": project.simulator,
+                "instances": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = write_crossprobe_report(
+        project,
+        "tb_top.dut.count",
+        input_path="trace.vcd",
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["hierarchy_resolution"] == "source_structural"
+    assert result["elaborated_evidence"]["status"] == "STALE"
+    assert "top='different_top'" in result["elaborated_evidence"]["error"]
+    assert "elaborated_index_path" not in result
+    assert result["hierarchy"]["design_path"] == "tb_top.dut"
+
+
+def test_crossprobe_rejects_mismatched_explicit_elaboration(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Elaborated index identity mismatch"):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index={
+                "project": project.name,
+                "top": "wrong_top",
+                "simulator": project.simulator,
+                "instances": [],
+            },
+        )
