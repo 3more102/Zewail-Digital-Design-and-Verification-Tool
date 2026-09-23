@@ -6,7 +6,7 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import _read_source, build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -325,3 +325,30 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+def test_desktop_source_preview_reads_configured_project_source(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-preview")
+    source = project.root / "rtl" / "preview.sv"
+    source.write_text(
+        "module preview;\n  logic value;\nendmodule\n",
+        encoding="utf-8",
+    )
+
+    assert _read_source(project, "rtl/preview.sv") == (
+        "module preview;\n  logic value;\nendmodule\n"
+    )
+
+
+def test_desktop_source_preview_is_restricted_to_configured_sources(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-guard")
+    configured = project.root / "rtl" / "inside.sv"
+    configured.write_text("module inside; endmodule\n", encoding="utf-8")
+    outside = tmp_path / "outside.sv"
+    outside.write_text("module outside; endmodule\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="restricted to configured project sources"):
+        _read_source(project, "../outside.sv")
+
+    with pytest.raises(ValueError, match="restricted to configured project sources"):
+        _read_source(project, str(outside.resolve()))
