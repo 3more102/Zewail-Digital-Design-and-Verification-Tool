@@ -11,6 +11,9 @@
   desktop does not materialize an unbounded evidence set.
 - Keep refresh display-only with respect to verification execution, AI invocation,
   and generated-artifact application.
+- Add SHA-confirmed structured desktop actions for lint/build/run. Preparation is
+  non-executing, requests are bound to active project identity, and no arbitrary shell
+  command surface is exposed.
 
 ### Release verification hardening
 
