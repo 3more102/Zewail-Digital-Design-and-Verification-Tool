@@ -64,6 +64,7 @@ from zddv.protocols.axi4 import analyze_axi4_file
 from zddv.protocols.axi4_waveform import analyze_axi4_waveform
 from zddv.protocols.ucie import analyze_ucie_file
 from zddv.regression import run_regression
+from zddv.rerun import rerun_records, select_historical_runs
 from zddv.reporting import write_junit_report
 from zddv.release import export_verification_release, verify_verification_release
 from zddv.simulator import get_backend
@@ -2687,38 +2688,31 @@ def cmd_runs(args) -> int:
 
 def cmd_rerun(args) -> int:
     project = load_project(_project_arg(args))
-    backend = _backend(project.simulator)
     statuses = tuple(args.status or ("FAIL", "TIMEOUT"))
-    rows = list_run_records(project, limit=args.limit, statuses=statuses)
+    rows = select_historical_runs(
+        project,
+        limit=args.limit,
+        statuses=statuses,
+    )
 
     print(f"Selected {len(rows)} run(s) for rerun: {', '.join(statuses)}")
     if not rows:
         return 0
 
-    build = backend.build(project)
-    if not build.passed:
-        print(f"BUILD FAIL: {build.log_path}")
-        return build.returncode or 1
+    backend = _backend(project.simulator)
+    summary = rerun_records(project, rows, backend=backend)
+    if summary["status"] == "BUILD_FAIL":
+        print(f"BUILD FAIL: {summary['build']['log_path']}")
+        return int(summary["build"]["returncode"]) or 1
 
-    passed = 0
-    for source in reversed(rows):
-        result = backend.run(
-            project,
-            test_name=source["test_name"],
-            seed=source["seed"],
-            plusargs=list(source["plusargs"]),
-            timeout_s=source["timeout_s"],
-        )
+    for result in summary["results"]:
         print(
-            f"{source['run_id']} -> {result.status}: "
-            f"{result.run_id}"
+            f"{result['source_run_id']} -> {result['status']}: "
+            f"{result['run_id']}"
         )
-        if result.status == "PASS":
-            passed += 1
 
-    total = len(rows)
-    print(f"RERUN: {passed}/{total} passed")
-    return 0 if passed == total else 1
+    print(f"RERUN: {summary['passed']}/{summary['selected']} passed")
+    return 0 if summary["status"] == "PASS" else 1
 
 
 def cmd_junit(args) -> int:
@@ -4834,7 +4828,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser(
         "gui",
-        help="Launch the read-only ZDDV desktop Debug Studio",
+        help="Launch ZDDV Debug Studio with read-only evidence and review-gated actions",
     )
     p_gui.add_argument(
         "--limit",
