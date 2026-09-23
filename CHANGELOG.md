@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 ID evidence hardening
+
+- Distinguish physically observed AWID/BID/ARID/RID fields from logical master defaults when enforcing explicit zero/nonzero ID width metadata.
+- Keep `ID_W_WIDTH`/`ID_R_WIDTH` unknown when the corresponding VCD ID pair is partial or entirely undumped; waveform omission is not promoted to physical width zero.
+- Continue rejecting mismatched widths when both declarations in an AWID/BID or ARID/RID pair are present.
+
 ### AXI4 USER guidance evidence
 
 - Report Arm USER width maxima and USER data-width granularity as explicit non-failing advisories when sufficient interface metadata is present.
