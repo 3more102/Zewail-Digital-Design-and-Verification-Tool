@@ -16,8 +16,11 @@
   desktop does not materialize an unbounded evidence set.
 - Keep refresh display-only with respect to verification execution, AI invocation,
   and generated-artifact application.
-- Add SHA-confirmed exact historical rerun, binding the selected persisted run record
-  and its recorded test/seed/plusargs/timeout into the reviewed action payload.
+- Add SHA-confirmed recorded-input historical rerun, binding the selected persisted
+  run record and its recorded test/seed/plusargs/timeout into the reviewed action
+  payload. Execution rebuilds the current configured backend and replays those
+  recorded runtime inputs; the historical command is review evidence and is not
+  executed verbatim.
 
 ### Release verification hardening
 
