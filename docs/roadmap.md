@@ -211,9 +211,10 @@ uncollected verification objectives passed.
 
 ## v1.1 — Desktop Debug Studio
 
-Current status: the first desktop foundation is read-only and reuses the authoritative
-ZDDV verification database. It intentionally does not execute simulations, mutate
-project files, invoke AI, or infer verification state from the UI.
+Current status: evidence browsing, source preview, hierarchy navigation, and waveform
+inspection remain read-only and reuse authoritative ZDDV core models. Mutating or
+simulator-invoking desktop operations are isolated behind explicit SHA-confirmed review
+gates; the GUI does not automatically invoke AI or execute generated code.
 
 - [x] Tk/ttk desktop shell with verification summary.
 - [x] Recent-run browser backed by persisted run records.
@@ -225,6 +226,19 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+
+## v1.2 — Desktop Review Workflows
+
+Current status: generated verification drafts can now be inspected and applied from a
+separate desktop review pane without bypassing the existing generated-artifact core
+gates. Apply does not compile or run the generated SystemVerilog.
+
+- [x] Enumerate staged generated assertion/test drafts from the isolated draft store.
+- [x] Re-hash staged bytes and show a bounded exact-content preview.
+- [x] Fail closed unless review is required, auto-apply is disabled, and execution is disabled.
+- [x] Require manual exact content SHA-256 plus explicit reviewed approval before apply.
+- [x] Delegate staging/apply to the existing core APIs and refuse changed, malformed, or already-applied drafts.
+- [x] Keep generated-code compilation/simulation separate from the apply action.
 
 ## Long-Term Direction
 
