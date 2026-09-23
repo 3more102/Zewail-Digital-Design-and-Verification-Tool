@@ -1554,8 +1554,8 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
                 "AWUSER": 4,
                 "WUSER": 2,
                 "BUSER": 3,
-                "ARUSER": 5,
-                "RUSER": 6,
+                "ARUSER": 4,
+                "RUSER": 5,
             },
             "samples": [
                 {
@@ -1575,7 +1575,7 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
                     "ARLEN": 0,
                     "ARSIZE": 2,
                     "ARBURST": "INCR",
-                    "ARUSER": 0x1F,
+                    "ARUSER": 0xF,
                 },
                 {
                     "cycle": 1,
@@ -1591,7 +1591,7 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
                     "RDATA": 0x66,
                     "RRESP": "OKAY",
                     "RLAST": 1,
-                    "RUSER": 0x2A,
+                    "RUSER": 0x1A,
                 },
                 {
                     "cycle": 2,
@@ -1607,10 +1607,10 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
 
     assert result["status"] == "PASS"
     assert result["user_signal_widths"] == {
-        "ARUSER": 5,
+        "ARUSER": 4,
         "AWUSER": 4,
         "BUSER": 3,
-        "RUSER": 6,
+        "RUSER": 5,
         "WUSER": 2,
     }
     write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
@@ -1618,8 +1618,8 @@ def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics(
     assert write["awuser"] == 0xA
     assert write["wuser"] == [0x3]
     assert write["buser"] == 0x7
-    assert read["aruser"] == 0x1F
-    assert read["ruser"] == [0x2A]
+    assert read["aruser"] == 0xF
+    assert read["ruser"] == [0x1A]
 
 
 def test_reports_user_sideband_values_that_do_not_fit_configured_width():
@@ -1727,3 +1727,48 @@ def test_user_signal_width_metadata_rejects_unknown_signal_and_negative_width():
                 "samples": [],
             }
         )
+
+
+def test_user_width_metadata_enforces_axi_request_width_relationship():
+    with pytest.raises(ValueError, match="USER_REQ_WIDTH"):
+        analyze_axi4_trace(
+            {
+                "user_signal_widths": {
+                    "AWUSER": 4,
+                    "ARUSER": 5,
+                },
+                "samples": [],
+            }
+        )
+
+
+def test_user_width_metadata_enforces_axi_ruser_composition():
+    with pytest.raises(ValueError, match="USER_DATA_WIDTH \+ USER_RESP_WIDTH"):
+        analyze_axi4_trace(
+            {
+                "user_signal_widths": {
+                    "WUSER": 4,
+                    "BUSER": 2,
+                    "RUSER": 5,
+                },
+                "samples": [],
+            }
+        )
+
+
+def test_user_width_metadata_does_not_infer_unspecified_relationship_members():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {
+                "AWUSER": 4,
+                "RUSER": 7,
+            },
+            "samples": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["user_signal_widths"] == {
+        "AWUSER": 4,
+        "RUSER": 7,
+    }
