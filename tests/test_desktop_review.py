@@ -142,3 +142,28 @@ def test_desktop_review_limit_is_validated(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     with pytest.raises(ValueError, match="limit must be >= 1"):
         list_desktop_review_drafts(project, limit=0)
+
+
+
+def test_desktop_review_rejects_execution_enabled_manifest(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    staged = stage_desktop_review_proposal(project, _proposal(project))
+    manifest_path = Path(staged["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["execution_enabled"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    detail = inspect_desktop_review_draft(project, manifest_path)
+
+    assert detail["status"] == "INVALID"
+    assert detail["integrity"] == "INVALID"
+    assert "execution_enabled=false" in detail["error"]
+
+    with pytest.raises(RuntimeError, match="not reviewable: INVALID"):
+        apply_desktop_review_draft(
+            project,
+            manifest_path,
+            destination=None,
+            expected_sha256=staged["content_sha256"],
+            approve_reviewed=True,
+        )
