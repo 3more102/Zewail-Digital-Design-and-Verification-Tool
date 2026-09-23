@@ -70,6 +70,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Elaborated module-port direction/source evidence in waveform cross-probing and the Desktop elaborated browser.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
+- [x] Exact correlation of source-structural `instance_port` edges with unique normalized direct elaborated pin bindings, without relabeling source driver/load roles.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
