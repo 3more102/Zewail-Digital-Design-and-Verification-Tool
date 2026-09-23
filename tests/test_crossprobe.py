@@ -407,5 +407,6 @@ def test_crossprobe_cli_supports_explicit_fst2vcd(tmp_path: Path, capsys, monkey
         )
     )
     assert report["waveform"]["format"] == "fst"
+    assert report["waveform"]["parse_status"] == "indexed-via-fst2vcd"
     assert report["waveform"]["adapter"]["adapter"] == "fst2vcd"
     assert report["waveform"]["signal"]["path"] == "TOP.tb_top.dut.count"
