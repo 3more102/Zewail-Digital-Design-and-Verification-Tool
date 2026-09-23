@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated debug correlation
+
+- Extend direct pin-to-source edge correlation to generated instances only when
+  the exact elaborated child path is already present in the source edge's
+  explicit ambiguous candidate set; preserve source-only driver/load semantics.
+
 ### AXI4 USER guidance evidence
 
 - Report Arm USER width maxima and USER data-width granularity as explicit non-failing advisories when sufficient interface metadata is present.
