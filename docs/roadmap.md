@@ -101,7 +101,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 explicit USER width/presence validation from `user_signal_widths` interface metadata.
 - [x] AXI4 USER_REQ_WIDTH/RUSER composition consistency and VCD USER-width evidence capture.
 - [x] AXI4 USER configuration/response-bit guidance as non-failing advisory evidence.
-- [x] AXI4 ID_W_WIDTH/ID_R_WIDTH metadata validation and VCD width/presence evidence for AWID/BID and ARID/RID.
+- [x] AXI4 ID_W_WIDTH/ID_R_WIDTH metadata validation and paired VCD width evidence for AWID/BID and ARID/RID; undumped/partial pairs remain unknown.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
