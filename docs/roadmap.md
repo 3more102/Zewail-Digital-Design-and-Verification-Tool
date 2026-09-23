@@ -75,7 +75,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 burst normalized-trace foundation (IDs, lengths/types, WLAST/RLAST, 4KB rule).
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checking.
-- [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks and AxREGION 4KB consistency.
+- [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks, AxPROT privilege/security/access decoding, and AxREGION 4KB consistency.
 - [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA attribute decoding.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
