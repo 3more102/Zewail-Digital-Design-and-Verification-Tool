@@ -583,11 +583,7 @@ def launch_desktop_gui(
                 ),
             )
 
-        try:
-            _load_waveform()
-        except Exception:
-            # _load_waveform already normalizes expected read-only failures.
-            pass
+        _load_waveform()
 
         _clear(failure_tree)
         for group in current["failure_groups"]:
