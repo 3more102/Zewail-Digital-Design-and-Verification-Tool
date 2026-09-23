@@ -54,9 +54,11 @@ module-port direction evidence surfaced without unsupported schema inference, an
 conservative direct CELL-pin-to-VARREF elaborated connectivity with complex expressions
 retained as unsupported evidence plus bidirectional waveform cross-probing across exact
 normalized pin bindings, fail-closed pin-binding schema validation with unsupported
-child-pin query evidence retained separately, assertion-to-waveform correlation, and the
-first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Exact elaborated drivers/loads remain future enrichment work.
+child-pin query evidence retained separately, exact endpoint-relative driver/load roles
+for normalized direct module-boundary bindings, assertion-to-waveform correlation, and
+the first protocol transaction reconstruction path (normalized APB traces) are
+implemented. Broader elaborated internal/net-expression driver/load reconstruction remains
+future enrichment work.
 
 - [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
@@ -73,6 +75,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Bidirectional waveform cross-probing across normalized parent-signal/child-pin bindings with evidence-gated port direction.
 - [x] Fail-closed normalized pin-binding schema validation and explicit unsupported child-pin query evidence without inferred parent relationships.
 - [x] Exact direct pin-binding to source instance-port edge correlation without promoting source roles to elaborated semantics.
+- [x] Endpoint-relative direct-binding driver/load classification from normalized pin bindings plus normalized module-port directions; inout, unknown-direction, and unsupported-expression evidence remains explicit rather than inferred.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
