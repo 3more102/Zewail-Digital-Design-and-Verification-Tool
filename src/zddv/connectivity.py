@@ -682,12 +682,12 @@ def qualify_signal_navigation_with_elaboration(
             candidate_module = candidate.get("module")
             if candidate_name != source_instance:
                 continue
-            if child_type and candidate_module and candidate_module != child_type:
+            if child_type and candidate_module != child_type:
                 continue
 
             generate_scopes = [
                 str(scope)
-                for scope in candidate.get("generate_scopes", [])
+                for scope in (candidate.get("generate_scopes") or [])
                 if str(scope)
             ]
             expected_path = ".".join(
