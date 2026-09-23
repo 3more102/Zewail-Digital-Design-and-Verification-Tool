@@ -28,6 +28,10 @@ The desktop provides:
 - normalized direct Verilator CELL-pin-to-VARREF bindings displayed beneath the exact
   elaborated instance, while explicitly unsupported complex expressions remain evidence
   rather than inferred connectivity;
+- trusted elaborated-pin/source-edge correlation surfaced only for the normalized
+  correlation contract with `source_structural_only` role semantics; one exact source
+  route is shown only when the retained correlation has exactly one MATCHED item, with
+  its recorded `match_basis` provenance;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
   hierarchy/source/connectivity cross-probing, including explicit module-port matches,
   bounded exact parent-signal/child-pin relationships, and explicit unsupported complex
@@ -72,8 +76,12 @@ only as unsupported evidence and are never promoted to exact connectivity. Wavef
 details are rendered only for the core `simulator_elaborated_direct_pin_varref` contract.
 Boundary-role rows are rendered only when all three core role buckets (drivers, loads,
 and unclassified) are present as normalized lists of mapping records; partial or malformed
-role evidence is suppressed rather than converted into zero-count claims. Unknown future
-contracts are not interpreted by the desktop. The elaborated hierarchy
+role evidence is suppressed rather than converted into zero-count claims. Elaborated/source correlation is rendered only for the core
+`simulator_elaborated_to_source_structural_correlation` contract when its role
+semantics remain `source_structural_only`, every correlation status is recognized,
+and every MATCHED item carries well-typed source-edge, source-role, and match-basis
+evidence. Multiple MATCHED items remain a summary only; the desktop does not pick one.
+Unknown future contracts are not interpreted by the desktop. The elaborated hierarchy
 browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
 unbounded evidence set in the GUI.
