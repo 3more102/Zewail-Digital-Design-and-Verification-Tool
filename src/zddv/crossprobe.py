@@ -257,6 +257,25 @@ def _elaborated_identity_errors(
         and not isinstance(pin_bindings, list)
     ):
         errors.append("normalized pin_binding_evidence requires a pin_bindings list")
+
+    direct_assignments = index.get("direct_assignments")
+    if direct_assignments is not None and not isinstance(direct_assignments, list):
+        errors.append("direct_assignments is not a list")
+
+    direct_assignment_evidence = index.get("direct_assignment_evidence")
+    if direct_assignment_evidence is not None and not isinstance(
+        direct_assignment_evidence,
+        dict,
+    ):
+        errors.append("direct_assignment_evidence is not an object")
+    elif (
+        isinstance(direct_assignment_evidence, dict)
+        and direct_assignment_evidence.get("status") == "NORMALIZED"
+        and not isinstance(direct_assignments, list)
+    ):
+        errors.append(
+            "normalized direct_assignment_evidence requires a direct_assignments list"
+        )
     return errors
 
 
@@ -591,6 +610,139 @@ def _elaborated_pin_connectivity(
     }
 
 
+def _elaborated_direct_assignment_connectivity(
+    elaborated_index: dict[str, Any],
+    *,
+    instance_path: str,
+    instance_module: str | None,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    """Classify exact module-root ASSIGNW VARREF relations for one query signal."""
+    evidence = elaborated_index.get("direct_assignment_evidence")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "NORMALIZED"
+        or evidence.get("contract")
+        != "verilator_module_root_assignw_direct_varref_only"
+        or not instance_module
+    ):
+        return None
+
+    assignments = elaborated_index.get("direct_assignments")
+    if not isinstance(assignments, list):
+        return None
+
+    drivers: list[dict[str, Any]] = []
+    loads: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+
+    def aliases(item: dict[str, Any], key: str, fallback: str) -> set[str]:
+        values = item.get(key)
+        result = (
+            {str(value) for value in values if value}
+            if isinstance(values, list)
+            else set()
+        )
+        if item.get(fallback):
+            result.add(str(item[fallback]))
+        return result
+
+    for assignment in assignments:
+        if not isinstance(assignment, dict):
+            continue
+        if assignment.get("module") != instance_module:
+            continue
+
+        if assignment.get("status") == "NORMALIZED":
+            lhs_signal = assignment.get("lhs_signal")
+            rhs_signal = assignment.get("rhs_signal")
+            if not lhs_signal or not rhs_signal:
+                continue
+            lhs_aliases = aliases(assignment, "lhs_aliases", "lhs_signal")
+            rhs_aliases = aliases(assignment, "rhs_aliases", "rhs_signal")
+            edge = {
+                "kind": "continuous_assignment",
+                "assignment_type": "ASSIGNW",
+                "instance_path": instance_path,
+                "module": instance_module,
+                "source_signal": str(rhs_signal),
+                "target_signal": str(lhs_signal),
+                "location": assignment.get("location"),
+            }
+            if signal_name in lhs_aliases:
+                drivers.append(edge)
+            if signal_name in rhs_aliases:
+                loads.append(edge)
+            continue
+
+        if assignment.get("status") != "UNSUPPORTED":
+            continue
+        lhs_refs = {
+            str(value)
+            for value in assignment.get("lhs_varrefs", [])
+            if value
+        }
+        rhs_refs = {
+            str(value)
+            for value in assignment.get("rhs_varrefs", [])
+            if value
+        }
+        if signal_name not in lhs_refs and signal_name not in rhs_refs:
+            continue
+        unresolved.append(
+            {
+                "status": "UNSUPPORTED",
+                "assignment_type": assignment.get("assignment_type") or "ASSIGNW",
+                "instance_path": instance_path,
+                "module": instance_module,
+                "query_references": sorted(
+                    side
+                    for side, refs in (("lhs", lhs_refs), ("rhs", rhs_refs))
+                    if signal_name in refs
+                ),
+                "lhs_expression_type": assignment.get("lhs_expression_type"),
+                "rhs_expression_type": assignment.get("rhs_expression_type"),
+                "lhs_varrefs": sorted(lhs_refs),
+                "rhs_varrefs": sorted(rhs_refs),
+                "location": assignment.get("location"),
+            }
+        )
+
+    if not drivers and not loads and not unresolved:
+        return None
+
+    def edge_key(item: dict[str, Any]) -> tuple[str, str, str, int]:
+        location = item.get("location") or {}
+        return (
+            str(item.get("source_signal") or ""),
+            str(item.get("target_signal") or ""),
+            str(location.get("path") or ""),
+            int(location.get("line") or 0),
+        )
+
+    def unresolved_key(item: dict[str, Any]) -> tuple[str, int, str, str]:
+        location = item.get("location") or {}
+        return (
+            str(location.get("path") or ""),
+            int(location.get("line") or 0),
+            str(item.get("lhs_expression_type") or ""),
+            str(item.get("rhs_expression_type") or ""),
+        )
+
+    return {
+        "status": "PARTIAL" if unresolved else "NORMALIZED",
+        "analysis_level": "simulator_elaborated_module_root_assignw_direct_varref",
+        "evidence_contract": evidence.get("contract"),
+        "role_semantics": "direct_continuous_assignment",
+        "query_instance_path": instance_path,
+        "query_module": instance_module,
+        "query_signal": signal_name,
+        "drivers": sorted(drivers, key=edge_key),
+        "loads": sorted(loads, key=edge_key),
+        "unresolved_assignments": sorted(unresolved, key=unresolved_key),
+    }
+
+
 def _correlate_elaborated_pin_bindings_with_source(
     elaborated_connectivity: dict[str, Any] | None,
     *,
@@ -916,6 +1068,7 @@ def build_crossprobe(
     source: dict[str, Any] | None = None
     connectivity_payload: dict[str, Any] | None = None
     elaborated_connectivity_payload: dict[str, Any] | None = None
+    elaborated_internal_connectivity_payload: dict[str, Any] | None = None
     elaborated_source_correlation: dict[str, Any] | None = None
     source_connectivity_index = connectivity_index
     status = "PARTIAL"
@@ -926,6 +1079,18 @@ def build_crossprobe(
             elaborated_index,
             instance_path=str(elaborated_node["path"]),
             signal_name=str(signal.get("name", "")),
+        )
+        elaborated_internal_connectivity_payload = (
+            _elaborated_direct_assignment_connectivity(
+                elaborated_index,
+                instance_path=str(elaborated_node["path"]),
+                instance_module=(
+                    str(elaborated_node["module"])
+                    if elaborated_node.get("module")
+                    else None
+                ),
+                signal_name=str(signal.get("name", "")),
+            )
         )
 
     if elaborated_node is None and source_hierarchy_node is None:
@@ -1064,6 +1229,7 @@ def build_crossprobe(
         "source": source,
         "connectivity": connectivity_payload,
         "elaborated_connectivity": elaborated_connectivity_payload,
+        "elaborated_internal_connectivity": elaborated_internal_connectivity_payload,
         "elaborated_source_correlation": elaborated_source_correlation,
         "note": note,
     }
