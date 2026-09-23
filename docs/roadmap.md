@@ -49,10 +49,11 @@ simulator-resolved elaborated hierarchy, VCD waveform indexing, explicit opt-in
 FST indexing/probing through `fst2vcd`, targeted waveform value-change probing,
 source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
-preference and simulator-elaborated instance qualification, assertion-to-waveform
-correlation, and the
-first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Exact elaborated drivers/loads remain future enrichment work.
+preference and simulator-elaborated instance qualification, plus documented
+Verilator module-port direction validation layered onto qualified source-structural
+port edges, assertion-to-waveform correlation, and the first protocol transaction
+reconstruction path (normalized APB traces) are implemented. Exact elaborated
+net drivers/loads remain future enrichment work.
 
 - [x] Design hierarchy (source-level + simulator-elaborated).
 - [x] Source indexing.
@@ -63,6 +64,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
 - [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
+- [x] Simulator-elaborated module-port direction validation for qualified boundary/instance-port edges without relabeling source-structural roles as exact net connectivity.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
