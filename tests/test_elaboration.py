@@ -77,6 +77,102 @@ def test_parse_verilator_json_elaborated_hierarchy(tmp_path: Path):
     assert result["instances"][1]["location"]["line"] == 5
 
 
+def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
+    rtl = tmp_path / "rtl" / "design.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module leaf; endmodule\\n"
+        "module top; genvar i; for (i = 0; i < 2; i++) begin: g "
+        "leaf u_leaf(); end endmodule\\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "level": 1,
+                "loc": "d,2:8,2:11",
+                "stmtsp": [
+                    {
+                        "type": "GENBLOCK",
+                        "name": "g[0]",
+                        "itemsp": [
+                            {
+                                "type": "CELL",
+                                "name": "u_leaf",
+                                "origName": "u_leaf",
+                                "verilogName": "u_leaf",
+                                "modName": "leaf",
+                                "modp": "(B)",
+                                "loc": "d,2:47,2:53",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "GENBLOCK",
+                        "name": "g[1]",
+                        "itemsp": [
+                            {
+                                "type": "CELL",
+                                "name": "u_leaf",
+                                "origName": "u_leaf",
+                                "verilogName": "u_leaf",
+                                "modName": "leaf",
+                                "modp": "(B)",
+                                "loc": "d,2:47,2:53",
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "type": "MODULE",
+                "name": "leaf",
+                "origName": "leaf",
+                "verilogName": "leaf",
+                "addr": "(B)",
+                "level": 2,
+                "loc": "d,1:8,1:12",
+            },
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/design.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert [item["path"] for item in result["instances"]] == [
+        "top",
+        "top.g[0].u_leaf",
+        "top.g[1].u_leaf",
+    ]
+    assert result["instances"][1]["module"] == "leaf"
+    assert result["instances"][1]["generate_scopes"] == ["g[0]"]
+    assert result["instances"][2]["generate_scopes"] == ["g[1]"]
+
+
 def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
     xml_path = tmp_path / "tree.xml"
     xml_path.write_text(
@@ -131,6 +227,8 @@ def test_elaborated_hierarchy_lines_and_version_detection():
     ]
     assert VerilatorBackend._version_tuple("Verilator 5.020 2024-01-01") == (5, 20)
     assert VerilatorBackend._version_tuple("Verilator 5.052 devel") == (5, 52)
+    assert VerilatorBackend._version_tuple("Verilator 5.043") < (5, 44)
+    assert VerilatorBackend._version_tuple("Verilator 5.044") >= (5, 44)
 
 
 class _FakeBackend:
