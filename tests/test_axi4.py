@@ -2179,6 +2179,24 @@ def test_axi4_id_width_metadata_checks_missing_id_while_valid_is_stalled():
     assert missing[0]["signal"] == "AWID"
 
 
+def test_axi4_zero_id_width_rejects_observed_id_while_channel_is_idle():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "samples": [{"cycle": 0, "AWVALID": 0, "AWID": 0}],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["cycle"] == 0
+    assert violation["signal"] == "AWID"
+
+
 def test_axi4_zero_id_width_rejects_observed_id_during_stall():
     result = analyze_axi4_trace(
         {
