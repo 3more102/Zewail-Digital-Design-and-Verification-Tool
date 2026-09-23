@@ -829,6 +829,20 @@ bundle is review-required before any external use.
 - [x] Desktop Debug Studio read-only foundation (Tk/ttk summary, runs, failures, coverage, and evidence views)
 - [ ] Interactive source/hierarchy/waveform/UVM panes and review-gated project actions
 
+### Desktop Debug Studio Waveform Navigation
+
+The read-only Debug Studio now exposes recorded waveform artifacts from recent runs.
+Selecting a VCD/FST artifact can build the existing in-memory waveform index without
+writing `.zddv/waveforms/*.json`. VCD indexes expose scopes/signals and SHA-256
+artifact provenance; FST remains metadata-only until an explicit FST converter or
+simulator adapter is available.
+
+For VCD artifacts, the Waveforms pane can probe one exact indexed signal over an
+optional integer time window and display bounded value changes. This uses the pure
+`probe_vcd_signals()` path and does not execute a simulator or materialize the normal
+CLI probe artifact. Indexing/probing errors are displayed as evidence rather than
+silently fabricating waveform state.
+
 ## Design Principles
 
 1. Simulator-independent orchestration.
