@@ -484,8 +484,11 @@ also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it
 `zddv axi4-analyze <trace.json>` extends protocol reconstruction to burst-aware
 AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
-different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
-and the requirement that each AXI burst remain inside one 4KB address region.
+different IDs, and WLAST/RLAST termination. A normalized trace can also provide
+`address_width_bits` for the AXI `ADDR_WIDTH` property; values must be 1..64
+bits and accepted AWADDR/ARADDR values are checked against that interface width.
+It also checks WRAP burst geometry and the requirement that each AXI burst remain
+inside one 4KB address region.
 
 The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable, Modifiable, Read-Allocate, and Write-Allocate attributes into each reconstructed transaction.
 
@@ -562,8 +565,10 @@ The normalized trace is written to
 `.zddv/protocols/axi4/waveform-trace.json` and the analyzed report to
 `.zddv/protocols/axi4/waveform-latest.json`. AW, W-beat, AR, R-beat, and
 response timestamps are retained so protocol violations and reconstructed bursts
-can be cross-referenced to the waveform. VCD extraction also records `ID_W_WIDTH`
-from matching AWID/BID declarations and `ID_R_WIDTH` from matching ARID/RID
+can be cross-referenced to the waveform. VCD extraction requires AWADDR and ARADDR
+to expose the same 1..64-bit `ADDR_WIDTH` and records that width as
+`address_width_bits`. It also records `ID_W_WIDTH` from matching AWID/BID
+declarations and `ID_R_WIDTH` from matching ARID/RID
 declarations when both signals in a pair are present with the same width. Missing
 or partially dumped ID declarations remain unknown; VCD omission is never promoted
 to the protocol-defined width-zero/physically-absent state. The normalized analyzer
