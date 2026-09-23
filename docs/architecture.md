@@ -180,9 +180,13 @@ pin-binding containers are rejected before cross-probing.
 For normalized direct bindings, cross-probing can also correlate the exact
 child path/pin/parent-signal tuple with the already-qualified source
 `instance_port` edge. A unique structural match is retained as cross-evidence
-correlation; missing or multiple source edges stay explicit. Driver/load roles
-attached to this correlation are labeled `source_structural_only` and are not
-promoted to simulator-elaborated semantics.
+correlation. When source qualification is ambiguous only because one static
+instance declaration expands into multiple explicit generated child candidates,
+the direct pin binding may select its exact child path only when that path is
+already present in `elaborated_child_candidates`; the retained source edge still
+records the original ambiguous candidate set. Other missing or multiple source
+edges stay explicit. Driver/load roles attached to this correlation are labeled
+`source_structural_only` and are not promoted to simulator-elaborated semantics.
 
 Separately, when a direct normalized binding also has trusted module-port direction,
 `elaborated_connectivity` classifies that module-boundary relation relative to the
