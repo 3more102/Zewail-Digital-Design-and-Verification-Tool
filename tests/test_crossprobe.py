@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -154,6 +155,61 @@ def test_write_crossprobe_report_can_use_direct_input(tmp_path: Path):
     assert result["connectivity"]["unit"] == "tb_top"
     assert result["connectivity_index_path"].endswith("connectivity.json")
     assert Path(result["report_path"]).is_file()
+
+
+def test_crossprobe_fst_stays_metadata_only_without_explicit_converter(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    with pytest.raises(RuntimeError, match="metadata-only"):
+        write_crossprobe_report(
+            project,
+            "tb_top.dut.count",
+            input_path="trace.fst",
+        )
+
+
+def test_crossprobe_cli_can_explicitly_index_fst(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd",
+    )
+
+    def fake_run(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    rc = main([
+        "--project",
+        str(project.root),
+        "crossprobe",
+        "tb_top.dut.count",
+        "--input",
+        "trace.fst",
+        "--fst2vcd",
+    ])
+
+    assert rc == 0
+    assert "CROSSPROBE MATCHED" in capsys.readouterr().out
+    report = json.loads(
+        (project.root / ".zddv" / "debug" / "crossprobe.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["waveform"]["format"] == "fst"
+    assert report["waveform"]["parse_status"] == "indexed-via-fst2vcd"
+    assert report["waveform"]["adapter"]["adapter"] == "fst2vcd"
+    assert report["waveform"]["artifact"]["path"] == str(waveform_path.resolve())
 
 
 def test_crossprobe_prefers_elaborated_generated_scope(tmp_path: Path):
