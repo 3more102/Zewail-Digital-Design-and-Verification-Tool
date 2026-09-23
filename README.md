@@ -794,6 +794,19 @@ This command does **not** contact an AI provider, transmit project data, execute
 commands, or reinterpret `evidence_score` as a causal probability. The generated
 bundle is review-required before any external use.
 
+### Desktop Debug Studio Source Navigation
+
+The read-only desktop Debug Studio includes **Sources** and **Hierarchy** panes.
+The Sources pane shows discovered RTL/testbench files, source-unit ranges, SHA-256
+file fingerprints, and child-instance counts. The Hierarchy pane renders the
+deterministic source-level instance tree and labels nodes as resolved, unresolved,
+or recursive with available `file:line` evidence.
+
+These panes call the in-memory `build_design_index()` API. Opening or refreshing
+the GUI does not write `.zddv/design/index.json`, edit HDL, or invoke a simulator.
+Simulator-elaborated hierarchy remains separate evidence and is not implied by the
+source-level tree.
+
 ### Phase 4 — Advanced Verification
 
 - [x] Questa adapter foundation (build/run, VCD, assertions, run-linked UVM)
