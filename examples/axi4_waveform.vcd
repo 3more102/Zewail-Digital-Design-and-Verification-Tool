@@ -35,7 +35,7 @@ $var wire 4 E AWUSER [3:0] $end
 $var wire 4 F WUSER [3:0] $end
 $var wire 2 G BUSER [1:0] $end
 $var wire 4 H ARUSER [3:0] $end
-$var wire 4 I RUSER [3:0] $end
+$var wire 6 I RUSER [5:0] $end
 $upscope $end
 $upscope $end
 $enddefinitions $end
