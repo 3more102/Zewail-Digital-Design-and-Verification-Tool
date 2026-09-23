@@ -94,6 +94,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 direction-aware AxCACHE Allocate/Other-Allocate semantics and memory-class evidence.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 explicit USER width/presence validation from `user_signal_widths` interface metadata.
+- [x] AXI4 USER_REQ_WIDTH/RUSER composition consistency and VCD USER-width evidence capture.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
