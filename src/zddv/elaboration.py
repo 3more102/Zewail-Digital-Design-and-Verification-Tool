@@ -145,8 +145,15 @@ def _json_module_ports(
     ports: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str | None, int | None, int | None]] = set()
     for node in candidates:
-        direction_raw = str(node.get("ioDirection") or "").strip()
-        if not direction_raw or direction_raw.upper() == "NONE":
+        direction_field = None
+        direction_raw = ""
+        for field in ("ioDirection", "direction", "declDirection"):
+            value = str(node.get(field) or "").strip()
+            if value and value.upper() != "NONE":
+                direction_field = field
+                direction_raw = value
+                break
+        if not direction_field:
             continue
 
         name = node.get("verilogName") or node.get("name") or node.get("origName")
@@ -176,6 +183,7 @@ def _json_module_ports(
                 "original_name": node.get("origName"),
                 "direction": direction_raw.lower(),
                 "direction_raw": direction_raw,
+                "direction_field": direction_field,
                 "var_type": node.get("varType"),
                 "location": location,
             }
@@ -477,7 +485,7 @@ def parse_verilator_json(
         "port_evidence": {
             "status": "NORMALIZED",
             "source_format": "json",
-            "contract": "verilator_module_var_io_direction",
+            "contract": "verilator_module_var_direction_fields",
         },
     }
 
