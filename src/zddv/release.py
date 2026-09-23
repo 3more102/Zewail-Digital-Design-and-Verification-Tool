@@ -14,6 +14,13 @@ from zddv.config import ProjectConfig
 _RELEASE_MANIFEST_PATH = "release/manifest.json"
 _RELEASE_SIGNOFF_PATH = "release/signoff.json"
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+_RELEASE_FILE_EXTERNAL_ATTR = 0o100644 << 16
+_RELEASE_REPRODUCIBILITY = {
+    "archive_format": "zip-stored",
+    "member_order": "lexicographic",
+    "member_timestamp": "1980-01-01T00:00:00",
+    "deterministic": True,
+}
 
 
 def _canonical_json_bytes(payload: Any) -> bytes:
@@ -201,12 +208,7 @@ def _unsigned_manifest(
             "key_id": key_id,
             "public_key_sha256": public_key_sha256,
         },
-        "reproducibility": {
-            "archive_format": "zip-stored",
-            "member_order": "lexicographic",
-            "member_timestamp": "1980-01-01T00:00:00",
-            "deterministic": True,
-        },
+        "reproducibility": dict(_RELEASE_REPRODUCIBILITY),
     }
 
 
@@ -226,7 +228,7 @@ def _zip_member(name: str, data: bytes) -> tuple[zipfile.ZipInfo, bytes]:
     info = zipfile.ZipInfo(name, date_time=_FIXED_ZIP_TIME)
     info.compress_type = zipfile.ZIP_STORED
     info.create_system = 3
-    info.external_attr = 0o100644 << 16
+    info.external_attr = _RELEASE_FILE_EXTERNAL_ATTR
     info.extra = b""
     info.comment = b""
     return info, data
@@ -307,6 +309,35 @@ def _validate_archive_member_name(name: str) -> None:
         raise ValueError(f"Unsafe release archive member path: {name}")
 
 
+def _validate_archive_member_metadata(info: zipfile.ZipInfo) -> None:
+    if info.is_dir():
+        raise ValueError(f"Release archive member must be a regular file: {info.filename}")
+    if info.compress_type != zipfile.ZIP_STORED:
+        raise ValueError(
+            f"Release archive member is not canonical ZIP_STORED data: {info.filename}"
+        )
+    if tuple(info.date_time) != _FIXED_ZIP_TIME:
+        raise ValueError(
+            f"Release archive member timestamp is not canonical: {info.filename}"
+        )
+    if info.create_system != 3:
+        raise ValueError(
+            f"Release archive member creator system is not canonical: {info.filename}"
+        )
+    if info.external_attr != _RELEASE_FILE_EXTERNAL_ATTR:
+        raise ValueError(
+            f"Release archive member permissions are not canonical: {info.filename}"
+        )
+    if info.extra or info.comment:
+        raise ValueError(
+            f"Release archive member contains non-canonical metadata: {info.filename}"
+        )
+    if info.compress_size != info.file_size:
+        raise ValueError(
+            f"Release archive member stored size is not canonical: {info.filename}"
+        )
+
+
 def verify_verification_release(
     archive_path: str | Path,
     *,
@@ -318,16 +349,22 @@ def verify_verification_release(
 
     try:
         with zipfile.ZipFile(source, "r") as archive:
+            if archive.comment:
+                raise ValueError("Release archive contains a non-canonical ZIP comment")
             names = archive.namelist()
             if len(names) != len(set(names)):
                 raise ValueError("Release archive contains duplicate member names")
             for name in names:
                 _validate_archive_member_name(name)
-            expected_names = {_RELEASE_MANIFEST_PATH, _RELEASE_SIGNOFF_PATH}
-            if set(names) != expected_names:
+            expected_names = [_RELEASE_MANIFEST_PATH, _RELEASE_SIGNOFF_PATH]
+            if set(names) != set(expected_names):
                 raise ValueError(
                     "Release archive member set is not the exact expected ZDDV release layout"
                 )
+            if names != sorted(expected_names):
+                raise ValueError("Release archive member order is not canonical")
+            for name in names:
+                _validate_archive_member_metadata(archive.getinfo(name))
             manifest_bytes = archive.read(_RELEASE_MANIFEST_PATH)
             signoff_bytes = archive.read(_RELEASE_SIGNOFF_PATH)
     except zipfile.BadZipFile as exc:
@@ -341,11 +378,22 @@ def verify_verification_release(
     if not isinstance(manifest, dict) or not isinstance(signoff, dict):
         raise ValueError("Release manifest and signoff must be JSON objects")
 
+    if manifest.get("schema_version") != 1:
+        raise ValueError("Release manifest schema_version is not supported")
     if manifest.get("artifact") != "zddv_verification_release":
         raise ValueError("Archive manifest is not a ZDDV verification release")
+    if manifest.get("reproducibility") != _RELEASE_REPRODUCIBILITY:
+        raise ValueError("Release manifest reproducibility contract is not canonical")
     signature = manifest.get("signature")
     if not isinstance(signature, dict) or signature.get("algorithm") != "ed25519":
         raise ValueError("Release manifest does not contain an Ed25519 signature")
+    key_id = signature.get("key_id")
+    if (
+        not isinstance(key_id, str)
+        or not key_id
+        or key_id != key_id.strip()
+    ):
+        raise ValueError("Release manifest key_id must be a canonical non-empty string")
 
     trusted_key = _load_ed25519_public_key(public_key)
     trusted_fingerprint = _public_key_sha256(trusted_key)
@@ -399,6 +447,21 @@ def verify_verification_release(
         raise ValueError("Release manifest file inventory or SHA-256 verification failed")
 
     _validate_signoff_payload(signoff)
+    manifest_identity = {
+        "project": manifest.get("project"),
+        "simulator": manifest.get("simulator"),
+        "top": manifest.get("top"),
+    }
+    signoff_identity = {
+        "project": signoff.get("project"),
+        "simulator": signoff.get("simulator"),
+        "top": signoff.get("top"),
+    }
+    if manifest_identity != signoff_identity:
+        raise ValueError(
+            "Release manifest project/simulator/top identity does not match bundled signoff"
+        )
+
     signoff_meta = manifest.get("signoff")
     if not isinstance(signoff_meta, dict):
         raise ValueError("Release manifest signoff metadata is missing")
@@ -422,6 +485,6 @@ def verify_verification_release(
         "archive_sha256": _sha256_bytes(source.read_bytes()),
         "manifest_sha256": _sha256_bytes(manifest_bytes),
         "signoff_sha256": expected_meta["signoff_sha256"],
-        "key_id": signature.get("key_id"),
+        "key_id": key_id,
         "public_key_sha256": trusted_fingerprint,
     }
