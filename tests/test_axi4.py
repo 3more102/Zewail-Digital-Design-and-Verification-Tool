@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.protocols.axi4 import analyze_axi4_file, analyze_axi4_trace
@@ -1266,3 +1268,157 @@ def test_accepts_all_zero_write_strobe_as_partial_write():
     assert result["status"] == "PASS"
     assert result["transactions"][0]["write_strobes"] == [0]
     assert result["transactions"][0]["allowed_write_strobes"] == [0xF]
+
+
+def test_applies_explicit_master_interface_defaults_without_guessing_missing_fields():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "absent_master_signals": [
+                "AWID",
+                "AWREGION",
+                "AWLEN",
+                "AWSIZE",
+                "AWBURST",
+                "AWLOCK",
+                "AWCACHE",
+                "AWQOS",
+                "WSTRB",
+                "ARID",
+                "ARREGION",
+                "ARLEN",
+                "ARSIZE",
+                "ARBURST",
+                "ARLOCK",
+                "ARCACHE",
+                "ARQOS",
+            ],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWPROT": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARADDR": 0x200,
+                    "ARPROT": 0,
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0xA5,
+                    "WLAST": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 0,
+                    "RDATA": 0x5A,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BID": 0,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["master_signal_defaults"] == {
+        "ARCACHE": 0,
+        "ARBURST": 1,
+        "ARID": 0,
+        "ARLEN": 0,
+        "ARLOCK": 0,
+        "ARQOS": 0,
+        "ARREGION": 0,
+        "ARSIZE": 2,
+        "AWBURST": 1,
+        "AWCACHE": 0,
+        "AWID": 0,
+        "AWLEN": 0,
+        "AWLOCK": 0,
+        "AWQOS": 0,
+        "AWREGION": 0,
+        "AWSIZE": 2,
+        "WSTRB": 0xF,
+    }
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    assert write["id"] == 0
+    assert write["length"] == 0
+    assert write["size"] == 2
+    assert write["burst"] == "INCR"
+    assert write["write_strobes"] == [0xF]
+    assert write["region"] == 0
+    assert write["cache"] == 0
+    assert write["qos"] == 0
+    assert read["id"] == 0
+    assert read["length"] == 0
+    assert read["size"] == 2
+    assert read["burst"] == "INCR"
+    assert read["region"] == 0
+    assert read["cache"] == 0
+    assert read["qos"] == 0
+
+
+def test_master_default_signaling_requires_width_for_size_or_strobe_defaults():
+    with pytest.raises(ValueError, match="data_width_bits is required"):
+        analyze_axi4_trace(
+            {
+                "absent_master_signals": ["AWSIZE", "WSTRB"],
+                "samples": [],
+            }
+        )
+
+
+def test_master_default_signaling_rejects_signal_declared_absent_but_observed():
+    with pytest.raises(ValueError, match="declared absent_master_signals"):
+        analyze_axi4_trace(
+            {
+                "data_width_bits": 32,
+                "absent_master_signals": ["AWQOS"],
+                "samples": [{"AWQOS": 3}],
+            }
+        )
+
+
+def test_master_default_signaling_rejects_required_or_unsupported_signal():
+    with pytest.raises(ValueError, match="AWPROT has no supported AXI4 master-interface default"):
+        analyze_axi4_trace(
+            {
+                "absent_master_signals": ["AWPROT"],
+                "samples": [],
+            }
+        )
+
+
+def test_missing_required_payload_still_fails_without_absence_metadata():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWPROT": 0,
+                }
+            ],
+        }
+    )
+
+    missing = {
+        item["signal"]
+        for item in result["violations"]
+        if item["code"] == "missing_channel_payload"
+    }
+    assert result["status"] == "FAIL"
+    assert {"AWLEN", "AWSIZE", "AWBURST"} <= missing

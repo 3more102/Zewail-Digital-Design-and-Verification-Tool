@@ -52,6 +52,16 @@ _RESPONSE_CODES = {name: code for code, name in _RESPONSE_NAMES.items()}
 _BURST_NAMES = {0: "FIXED", 1: "INCR", 2: "WRAP"}
 _BURST_CODES = {name: code for code, name in _BURST_NAMES.items()}
 
+# AMBA AXI4 Issue H, A9.3 master-interface defaults. These are applied only
+# when the normalized trace explicitly declares the corresponding master
+# output physically absent; ordinary missing sample fields are never guessed.
+_MASTER_DEFAULTABLE_SIGNALS = frozenset({
+    "AWID", "AWREGION", "AWLEN", "AWSIZE", "AWBURST", "AWLOCK",
+    "AWCACHE", "AWQOS", "WSTRB",
+    "ARID", "ARREGION", "ARLEN", "ARSIZE", "ARBURST", "ARLOCK",
+    "ARCACHE", "ARQOS",
+})
+
 
 def _logic(value: Any, *, name: str) -> bool:
     if isinstance(value, bool):
@@ -176,11 +186,89 @@ def _decode_burst(value: Any) -> tuple[int | None, str]:
     return None, "INVALID" if value is None else str(value)
 
 
-def _normalize_sample(raw: dict[str, Any], index: int) -> dict[str, Any]:
+def _master_default_signals(
+    payload: dict[str, Any],
+    raw_samples: list[Any],
+    *,
+    data_bus_bytes: int | None,
+) -> dict[str, Any]:
+    raw_absent = payload.get("absent_master_signals", [])
+    if raw_absent is None:
+        raw_absent = []
+    if not isinstance(raw_absent, list) or any(
+        not isinstance(item, str) or not item.strip()
+        for item in raw_absent
+    ):
+        raise ValueError("absent_master_signals must be a list of non-empty signal names")
+
+    absent: list[str] = []
+    seen: set[str] = set()
+    for item in raw_absent:
+        name = item.strip().upper()
+        if name not in _MASTER_DEFAULTABLE_SIGNALS:
+            raise ValueError(
+                f"{name} has no supported AXI4 master-interface default in this analyzer"
+            )
+        if name in seen:
+            raise ValueError(f"absent_master_signals contains duplicate {name}")
+        seen.add(name)
+        absent.append(name)
+
+    width_dependent = {"AWSIZE", "ARSIZE", "WSTRB"} & seen
+    if width_dependent and data_bus_bytes is None:
+        names = ", ".join(sorted(width_dependent))
+        raise ValueError(
+            f"data_width_bits is required to default width-dependent signal(s): {names}"
+        )
+
+    for index, raw in enumerate(raw_samples):
+        if not isinstance(raw, dict):
+            continue
+        observed = {str(key).upper() for key in raw}
+        conflict = sorted(observed & seen)
+        if conflict:
+            raise ValueError(
+                "signal declared absent_master_signals is present in sample "
+                f"{index}: {', '.join(conflict)}"
+            )
+
+    defaults: dict[str, Any] = {
+        "AWID": 0,
+        "AWREGION": 0,
+        "AWLEN": 0,
+        "AWBURST": 1,
+        "AWLOCK": 0,
+        "AWCACHE": 0,
+        "AWQOS": 0,
+        "ARID": 0,
+        "ARREGION": 0,
+        "ARLEN": 0,
+        "ARBURST": 1,
+        "ARLOCK": 0,
+        "ARCACHE": 0,
+        "ARQOS": 0,
+    }
+    if data_bus_bytes is not None:
+        size_encoding = data_bus_bytes.bit_length() - 1
+        defaults["AWSIZE"] = size_encoding
+        defaults["ARSIZE"] = size_encoding
+        defaults["WSTRB"] = (1 << data_bus_bytes) - 1
+
+    return {name: defaults[name] for name in absent}
+
+
+def _normalize_sample(
+    raw: dict[str, Any],
+    index: int,
+    *,
+    master_defaults: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"AXI4 sample {index} must be an object")
 
     upper = {str(key).upper(): value for key, value in raw.items()}
+    if master_defaults:
+        upper.update(master_defaults)
     sample: dict[str, Any] = {
         "sample_index": index,
         "cycle": upper.get("CYCLE", index),
@@ -232,7 +320,19 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             )
         data_bus_bytes = data_width_bits // 8
 
-    samples = [_normalize_sample(sample, index) for index, sample in enumerate(raw_samples)]
+    master_defaults = _master_default_signals(
+        payload,
+        raw_samples,
+        data_bus_bytes=data_bus_bytes,
+    )
+    samples = [
+        _normalize_sample(
+            sample,
+            index,
+            master_defaults=master_defaults,
+        )
+        for index, sample in enumerate(raw_samples)
+    ]
     violations: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
 
@@ -1183,9 +1283,13 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_semantics_user_write_strobes",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_semantics_user_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
+        "absent_master_signals": sorted(master_defaults),
+        "master_signal_defaults": {
+            name: master_defaults[name] for name in sorted(master_defaults)
+        },
         "status": "PASS" if not violations else "FAIL",
         "summary": {
             "samples": len(samples),
@@ -1211,6 +1315,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
             "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics are decoded, and AxREGION is checked for 4KB-space consistency.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
+            "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning and width are implementation-defined, so semantic or width legality is not inferred without explicit interface metadata.",
             "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, and QoS policy are not modeled.",
