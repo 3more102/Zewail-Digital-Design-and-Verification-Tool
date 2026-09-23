@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from zddv.cli import main
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop import build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -131,3 +132,89 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+def _project_with_sources(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-demo")
+    rtl = project.root / "rtl" / "design.sv"
+    rtl.write_text(
+        """module child;
+endmodule
+
+module top;
+  child u_child();
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = []
+    project.top = "top"
+    save_project(project)
+    return project
+
+
+def test_desktop_snapshot_adds_source_hierarchy_without_writing_index(tmp_path: Path):
+    project = _project_with_sources(tmp_path)
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    assert snapshot["source_index"]["summary"]["files"] == 1
+    assert snapshot["source_index"]["summary"]["units"] == 2
+    assert [row["path"] for row in snapshot["source_hierarchy"]] == [
+        "top",
+        "top.u_child",
+    ]
+    assert snapshot["source_hierarchy"][1]["file"] == "rtl/design.sv"
+    assert snapshot["elaborated_hierarchy"]["state"] == "NOT_PRESENT"
+    assert not (project.root / ".zddv" / "design" / "index.json").exists()
+
+
+def test_desktop_snapshot_reads_persisted_elaboration_without_running_tool(tmp_path: Path):
+    project = _project_with_sources(tmp_path)
+    out_dir = project.root / ".zddv" / "design"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": "top",
+        "simulator": "verilator",
+        "source_format": "json",
+        "instances": [
+            {
+                "path": "top",
+                "name": "top",
+                "module": "top",
+                "location": {"path": "rtl/design.sv", "line": 4},
+            },
+            {
+                "path": "top.u_child",
+                "name": "u_child",
+                "module": "child",
+                "location": {"path": "rtl/design.sv", "line": 5},
+            },
+        ],
+    }
+    (out_dir / "elaborated.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    elaborated = snapshot["elaborated_hierarchy"]
+    assert elaborated["state"] == "PRESENT"
+    assert elaborated["index"]["source_format"] == "json"
+    assert elaborated["index"]["instances"][1]["path"] == "top.u_child"
+
+
+def test_desktop_snapshot_flags_invalid_elaboration_evidence(tmp_path: Path):
+    project = _project_with_sources(tmp_path)
+    out_dir = project.root / ".zddv" / "design"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "elaborated.json").write_text("{not-json", encoding="utf-8")
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    assert snapshot["elaborated_hierarchy"]["state"] == "INVALID"
+    assert snapshot["elaborated_hierarchy"]["index"] is None
