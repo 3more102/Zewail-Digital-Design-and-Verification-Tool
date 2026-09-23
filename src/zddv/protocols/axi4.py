@@ -664,6 +664,76 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     evaluate_user_signal_guidance()
 
+    def validate_configured_id_signals(
+        sample: dict[str, Any],
+        raw_sample: dict[str, Any],
+    ) -> None:
+        observed = {str(key).upper() for key in raw_sample}
+        channels = {
+            "AWID": "AW",
+            "BID": "B",
+            "ARID": "AR",
+            "RID": "R",
+        }
+        for property_name, signals in _AXI4_ID_WIDTH_PROPERTIES.items():
+            if property_name not in id_widths:
+                continue
+            width = id_widths[property_name]
+            for signal in signals:
+                channel = channels[signal]
+                if width == 0:
+                    if signal in observed:
+                        add_violation(
+                            "id_signal_present_when_width_zero",
+                            sample,
+                            f"{signal} is physically observed although {property_name}=0 "
+                            "declares the ID signal absent",
+                            channel=channel,
+                            signal=signal,
+                            expected="signal absent",
+                            actual=sample.get(signal),
+                        )
+                    continue
+
+                if not sample[_CHANNELS[channel]["valid"]]:
+                    continue
+
+                if signal not in observed:
+                    add_violation(
+                        "missing_transaction_id",
+                        sample,
+                        f"{signal} is required while "
+                        f"{_CHANNELS[channel]['valid']} is asserted because "
+                        f"{property_name}={width}",
+                        channel=channel,
+                        signal=signal,
+                        expected=f"unsigned {width}-bit transaction ID",
+                        actual=None,
+                    )
+                    continue
+
+                value = sample.get(signal)
+                if not isinstance(value, int) or value < 0:
+                    add_violation(
+                        "invalid_transaction_id",
+                        sample,
+                        f"{signal} must be a non-negative integer",
+                        channel=channel,
+                        signal=signal,
+                        expected="non-negative integer",
+                        actual=value,
+                    )
+                elif value >= (1 << width):
+                    add_violation(
+                        "invalid_transaction_id_width",
+                        sample,
+                        f"{signal} does not fit {property_name}={width}",
+                        channel=channel,
+                        signal=signal,
+                        expected=f"0..{(1 << width) - 1}",
+                        actual=value,
+                    )
+
     def channel_event(sample: dict[str, Any], channel: str) -> bool:
         spec = _CHANNELS[channel]
         valid = bool(sample[spec["valid"]])
@@ -747,35 +817,21 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         configured_width = id_widths.get(property_name)
 
         if configured_width == 0:
-            # A manager signal explicitly declared absent is normalized to its
-            # protocol default value. That injected value is not physical signal
-            # presence and must not contradict width-zero metadata.
-            physically_observed = field in sample and field not in master_defaults
-            if physically_observed:
-                add_violation(
-                    "id_signal_present_when_width_zero",
-                    sample,
-                    f"{field} is present although {property_name}=0 declares the ID signal absent",
-                    channel=channel,
-                    signal=field,
-                    expected="signal absent",
-                    actual=sample.get(field),
-                )
-            return 0
-
-        if configured_width is not None and field not in sample:
-            add_violation(
-                "missing_transaction_id",
-                sample,
-                f"{field} is required because {property_name}={configured_width}",
-                channel=channel,
-                signal=field,
-                expected=f"unsigned {configured_width}-bit transaction ID",
-                actual=None,
-            )
             return 0
 
         value = sample.get(field, 0)
+        if configured_width is not None:
+            # Explicit ID metadata is validated against raw physical evidence on
+            # every VALID cycle before handshake reconstruction. Keep transaction
+            # reconstruction deterministic without emitting duplicate violations.
+            if (
+                not isinstance(value, int)
+                or value < 0
+                or value >= (1 << configured_width)
+            ):
+                return 0
+            return value
+
         if not isinstance(value, int) or value < 0:
             add_violation(
                 "invalid_transaction_id",
@@ -784,18 +840,6 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 channel=channel,
                 signal=field,
                 expected="non-negative integer",
-                actual=value,
-            )
-            return 0
-
-        if configured_width is not None and value >= (1 << configured_width):
-            add_violation(
-                "invalid_transaction_id_width",
-                sample,
-                f"{field} does not fit {property_name}={configured_width}",
-                channel=channel,
-                signal=field,
-                expected=f"0..{(1 << configured_width) - 1}",
                 actual=value,
             )
             return 0
@@ -1363,8 +1407,9 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
         transactions.append(tx)
 
-    for sample in samples:
+    for sample, raw_sample in zip(samples, raw_samples):
         validate_user_sidebands(sample)
+        validate_configured_id_signals(sample, raw_sample)
         aw_hs = channel_event(sample, "AW")
         w_hs = channel_event(sample, "W")
         b_hs = channel_event(sample, "B")
