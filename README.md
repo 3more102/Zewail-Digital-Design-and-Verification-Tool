@@ -484,8 +484,11 @@ also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it
 `zddv axi4-analyze <trace.json>` extends protocol reconstruction to burst-aware
 AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
-different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
-and the requirement that each AXI burst remain inside one 4KB address region.
+different IDs, and WLAST/RLAST termination. A normalized trace can also provide
+`address_width_bits` for the AXI `ADDR_WIDTH` property; values must be 1..64
+bits and accepted AWADDR/ARADDR values are checked against that interface width.
+It also checks WRAP burst geometry and the requirement that each AXI burst remain
+inside one 4KB address region.
 
 The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable, Modifiable, Read-Allocate, and Write-Allocate attributes into each reconstructed transaction.
 
@@ -549,9 +552,10 @@ The default report is `.zddv/protocols/axi4/latest.json`.
 ZDDV can decode full burst-aware AXI4 directly from a VCD waveform with
 `axi4-waveform`. The extractor samples ACLK edges, auto-detects a complete AXI4
 scope when unambiguous, preserves optional ID/sideband signals when present,
-requires WDATA and RDATA to use the same standard AXI data width, verifies that
-WSTRB has one bit per data byte, derives `data_width_bits`, and feeds the same
-normalized burst analyzer used by `axi4-analyze`.
+requires AWADDR and ARADDR to expose the same 1..64-bit `ADDR_WIDTH`, requires
+WDATA and RDATA to use the same standard AXI data width, verifies that WSTRB has
+one bit per data byte, derives `address_width_bits` and `data_width_bits`, and
+feeds the same normalized burst analyzer used by `axi4-analyze`.
 
 ```bash
 zddv --project my_project axi4-waveform --input axi4.vcd
