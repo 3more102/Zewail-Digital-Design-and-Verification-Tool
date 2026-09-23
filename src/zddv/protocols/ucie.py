@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -167,11 +168,14 @@ def analyze_ucie_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     rate_raw = negotiated.get("data_rate_gt_s")
     if rate_raw is not None:
-        try:
-            rate = float(rate_raw)
-        except (TypeError, ValueError):
+        if isinstance(rate_raw, bool):
             rate = None
-        if rate is None or rate <= 0:
+        else:
+            try:
+                rate = float(rate_raw)
+            except (TypeError, ValueError):
+                rate = None
+        if rate is None or not math.isfinite(rate) or rate <= 0:
             add_negotiation_violation(
                 "invalid_negotiated_data_rate",
                 "negotiated data rate must be a positive numeric GT/s value",
