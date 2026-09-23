@@ -106,7 +106,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA raw-bit decoding.
 - [x] AXI4 direction-aware AxCACHE Allocate/Other-Allocate semantics and memory-class evidence.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
-- [x] AXI4 explicit USER width/presence validation from `user_signal_widths` interface metadata.
+- [x] AXI4 explicit USER width/presence validation from `user_signal_widths`, including raw physical absence for width zero and required evidence on every corresponding VALID cycle.
 - [x] AXI4 USER_REQ_WIDTH/RUSER composition consistency and VCD USER-width evidence capture.
 - [x] AXI4 USER configuration/response-bit guidance as non-failing advisory evidence.
 - [x] AXI4 ID_W_WIDTH/ID_R_WIDTH metadata validation plus complete-pair VCD width evidence for AWID/BID and ARID/RID; omitted/partial declarations remain unknown.

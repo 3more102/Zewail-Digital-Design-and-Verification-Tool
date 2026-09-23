@@ -501,8 +501,12 @@ value is a non-negative bit width; zero declares the signal absent. When both re
 widths are supplied, AWUSER and ARUSER must match the AXI `USER_REQ_WIDTH`
 relationship. When WUSER, BUSER, and RUSER widths are all supplied, RUSER must equal
 WUSER + BUSER, matching `USER_DATA_WIDTH + USER_RESP_WIDTH`. Partial metadata
-remains partial and does not cause missing widths to be guessed. When the metadata
-is omitted, existing USER transport behavior is unchanged.
+remains partial and does not cause missing widths to be guessed. For every USER
+signal with an explicit width greater than zero, the normalized analyzer requires
+that signal to be physically present in each sample where its channel VALID is
+asserted, including stalled cycles; a zero-width declaration rejects any raw
+observation of that signal. When the metadata is omitted, existing USER transport
+behavior is unchanged.
 
 ZDDV also reports the Arm USER configuration guidance as explicit non-failing
 `advisories`: request widths above the 128-bit guidance maximum, response widths

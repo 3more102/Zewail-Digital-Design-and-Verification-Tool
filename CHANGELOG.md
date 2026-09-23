@@ -22,6 +22,12 @@
 - Preserve the boundary-only scope: this does not claim complete simulator-elaborated internal drivers or loads.
 - Surface the core-provided boundary driver/load/unclassified buckets in Desktop waveform cross-probing with bounded rows and no GUI-side role inference.
 
+### AXI4 USER presence evidence
+
+- Require every configured non-zero USER signal on each corresponding channel VALID cycle, including stalls, using raw normalized-trace sample evidence.
+- Treat any raw observation of a USER signal declared width zero as a physical-interface contradiction.
+- Keep unconfigured USER signals optional and do not infer widths or presence from transaction values.
+
 ### AXI4 USER guidance evidence
 
 - Report Arm USER width maxima and USER data-width granularity as explicit non-failing advisories when sufficient interface metadata is present.

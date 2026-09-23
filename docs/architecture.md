@@ -269,11 +269,13 @@ channel payload. When present, they participate in the same VALID/READY stabilit
 checks as the rest of their channel and are preserved in reconstructed transaction
 evidence. Their meaning remains implementation-defined, so ZDDV does not invent
 semantic legality rules for their bit values. Explicit `user_signal_widths`
-metadata can validate individual values and zero-width absence. When enough widths
-are supplied, ZDDV also enforces the Arm IHI 0022 Issue K A13.5 configuration
-relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
-`USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
-members stay unknown rather than being inferred.
+metadata validates raw physical absence for zero-width signals and requires every
+configured non-zero USER signal on each sample where its corresponding channel
+VALID is asserted, including stalled cycles. Values on those active cycles must fit
+the configured unsigned width. When enough widths are supplied, ZDDV also enforces
+the Arm IHI 0022 configuration relationships: AWUSER and ARUSER share
+`USER_REQ_WIDTH`, while RUSER is `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER
+and BUSER widths). Missing metadata members stay unknown rather than being inferred.
 
 The analyzer keeps Arm USER guidance separate from protocol legality. It records
 non-failing advisories for the guidance maxima on `USER_REQ_WIDTH`,
