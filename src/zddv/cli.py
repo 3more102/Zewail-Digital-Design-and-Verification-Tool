@@ -37,7 +37,6 @@ from zddv.coverage import (
 from zddv.coverage_suggestions import write_coverage_test_suggestions
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
-from zddv.desktop import launch_desktop_gui
 from zddv.gui import launch_debug_gui
 from zddv.design_index import hierarchy_lines, write_design_index
 from zddv.debug import write_assertion_waveform_report
@@ -2756,17 +2755,6 @@ def cmd_release_verify(args) -> int:
     return 0
 
 
-def cmd_desktop(args) -> int:
-    project = load_project(_project_arg(args))
-    snapshot = launch_desktop_gui(project, limit=args.limit)
-    stats = snapshot["stats"]
-    print(
-        f"DESKTOP CLOSED: {stats['passed']}/{stats['total']} passed "
-        f"({stats['pass_rate']:.1f}%)"
-    )
-    return 0
-
-
 def cmd_report(args) -> int:
     project = load_project(_project_arg(args))
     result = generate_html_report(project, limit=args.limit)
@@ -4635,18 +4623,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Trusted Ed25519 public key PEM path",
     )
     p_release_verify.set_defaults(func=cmd_release_verify)
-
-    p_desktop = sub.add_parser(
-        "desktop",
-        help="Launch the display-only ZDDV desktop Debug Studio",
-    )
-    p_desktop.add_argument(
-        "--limit",
-        type=int,
-        default=100,
-        help="Maximum recent persisted runs to show",
-    )
-    p_desktop.set_defaults(func=cmd_desktop)
 
     p_report = sub.add_parser(
         "report",
