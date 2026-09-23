@@ -4806,7 +4806,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser(
         "gui",
-        help="Launch the read-only ZDDV desktop Debug Studio",
+        help="Launch ZDDV Debug Studio with read-only evidence and review-gated actions",
     )
     p_gui.add_argument(
         "--limit",
