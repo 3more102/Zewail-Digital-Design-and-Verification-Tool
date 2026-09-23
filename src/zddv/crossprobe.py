@@ -209,6 +209,138 @@ def _match_elaborated_port_evidence(
     }
 
 
+def _match_elaborated_boundary_binding(
+    elaborated_index: dict[str, Any] | None,
+    elaborated_node: dict[str, Any] | None,
+    elaborated_port: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Match a child module port to one direct normalized parent-side pin binding."""
+    if (
+        elaborated_index is None
+        or elaborated_node is None
+        or elaborated_port is None
+        or elaborated_port.get("status") != "MATCHED"
+    ):
+        return None
+
+    instance_path = elaborated_node.get("path")
+    if elaborated_node.get("top"):
+        return {
+            "status": "NOT_APPLICABLE",
+            "instance_path": instance_path,
+            "reason": "top_instance_has_no_parent_cell_binding",
+        }
+
+    evidence = elaborated_index.get("pin_binding_evidence")
+    if not isinstance(evidence, dict):
+        return {
+            "status": "UNAVAILABLE",
+            "instance_path": instance_path,
+            "reason": "pin_binding_evidence_metadata_missing",
+        }
+
+    evidence_status = str(evidence.get("status") or "UNAVAILABLE")
+    if evidence_status != "NORMALIZED":
+        return {
+            "status": evidence_status,
+            "instance_path": instance_path,
+            "source_format": evidence.get("source_format"),
+            "reason": (
+                evidence.get("reason")
+                or "pin_binding_evidence_not_normalized"
+            ),
+        }
+
+    bindings = elaborated_index.get("pin_bindings")
+    if not isinstance(bindings, list):
+        return {
+            "status": "INVALID",
+            "instance_path": instance_path,
+            "reason": "normalized_pin_binding_evidence_requires_bindings_list",
+        }
+
+    port = elaborated_port.get("port")
+    if not isinstance(port, dict):
+        return {
+            "status": "INVALID",
+            "instance_path": instance_path,
+            "reason": "matched_module_port_record_missing",
+        }
+
+    port_aliases = {
+        str(value)
+        for value in (
+            port.get("name"),
+            port.get("elaborated_name"),
+            port.get("verilog_name"),
+            port.get("original_name"),
+        )
+        if value
+    }
+    matches: list[dict[str, Any]] = []
+    for binding in bindings:
+        if (
+            not isinstance(binding, dict)
+            or binding.get("instance_path") != instance_path
+        ):
+            continue
+        pin_aliases = {
+            str(value)
+            for value in (
+                binding.get("pin"),
+                binding.get("pin_elaborated_name"),
+                binding.get("pin_verilog_name"),
+                binding.get("pin_original_name"),
+            )
+            if value
+        }
+        if port_aliases & pin_aliases:
+            matches.append(binding)
+
+    common = {
+        "instance_path": instance_path,
+        "module": elaborated_node.get("module"),
+        "port": port.get("name"),
+        "evidence": dict(evidence),
+    }
+    if not matches:
+        return {
+            **common,
+            "status": "NOT_BOUND",
+        }
+    if len(matches) > 1:
+        return {
+            **common,
+            "status": "AMBIGUOUS",
+            "candidate_count": len(matches),
+            "candidates": matches,
+        }
+
+    binding = matches[0]
+    if binding.get("status") != "NORMALIZED":
+        return {
+            **common,
+            "status": str(binding.get("status") or "UNSUPPORTED"),
+            "reason": "pin_binding_is_not_a_direct_varref",
+            "binding": binding,
+        }
+
+    direction = str(port.get("direction") or "").lower()
+    flow = {
+        "input": "parent_to_child",
+        "output": "child_to_parent",
+        "inout": "bidirectional",
+    }.get(direction, "unknown")
+
+    return {
+        **common,
+        "status": "MATCHED",
+        "port_direction": direction or None,
+        "flow": flow,
+        "binding": binding,
+    }
+
+
 def _elaborated_identity_errors(
     project: ProjectConfig,
     index: dict[str, Any],
@@ -240,6 +372,23 @@ def _elaborated_identity_errors(
         and not isinstance(ports, list)
     ):
         errors.append("normalized port_evidence requires a ports list")
+
+    pin_bindings = index.get("pin_bindings")
+    if pin_bindings is not None and not isinstance(pin_bindings, list):
+        errors.append("pin_bindings is not a list")
+
+    pin_binding_evidence = index.get("pin_binding_evidence")
+    if pin_binding_evidence is not None and not isinstance(
+        pin_binding_evidence,
+        dict,
+    ):
+        errors.append("pin_binding_evidence is not an object")
+    elif (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and not isinstance(pin_bindings, list)
+    ):
+        errors.append("normalized pin_binding_evidence requires a pin_bindings list")
     return errors
 
 
@@ -435,6 +584,11 @@ def build_crossprobe(
         elaborated_node,
         str(signal.get("name", "")),
     )
+    elaborated_boundary = _match_elaborated_boundary_binding(
+        elaborated_index,
+        elaborated_node,
+        elaborated_port,
+    )
 
     selected_kind: str | None = None
     unit: dict[str, Any] | None = None
@@ -570,6 +724,7 @@ def build_crossprobe(
         "source_hierarchy": source_hierarchy_payload,
         "elaborated_hierarchy": elaborated_hierarchy_payload,
         "elaborated_port": elaborated_port,
+        "elaborated_boundary": elaborated_boundary,
         "source": source,
         "connectivity": connectivity_payload,
         "note": note,
