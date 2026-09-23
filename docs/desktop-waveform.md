@@ -13,9 +13,16 @@ When cross-probe returns the trusted `simulator_elaborated_direct_pin_varref` co
 When normalized elaborated evidence exists, the cross-probe pane keeps source-structural
 drivers/loads separate from simulator-elaborated evidence. It surfaces the core
 `simulator_elaborated_to_source_structural_correlation` contract only when role semantics
-remain `source_structural_only`; ambiguous, missing, or unavailable correlations are
-summarized without being displayed as exact source routes. A correlated source edge is
-shown only when exactly one trusted `MATCHED` item carries explicit source-edge evidence.
+remain `source_structural_only`. The correlation container must be a complete list of
+mapping records using only the currently recognized `MATCHED`, `NOT_FOUND`, `AMBIGUOUS`,
+and `UNAVAILABLE` statuses; malformed containers, malformed rows, or future statuses fail
+closed instead of being filtered into misleading counts. Ambiguous, missing, or unavailable
+correlations are summarized without being displayed as exact source routes. A correlated
+source edge is shown only when exactly one trusted `MATCHED` item carries mapping-shaped
+source-edge evidence plus list-shaped source-role and match-basis provenance.
+
+Normalized direct-pin endpoints are deduplicated by their exact parent instance/signal and
+child instance/pin identity for display only. The underlying core evidence is not modified.
 
 ## Trust boundary
 
