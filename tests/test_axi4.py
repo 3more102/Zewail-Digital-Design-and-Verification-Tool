@@ -1939,6 +1939,61 @@ def test_axi4_zero_id_width_requires_absent_id_signals():
     }
 
 
+def test_axi4_zero_id_width_accepts_declared_absent_master_id_default():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["id"] == 0
+
+
+@pytest.mark.parametrize(
+    ("property_name", "manager_signal"),
+    [("ID_W_WIDTH", "AWID"), ("ID_R_WIDTH", "ARID")],
+)
+def test_axi4_positive_id_width_rejects_absent_manager_id_metadata(
+    property_name,
+    manager_signal,
+):
+    with pytest.raises(ValueError, match=f"requires {manager_signal} to be present"):
+        analyze_axi4_trace(
+            {
+                "id_widths": {property_name: 1},
+                "absent_master_signals": [manager_signal],
+                "samples": [],
+            }
+        )
+
+
 @pytest.mark.parametrize("width", [-1, 33, True, "bad"])
 def test_axi4_rejects_invalid_id_width_metadata(width):
     with pytest.raises(ValueError, match="0..32"):
