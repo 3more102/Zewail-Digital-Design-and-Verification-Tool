@@ -414,6 +414,29 @@ def _pin_relationship(direction: str | None) -> str:
     return "direct_pin_varref"
 
 
+def _directional_query_role(
+    direction: str | None,
+    *,
+    query_side: str,
+) -> str | None:
+    """Classify one exact direct binding relative to the queried endpoint."""
+    if direction == "inout":
+        return "bidirectional"
+    if query_side == "parent_signal":
+        if direction == "input":
+            return "load"
+        if direction == "output":
+            return "driver"
+        return None
+    if query_side == "instance_port":
+        if direction == "input":
+            return "driver"
+        if direction == "output":
+            return "load"
+        return None
+    raise ValueError(f"Unsupported elaborated directional query side: {query_side}")
+
+
 def _elaborated_pin_connectivity(
     elaborated_index: dict[str, Any],
     *,
@@ -513,6 +536,60 @@ def _elaborated_pin_connectivity(
     ):
         return None
 
+    directional_drivers: list[dict[str, Any]] = []
+    directional_loads: list[dict[str, Any]] = []
+    directional_bidirectional: list[dict[str, Any]] = []
+    directional_unclassified: list[dict[str, Any]] = []
+
+    for query_side, bindings in (
+        ("parent_signal", parent_signal_bindings),
+        ("instance_port", instance_port_bindings),
+    ):
+        for binding in bindings:
+            directional = {**binding, "query_side": query_side}
+            role = _directional_query_role(
+                binding.get("port_direction"),
+                query_side=query_side,
+            )
+            if role == "driver":
+                directional_drivers.append(directional)
+            elif role == "load":
+                directional_loads.append(directional)
+            elif role == "bidirectional":
+                directional_bidirectional.append(directional)
+            else:
+                directional_unclassified.append(directional)
+
+    def directional_key(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return (
+            item["query_side"],
+            item["instance_path"],
+            item["pin"],
+            item["parent_instance_path"],
+            item["parent_signal"],
+        )
+
+    directional_connectivity = {
+        "status": (
+            "PARTIAL"
+            if directional_unclassified or unsupported_instance_port_bindings
+            else "NORMALIZED"
+        ),
+        "analysis_level": "simulator_elaborated_direct_pin_directional",
+        "basis": (
+            "normalized_direct_pin_binding_plus_normalized_module_port_direction"
+        ),
+        "role_semantics": "query_endpoint_relative",
+        "drivers": sorted(directional_drivers, key=directional_key),
+        "loads": sorted(directional_loads, key=directional_key),
+        "bidirectional": sorted(directional_bidirectional, key=directional_key),
+        "unclassified_bindings": sorted(
+            directional_unclassified,
+            key=directional_key,
+        ),
+        "unsupported_binding_count": len(unsupported_instance_port_bindings),
+    }
+
     return {
         "analysis_level": "simulator_elaborated_direct_pin_varref",
         "evidence_contract": evidence.get("contract"),
@@ -540,6 +617,7 @@ def _elaborated_pin_connectivity(
                 str(item.get("expression_type") or ""),
             ),
         ),
+        "directional_connectivity": directional_connectivity,
     }
 
 
