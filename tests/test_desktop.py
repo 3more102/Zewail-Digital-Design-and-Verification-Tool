@@ -7,7 +7,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import _read_source, build_desktop_snapshot
+from zddv.desktop import (
+    _bounded_elaborated_pin_bindings,
+    _read_source,
+    build_desktop_snapshot,
+)
 from zddv.design_revision import design_revision_fingerprint
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -37,6 +41,29 @@ def _run_record(run_id: str, status: str, *, seed: int) -> dict:
         "command": ["sim"],
         "plusargs": [],
     }
+
+
+
+def test_desktop_bounds_elaborated_pin_binding_rows():
+    bindings = [
+        {"instance_path": "tb_top.u0", "pin": "a"},
+        {"instance_path": "tb_top.u0", "pin": "b"},
+        {"instance_path": "tb_top.u1", "pin": "c"},
+        {"instance_path": "", "pin": "unscoped"},
+    ]
+
+    grouped, display = _bounded_elaborated_pin_bindings(bindings, limit=2)
+
+    assert grouped == {
+        "tb_top.u0": [
+            {"instance_path": "tb_top.u0", "pin": "a"},
+            {"instance_path": "tb_top.u0", "pin": "b"},
+        ]
+    }
+    assert display == {"total": 3, "shown": 2, "truncated": 1}
+
+    with pytest.raises(ValueError, match="limit must be >= 1"):
+        _bounded_elaborated_pin_bindings(bindings, limit=0)
 
 
 def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
