@@ -19,7 +19,7 @@ The desktop provides:
 - verification summary cards and recent simulation runs;
 - deterministic failure-signature groups;
 - an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
+- deterministic source-file and source-level hierarchy navigation with read-only RTL preview;
 - read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
 - a detailed Assertions pane with status, assertion name, run, log line, and message;
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
@@ -32,10 +32,11 @@ limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Refresh reads persisted verification evidence, rebuilds the in-memory design index,
+and may read only files matched by the active project's configured RTL/TB source
+patterns for preview. It does not launch simulations or formal jobs, invoke or
+transmit data to an AI provider, stage/apply generated artifacts, or edit RTL,
+testbench sources, or project configuration.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
