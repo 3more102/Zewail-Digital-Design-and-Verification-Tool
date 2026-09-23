@@ -140,7 +140,7 @@ def _elaborated_identity_errors(
     return errors
 
 
-def _load_persisted_elaborated_evidence(
+def load_persisted_elaborated_evidence(
     project: ProjectConfig,
 ) -> dict[str, Any]:
     path = (project.root / ".zddv" / "design" / "elaborated.json").resolve()
@@ -450,7 +450,7 @@ def write_crossprobe_report(
         run_id=run_id,
         input_path=input_path,
     )
-    elaborated_evidence = _load_persisted_elaborated_evidence(project)
+    elaborated_evidence = load_persisted_elaborated_evidence(project)
     elaborated_index = (
         elaborated_evidence.get("index")
         if elaborated_evidence.get("status") == "PRESENT"
