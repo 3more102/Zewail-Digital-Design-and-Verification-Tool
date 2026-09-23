@@ -434,6 +434,16 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["parent_signal"] == "clk"
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
+    parent_directional = parent_connectivity["directional_connectivity"]
+    assert parent_directional["status"] == "NORMALIZED"
+    assert parent_directional["role_semantics"] == "query_endpoint_relative"
+    assert parent_directional["drivers"] == []
+    assert parent_directional["bidirectional"] == []
+    assert parent_directional["unclassified_bindings"] == []
+    assert parent_directional["unsupported_binding_count"] == 0
+    assert len(parent_directional["loads"]) == 1
+    assert parent_directional["loads"][0]["query_side"] == "parent_signal"
+    assert parent_directional["loads"][0]["pin"] == "clk"
 
     parent_correlation = parent["elaborated_source_correlation"]
     assert parent_correlation["analysis_level"] == (
@@ -467,6 +477,15 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+    child_directional = child_connectivity["directional_connectivity"]
+    assert child_directional["status"] == "NORMALIZED"
+    assert child_directional["role_semantics"] == "query_endpoint_relative"
+    assert child_directional["drivers"] == []
+    assert child_directional["bidirectional"] == []
+    assert child_directional["unclassified_bindings"] == []
+    assert len(child_directional["loads"]) == 1
+    assert child_directional["loads"][0]["query_side"] == "instance_port"
+    assert child_directional["loads"][0]["parent_signal"] == "count"
 
     child_correlation = child["elaborated_source_correlation"]
     assert child_correlation["role_semantics"] == "source_structural_only"
@@ -481,6 +500,30 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_edge["source_edge"]["elaborated_child_path"] == "tb_top.dut"
     assert "role" not in child_edge["source_edge"]
 
+    parent_output_vcd = project.root / "parent-output.vcd"
+    parent_output_vcd.write_text(
+        VCD.replace(
+            "$var wire 1 ! clk $end",
+            "$var wire 1 ! clk $end\n$var wire 4 @ count [3:0] $end",
+        ).replace("#0\n0!", "#0\n0!\nb0000 @"),
+        encoding="utf-8",
+    )
+    parent_output = build_crossprobe(
+        project,
+        "TOP.tb_top.count",
+        build_waveform_index(parent_output_vcd, project_name=project.name),
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    parent_output_directional = parent_output["elaborated_connectivity"][
+        "directional_connectivity"
+    ]
+    assert parent_output_directional["status"] == "NORMALIZED"
+    assert len(parent_output_directional["drivers"]) == 1
+    assert parent_output_directional["drivers"][0]["query_side"] == "parent_signal"
+    assert parent_output_directional["drivers"][0]["pin"] == "count"
+    assert parent_output_directional["loads"] == []
+
     elaborated["port_evidence"] = {
         "status": "UNAVAILABLE",
         "source_format": "json",
@@ -493,9 +536,15 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         design_index=design,
         elaborated_index=elaborated,
     )
-    ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
+    ungated_connectivity = ungated["elaborated_connectivity"]
+    ungated_binding = ungated_connectivity["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    ungated_directional = ungated_connectivity["directional_connectivity"]
+    assert ungated_directional["status"] == "PARTIAL"
+    assert ungated_directional["drivers"] == []
+    assert ungated_directional["loads"] == []
+    assert len(ungated_directional["unclassified_bindings"]) == 1
     assert ungated["elaborated_source_correlation"]["correlations"][0][
         "status"
     ] == "MATCHED"
@@ -537,6 +586,12 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert unsupported_pin["expression_type"] == "AND"
     assert "parent_signal" not in unsupported_pin
     assert "relationship" not in unsupported_pin
+    unsupported_directional = unsupported_connectivity["directional_connectivity"]
+    assert unsupported_directional["status"] == "PARTIAL"
+    assert unsupported_directional["drivers"] == []
+    assert unsupported_directional["loads"] == []
+    assert unsupported_directional["unclassified_bindings"] == []
+    assert unsupported_directional["unsupported_binding_count"] == 1
 
 
 def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
