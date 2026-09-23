@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 ID presence hardening
+
+- Validate explicit positive ID widths on every channel-VALID cycle, including backpressure, instead of waiting for a completed handshake.
+- Enforce width-zero physical ID absence from raw sample keys on every cycle, including idle cycles, while keeping injected manager defaults non-physical.
+- Correct the fully-undumped VCD regression so AWID and BID are both actually removed before confirming the write-ID width remains unknown.
+
 ### Elaborated boundary connectivity
 
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
