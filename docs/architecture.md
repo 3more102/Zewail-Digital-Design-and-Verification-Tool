@@ -91,17 +91,22 @@ timescale, hierarchical scopes, signal paths, widths, VCD identifier codes, and
 artifact fingerprints. The parser stops at `$enddefinitions` and does not load
 value-change samples while building the signal catalog.
 
-FST artifacts are fingerprinted and recorded as metadata-only until an FST
-converter or simulator-native waveform adapter is available. This distinction is
-explicit in the `parse_status` field so downstream debug features do not treat
-metadata-only artifacts as fully indexed waveforms.
+FST artifacts are fingerprinted and recorded as metadata-only by default. An
+explicit `fst2vcd` adapter can be enabled by the caller to convert one FST into a
+temporary VCD, reuse the VCD declaration parser, and return
+`parse_status = "indexed-via-fst2vcd"` with converter provenance. The temporary
+VCD is removed after use, converter execution never uses a shell, and converter
+failures or security rejections are surfaced rather than bypassed. Downstream
+features must still opt in to this adapter explicitly; metadata-only remains the
+fail-closed default.
 
 ## v0.4 Assertion / Waveform Correlation
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
-simulation run and recorded waveform. VCD-backed runs reuse the waveform index,
-while FST-backed runs remain explicitly metadata-only until an adapter is
-available.
+simulation run and recorded waveform. VCD-backed runs reuse the waveform index.
+The standalone waveform index/probe paths can opt in to the `fst2vcd` adapter,
+but assertion correlation does not invoke external conversion implicitly, so its
+FST-backed runs remain metadata-only until that flow explicitly adopts the adapter.
 
 Correlation is evidence-based: signal hints are emitted only when identifiers in
 the assertion name/message match a waveform signal by exact hierarchical path or
