@@ -348,3 +348,27 @@ def test_desktop_source_reader_rejects_paths_outside_project(tmp_path: Path):
 
     with pytest.raises(ValueError, match="inside the project root"):
         _read_source(project, "../outside.sv")
+
+
+def test_desktop_source_reader_allows_only_indexed_external_source(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-preview-external")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    external = shared / "external.sv"
+    external.write_text("module external; endmodule\n", encoding="utf-8")
+
+    allowed = {external.resolve()}
+    assert _read_source(
+        project,
+        str(external),
+        allowed_paths=allowed,
+    ) == "module external; endmodule\n"
+
+    unrelated = tmp_path / "unrelated.sv"
+    unrelated.write_text("module unrelated; endmodule\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="current design index"):
+        _read_source(
+            project,
+            str(unrelated),
+            allowed_paths=allowed,
+        )
