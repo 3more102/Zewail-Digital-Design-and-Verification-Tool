@@ -156,6 +156,85 @@ def _desktop_boundary_role_item_is_normalized(
     return False
 
 
+def _desktop_internal_location_is_normalized(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, dict):
+        return False
+    path = value.get("path")
+    line = value.get("line")
+    if path is not None and (not isinstance(path, str) or not path):
+        return False
+    if line is not None and (
+        not isinstance(line, int) or isinstance(line, bool) or line <= 0
+    ):
+        return False
+    return True
+
+
+def _desktop_internal_connectivity_item_is_normalized(
+    item: Any,
+    role: str,
+    *,
+    query_instance_path: str,
+    query_module: str,
+    query_signal: str,
+) -> bool:
+    """Validate persisted internal ASSIGNW evidence against the core producer contract."""
+    if not isinstance(item, dict):
+        return False
+    if item.get("assignment_type") != "ASSIGNW":
+        return False
+    if item.get("instance_path") != query_instance_path:
+        return False
+    if item.get("module") != query_module:
+        return False
+    if not _desktop_internal_location_is_normalized(item.get("location")):
+        return False
+
+    if role in {"DRIVER", "LOAD"}:
+        if item.get("kind") != "continuous_assignment":
+            return False
+        return all(
+            isinstance(item.get(key), str) and bool(item.get(key))
+            for key in ("source_signal", "target_signal")
+        )
+
+    if role != "UNRESOLVED" or item.get("status") != "UNSUPPORTED":
+        return False
+
+    query_references = item.get("query_references")
+    if (
+        not isinstance(query_references, list)
+        or not query_references
+        or any(
+            not isinstance(side, str) or side not in {"lhs", "rhs"}
+            for side in query_references
+        )
+        or len(set(query_references)) != len(query_references)
+    ):
+        return False
+
+    varrefs: dict[str, list[str]] = {}
+    for side in ("lhs", "rhs"):
+        values = item.get(f"{side}_varrefs")
+        if (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+        ):
+            return False
+        varrefs[side] = values
+
+    if any(query_signal not in varrefs[side] for side in query_references):
+        return False
+
+    for key in ("lhs_expression_type", "rhs_expression_type"):
+        value = item.get(key)
+        if value is not None and (not isinstance(value, str) or not value):
+            return False
+    return True
+
+
 def desktop_crossprobe_evidence_rows(
     report: dict[str, Any],
     *,
@@ -385,27 +464,61 @@ def desktop_crossprobe_evidence_rows(
         isinstance(elaborated_internal_connectivity, dict)
         and elaborated_internal_connectivity.get("analysis_level")
         == "simulator_elaborated_module_root_assignw_direct_varref"
+        and elaborated_internal_connectivity.get("evidence_contract")
+        == "verilator_module_root_assignw_direct_varref_only"
         and elaborated_internal_connectivity.get("role_semantics")
         == "direct_continuous_assignment"
         and elaborated_internal_connectivity.get("status")
         in {"NORMALIZED", "PARTIAL"}
+        and all(
+            isinstance(elaborated_internal_connectivity.get(key), str)
+            and bool(elaborated_internal_connectivity.get(key))
+            for key in ("query_instance_path", "query_module", "query_signal")
+        )
     )
     if trusted_internal_connectivity:
-        internal_role_keys = (
-            "drivers",
-            "loads",
-            "unresolved_assignments",
+        query_instance_path = elaborated_internal_connectivity["query_instance_path"]
+        query_module = elaborated_internal_connectivity["query_module"]
+        query_signal = elaborated_internal_connectivity["query_signal"]
+        internal_role_groups = (
+            ("DRIVER", elaborated_internal_connectivity.get("drivers")),
+            ("LOAD", elaborated_internal_connectivity.get("loads")),
+            (
+                "UNRESOLVED",
+                elaborated_internal_connectivity.get("unresolved_assignments"),
+            ),
         )
-        internal_role_values = [
-            elaborated_internal_connectivity.get(key)
-            for key in internal_role_keys
-        ]
         internal_roles_normalized = all(
-            isinstance(value, list)
-            and all(isinstance(item, dict) for item in value)
-            for value in internal_role_values
+            isinstance(items, list)
+            and all(
+                _desktop_internal_connectivity_item_is_normalized(
+                    item,
+                    role,
+                    query_instance_path=query_instance_path,
+                    query_module=query_module,
+                    query_signal=query_signal,
+                )
+                for item in items
+            )
+            for role, items in internal_role_groups
         )
-        if internal_roles_normalized:
+        unresolved_items = elaborated_internal_connectivity.get(
+            "unresolved_assignments"
+        )
+        status_consistent = (
+            isinstance(unresolved_items, list)
+            and (
+                (
+                    elaborated_internal_connectivity["status"] == "NORMALIZED"
+                    and not unresolved_items
+                )
+                or (
+                    elaborated_internal_connectivity["status"] == "PARTIAL"
+                    and bool(unresolved_items)
+                )
+            )
+        )
+        if internal_roles_normalized and status_consistent:
             internal_drivers = list(
                 elaborated_internal_connectivity["drivers"]
             )

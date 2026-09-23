@@ -9,6 +9,7 @@
 - Preserve complex assignment sides as unresolved reference evidence and mark affected queries partial instead of inferring connectivity.
 - Keep legacy XML, generated-scope, procedural, select, concatenation, and other complex-expression semantics outside the normalized contract.
 - Surface that exact internal connectivity in Desktop cross-probing with bounded rows and fail-closed contract/list validation.
+- Harden Desktop internal ASSIGNW rendering with exact evidence-contract/query identity checks, per-item semantic validation, and NORMALIZED/PARTIAL status consistency.
 
 ### Elaborated debug correlation
 
