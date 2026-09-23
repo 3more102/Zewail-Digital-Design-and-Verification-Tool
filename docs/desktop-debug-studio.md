@@ -68,7 +68,10 @@ transmit data to an AI provider, or edit RTL/testbench sources. Stale elaborated
 is reported as `STALE` and is never regenerated implicitly. Module-port direction and direct pin-binding rows are shown only when their persisted
 evidence contracts are `NORMALIZED`; legacy XML or missing metadata remains explicitly
 unavailable rather than being inferred. Unsupported complex pin expressions can be shown
-only as unsupported evidence and are never promoted to exact connectivity.
+only as unsupported evidence and are never promoted to exact connectivity. The elaborated
+hierarchy browser also caps displayed direct pin-binding rows at the Desktop evidence limit
+and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
+unbounded evidence set in the GUI.
 
 The only desktop paths that intentionally perform project/tool actions are the explicit
 SHA-confirmed action panes described above. They reuse the existing core APIs rather than
