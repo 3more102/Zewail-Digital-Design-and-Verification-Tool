@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.fst_adapter import converted_fst_vcd
 from zddv.storage import get_run_record, list_run_records
 
 
@@ -157,6 +158,8 @@ def build_waveform_index(
     *,
     run_id: str | None = None,
     project_name: str | None = None,
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     source = Path(path).resolve()
     if not source.exists():
@@ -184,6 +187,28 @@ def build_waveform_index(
         }
 
     if suffix in _FST_SUFFIXES:
+        if fst_converter is not None:
+            with converted_fst_vcd(
+                source,
+                executable=fst_converter,
+                timeout_s=fst_converter_timeout_s,
+            ) as (converted_vcd, adapter):
+                parsed = parse_vcd_header(converted_vcd)
+            return {
+                "schema_version": 1,
+                "project": project_name,
+                "run_id": run_id,
+                "format": "fst",
+                "parse_status": "indexed-via-fst2vcd",
+                "artifact": artifact,
+                "adapter": adapter,
+                **parsed,
+                "note": (
+                    "FST scope/signal metadata was derived through an explicit "
+                    "fst2vcd conversion; the temporary VCD is not retained."
+                ),
+            }
+
         return {
             "schema_version": 1,
             "project": project_name,
@@ -203,8 +228,8 @@ def build_waveform_index(
                 "declared_bits": 0,
             },
             "note": (
-                "FST artifact metadata is indexed, but signal/scope extraction "
-                "requires a simulator or FST converter adapter."
+                "FST artifact metadata is indexed. Pass an explicit fst2vcd adapter "
+                "to derive scopes and signals without changing the default behavior."
             ),
         }
 
@@ -250,6 +275,8 @@ def write_waveform_index(
     run_id: str | None = None,
     input_path: str | Path | None = None,
     output: str | Path | None = None,
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     if run_id is not None and input_path is not None:
         raise ValueError("run_id and input_path are mutually exclusive")
@@ -270,6 +297,8 @@ def write_waveform_index(
         waveform_path,
         run_id=effective_run_id,
         project_name=project.name,
+        fst_converter=fst_converter,
+        fst_converter_timeout_s=fst_converter_timeout_s,
     )
     index["artifact"]["project_path"] = _relative_path(project, waveform_path)
 
