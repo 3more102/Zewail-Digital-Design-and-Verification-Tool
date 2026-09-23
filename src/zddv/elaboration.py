@@ -192,6 +192,92 @@ def _json_module_ports(
     )
 
 
+def _json_cell_pin_bindings(
+    cell_node: dict[str, Any],
+    *,
+    files: dict[str, dict[str, Any]],
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    """Normalize only direct CELL PIN expressions that are one exact VARREF."""
+    pinsp = cell_node.get("pinsp")
+    if not isinstance(pinsp, list):
+        return []
+
+    bindings: list[dict[str, Any]] = []
+    for pin in pinsp:
+        if not isinstance(pin, dict) or str(pin.get("type", "")).upper() != "PIN":
+            continue
+        port_name = _json_node_name(pin)
+        if not port_name:
+            continue
+
+        binding: dict[str, Any] = {
+            "port": port_name,
+            "port_var_pointer": (
+                str(pin["modVarp"]) if pin.get("modVarp") is not None else None
+            ),
+            "pin_location": _decode_location(pin.get("loc"), files, project_root),
+        }
+        raw_expr = pin.get("exprp")
+        if isinstance(raw_expr, dict):
+            expressions = [raw_expr]
+        elif isinstance(raw_expr, list):
+            expressions = [item for item in raw_expr if isinstance(item, dict)]
+        else:
+            expressions = []
+
+        if not expressions:
+            bindings.append(
+                {
+                    **binding,
+                    "status": "UNCONNECTED",
+                    "reason": "no_pin_expression",
+                    "expression_types": [],
+                }
+            )
+            continue
+
+        if len(expressions) == 1:
+            expression = expressions[0]
+            if str(expression.get("type", "")).upper() == "VARREF":
+                signal_name = _json_node_name(expression)
+                if signal_name:
+                    bindings.append(
+                        {
+                            **binding,
+                            "status": "NORMALIZED",
+                            "expression_type": "VARREF",
+                            "signal": signal_name,
+                            "signal_var_pointer": (
+                                str(expression["varp"])
+                                if expression.get("varp") is not None
+                                else None
+                            ),
+                            "access": expression.get("access"),
+                            "expression_location": _decode_location(
+                                expression.get("loc"),
+                                files,
+                                project_root,
+                            ),
+                        }
+                    )
+                    continue
+
+        bindings.append(
+            {
+                **binding,
+                "status": "UNSUPPORTED",
+                "reason": "pin_expression_not_single_varref",
+                "expression_types": [
+                    str(item.get("type") or "").upper() or "UNKNOWN"
+                    for item in expressions
+                ],
+            }
+        )
+
+    return bindings
+
+
 def _json_direct_cells(
     value: Any,
     *,
@@ -246,6 +332,11 @@ def _json_direct_cells(
                     files,
                     project_root,
                 ),
+                "pin_bindings": _json_cell_pin_bindings(
+                    value,
+                    files=files,
+                    project_root=project_root,
+                ),
             }
         )
         return cells
@@ -293,6 +384,7 @@ def parse_verilator_json(
     module_node_by_addr: dict[str, dict[str, Any]] = {}
     module_nodes: list[dict[str, Any]] = []
     ports: list[dict[str, Any]] = []
+    pin_bindings: list[dict[str, Any]] = []
     for node in nodes:
         if str(node.get("type", "")).upper() != "MODULE":
             continue
@@ -427,6 +519,14 @@ def parse_verilator_json(
                         "generate_scopes": list(cell.get("generate_scopes", [])),
                     }
                 )
+                for binding in cell.get("pin_bindings", []):
+                    pin_bindings.append(
+                        {
+                            **binding,
+                            "instance": path,
+                            "module": str(module_name) if module_name else None,
+                        }
+                    )
                 if child_node is not None:
                     visit(child_node, path, next_stack)
 
@@ -459,6 +559,18 @@ def parse_verilator_json(
                     "generate_scopes": [],
                 }
             )
+            for binding in _json_cell_pin_bindings(
+                node,
+                files=files,
+                project_root=root,
+            ):
+                pin_bindings.append(
+                    {
+                        **binding,
+                        "instance": hierarchy,
+                        "module": str(module_name) if module_name else None,
+                    }
+                )
 
     modules, instances = _deduplicate(modules, instances)
     ports = sorted(
@@ -470,6 +582,15 @@ def parse_verilator_json(
             item["direction"],
         ),
     )
+    pin_bindings = sorted(
+        pin_bindings,
+        key=lambda item: (
+            item["instance"],
+            item["port"],
+            item["status"],
+            str(item.get("signal") or ""),
+        ),
+    )
     return {
         "modules": modules,
         "instances": instances,
@@ -478,6 +599,21 @@ def parse_verilator_json(
             "status": "NORMALIZED",
             "source_format": "json",
             "contract": "verilator_module_var_io_direction",
+        },
+        "pin_bindings": pin_bindings,
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_single_varref",
+            "normalized": sum(
+                item["status"] == "NORMALIZED" for item in pin_bindings
+            ),
+            "unsupported": sum(
+                item["status"] == "UNSUPPORTED" for item in pin_bindings
+            ),
+            "unconnected": sum(
+                item["status"] == "UNCONNECTED" for item in pin_bindings
+            ),
         },
     }
 
@@ -549,6 +685,12 @@ def parse_verilator_xml(
             "source_format": "xml",
             "reason": "legacy_xml_port_schema_not_normalized",
         },
+        "pin_bindings": [],
+        "pin_binding_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_pin_binding_schema_not_normalized",
+        },
     }
 
 
@@ -617,10 +759,13 @@ def write_elaborated_index(
         "instances": parsed["instances"],
         "ports": parsed["ports"],
         "port_evidence": parsed["port_evidence"],
+        "pin_bindings": parsed["pin_bindings"],
+        "pin_binding_evidence": parsed["pin_binding_evidence"],
         "summary": {
             "modules": len(parsed["modules"]),
             "instances": len(parsed["instances"]),
             "ports": len(parsed["ports"]),
+            "pin_bindings": len(parsed["pin_bindings"]),
         },
         "tool_log": export["log"],
     }
