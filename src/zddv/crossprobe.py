@@ -126,6 +126,90 @@ def _match_elaborated_scope(
     return None, None
 
 
+
+
+def _match_elaborated_port_evidence(
+    elaborated_index: dict[str, Any] | None,
+    elaborated_node: dict[str, Any] | None,
+    signal_name: str,
+) -> dict[str, Any] | None:
+    """Match one waveform signal to normalized simulator module-port evidence."""
+    if elaborated_index is None or elaborated_node is None:
+        return None
+
+    evidence = elaborated_index.get("port_evidence")
+    if not isinstance(evidence, dict):
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "port_evidence_metadata_missing",
+        }
+
+    evidence_status = str(evidence.get("status") or "UNAVAILABLE")
+    if evidence_status != "NORMALIZED":
+        return {
+            "status": evidence_status,
+            "source_format": evidence.get("source_format"),
+            "reason": (
+                evidence.get("reason")
+                or "module_port_evidence_not_normalized"
+            ),
+        }
+
+    ports = elaborated_index.get("ports")
+    if not isinstance(ports, list):
+        return {
+            "status": "INVALID",
+            "reason": "normalized_port_evidence_requires_ports_list",
+        }
+
+    module_name = elaborated_node.get("module")
+    if not module_name:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "matched_elaborated_instance_has_no_module_name",
+        }
+
+    matches: list[dict[str, Any]] = []
+    for port in ports:
+        if not isinstance(port, dict) or port.get("module") != module_name:
+            continue
+        aliases = {
+            str(value)
+            for value in (
+                port.get("name"),
+                port.get("elaborated_name"),
+                port.get("verilog_name"),
+                port.get("original_name"),
+            )
+            if value
+        }
+        if signal_name in aliases:
+            matches.append(port)
+
+    common = {
+        "instance_path": elaborated_node.get("path"),
+        "module": module_name,
+        "signal": signal_name,
+        "evidence": dict(evidence),
+    }
+    if len(matches) == 1:
+        return {
+            **common,
+            "status": "MATCHED",
+            "port": matches[0],
+        }
+    if not matches:
+        return {
+            **common,
+            "status": "NOT_A_PORT",
+        }
+    return {
+        **common,
+        "status": "AMBIGUOUS",
+        "candidate_count": len(matches),
+        "candidates": matches,
+    }
+
 def _elaborated_identity_errors(
     project: ProjectConfig,
     index: dict[str, Any],
@@ -143,6 +227,20 @@ def _elaborated_identity_errors(
             )
     if not isinstance(index.get("instances"), list):
         errors.append("instances is not a list")
+
+    ports = index.get("ports")
+    if ports is not None and not isinstance(ports, list):
+        errors.append("ports is not a list")
+
+    port_evidence = index.get("port_evidence")
+    if port_evidence is not None and not isinstance(port_evidence, dict):
+        errors.append("port_evidence is not an object")
+    elif (
+        isinstance(port_evidence, dict)
+        and port_evidence.get("status") == "NORMALIZED"
+        and not isinstance(ports, list)
+    ):
+        errors.append("normalized port_evidence requires a ports list")
     return errors
 
 
@@ -333,6 +431,12 @@ def build_crossprobe(
             list(elaborated_index.get("instances", [])),
         )
 
+    elaborated_port = _match_elaborated_port_evidence(
+        elaborated_index,
+        elaborated_node,
+        str(signal.get("name", "")),
+    )
+
     selected_kind: str | None = None
     unit: dict[str, Any] | None = None
     if elaborated_node is not None:
@@ -466,6 +570,7 @@ def build_crossprobe(
         "hierarchy": hierarchy_payload,
         "source_hierarchy": source_hierarchy_payload,
         "elaborated_hierarchy": elaborated_hierarchy_payload,
+        "elaborated_port": elaborated_port,
         "source": source,
         "connectivity": connectivity_payload,
         "note": note,
