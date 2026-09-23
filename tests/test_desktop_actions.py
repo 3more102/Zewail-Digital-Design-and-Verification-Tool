@@ -9,6 +9,7 @@ from zddv.desktop_actions import (
     execute_desktop_action,
     prepare_desktop_action,
 )
+from zddv.storage import record_run
 
 
 def _project(tmp_path: Path):
@@ -199,3 +200,150 @@ def test_non_run_action_rejects_hidden_runtime_parameters(tmp_path: Path):
 
     with pytest.raises(ValueError, match="only valid for the run action"):
         prepare_desktop_action(project, "build", seed=7)
+
+
+
+def _record_historical_run(project, *, run_id: str = "run-fail", seed: int = 7) -> None:
+    record_run(
+        project,
+        {
+            "run_id": run_id,
+            "created_at": "2026-09-23T07:20:00+00:00",
+            "project": project.name,
+            "simulator": project.simulator,
+            "simulator_version": "Verilator test",
+            "top": project.top,
+            "test": "smoke",
+            "seed": seed,
+            "status": "FAIL",
+            "returncode": 1,
+            "duration_ms": 10.0,
+            "run_dir": f".zddv/runs/{run_id}",
+            "log": f".zddv/runs/{run_id}/simulation.log",
+            "waveform": None,
+            "coverage": None,
+            "timeout_s": 25.0,
+            "command": ["sim", "+MODE=stress"],
+            "plusargs": ["+MODE=stress", "+COUNT=4"],
+        },
+    )
+
+
+def test_rerun_review_binds_historical_record(tmp_path: Path):
+    project, _ = _project(tmp_path)
+    _record_historical_run(project)
+
+    proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
+
+    assert proposal["parameters"] == {"run_id": "run-fail"}
+    assert proposal["core_api"] == "zddv.rerun.rerun_run_id"
+    assert proposal["historical_run"]["run_id"] == "run-fail"
+    assert proposal["historical_run"]["recorded_inputs"] == {
+        "test_name": "smoke",
+        "seed": 7,
+        "plusargs": ["+MODE=stress", "+COUNT=4"],
+        "timeout_s": 25.0,
+    }
+    assert len(proposal["review_sha256"]) == 64
+
+
+def test_execute_rerun_delegates_only_after_sha_approval(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project, _ = _project(tmp_path)
+    _record_historical_run(project)
+    proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
+    calls = []
+
+    def fake_rerun(project_arg, run_id):
+        calls.append((project_arg.root, run_id))
+        return {
+            "status": "PASS",
+            "selected": 1,
+            "passed": 1,
+            "failed": 0,
+            "build": {"passed": True, "returncode": 0},
+            "results": [
+                {
+                    "source_run_id": run_id,
+                    "run_id": "rerun-pass",
+                    "status": "PASS",
+                    "returncode": 0,
+                }
+            ],
+            "source": proposal["historical_run"],
+        }
+
+    monkeypatch.setattr("zddv.desktop_actions.rerun_run_id", fake_rerun)
+
+    with pytest.raises(RuntimeError, match="approval"):
+        execute_desktop_action(
+            project,
+            proposal,
+            expected_sha256=proposal["review_sha256"],
+            approve_reviewed=False,
+        )
+
+    result = execute_desktop_action(
+        project,
+        proposal,
+        expected_sha256=proposal["review_sha256"],
+        approve_reviewed=True,
+    )
+
+    assert calls == [(project.root, "run-fail")]
+    assert result["action"] == "rerun"
+    assert result["status"] == "PASS"
+    assert result["review_sha256"] == proposal["review_sha256"]
+
+
+def test_execute_rerun_rejects_historical_record_drift(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project, _ = _project(tmp_path)
+    _record_historical_run(project, seed=7)
+    proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
+    called = False
+
+    def fake_rerun(_project_arg, _run_id):
+        nonlocal called
+        called = True
+        return {"status": "PASS"}
+
+    monkeypatch.setattr("zddv.desktop_actions.rerun_run_id", fake_rerun)
+    _record_historical_run(project, seed=8)
+
+    with pytest.raises(RuntimeError, match="changed after review"):
+        execute_desktop_action(
+            project,
+            proposal,
+            expected_sha256=proposal["review_sha256"],
+            approve_reviewed=True,
+        )
+
+    assert called is False
+
+
+def test_rerun_action_rejects_runtime_overrides(tmp_path: Path):
+    project, _ = _project(tmp_path)
+    _record_historical_run(project)
+
+    with pytest.raises(ValueError, match="Runtime overrides"):
+        prepare_desktop_action(
+            project,
+            "rerun",
+            run_id="run-fail",
+            seed=99,
+        )
+
+
+def test_rerun_action_requires_existing_run_id(tmp_path: Path):
+    project, _ = _project(tmp_path)
+
+    with pytest.raises(ValueError, match="requires a historical run_id"):
+        prepare_desktop_action(project, "rerun")
+
+    with pytest.raises(ValueError, match="Run not found"):
+        prepare_desktop_action(project, "rerun", run_id="missing")
