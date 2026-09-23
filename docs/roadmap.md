@@ -204,6 +204,21 @@ uncollected verification objectives passed.
 - [x] Coverage/formal/UVM evidence-change summaries without quality inference.
 - [x] CLI JSON artifact for release/review change inspection.
 
+## v1.1 — Desktop Debug Studio
+
+The desktop path remains evidence-first and read-only. It consumes the same persisted
+verification records and design models as the CLI, and it does not execute simulators,
+mutate project files, invoke AI providers, or apply generated artifacts.
+
+- [x] Tk/ttk desktop shell with verification summary, runs, failures, coverage, and per-test views.
+- [x] Source-unit browser backed by the deterministic source index.
+- [x] In-app bounded source preview restricted to configured project source files.
+- [x] Hierarchy browser that prefers persisted simulator-elaborated hierarchy and falls back to source hierarchy.
+- [x] Explicit evidence status for absent or invalid elaborated hierarchy artifacts.
+- [ ] Waveform navigation and targeted probe integration.
+- [ ] Assertion/UVM/formal drill-down panes.
+- [ ] Review-gated project actions through existing CLI/core APIs.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
