@@ -253,6 +253,18 @@ $enddefinitions $end
     assert result["source"]["declaration"]["line"] == 3
     assert result["connectivity"]["analysis_level"] == "source_structural"
     assert result["connectivity"]["unit"] == "leaf"
+    assert result["connectivity"]["instance_path"] == "tb_top.g[0].u_leaf"
+    assert (
+        result["connectivity"]["instance_qualification"]
+        == "simulator_elaborated_scope"
+    )
+    assert all(
+        item["instance_path"] == "tb_top.g[0].u_leaf"
+        for item in (
+            result["connectivity"]["drivers"]
+            + result["connectivity"]["loads"]
+        )
+    )
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
