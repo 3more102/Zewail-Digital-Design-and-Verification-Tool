@@ -364,26 +364,41 @@ def _elaborated_port_directions(
     elaborated_index: dict[str, Any],
 ) -> dict[tuple[str, str], str]:
     evidence = elaborated_index.get("port_evidence")
-    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+    ports = elaborated_index.get("ports")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "NORMALIZED"
+        or not isinstance(ports, list)
+    ):
         return {}
 
     directions: dict[tuple[str, str], str] = {}
     ambiguous: set[tuple[str, str]] = set()
-    for port in elaborated_index.get("ports", []):
+    for port in ports:
         if not isinstance(port, dict):
             continue
         module = port.get("module")
-        name = port.get("name")
         direction = port.get("direction")
-        if not module or not name or not direction:
+        if not module or not direction:
             continue
-        key = (str(module), str(name))
-        value = str(direction).lower()
-        current = directions.get(key)
-        if current is not None and current != value:
-            ambiguous.add(key)
-            continue
-        directions[key] = value
+        aliases = {
+            str(value)
+            for value in (
+                port.get("name"),
+                port.get("elaborated_name"),
+                port.get("verilog_name"),
+                port.get("original_name"),
+            )
+            if value
+        }
+        direction_value = str(direction).lower()
+        for alias in aliases:
+            key = (str(module), alias)
+            current = directions.get(key)
+            if current is not None and current != direction_value:
+                ambiguous.add(key)
+                continue
+            directions[key] = direction_value
     for key in ambiguous:
         directions.pop(key, None)
     return directions
