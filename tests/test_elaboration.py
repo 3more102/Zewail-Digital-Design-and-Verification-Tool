@@ -190,6 +190,130 @@ def test_parse_verilator_json_normalizes_documented_module_io_direction(tmp_path
     )
 
 
+def test_parse_verilator_json_normalizes_direct_cell_pin_varrefs_only(
+    tmp_path: Path,
+):
+    rtl = tmp_path / "rtl" / "pins.sv"
+    rtl.parent.mkdir()
+    rtl.write_text(
+        "module leaf(input logic a, input logic b); endmodule\n"
+        "module top(input logic src, input logic other); "
+        "leaf u_leaf(.a(src), .b(src & other)); endmodule\n",
+        encoding="utf-8",
+    )
+
+    ast = {
+        "type": "NETLIST",
+        "modulesp": [
+            {
+                "type": "MODULE",
+                "name": "top",
+                "origName": "top",
+                "verilogName": "top",
+                "addr": "(A)",
+                "level": 1,
+                "topModule": True,
+                "loc": "d,2:8,2:75",
+                "stmtsp": [
+                    {
+                        "type": "CELL",
+                        "name": "u_leaf",
+                        "origName": "u_leaf",
+                        "verilogName": "u_leaf",
+                        "modName": "leaf",
+                        "modp": "(B)",
+                        "loc": "d,2:46,2:52",
+                        "pinsp": [
+                            {
+                                "type": "PIN",
+                                "name": "a",
+                                "origName": "a",
+                                "loc": "d,2:54,2:60",
+                                "exprp": {
+                                    "type": "VARREF",
+                                    "name": "src",
+                                    "origName": "src",
+                                    "verilogName": "src",
+                                    "loc": "d,2:57,2:59",
+                                },
+                            },
+                            {
+                                "type": "PIN",
+                                "name": "b",
+                                "origName": "b",
+                                "loc": "d,2:63,2:74",
+                                "exprp": {
+                                    "type": "AND",
+                                    "lhsp": {
+                                        "type": "VARREF",
+                                        "name": "src",
+                                    },
+                                    "rhsp": {
+                                        "type": "VARREF",
+                                        "name": "other",
+                                    },
+                                },
+                            },
+                        ],
+                    }
+                ],
+            },
+            {
+                "type": "MODULE",
+                "name": "leaf",
+                "origName": "leaf",
+                "verilogName": "leaf",
+                "addr": "(B)",
+                "level": 2,
+                "loc": "d,1:8,1:47",
+            },
+        ],
+    }
+    meta = {
+        "files": {
+            "d": {
+                "filename": "rtl/pins.sv",
+                "realpath": str(rtl),
+                "language": "1800-2023",
+            }
+        }
+    }
+    ast_path = tmp_path / "tree.json"
+    meta_path = tmp_path / "tree.meta.json"
+    ast_path.write_text(json.dumps(ast), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+    result = parse_verilator_json(
+        ast_path,
+        meta_path,
+        project_root=tmp_path,
+        top="top",
+    )
+
+    assert result["pin_binding_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_cell_pin_direct_varref_only",
+        "unsupported_expression_count": 1,
+    }
+    assert len(result["pin_bindings"]) == 2
+    simple = result["pin_bindings"][0]
+    assert simple["instance_path"] == "top.u_leaf"
+    assert simple["parent_instance_path"] == "top"
+    assert simple["instance_module"] == "leaf"
+    assert simple["pin"] == "a"
+    assert simple["status"] == "NORMALIZED"
+    assert simple["expression_type"] == "VARREF"
+    assert simple["signal"] == "src"
+    assert simple["signal_location"]["path"] == "rtl/pins.sv"
+
+    complex_expr = result["pin_bindings"][1]
+    assert complex_expr["pin"] == "b"
+    assert complex_expr["status"] == "UNSUPPORTED"
+    assert complex_expr["expression_type"] == "AND"
+    assert complex_expr["signal"] is None
+
+
 def test_parse_verilator_json_preserves_generated_scope_paths(tmp_path: Path):
     rtl = tmp_path / "rtl" / "design.sv"
     rtl.parent.mkdir()
@@ -327,6 +451,12 @@ def test_parse_legacy_verilator_xml_elaborated_hierarchy(tmp_path: Path):
         "source_format": "xml",
         "reason": "legacy_xml_port_schema_not_normalized",
     }
+    assert result["pin_bindings"] == []
+    assert result["pin_binding_evidence"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_pin_binding_schema_not_normalized",
+    }
 
 
 def test_elaborated_hierarchy_lines_and_version_detection():
@@ -442,11 +572,23 @@ def test_write_elaborated_index_links_source_index(tmp_path: Path):
     assert Path(result["path"]).exists()
     assert Path(result["source_index"]).exists()
     assert Path(result["hierarchy_path"]).read_text(encoding="utf-8") == "top: top\n"
-    assert result["summary"] == {"modules": 1, "instances": 1, "ports": 0}
+    assert result["summary"] == {
+        "modules": 1,
+        "instances": 1,
+        "ports": 0,
+        "pin_bindings": 0,
+    }
     assert result["ports"] == []
     assert result["port_evidence"] == {
         "status": "NORMALIZED",
         "source_format": "json",
         "contract": "verilator_module_var_io_direction",
+    }
+    assert result["pin_bindings"] == []
+    assert result["pin_binding_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_cell_pin_direct_varref_only",
+        "unsupported_expression_count": 0,
     }
     assert result["design_fingerprint"] == design_revision_fingerprint(project)
