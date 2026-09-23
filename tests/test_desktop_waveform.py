@@ -743,6 +743,8 @@ def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
     report = {
         "elaborated_source_correlation": {
             "analysis_level": "simulator_elaborated_to_source_structural_correlation",
+            "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
             "role_semantics": "source_structural_only",
             "correlations": [
                 {
@@ -800,7 +802,9 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
         {
             "elaborated_source_correlation": {
                 "analysis_level": "simulator_elaborated_to_source_structural_correlation",
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [
                     {
                         "status": "AMBIGUOUS",
@@ -847,7 +851,9 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
         {
             "elaborated_source_correlation": {
                 "analysis_level": "future_correlation_contract",
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [{"status": "MATCHED", "source_edge": {}}],
             }
         }
@@ -855,6 +861,34 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
     assert not any(
         kind in {"Elaborated/source correlation", "Correlated source edge"}
         for kind, _detail in untrusted
+    )
+
+    wrong_envelope = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "elaborated_analysis_level": "future_elaborated_contract",
+                "source_analysis_level": "source_structural",
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "UNAVAILABLE",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "reason": "parent_elaborated_instance_not_found",
+                    }
+                ],
+            }
+        }
+    )
+    assert not any(
+        kind in {"Elaborated/source correlation", "Correlated source edge"}
+        for kind, _detail in wrong_envelope
     )
 
     wrong_roles = desktop_crossprobe_evidence_rows(
@@ -880,7 +914,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [
                     {
                         "status": "MATCHED",
@@ -906,7 +942,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [
                     {
                         "status": "MATCHED",
@@ -944,7 +982,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [
                     {
                         "status": "MATCHED",
@@ -984,7 +1024,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [
                     {
                         "status": "MATCHED",
@@ -1023,7 +1065,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [],
             }
         }
@@ -1034,7 +1078,9 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
                 "analysis_level": (
                     "simulator_elaborated_to_source_structural_correlation"
                 ),
-                "role_semantics": "source_structural_only",
+                "elaborated_analysis_level": "simulator_elaborated_direct_pin_varref",
+            "source_analysis_level": "source_structural",
+            "role_semantics": "source_structural_only",
                 "correlations": [{"status": "FUTURE_STATUS"}],
             }
         }
