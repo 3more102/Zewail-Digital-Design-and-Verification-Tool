@@ -35,6 +35,7 @@ from zddv.coverage import (
     write_questa_statement_hole_report,
 )
 from zddv.coverage_suggestions import write_coverage_test_suggestions
+from zddv.questa_detail_audit import write_questa_coverage_evidence_audit
 from zddv.xcelium_detail_audit import write_xcelium_imc_detail_audit
 from zddv.dashboard import generate_html_report
 from zddv.design_index import hierarchy_lines, write_design_index
@@ -1199,6 +1200,55 @@ def cmd_coverage(args) -> int:
     report = result["report"].strip()
     if report:
         print(report)
+    return 0
+
+
+def cmd_questa_detail_audit(args) -> int:
+    project = load_project(_project_arg(args))
+
+    source = Path(args.input)
+    if not source.is_absolute():
+        source = project.root / source
+
+    output = Path(args.output)
+    if not output.is_absolute():
+        output = project.root / output
+
+    result = write_questa_coverage_evidence_audit(source, output)
+    summary = result["summary"]
+    pending = ",".join(summary["pending_schema_targets"])
+    print(
+        "QUESTA DETAIL AUDIT: "
+        f"{summary['files_present']} file(s); "
+        f"parser-supported={summary['parser_supported_files']} "
+        f"evidence-only={summary['evidence_only_files']} "
+        f"normalized-points={summary['normalized_points']} "
+        f"pending={pending}"
+    )
+    for item in result["files"][: max(0, args.show)]:
+        print(
+            f"{item['name']:<24} "
+            f"{item['normalization_status']:<31} "
+            f"sha256={item['sha256'][:12]}"
+        )
+        pending_tags = item.get("pending_toggle_tags") or {}
+        if pending_tags:
+            detail = ", ".join(
+                f"{name}={count}"
+                for name, count in sorted(pending_tags.items())
+            )
+            print(f"    pending toggle tags: {detail}")
+    pending_tags = summary.get("pending_toggle_tags") or {}
+    if pending_tags:
+        detail = ", ".join(
+            f"{name}={count}"
+            for name, count in sorted(pending_tags.items())
+        )
+        print(f"Pending toggle tags: {detail}")
+    print("No pending schema is inferred.")
+    for limitation in result["limitations"]:
+        print(f"NOTE: {limitation}")
+    print(f"Report: {result['path']}")
     return 0
 
 
@@ -3634,6 +3684,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_coverage = sub.add_parser("coverage", help="Merge and report collected coverage")
     p_coverage.set_defaults(func=cmd_coverage)
+
+    p_questa_detail_audit = sub.add_parser(
+        "questa-detail-audit",
+        help="Audit captured Questa detail evidence without guessing pending schemas",
+    )
+    p_questa_detail_audit.add_argument(
+        "--input",
+        default=".zddv/coverage",
+        help="Directory containing captured native Questa coverage evidence",
+    )
+    p_questa_detail_audit.add_argument(
+        "--output",
+        default=".zddv/coverage/questa-detail-audit.json",
+        help="Evidence-preserving Questa detail schema audit JSON",
+    )
+    p_questa_detail_audit.add_argument(
+        "--show",
+        type=int,
+        default=20,
+        help="Maximum number of evidence-file summaries to print",
+    )
+    p_questa_detail_audit.set_defaults(func=cmd_questa_detail_audit)
 
     p_xcelium_detail_audit = sub.add_parser(
         "xcelium-detail-audit",
