@@ -6,7 +6,9 @@ The ZDDV Desktop Debug Studio can browse waveform evidence already recorded by s
 
 The Waveform tab selects the newest recorded run whose waveform file still exists. For VCD files it parses the declaration header in memory and lists signal paths, widths, and VCD types. The selected signal can then be probed over optional integer start/end times with an explicit maximum number of recorded changes.
 
-The tab reuses the same `build_waveform_index` and `probe_vcd_signals` core APIs used by the CLI, but it does not call the artifact-writing waveform-index or waveform-probe commands. FST remains metadata-only until a verified parser or converter adapter is available.
+The tab reuses the same `build_waveform_index`, `probe_vcd_signals`, and cross-probe core APIs used by the CLI, but it does not call the artifact-writing waveform-index or waveform-probe commands. The Desktop tab does not invoke `fst2vcd`; FST therefore remains metadata-only in this tab.
+
+When normalized elaborated evidence exists, the cross-probe pane keeps source-structural drivers/loads separate from simulator-elaborated evidence. It renders only the trusted `simulator_elaborated_direct_pin_varref` contract, shows bounded exact parent/child endpoints, preserves unsupported complex expressions as evidence without inventing a direct relation, and reports hidden evidence counts when the row limit is exceeded.
 
 ## Trust boundary
 
