@@ -1460,7 +1460,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
-            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables per-signal width/presence validation without assigning semantics to USER bits.",
+            "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits.",
             "Topology-dependent AxCACHE reachability, cross-master memory-attribute consistency, the AxREGION downstream-address-decode placement requirement, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled without explicit system topology metadata.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
