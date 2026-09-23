@@ -575,7 +575,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             entry["actual"] = actual
         advisories.append(entry)
 
-    def validate_user_sidebands(sample: dict[str, Any]) -> None:
+    def validate_user_sidebands(
+        sample: dict[str, Any],
+        raw_sample: dict[str, Any],
+    ) -> None:
+        observed = {str(key).upper() for key in raw_sample}
         channels = {
             "AWUSER": "AW",
             "WUSER": "W",
@@ -584,21 +588,37 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "RUSER": "R",
         }
         for signal, width in user_signal_widths.items():
-            if signal not in sample:
-                continue
-            value = sample[signal]
             channel = channels[signal]
             if width == 0:
+                if signal in observed:
+                    add_violation(
+                        "user_sideband_present_when_width_zero",
+                        sample,
+                        f"{signal} is physically observed although interface metadata declares a 0-bit width",
+                        channel=channel,
+                        signal=signal,
+                        expected="signal absent",
+                        actual=sample.get(signal),
+                    )
+                continue
+
+            if not sample[_CHANNELS[channel]["valid"]]:
+                continue
+
+            if signal not in observed:
                 add_violation(
-                    "user_sideband_present_when_width_zero",
+                    "missing_user_sideband",
                     sample,
-                    f"{signal} is present although interface metadata declares a 0-bit width",
+                    f"{signal} is required while {_CHANNELS[channel]['valid']} is asserted "
+                    f"because user_signal_widths[{signal}]={width}",
                     channel=channel,
                     signal=signal,
-                    expected="signal absent",
-                    actual=value,
+                    expected=f"unsigned {width}-bit USER value",
+                    actual=None,
                 )
                 continue
+
+            value = sample.get(signal)
             if not isinstance(value, int) or value < 0 or value >= (1 << width):
                 add_violation(
                     "invalid_user_sideband_width",
@@ -1408,7 +1428,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         transactions.append(tx)
 
     for sample, raw_sample in zip(samples, raw_samples):
-        validate_user_sidebands(sample)
+        validate_user_sidebands(sample, raw_sample)
         validate_configured_id_signals(sample, raw_sample)
         aw_hs = channel_event(sample, "AW")
         w_hs = channel_event(sample, "W")
