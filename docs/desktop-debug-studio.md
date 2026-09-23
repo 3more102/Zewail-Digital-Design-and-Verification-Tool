@@ -83,11 +83,14 @@ continuous-assignment view is rendered only for the core
 normalized driver/load/unresolved items, and status/unresolved consistency.
 Complex-expression records remain unresolved evidence. Elaborated/source
 correlation is rendered only for the core
-`simulator_elaborated_to_source_structural_correlation` contract when
+`simulator_elaborated_to_source_structural_correlation` contract when its embedded
+elaborated/source analysis levels remain
+`simulator_elaborated_direct_pin_varref` / `source_structural`,
 `role_semantics=source_structural_only`, the correlation list is non-empty and
-well-typed, every status is recognized, and every MATCHED item preserves complete
-source-edge identity plus non-empty `match_basis` provenance. Multiple MATCHED items
-remain summary-only; the desktop does not choose one. Unknown future contracts are not
+well-typed, every status is recognized, and every item matches the current core producer
+shape. MATCHED evidence must preserve the source instance-port identity, source
+driver/load role semantics, and exact-vs-generated-child `match_basis` provenance.
+Multiple MATCHED items remain summary-only; the desktop does not choose one. Unknown future contracts are not
 interpreted by the desktop. The elaborated hierarchy
 browser also caps displayed direct pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
