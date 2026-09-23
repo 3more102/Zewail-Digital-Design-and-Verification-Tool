@@ -53,10 +53,14 @@ def historical_run_snapshot(
 
     plusargs = source.get("plusargs")
     command = source.get("command")
-    if not isinstance(plusargs, list):
-        raise ValueError("Historical run plusargs are not a list.")
-    if not isinstance(command, list):
-        raise ValueError("Historical run command is not a list.")
+    if not isinstance(plusargs, list) or any(
+        not isinstance(item, str) for item in plusargs
+    ):
+        raise ValueError("Historical run plusargs must be a list of strings.")
+    if not isinstance(command, list) or any(
+        not isinstance(item, str) for item in command
+    ):
+        raise ValueError("Historical run command must be a list of strings.")
 
     return {
         "run_id": str(source["run_id"]),
@@ -73,10 +77,10 @@ def historical_run_snapshot(
         "recorded_inputs": {
             "test_name": source["test_name"],
             "seed": source["seed"],
-            "plusargs": [str(item) for item in plusargs],
+            "plusargs": list(plusargs),
             "timeout_s": source["timeout_s"],
         },
-        "recorded_command": [str(item) for item in command],
+        "recorded_command": list(command),
         "evidence": {
             "run_dir": source["run_dir"],
             "log_path": source["log_path"],
@@ -192,25 +196,35 @@ def _validated_snapshot_inputs(
     if not run_id:
         raise ValueError("Historical run snapshot is missing run_id.")
 
+    test_name = inputs.get("test_name")
+    if test_name is not None and not isinstance(test_name, str):
+        raise ValueError("Historical run test_name must be a string or None.")
+
     seed = inputs.get("seed")
-    if seed is not None and not isinstance(seed, int):
+    if seed is not None and (
+        not isinstance(seed, int) or isinstance(seed, bool)
+    ):
         raise ValueError("Historical run seed must be an integer or None.")
 
     plusargs = inputs.get("plusargs")
-    if not isinstance(plusargs, list):
-        raise ValueError("Historical run plusargs are not a list.")
+    if not isinstance(plusargs, list) or any(
+        not isinstance(item, str) for item in plusargs
+    ):
+        raise ValueError("Historical run plusargs must be a list of strings.")
 
     timeout_s = inputs.get("timeout_s")
     if timeout_s is not None and (
-        not isinstance(timeout_s, (int, float)) or timeout_s <= 0
+        isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, (int, float))
+        or timeout_s <= 0
     ):
         raise ValueError("Historical run timeout_s must be > 0 or None.")
 
     return {
         "run_id": run_id,
-        "test_name": inputs.get("test_name"),
+        "test_name": test_name,
         "seed": seed,
-        "plusargs": [str(item) for item in plusargs],
+        "plusargs": list(plusargs),
         "timeout_s": timeout_s,
     }
 
