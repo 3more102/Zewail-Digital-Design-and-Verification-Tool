@@ -83,6 +83,15 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
         "RUSER": 6,
         "WUSER": 4,
     }
+    evidence = result["user_width_property_evidence"]
+    assert evidence["USER_REQ_WIDTH"]["value_bits"] == 4
+    assert evidence["USER_REQ_WIDTH"]["guidance_exceeded"] is False
+    assert evidence["USER_DATA_WIDTH"]["value_bits"] == 4
+    assert evidence["USER_DATA_WIDTH"]["guidance_max_bits"] == 8
+    assert evidence["USER_DATA_WIDTH"]["guidance_exceeded"] is False
+    assert evidence["USER_RESP_WIDTH"]["value_bits"] == 2
+    assert evidence["USER_RESP_WIDTH"]["guidance_exceeded"] is False
+    assert evidence["RUSER"]["composition_confirmed"] is True
 
     assert Path(result["trace_path"]).is_file()
     assert Path(result["report_path"]).is_file()
