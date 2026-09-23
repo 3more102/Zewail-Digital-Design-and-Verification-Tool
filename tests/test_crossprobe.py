@@ -405,6 +405,79 @@ def test_crossprobe_preserves_unsupported_elaborated_pin_expression(tmp_path: Pa
     assert "flow" not in result["elaborated_boundary"]
 
 
+
+def test_crossprobe_boundary_rejects_unknown_normalized_port_direction(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+        "ports": [
+            {
+                "module": "counter",
+                "name": "count",
+                "direction": "sideways",
+                "direction_field": "ioDirection",
+            }
+        ],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
+        "pin_bindings": [
+            {
+                "pin": "count",
+                "pin_original_name": "count",
+                "expression_type": "VARREF",
+                "status": "NORMALIZED",
+                "signal": "count",
+                "instance_path": "tb_top.dut",
+                "instance_name": "dut",
+                "instance_module": "counter",
+                "parent_instance_path": "tb_top",
+                "generate_scopes": [],
+            }
+        ],
+        "instances": [
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "tb/tb_top.sv", "line": 4},
+            }
+        ],
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["elaborated_port"]["status"] == "MATCHED"
+    assert result["elaborated_boundary"]["status"] == "INVALID_DIRECTION"
+    assert result["elaborated_boundary"]["port_direction"] == "sideways"
+    assert (
+        result["elaborated_boundary"]["reason"]
+        == "normalized_module_port_direction_is_not_supported"
+    )
+    assert "flow" not in result["elaborated_boundary"]
+
+
 def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
     project = _project(tmp_path)
     waveform_path = project.root / "trace.vcd"
