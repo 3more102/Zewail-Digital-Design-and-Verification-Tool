@@ -245,6 +245,17 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+Optional `id_widths` metadata carries the Arm AXI interface properties
+`ID_R_WIDTH` for ARID/RID and `ID_W_WIDTH` for AWID/BID. Each property is
+validated in the specification-defined 0..32 range. Width zero is explicit
+interface evidence that the paired ID signals are absent. A positive width makes
+the ID signal required whenever its channel VALID is asserted and constrains any
+observed value to the declared unsigned width. Ordinary traces that omit
+`id_widths` retain the existing behavior; missing metadata is never converted into
+an absence claim. VCD extraction derives an ID-width property only when both signals
+in its pair are present with the same declared width, otherwise the property stays
+unknown. This follows Arm IHI 0022H, E1.19, Table E1-31.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
