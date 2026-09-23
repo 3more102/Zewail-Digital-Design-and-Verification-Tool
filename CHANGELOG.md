@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 USER guidance evidence
+
+- Report Arm USER width maxima and USER data-width granularity as explicit non-failing advisories when sufficient interface metadata is present.
+- Report changing lower RUSER response bits across multi-beat reads as recommendation evidence without changing the protocol PASS/FAIL verdict.
+- Preserve the distinction between mandatory AXI4 legality checks and specification guidance/recommendations.
+
 ### FST debug correlation
 
 - Extend the explicit `fst2vcd` adapter to `crossprobe` and `assertion-waveform`; FST stays metadata-only unless the user opts in.
