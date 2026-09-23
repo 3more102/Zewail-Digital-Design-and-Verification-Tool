@@ -6,7 +6,7 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import build_desktop_snapshot, probe_desktop_waveform
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -89,6 +89,7 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
     assert snapshot["latest_coverage"]["percent"] == 93.5
     assert snapshot["latest_formal"] is None
     assert snapshot["latest_uvm"] is None
+    assert snapshot["latest_waveform"] is None
     assert snapshot["policy"] == {
         "display_only": True,
         "executes_verification": False,
@@ -191,3 +192,94 @@ endmodule
     # The desktop view uses the in-memory design index and must not create
     # the normal CLI design-index artifact merely by viewing the project.
     assert not index_artifact.exists()
+
+
+
+DESKTOP_VCD = """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0001 #
+#10
+0!
+b0010 #
+#15
+1!
+b0011 #
+"""
+
+
+def test_desktop_waveform_navigation_and_probe_are_read_only(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "trace.vcd"
+    waveform.write_text(DESKTOP_VCD, encoding="utf-8")
+
+    record = _run_record("run-wave", "PASS", seed=3)
+    record["waveform"] = str(waveform)
+    record_run(project, record)
+
+    waveform_artifacts = project.root / ".zddv" / "waveforms"
+    assert not waveform_artifacts.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    indexed = snapshot["latest_waveform"]
+
+    assert indexed["status"] == "INDEXED"
+    assert indexed["run_id"] == "run-wave"
+    assert indexed["format"] == "vcd"
+    assert indexed["timescale"] == "1ns"
+    assert indexed["summary"]["signals"] == 2
+    assert [signal["path"] for signal in indexed["signals"]] == [
+        "tb_top.clk",
+        "tb_top.dut.count",
+    ]
+    assert not waveform_artifacts.exists()
+
+    probe = probe_desktop_waveform(
+        project,
+        ["tb_top.dut.count"],
+        run_id="run-wave",
+        start_time=5,
+        end_time=10,
+        max_changes=10,
+    )
+
+    assert probe["run_id"] == "run-wave"
+    assert probe["summary"] == {
+        "signals": 1,
+        "total_changes": 2,
+        "truncated_signals": 0,
+    }
+    assert probe["signals"][0]["changes"] == [
+        {"time": 5, "value": "0001"},
+        {"time": 10, "value": "0010"},
+    ]
+    assert not waveform_artifacts.exists()
+
+
+def test_desktop_waveform_probe_rejects_missing_signal_without_artifacts(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "trace.vcd"
+    waveform.write_text(DESKTOP_VCD, encoding="utf-8")
+
+    record = _run_record("run-wave", "PASS", seed=4)
+    record["waveform"] = str(waveform)
+    record_run(project, record)
+
+    with pytest.raises(RuntimeError, match="was not found"):
+        probe_desktop_waveform(
+            project,
+            ["tb_top.dut.missing"],
+            run_id="run-wave",
+        )
+
+    assert not (project.root / ".zddv" / "waveforms").exists()
