@@ -496,3 +496,139 @@ def test_desktop_crossprobe_rows_fail_closed_on_partial_or_malformed_boundary_ro
         for kind, _detail in malformed_item_rows
     )
 
+def test_desktop_crossprobe_rows_surface_trusted_source_correlation_with_provenance():
+    rows = dict(
+        desktop_crossprobe_evidence_rows(
+            {
+                "elaborated_source_correlation": {
+                    "analysis_level": (
+                        "simulator_elaborated_to_source_structural_correlation"
+                    ),
+                    "role_semantics": "source_structural_only",
+                    "correlations": [
+                        {
+                            "status": "MATCHED",
+                            "binding_side": "instance_port",
+                            "instance_path": "tb_top.genblk1[2].dut",
+                            "pin": "count",
+                            "parent_instance_path": "tb_top",
+                            "parent_signal": "count",
+                            "source_unit": "tb_top",
+                            "source_roles": ["driver"],
+                            "match_basis": [
+                                "direct_pin_resolves_source_generated_candidate"
+                            ],
+                            "source_edge": {
+                                "file": "tb/tb_top.sv",
+                                "line": 12,
+                                "kind": "instance_port",
+                            },
+                        }
+                    ],
+                }
+            }
+        )
+    )
+
+    assert rows["Elaborated/source correlation"] == (
+        "simulator_elaborated_to_source_structural_correlation · correlations=1 · "
+        "matched=1 · not-found=0 · ambiguous=0 · unavailable=0 · "
+        "roles=source_structural_only"
+    )
+    assert rows["Correlated source edge"] == (
+        "tb_top.count <-> tb_top.genblk1[2].dut.count · "
+        "binding_side=instance_port · source=tb_top · source_roles=driver · "
+        "basis=direct_pin_resolves_source_generated_candidate · "
+        "location=tb/tb_top.sv:12"
+    )
+
+
+def test_desktop_crossprobe_rows_do_not_promote_non_unique_source_correlation():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "source_roles": ["driver"],
+                        "match_basis": ["source_edge_exact_child_path"],
+                        "source_edge": {"file": "tb/tb_top.sv", "line": 4},
+                    },
+                    {
+                        "status": "MATCHED",
+                        "source_roles": ["load"],
+                        "match_basis": [
+                            "direct_pin_resolves_source_generated_candidate"
+                        ],
+                        "source_edge": {"file": "tb/tb_top.sv", "line": 7},
+                    },
+                    {"status": "AMBIGUOUS"},
+                ],
+            }
+        }
+    )
+
+    summary = next(
+        detail
+        for kind, detail in rows
+        if kind == "Elaborated/source correlation"
+    )
+    assert "matched=2" in summary
+    assert "ambiguous=1" in summary
+    assert not any(kind == "Correlated source edge" for kind, _detail in rows)
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_malformed_source_correlation():
+    malformed_matched = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "source_roles": ["driver"],
+                        "source_edge": {"file": "tb/tb_top.sv", "line": 4},
+                    }
+                ],
+            }
+        }
+    )
+    unknown_status = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [{"status": "FUTURE_STATUS"}],
+            }
+        }
+    )
+    wrong_roles = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "simulator_elaborated",
+                "correlations": [],
+            }
+        }
+    )
+
+    for candidate in (malformed_matched, unknown_status, wrong_roles):
+        assert not any(
+            kind in {
+                "Elaborated/source correlation",
+                "Correlated source edge",
+            }
+            for kind, _detail in candidate
+        )
+
