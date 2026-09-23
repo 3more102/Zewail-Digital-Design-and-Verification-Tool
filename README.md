@@ -56,7 +56,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Public-facts-based UCIe 68B/256B FLIT trace and link-health analysis with ACK/NAK and CRC summaries, plus optional version-aware public data-rate ceiling evidence through UCIe 3.0
 - Compatibility path for packaged Verilator 5.020 coverage generation
 - SQLite verification results database and run history
-- Read-only desktop Debug Studio using Python Tk/ttk, backed by persisted verification evidence, deterministic source/hierarchy navigation, recorded waveform browsing, and evidence-backed probe suggestions
+- Read-only desktop Debug Studio using Python Tk/ttk, backed by persisted verification evidence, deterministic source/hierarchy navigation, recorded waveform browsing, and bounded in-memory VCD signal probing
 - Selective rerun of historical PASS / FAIL / TIMEOUT runs
 - JUnit XML export for CI systems
 - Failure-signature normalization and grouping across failing seeds
