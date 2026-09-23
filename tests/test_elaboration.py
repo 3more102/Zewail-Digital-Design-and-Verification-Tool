@@ -104,7 +104,8 @@ def test_parse_verilator_json_normalizes_only_module_level_io_vars(tmp_path: Pat
                         "name": "clk",
                         "origName": "clk",
                         "verilogName": "clk",
-                        "ioDirection": "INPUT",
+                        "direction": "INPUT",
+                        "declDirection": "INPUT",
                         "varType": "PORT",
                         "loc": "d,1:12,1:27",
                     },
@@ -120,7 +121,8 @@ def test_parse_verilator_json_normalizes_only_module_level_io_vars(tmp_path: Pat
                     {
                         "type": "VAR",
                         "name": "internal",
-                        "ioDirection": "NONE",
+                        "direction": "NONE",
+                        "declDirection": "NONE",
                         "varType": "VAR",
                         "loc": "d,1:47,1:54",
                     },
@@ -132,7 +134,8 @@ def test_parse_verilator_json_normalizes_only_module_level_io_vars(tmp_path: Pat
                                 "type": "VAR",
                                 "name": "arg",
                                 "verilogName": "arg",
-                                "ioDirection": "INPUT",
+                                "direction": "INPUT",
+                                "declDirection": "INPUT",
                                 "varType": "PORT",
                                 "loc": "d,1:47,1:50",
                             }
@@ -166,7 +169,7 @@ def test_parse_verilator_json_normalizes_only_module_level_io_vars(tmp_path: Pat
     assert result["port_evidence"] == {
         "status": "NORMALIZED",
         "source_format": "json",
-        "contract": "verilator_module_var_io_direction",
+        "contract": "verilator_module_var_direction_fields",
     }
     assert [(item["name"], item["direction"]) for item in result["ports"]] == [
         ("clk", "input"),
@@ -174,6 +177,8 @@ def test_parse_verilator_json_normalizes_only_module_level_io_vars(tmp_path: Pat
     ]
     assert result["ports"][0]["module"] == "top"
     assert result["ports"][0]["direction_raw"] == "INPUT"
+    assert result["ports"][0]["direction_field"] == "direction"
+    assert result["ports"][1]["direction_field"] == "ioDirection"
     assert result["ports"][0]["location"]["path"] == "rtl/ports.sv"
     assert all(item["name"] != "arg" for item in result["ports"])
 
