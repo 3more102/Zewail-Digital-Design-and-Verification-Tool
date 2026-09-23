@@ -168,8 +168,20 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+
+For Verilator JSON elaboration, qualified boundary-port edges can be checked against
+the normalized direct module `VAR.ioDirection` evidence for the resolved parent.
+Qualified instance-port edges are checked against the exact resolved child module
+and, when present, the direct CELL PIN -> VARREF binding for that child path and
+port. The report records direction consistency, source-role consistency, and direct
+pin-signal consistency. Complex pin expressions remain `UNSUPPORTED` evidence;
+missing, ambiguous, invalid, or legacy-XML-unavailable evidence is reported rather
+than inferred. Explicit unavailable metadata takes precedence over any stray data.
+
+These checks validate documented elaborated facts against the source-structural
+edge; they do not rewrite the source-derived driver/load role or claim complete
+elaborated-net connectivity. General expression resolution and exact elaborated
+net drivers/loads remain separate enrichment milestones.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
