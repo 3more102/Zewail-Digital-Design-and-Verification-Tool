@@ -221,6 +221,23 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
                     "relationship": "child_output_to_parent_signal",
                 }
             ],
+            "directional_connectivity": {
+                "status": "NORMALIZED",
+                "drivers": [],
+                "loads": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "query_side": "instance_port",
+                    }
+                ],
+                "bidirectional": [],
+                "unclassified_bindings": [],
+                "unsupported_binding_count": 0,
+            },
         },
         "elaborated_boundary": {
             "status": "MATCHED",
@@ -239,6 +256,9 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
     assert rows["Elaborated connectivity"] == (
         "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
         "instance-port bindings=1 · relationships=child_output_to_parent_signal"
+    )
+    assert rows["Elaborated direction"] == (
+        "NORMALIZED · drivers=0 · loads=1 · bidirectional=0 · unresolved=0"
     )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
