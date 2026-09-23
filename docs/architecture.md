@@ -416,7 +416,7 @@ hidden queues, lock/grab state, and vendor transcript semantics are still not in
 2. Add regression scheduler and worker pool.
 3. Move run records into SQLite while preserving JSON artifacts.
 4. Define normalized assertion and coverage schemas.
-5. Add exact elaborated signal/port drivers and loads; generated hierarchy is already consumed by waveform cross-probing.
+5. Extend exact elaborated internal driver/load coverage beyond the current direct `ASSIGN`/`ASSIGNW` `VARREF <- VARREF` subset; generated hierarchy and direct boundary pins are already consumed by waveform cross-probing.
 6. Add protocol-aware analyzers.
 7. Add formal adapters.
 8. Add AI-assisted triage over normalized ZDDV evidence.
