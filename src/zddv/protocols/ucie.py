@@ -13,7 +13,15 @@ _ACK_NAK_VALUES = {"ACK", "NAK"}
 _REFERENCES = [
     "https://www.uciexpress.org/specifications",
     "https://www.uciexpress.org/post/introduction-to-ucie-webinar-q-a-recap",
+    "https://www.uciexpress.org/post/ucie-3-0-specification-redefining-chiplet-interconnects",
 ]
+_PUBLIC_SPEC_VERSIONS = {"1.0", "1.1", "2.0", "3.0"}
+_PUBLIC_MAX_DATA_RATE_GT_S = {
+    "1.0": 32.0,
+    "1.1": 32.0,
+    "2.0": 32.0,
+    "3.0": 64.0,
+}
 
 
 def _integer(value: Any) -> int | None:
@@ -52,9 +60,22 @@ def _normalize_negotiated_parameters(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("UCIe 'negotiated' parameters must be an object")
 
     result: dict[str, Any] = {}
-    for name in ("width", "lane_numbering", "frequency_gt_s", "protocol"):
+    for name in (
+        "width",
+        "lane_numbering",
+        "frequency_gt_s",
+        "data_rate_gt_s",
+        "protocol",
+        "spec_version",
+    ):
         if name in raw:
             result[name] = raw[name]
+
+    # Preserve the historical frequency_gt_s field while exposing the correctly
+    # named data-rate alias for new traces. GT/s is a transfer rate, not a clock
+    # frequency.
+    if "data_rate_gt_s" not in result and "frequency_gt_s" in result:
+        result["data_rate_gt_s"] = result["frequency_gt_s"]
     return result
 
 
@@ -109,6 +130,69 @@ def analyze_ucie_trace(payload: dict[str, Any]) -> dict[str, Any]:
             entry["expected"] = expected
             entry["actual"] = actual
         violations.append(entry)
+
+    def add_negotiation_violation(
+        code: str,
+        message: str,
+        *,
+        field: str,
+        expected: Any,
+        actual: Any,
+    ) -> None:
+        violations.append(
+            {
+                "code": code,
+                "scope": "negotiated",
+                "message": message,
+                "field": field,
+                "expected": expected,
+                "actual": actual,
+            }
+        )
+
+    spec_version = negotiated.get("spec_version")
+    if spec_version is not None:
+        canonical_version = str(spec_version).strip()
+        if canonical_version in {"1", "2", "3"}:
+            canonical_version = f"{canonical_version}.0"
+        negotiated["spec_version"] = canonical_version
+        if canonical_version not in _PUBLIC_SPEC_VERSIONS:
+            add_negotiation_violation(
+                "unsupported_public_spec_version",
+                "spec_version is outside the public UCIe generations modeled by this analyzer",
+                field="spec_version",
+                expected="1.0/1.1/2.0/3.0",
+                actual=spec_version,
+            )
+
+    rate_raw = negotiated.get("data_rate_gt_s")
+    if rate_raw is not None:
+        try:
+            rate = float(rate_raw)
+        except (TypeError, ValueError):
+            rate = None
+        if rate is None or rate <= 0:
+            add_negotiation_violation(
+                "invalid_negotiated_data_rate",
+                "negotiated data rate must be a positive numeric GT/s value",
+                field="data_rate_gt_s",
+                expected="positive number",
+                actual=rate_raw,
+            )
+        else:
+            negotiated["data_rate_gt_s"] = rate
+            canonical_version = negotiated.get("spec_version")
+            ceiling = _PUBLIC_MAX_DATA_RATE_GT_S.get(canonical_version)
+            if ceiling is not None:
+                negotiated["public_generation_max_data_rate_gt_s"] = ceiling
+                if rate > ceiling:
+                    add_negotiation_violation(
+                        "data_rate_exceeds_public_generation",
+                        "negotiated data rate exceeds the public maximum for the declared UCIe generation",
+                        field="data_rate_gt_s",
+                        expected=f"<= {ceiling:g} GT/s for UCIe {canonical_version}",
+                        actual=rate,
+                    )
 
     for index, raw in enumerate(raw_flits):
         if not isinstance(raw, dict):
@@ -283,6 +367,7 @@ def analyze_ucie_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "references": list(_REFERENCES),
         "limitations": [
             "This is a public-facts-based normalized trace and link-health foundation, not a UCIe conformance checker.",
+            "Optional spec_version/data-rate checks enforce only public generation ceilings (32 GT/s through UCIe 2.0 and 64 GT/s in UCIe 3.0), not complete speed negotiation legality.",
             "NAK observations and CRC failures are reported as link-health events; retry correctness is not inferred.",
             "PHY electrical behavior, link-training state timing, lane repair, protocol mappings, exact CRC construction, and specification-only rules are not modeled.",
             "The public FLIT profile is intentionally limited to the 68-byte and 256-byte formats documented by the UCIe Consortium public Q&A.",
