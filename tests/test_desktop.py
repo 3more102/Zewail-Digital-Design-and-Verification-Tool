@@ -90,10 +90,13 @@ def test_desktop_snapshot_summarizes_persisted_evidence(tmp_path: Path):
     assert snapshot["latest_formal"] is None
     assert snapshot["latest_uvm"] is None
     assert snapshot["policy"] == {
-        "display_only": True,
-        "executes_verification": False,
+        "display_only": False,
+        "evidence_views_display_only": True,
+        "executes_verification": True,
+        "review_gated_execution": True,
         "invokes_ai": False,
-        "applies_generated_artifacts": False,
+        "applies_generated_artifacts": True,
+        "review_gated_generated_artifact_apply": True,
     }
 
 
