@@ -8,10 +8,11 @@ from typing import Any
 
 from zddv.config import ProjectConfig
 from zddv.lint import lint_project
+from zddv.rerun import historical_run_snapshot, rerun_run_id
 from zddv.simulator import get_backend
 
 
-_ACTIONS = {"lint", "build", "run"}
+_ACTIONS = {"lint", "build", "run", "rerun"}
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -69,6 +70,7 @@ def prepare_desktop_action(
     project: ProjectConfig,
     action: str,
     *,
+    run_id: str | None = None,
     test_name: str | None = None,
     seed: int | None = None,
     plusargs: list[str] | None = None,
@@ -82,29 +84,46 @@ def prepare_desktop_action(
     if normalized == "lint" and project.simulator != "verilator":
         raise RuntimeError("Desktop lint is currently implemented with Verilator only.")
 
+    clean_run_id = "" if run_id is None else str(run_id).strip()
     clean_plusargs = [str(item) for item in (plusargs or [])]
     if timeout_s is not None and timeout_s <= 0:
         raise ValueError("timeout_s must be > 0")
     if seed is not None and not isinstance(seed, int):
         raise ValueError("seed must be an integer or None")
 
-    if normalized != "run" and (
+    has_run_parameters = (
         test_name is not None
         or seed is not None
-        or clean_plusargs
+        or bool(clean_plusargs)
         or timeout_s is not None
-    ):
-        raise ValueError("Run parameters are only valid for the run action.")
+    )
+    historical_run: dict[str, Any] | None = None
 
     parameters: dict[str, Any]
     if normalized == "run":
+        if clean_run_id:
+            raise ValueError("run_id is only valid for the rerun action.")
         parameters = {
             "test_name": test_name,
             "seed": seed,
             "plusargs": clean_plusargs,
             "timeout_s": timeout_s,
         }
+    elif normalized == "rerun":
+        if not clean_run_id:
+            raise ValueError("rerun action requires a historical run_id.")
+        if has_run_parameters:
+            raise ValueError(
+                "Runtime overrides are not valid for the rerun action; "
+                "the persisted run inputs are used exactly."
+            )
+        parameters = {"run_id": clean_run_id}
+        historical_run = historical_run_snapshot(project, clean_run_id)
     else:
+        if clean_run_id:
+            raise ValueError("run_id is only valid for the rerun action.")
+        if has_run_parameters:
+            raise ValueError("Run parameters are only valid for the run action.")
         parameters = {}
 
     effects = {
@@ -120,12 +139,18 @@ def prepare_desktop_action(
             f"Invokes the configured {project.simulator} run backend.",
             "Creates a persisted run record and may create log, waveform, and coverage artifacts.",
         ],
+        "rerun": [
+            f"Builds with the configured {project.simulator} backend.",
+            "Reruns the selected historical run using its recorded test, seed, plusargs, and timeout.",
+            "Creates a new persisted run record and may create log, waveform, and coverage artifacts.",
+        ],
     }[normalized]
 
     core_api = {
         "lint": "zddv.lint.lint_project",
         "build": "zddv.simulator.get_backend(...).build",
         "run": "zddv.simulator.get_backend(...).run",
+        "rerun": "zddv.rerun.rerun_run_id",
     }[normalized]
 
     payload = {
@@ -148,6 +173,8 @@ def prepare_desktop_action(
             "revalidates_project_before_execution": True,
         },
     }
+    if historical_run is not None:
+        payload["historical_run"] = historical_run
     return {**payload, "review_sha256": _canonical_sha256(payload)}
 
 
@@ -183,6 +210,7 @@ def _validated_current_proposal(
     current = prepare_desktop_action(
         project,
         action,
+        run_id=parameters.get("run_id"),
         test_name=parameters.get("test_name"),
         seed=parameters.get("seed"),
         plusargs=parameters.get("plusargs"),
@@ -224,6 +252,14 @@ def execute_desktop_action(
             "warnings": result["warnings"],
             "log": result["log"],
             "summary": result["summary"],
+        }
+
+    if action == "rerun":
+        summary = rerun_run_id(project, str(parameters["run_id"]))
+        return {
+            "action": action,
+            "review_sha256": reviewed["review_sha256"],
+            **summary,
         }
 
     backend = get_backend(project.simulator)
@@ -282,6 +318,7 @@ def attach_desktop_actions_tab(
     form.pack(fill="x")
 
     action_var = tk.StringVar(value="lint")
+    run_id_var = tk.StringVar(value="")
     test_var = tk.StringVar(value="")
     seed_var = tk.StringVar(value="")
     plusargs_var = tk.StringVar(value="")
@@ -291,7 +328,7 @@ def attach_desktop_actions_tab(
     ttk.Combobox(
         form,
         textvariable=action_var,
-        values=("lint", "build", "run"),
+        values=("lint", "build", "run", "rerun"),
         state="readonly",
         width=10,
     ).grid(row=0, column=1, sticky="w", padx=(4, 14))
@@ -310,7 +347,13 @@ def attach_desktop_actions_tab(
 
     ttk.Label(form, text="Plusargs").grid(row=1, column=0, sticky="w", pady=(8, 0))
     ttk.Entry(form, textvariable=plusargs_var, width=68).grid(
-        row=1, column=1, columnspan=7, sticky="ew", padx=(4, 0), pady=(8, 0)
+        row=1, column=1, columnspan=6, sticky="ew", padx=(4, 0), pady=(8, 0)
+    )
+    ttk.Label(form, text="Historical Run ID").grid(
+        row=2, column=0, sticky="w", pady=(8, 0)
+    )
+    ttk.Entry(form, textvariable=run_id_var, width=68).grid(
+        row=2, column=1, columnspan=7, sticky="ew", padx=(4, 0), pady=(8, 0)
     )
     form.columnconfigure(7, weight=1)
 
@@ -354,8 +397,14 @@ def attach_desktop_actions_tab(
 
     def prepare() -> None:
         try:
-            params = _run_parameters() if action_var.get() == "run" else {}
-            proposal = prepare_desktop_action(project, action_var.get(), **params)
+            action = action_var.get()
+            if action == "run":
+                params = _run_parameters()
+            elif action == "rerun":
+                params = {"run_id": run_id_var.get().strip() or None}
+            else:
+                params = {}
+            proposal = prepare_desktop_action(project, action, **params)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             state["proposal"] = None
             review_status.set(f"Prepare error: {exc}")
