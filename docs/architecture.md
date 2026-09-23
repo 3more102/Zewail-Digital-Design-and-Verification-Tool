@@ -141,6 +141,29 @@ This contract is source-level. Generated hierarchy, parameter-specialized
 instances, binds, macros, and simulator-resolved objects remain enrichment work
 for simulator AST/elaboration adapters.
 
+## v1.1 Verilator JSON Elaboration Contract
+
+`zddv elaborate` is the first simulator-backed elaboration enrichment path. It is
+available for Verilator 5.044 or newer and invokes `--json-only` with explicit
+`.tree.json` and `.tree.meta.json` output paths plus `--no-json-edit-nums`.
+The raw JSON tree, metadata, and command log are retained under
+`.zddv/design/verilator/`; the normalized report is written to
+`.zddv/design/elaboration.json`.
+
+Normalization is intentionally conservative. ZDDV currently consumes the verified
+Verilator `NETLIST`, `MODULE`, `CELL`, and `GENBLOCK` structure and the
+`name`/`origName`/`verilogName`, `modName`, `level`, `depth`, and
+`loc` evidence needed for hierarchy reconstruction. File IDs in `loc` are resolved
+through the companion metadata `files` table. Generated block names are preserved as
+path segments, unresolved child modules remain explicitly unresolved, and recursive
+hierarchies are bounded rather than expanded indefinitely.
+
+The report is tagged `analysis_level = "verilator_elaborated_json"` and records
+SHA-256 hashes of both raw JSON artifacts. This does not replace
+`source_structural` connectivity: elaborated signal/port connectivity and promotion
+of this evidence into waveform cross-probing are separate milestones. The JSON AST
+format is treated as version-sensitive; unknown roots are rejected instead of inferred.
+
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
 `zddv axi4lite-analyze` consumes a simulator-independent JSON trace whose
