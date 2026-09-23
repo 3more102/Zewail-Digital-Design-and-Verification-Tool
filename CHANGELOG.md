@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Elaborated debug correlation
+
+- Extend direct pin-to-source edge correlation to generated instances only when
+  the exact elaborated child path is already present in the source edge's
+  explicit ambiguous candidate set; preserve source-only driver/load semantics.
+
 ### Elaborated boundary connectivity
 
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
