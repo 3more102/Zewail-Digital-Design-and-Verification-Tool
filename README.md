@@ -16,7 +16,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Questa/QuestaSim native `vlib`/`vlog`/`vsim` build/run foundation with version detection, seeds, plusargs, timeouts, VCD capture, assertion ingestion, and run-linked UVM normalization
 - Synopsys VCS native `vcs` -> `simv` build/run foundation with version detection, UVM 1.2 compilation, deterministic seeds, plusargs, timeouts, VCD capture, assertion ingestion, run-linked UVM normalization, per-run native `.vdb` coverage capture, multi-run URG merge/report evidence, normalized dashboard scores, documented global covergroup type/instance counts, documented module-level line/branch covered/total counts from `modinfo.txt`, and deduplicated instance-level line/condition/toggle/branch plus separate FSM state/transition/sequence counts from URG HTML detail
 - Cadence Xcelium native `xrun -elaborate` / `xrun -R` foundation with deterministic seeds, plusargs, timeouts, VCD capture, assertion/UVM ingestion, isolated per-run native coverage databases, IMC multi-run merge/report evidence, normalized Overall Average/Covered score history, and conservative item-level block/expression/toggle `coverage-holes` from verified native detail tables, plus an evidence-preserving `xcelium-detail-audit` that inventories native report sections and fingerprints unverified FSM/functional layouts before parser support is added
-- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and source-linked `coverage-holes` for statement/branch, scalar condition/expression FEC, documented multibit-expression input-term-bit FEC, and FSM state/transition items; by-instance toggle text/XML evidence is retained, while toggle item normalization remains pending until an exact offline `vcover report` item schema is verified
+- Questa per-run UCDB capture, multi-run `vcover merge`, normalized `vcover report -summary` metrics, ordinary covergroup-bin ingestion, complementary XML/zero-hit evidence, and source-linked `coverage-holes` for statement/branch, scalar condition/expression FEC, documented multibit-expression input-term-bit FEC, and FSM state/transition items; native by-instance binary/extended toggle transition item normalization is supported; multibit-condition and enumerated/unknown toggle layouts remain evidence-only until their exact native schemas are verified
 - SystemVerilog compile/elaboration
 - Self-checking simulation with PASS / FAIL / TIMEOUT results
 - Named tests, deterministic seeds, runtime plusargs, and per-test timeouts
@@ -37,6 +37,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Read-only AI provenance-chain auditing across context, provider request/response, validated payload, and optional human review artifacts
 - Deterministic portable AI audit bundles spanning context, raw/validated responses, approved review, and exact reviewed proposals, with relocation-safe SHA-256 verification
 - Deterministic verification signoff bundles with explicit evidence/run/snapshot pinning, conservative READY_FOR_REVIEW semantics, and reproducible Ed25519-signed release archives
+- Signed release verification enforces the canonical ZIP envelope and exact project/simulator/top identity agreement with the bundled signoff
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -785,8 +786,8 @@ bundle is review-required before any external use.
 - [x] Questa complementary detailed code-coverage evidence retention (XML + zero-hit source detail)
 - [x] Questa statement/branch plus scalar condition/expression FEC item/source normalization and coverage-hole reporting
 - [x] Questa documented multibit-expression input-term-bit FEC plus FSM state/transition item normalization
-- [x] Questa by-instance toggle text/XML evidence retention
-- [ ] Questa toggle item normalization from a verified offline `vcover report` item schema
+- [x] Questa by-instance binary/extended toggle transition item normalization from native XML
+- [ ] Questa multibit-condition and enumerated/unknown toggle item-level normalization pending verified native schemas
 - [x] VCS execution adapter foundation
 - [x] VCS native per-run coverage database capture
 - [x] VCS multi-run URG merge/report evidence retention
@@ -794,7 +795,7 @@ bundle is review-required before any external use.
 - [x] VCS documented global covergroup type/instance covered/expected count ingestion
 - [x] VCS documented module-level line/branch covered/total count ingestion from `modinfo.txt`
 - [x] VCS documented instance-level line/condition/toggle/branch aggregation plus separate FSM state/transition/sequence counts
-- [ ] VCS remaining condition/toggle/FSM module-level counts
+- [x] VCS module-level line/condition/toggle/FSM-transition/branch covered/total normalization from `modinfo.txt`
 - [x] Xcelium execution adapter foundation
 - [x] Xcelium native per-run coverage database capture
 - [x] Xcelium IMC multi-run merge/report evidence retention
