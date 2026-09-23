@@ -611,6 +611,28 @@ def build_crossprobe(
                     elaborated_instances=list(
                         elaborated_index.get("instances", [])
                     ),
+                    elaborated_ports=(
+                        list(elaborated_index.get("ports", []))
+                        if isinstance(elaborated_index.get("ports", []), list)
+                        else []
+                    ),
+                    port_evidence=(
+                        dict(elaborated_index["port_evidence"])
+                        if isinstance(elaborated_index.get("port_evidence"), dict)
+                        else None
+                    ),
+                    elaborated_pin_bindings=(
+                        list(elaborated_index.get("pin_bindings", []))
+                        if isinstance(elaborated_index.get("pin_bindings", []), list)
+                        else []
+                    ),
+                    pin_binding_evidence=(
+                        dict(elaborated_index["pin_binding_evidence"])
+                        if isinstance(
+                            elaborated_index.get("pin_binding_evidence"), dict
+                        )
+                        else None
+                    ),
                 )
             connectivity_payload = {
                 "analysis_level": connectivity.get("analysis_level"),
@@ -623,6 +645,14 @@ def build_crossprobe(
                 connectivity_payload["instance_path"] = navigation["instance_path"]
                 connectivity_payload["instance_qualification"] = navigation[
                     "instance_qualification"
+                ]
+            if navigation.get("elaborated_port_evidence") is not None:
+                connectivity_payload["elaborated_port_evidence"] = navigation[
+                    "elaborated_port_evidence"
+                ]
+            if navigation.get("elaborated_pin_binding_evidence") is not None:
+                connectivity_payload["elaborated_pin_binding_evidence"] = navigation[
+                    "elaborated_pin_binding_evidence"
                 ]
 
         if declaration is not None:
