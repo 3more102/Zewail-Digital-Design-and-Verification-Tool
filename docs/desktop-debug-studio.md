@@ -20,6 +20,7 @@ The desktop provides:
 - deterministic failure-signature groups;
 - an evidence overview for assertions, normalized coverage, formal, and UVM;
 - deterministic source-file and source-level hierarchy navigation;
+- read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
 - a detailed Assertions pane with status, assertion name, run, log line, and message;
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
@@ -43,6 +44,7 @@ guarantee of zero filesystem writes.
 
 ## Remaining desktop milestones
 
-The roadmap still includes waveform navigation/targeted probing and review-gated
-project actions. These should continue to call the existing core APIs rather than
-duplicate simulator-specific logic in the GUI.
+Waveform navigation and bounded targeted VCD probing are already integrated through
+the existing core APIs. The remaining desktop milestone is review-gated project
+actions, which must continue to reuse the existing core APIs rather than duplicate
+simulator-specific logic in the GUI.
