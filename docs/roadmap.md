@@ -230,6 +230,7 @@ gates; the GUI does not automatically invoke AI or execute generated code.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+- [x] Review-gated exact historical rerun using persisted test/seed/plusargs/timeout evidence, with the selected run record bound into the reviewed SHA-256 payload.
 
 ## v1.2 — Desktop Review Workflows
 
