@@ -190,6 +190,23 @@ jobs:
           grep -q '"awprot": 2' examples/counter/.zddv/protocols/axi4/sidebands.json
           grep -q '"awqos": 9' examples/counter/.zddv/protocols/axi4/sidebands.json
           grep -q '"awregion": 4' examples/counter/.zddv/protocols/axi4/sidebands.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("examples/counter/.zddv/protocols/axi4/sidebands.json").read_text())
+          read = next(tx for tx in payload["transactions"] if tx["direction"] == "READ")
+          write = next(tx for tx in payload["transactions"] if tx["direction"] == "WRITE")
+          assert read["prot_attributes"]["encoding"] == 5
+          assert read["prot_attributes"]["privilege_class"] == "privileged"
+          assert read["prot_attributes"]["security_class"] == "secure"
+          assert read["prot_attributes"]["access_class"] == "instruction"
+          assert read["prot_attributes"]["access_is_hint"] is True
+          assert write["prot_attributes"]["encoding"] == 2
+          assert write["prot_attributes"]["privilege_class"] == "unprivileged"
+          assert write["prot_attributes"]["security_class"] == "non-secure"
+          assert write["prot_attributes"]["access_class"] == "data"
+          assert write["prot_attributes"]["access_is_hint"] is True
+          PY
           grep -q '"violations": 0' examples/counter/.zddv/protocols/axi4/sidebands.json
 
       - name: Analyze AXI4 USER sidebands
