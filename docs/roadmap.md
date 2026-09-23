@@ -48,8 +48,7 @@ Current status: deterministic source indexing, source-level hierarchy,
 simulator-resolved elaborated hierarchy, VCD waveform indexing, targeted VCD
 value-change probing, source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
-preference and simulator-elaborated instance qualification, assertion-to-waveform
-correlation, and the
+preference, assertion-to-waveform correlation, and the
 first protocol transaction reconstruction path (normalized APB traces) are
 implemented. Exact elaborated drivers/loads remain future enrichment work.
 
@@ -60,7 +59,6 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted VCD value-change probing (time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
-- [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
@@ -70,8 +68,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 Current status: normalized-trace analyzers are implemented for APB, AXI4-Lite,
 burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/link-health
 foundation. Core AXI4 exclusive-access semantics plus address-sideband width and AxREGION 4KB
-consistency checks, reserved AxCACHE encoding validation, B/M plus direction-aware
-Allocate/Other-Allocate memory-class evidence (with legacy RA/WA bit compatibility),
+consistency checks, reserved AxCACHE encoding validation and B/M/RA/WA attribute decoding,
 optional USER-sideband transport evidence, and data-width-aware AxSIZE/WSTRB byte-lane
 validation are implemented; exhaustive optional AXI4 sideband/coherency semantics,
 structural CDC signoff, and specification-complete UCIe checking remain planned.
@@ -82,8 +79,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 burst VCD extraction with timestamped transaction reconstruction.
 - [x] AXI4 exclusive-access size/alignment, response, timing, and observed-pair checking.
 - [x] AXI4 AxCACHE/AxPROT/AxQOS/AxREGION width checks, AxPROT privilege/security/access decoding, and AxREGION 4KB consistency.
-- [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA raw-bit decoding.
-- [x] AXI4 direction-aware AxCACHE Allocate/Other-Allocate semantics and memory-class evidence.
+- [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA attribute decoding.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
@@ -136,7 +132,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Xcelium explicitly reported two-field covered/total count persistence without percentage-derived counts.
 - [x] Xcelium IMC detailed all-metrics/source report evidence capture, with tool failures retained without fabricating item data.
 - [x] Xcelium verified block/expression/toggle item-level normalization persisted in `.zddv/coverage/xcelium/items.json` and consumed by coverage-hole queries.
-- [x] Xcelium native IMC detail-section schema audit with source/section SHA-256 evidence, schema-neutral lexical layout fingerprints, and explicit unverified-layout classification.
+- [x] Xcelium native IMC detail-section schema audit with source/section SHA-256 evidence and explicit unverified-layout classification.
 - [ ] Xcelium FSM/functional item-level coverage-hole normalization pending verified native schemas.
 - [x] Simulator-independent UVM report/test metadata ingestion and SQLite persistence.
 - [x] UVM snapshot-to-run correlation with run-log resolution and history filtering.
@@ -213,10 +209,12 @@ uncollected verification objectives passed.
 
 ## v1.1 — Desktop Debug Studio
 
-Current status: evidence browsing, source preview, hierarchy navigation, and waveform
-inspection remain read-only and reuse authoritative ZDDV core models. Mutating or
-simulator-invoking desktop operations are isolated behind explicit SHA-confirmed review
-gates; the GUI does not automatically invoke AI or execute generated code.
+Current status: evidence, source, hierarchy, waveform, assertion, formal, and UVM
+views remain read-only and reuse the authoritative ZDDV backend. Explicit desktop
+actions are review-gated: lint/build/run require an exact SHA-256 over the reviewed
+project/action state, while generated verification artifacts use isolated staging and
+an exact-content SHA-confirmed apply gate. No desktop action invokes AI or executes
+generated code automatically.
 
 - [x] Tk/ttk desktop shell with verification summary.
 - [x] Recent-run browser backed by persisted run records.
@@ -228,19 +226,7 @@ gates; the GUI does not automatically invoke AI or execute generated code.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
-
-## v1.2 — Desktop Review Workflows
-
-Current status: generated verification drafts can now be inspected and applied from a
-separate desktop review pane without bypassing the existing generated-artifact core
-gates. Apply does not compile or run the generated SystemVerilog.
-
-- [x] Enumerate staged generated assertion/test drafts from the isolated draft store.
-- [x] Re-hash staged bytes and show a bounded exact-content preview.
-- [x] Fail closed unless review is required, auto-apply is disabled, and execution is disabled.
-- [x] Require manual exact content SHA-256 plus explicit reviewed approval before apply.
-- [x] Delegate staging/apply to the existing core APIs and refuse changed, malformed, or already-applied drafts.
-- [x] Keep generated-code compilation/simulation separate from the apply action.
+- [x] Review-gated generated-artifact stage/preview/apply using exact content SHA-256 and existing core safeguards.
 
 ## Long-Term Direction
 
