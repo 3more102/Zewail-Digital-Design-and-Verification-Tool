@@ -705,6 +705,16 @@ def test_desktop_crossprobe_rows_fail_closed_on_semantically_invalid_internal_as
             "status": "PARTIAL",
             "unresolved_assignments": [invalid_unresolved],
         },
+        {
+            **base,
+            "status": "PARTIAL",
+            "unresolved_assignments": [
+                {
+                    **invalid_unresolved,
+                    "query_references": [{"side": "rhs"}],
+                }
+            ],
+        },
     ]
 
     for payload in invalid_payloads:
