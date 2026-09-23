@@ -435,6 +435,22 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
 
+    parent_correlation = parent["elaborated_source_correlation"]
+    assert parent_correlation["analysis_level"] == (
+        "simulator_elaborated_to_source_structural_correlation"
+    )
+    assert parent_correlation["role_semantics"] == "source_structural_only"
+    assert len(parent_correlation["correlations"]) == 1
+    parent_edge = parent_correlation["correlations"][0]
+    assert parent_edge["status"] == "MATCHED"
+    assert parent_edge["binding_side"] == "parent_signal"
+    assert parent_edge["source_unit"] == "tb_top"
+    assert parent_edge["source_roles"] == ["load"]
+    assert parent_edge["source_edge"]["kind"] == "instance_port"
+    assert parent_edge["source_edge"]["port"] == "clk"
+    assert parent_edge["source_edge"]["elaborated_child_path"] == "tb_top.dut"
+    assert "role" not in parent_edge["source_edge"]
+
     child = build_crossprobe(
         project,
         "tb_top.dut.count",
@@ -452,6 +468,19 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
 
+    child_correlation = child["elaborated_source_correlation"]
+    assert child_correlation["role_semantics"] == "source_structural_only"
+    assert len(child_correlation["correlations"]) == 1
+    child_edge = child_correlation["correlations"][0]
+    assert child_edge["status"] == "MATCHED"
+    assert child_edge["binding_side"] == "instance_port"
+    assert child_edge["source_unit"] == "tb_top"
+    assert child_edge["source_roles"] == ["driver"]
+    assert child_edge["source_edge"]["kind"] == "instance_port"
+    assert child_edge["source_edge"]["port"] == "count"
+    assert child_edge["source_edge"]["elaborated_child_path"] == "tb_top.dut"
+    assert "role" not in child_edge["source_edge"]
+
     elaborated["port_evidence"] = {
         "status": "UNAVAILABLE",
         "source_format": "json",
@@ -467,6 +496,9 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    assert ungated["elaborated_source_correlation"]["correlations"][0][
+        "status"
+    ] == "MATCHED"
 
     elaborated["port_evidence"] = {
         "status": "NORMALIZED",

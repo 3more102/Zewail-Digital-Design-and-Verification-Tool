@@ -177,8 +177,15 @@ binding is `UNSUPPORTED` is retained separately as
 location but no inferred parent signal or relationship. Malformed normalized
 pin-binding containers are rejected before cross-probing.
 
-This qualification is hierarchy/boundary evidence only: exact elaborated internal
-signal drivers and loads remain a separate enrichment milestone.
+For normalized direct bindings, cross-probing can also correlate the exact
+child path/pin/parent-signal tuple with the already-qualified source
+`instance_port` edge. A unique structural match is retained as cross-evidence
+correlation; missing or multiple source edges stay explicit. Driver/load roles
+attached to this correlation are labeled `source_structural_only` and are not
+promoted to simulator-elaborated semantics.
+
+This qualification and correlation are hierarchy/boundary evidence only: exact
+elaborated internal signal drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 

@@ -480,6 +480,18 @@ def _elaborated_pin_connectivity(
                 str(child_module) if child_module is not None else None
             ),
             "pin": str(pin),
+            "pin_aliases": sorted(
+                {
+                    str(value)
+                    for value in (
+                        binding.get("pin"),
+                        binding.get("pin_elaborated_name"),
+                        binding.get("pin_verilog_name"),
+                        binding.get("pin_original_name"),
+                    )
+                    if value
+                }
+            ),
             "parent_instance_path": str(parent_path),
             "parent_signal": str(parent_signal),
             "port_direction": direction,
@@ -526,6 +538,200 @@ def _elaborated_pin_connectivity(
                 item["instance_path"],
                 item["pin"],
                 str(item.get("expression_type") or ""),
+            ),
+        ),
+    }
+
+
+def _correlate_elaborated_pin_bindings_with_source(
+    elaborated_connectivity: dict[str, Any] | None,
+    *,
+    elaborated_index: dict[str, Any],
+    design_index: dict[str, Any],
+    connectivity_index: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Correlate exact elaborated pin bindings with source instance-port edges.
+
+    Driver/load roles remain source-structural evidence. This helper only proves
+    that a normalized direct pin binding and an already-qualified source
+    instance-port edge describe the same module-boundary connection.
+    """
+    if elaborated_connectivity is None:
+        return None
+
+    elaborated_instances = [
+        item
+        for item in elaborated_index.get("instances", [])
+        if isinstance(item, dict) and item.get("path")
+    ]
+    instances_by_path = {
+        str(item["path"]): item
+        for item in elaborated_instances
+    }
+
+    def correlate(
+        binding: dict[str, Any],
+        *,
+        binding_side: str,
+    ) -> dict[str, Any]:
+        child_path = str(binding.get("instance_path") or "")
+        parent_path = str(binding.get("parent_instance_path") or "")
+        pin = str(binding.get("pin") or "")
+        parent_signal = str(binding.get("parent_signal") or "")
+        identity = {
+            "binding_side": binding_side,
+            "instance_path": child_path,
+            "instance_module": binding.get("instance_module"),
+            "pin": pin,
+            "parent_instance_path": parent_path,
+            "parent_signal": parent_signal,
+        }
+
+        parent_instance = instances_by_path.get(parent_path)
+        if parent_instance is None:
+            return {
+                **identity,
+                "status": "UNAVAILABLE",
+                "reason": "parent_elaborated_instance_not_found",
+            }
+
+        parent_unit = _design_unit_for_elaborated_instance(
+            parent_instance,
+            design_index,
+        )
+        if parent_unit is None:
+            return {
+                **identity,
+                "status": "UNAVAILABLE",
+                "reason": "parent_source_unit_not_resolved",
+            }
+
+        try:
+            navigation = signal_navigation(
+                connectivity_index,
+                unit=str(parent_unit["name"]),
+                signal=parent_signal,
+            )
+        except ValueError:
+            return {
+                **identity,
+                "status": "NOT_FOUND",
+                "reason": "parent_signal_not_in_source_connectivity",
+                "source_unit": parent_unit["name"],
+            }
+
+        qualified = qualify_signal_navigation_with_elaboration(
+            navigation,
+            instance_path=parent_path,
+            elaborated_instances=elaborated_instances,
+        )
+        pin_aliases = {
+            str(value)
+            for value in binding.get("pin_aliases", [])
+            if value
+        }
+        pin_aliases.add(pin)
+
+        candidates: list[dict[str, Any]] = []
+        for role_key in ("drivers", "loads"):
+            for edge in qualified.get(role_key, []):
+                if edge.get("kind") != "instance_port":
+                    continue
+                if edge.get("elaborated_child_resolution") != "exact":
+                    continue
+                if edge.get("elaborated_child_path") != child_path:
+                    continue
+                if str(edge.get("port") or "") not in pin_aliases:
+                    continue
+                child_module = binding.get("instance_module")
+                if (
+                    child_module
+                    and edge.get("child_type")
+                    and edge.get("child_type") != child_module
+                ):
+                    continue
+                candidates.append(edge)
+
+        if not candidates:
+            return {
+                **identity,
+                "status": "NOT_FOUND",
+                "reason": "no_exact_source_instance_port_edge",
+                "source_unit": parent_unit["name"],
+            }
+
+        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for edge in candidates:
+            key = (
+                edge.get("file"),
+                edge.get("line"),
+                edge.get("instance"),
+                edge.get("child_type"),
+                edge.get("port"),
+                edge.get("expression"),
+                edge.get("elaborated_child_path"),
+            )
+            groups.setdefault(key, []).append(edge)
+
+        if len(groups) != 1:
+            return {
+                **identity,
+                "status": "AMBIGUOUS",
+                "source_unit": parent_unit["name"],
+                "candidate_count": len(groups),
+            }
+
+        edges = next(iter(groups.values()))
+        source_edge = {
+            key: value
+            for key, value in edges[0].items()
+            if key != "role"
+        }
+        return {
+            **identity,
+            "status": "MATCHED",
+            "source_unit": parent_unit["name"],
+            "source_roles": sorted(
+                {
+                    str(edge["role"])
+                    for edge in edges
+                    if edge.get("role")
+                }
+            ),
+            "source_edge": source_edge,
+        }
+
+    correlations: list[dict[str, Any]] = []
+    for binding_side, key in (
+        ("parent_signal", "parent_signal_bindings"),
+        ("instance_port", "instance_port_bindings"),
+    ):
+        for binding in elaborated_connectivity.get(key, []):
+            if isinstance(binding, dict):
+                correlations.append(
+                    correlate(binding, binding_side=binding_side)
+                )
+
+    if not correlations:
+        return None
+
+    return {
+        "analysis_level": (
+            "simulator_elaborated_to_source_structural_correlation"
+        ),
+        "elaborated_analysis_level": elaborated_connectivity.get(
+            "analysis_level"
+        ),
+        "source_analysis_level": connectivity_index.get("analysis_level"),
+        "role_semantics": "source_structural_only",
+        "correlations": sorted(
+            correlations,
+            key=lambda item: (
+                item["parent_instance_path"],
+                item["parent_signal"],
+                item["instance_path"],
+                item["pin"],
+                item["binding_side"],
             ),
         ),
     }
@@ -637,6 +843,8 @@ def build_crossprobe(
     source: dict[str, Any] | None = None
     connectivity_payload: dict[str, Any] | None = None
     elaborated_connectivity_payload: dict[str, Any] | None = None
+    elaborated_source_correlation: dict[str, Any] | None = None
+    source_connectivity_index = connectivity_index
     status = "PARTIAL"
     note: str | None = None
 
@@ -672,7 +880,9 @@ def build_crossprobe(
             "declaration": declaration,
         }
 
-        connectivity = connectivity_index or build_connectivity_index(project)
+        if source_connectivity_index is None:
+            source_connectivity_index = build_connectivity_index(project)
+        connectivity = source_connectivity_index
         try:
             navigation = signal_navigation(
                 connectivity,
@@ -710,6 +920,18 @@ def build_crossprobe(
                 "The waveform scope matched hierarchy evidence, but no "
                 "same-line SystemVerilog declaration was found for the signal."
             )
+
+    if elaborated_connectivity_payload is not None and elaborated_index is not None:
+        if source_connectivity_index is None:
+            source_connectivity_index = build_connectivity_index(project)
+        elaborated_source_correlation = (
+            _correlate_elaborated_pin_bindings_with_source(
+                elaborated_connectivity_payload,
+                elaborated_index=elaborated_index,
+                design_index=design,
+                connectivity_index=source_connectivity_index,
+            )
+        )
 
     source_hierarchy_payload = None
     if source_hierarchy_node is not None:
@@ -769,6 +991,7 @@ def build_crossprobe(
         "source": source,
         "connectivity": connectivity_payload,
         "elaborated_connectivity": elaborated_connectivity_payload,
+        "elaborated_source_correlation": elaborated_source_correlation,
         "note": note,
     }
 
