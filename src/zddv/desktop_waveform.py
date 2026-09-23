@@ -111,6 +111,142 @@ def crossprobe_desktop_waveform_signal(
     return report
 
 
+def build_desktop_crossprobe_evidence_rows(
+    crossprobe: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Format bounded read-only cross-probe evidence for the Desktop Waveform tab."""
+    rows: list[tuple[str, str]] = []
+
+    hierarchy = crossprobe.get("hierarchy") or {}
+    hierarchy_detail = crossprobe.get("note") or "No hierarchy match."
+    if hierarchy:
+        hierarchy_detail = (
+            f"{crossprobe.get('hierarchy_resolution') or 'unknown'} · "
+            f"{hierarchy.get('design_path') or '-'} · "
+            f"{hierarchy.get('type') or '-'}"
+        )
+    rows.append(("Hierarchy", hierarchy_detail))
+
+    source = crossprobe.get("source") or {}
+    declaration = source.get("declaration") or {}
+    source_detail = "No RTL declaration match."
+    if source:
+        location = source.get("file") or "-"
+        if declaration.get("line") is not None:
+            location += f":{declaration['line']}"
+        source_detail = f"{source.get('unit') or '-'} · {location}"
+    rows.append(("RTL source", source_detail))
+
+    connectivity = crossprobe.get("connectivity") or {}
+    drivers = connectivity.get("drivers") or []
+    loads = connectivity.get("loads") or []
+    rows.append(("Drivers", f"{len(drivers)} source-structural item(s)"))
+    rows.append(("Loads", f"{len(loads)} source-structural item(s)"))
+
+    elaborated_port = crossprobe.get("elaborated_port")
+    if isinstance(elaborated_port, dict):
+        port_status = str(elaborated_port.get("status") or "UNAVAILABLE")
+        if port_status == "MATCHED":
+            port = elaborated_port.get("port") or {}
+            rows.append(
+                (
+                    "Elaborated port",
+                    f"MATCHED · {elaborated_port.get('instance_path') or '-'}."
+                    f"{elaborated_port.get('signal') or '-'} · "
+                    f"{port.get('direction') or '-'} · "
+                    f"module={elaborated_port.get('module') or '-'}",
+                )
+            )
+        else:
+            reason = elaborated_port.get("reason")
+            detail = port_status if not reason else f"{port_status} · {reason}"
+            rows.append(("Elaborated port", detail))
+    else:
+        rows.append(("Elaborated port", "NOT_AVAILABLE"))
+
+    elaborated_connectivity = crossprobe.get("elaborated_connectivity")
+    if isinstance(elaborated_connectivity, dict):
+        parent_bindings = list(
+            elaborated_connectivity.get("parent_signal_bindings") or []
+        )
+        instance_bindings = list(
+            elaborated_connectivity.get("instance_port_bindings") or []
+        )
+        contract = elaborated_connectivity.get("evidence_contract") or "-"
+        rows.append(
+            (
+                "Elaborated pins",
+                f"{len(parent_bindings)} parent-signal / "
+                f"{len(instance_bindings)} instance-port binding(s) · "
+                f"contract={contract}",
+            )
+        )
+
+        unique_bindings: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for binding in [*parent_bindings, *instance_bindings]:
+            if not isinstance(binding, dict):
+                continue
+            key = (
+                str(binding.get("parent_instance_path") or ""),
+                str(binding.get("parent_signal") or ""),
+                str(binding.get("instance_path") or ""),
+                str(binding.get("pin") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_bindings.append(binding)
+
+        max_rows = 6
+        for binding in unique_bindings[:max_rows]:
+            parent_endpoint = (
+                f"{binding.get('parent_instance_path') or '-'}."
+                f"{binding.get('parent_signal') or '-'}"
+            )
+            child_endpoint = (
+                f"{binding.get('instance_path') or '-'}."
+                f"{binding.get('pin') or '-'}"
+            )
+            relationship = binding.get("relationship") or "direct_pin_varref"
+            if relationship == "parent_signal_to_child_input":
+                endpoints = f"{parent_endpoint} -> {child_endpoint}"
+            elif relationship == "child_output_to_parent_signal":
+                endpoints = f"{child_endpoint} -> {parent_endpoint}"
+            elif relationship == "bidirectional_child_port":
+                endpoints = f"{parent_endpoint} <-> {child_endpoint}"
+            else:
+                endpoints = f"{parent_endpoint} ~ {child_endpoint}"
+            rows.append(
+                (
+                    "Elaborated pin",
+                    f"{endpoints} · direction={binding.get('port_direction') or '-'} "
+                    f"· {relationship}",
+                )
+            )
+        if len(unique_bindings) > max_rows:
+            rows.append(
+                (
+                    "Elaborated pin",
+                    f"{len(unique_bindings) - max_rows} additional binding(s) hidden",
+                )
+            )
+    else:
+        rows.append(
+            (
+                "Elaborated pins",
+                "No normalized direct pin binding matched this signal.",
+            )
+        )
+
+    elaborated = crossprobe.get("elaborated_evidence") or {}
+    elaborated_detail = elaborated.get("status") or "NOT_PRESENT"
+    if elaborated.get("error"):
+        elaborated_detail += f" · {elaborated['error']}"
+    rows.append(("Elaboration", elaborated_detail))
+    return rows
+
+
 def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
     """Attach a self-contained read-only waveform navigation tab to a Tk notebook."""
     try:
@@ -277,45 +413,8 @@ def attach_desktop_waveform_tab(notebook: Any, project: ProjectConfig) -> None:
                 "end",
                 values=(change["time"], change["value"]),
             )
-        hierarchy = crossprobe.get("hierarchy") or {}
-        source = crossprobe.get("source") or {}
-        declaration = source.get("declaration") or {}
-        connectivity = crossprobe.get("connectivity") or {}
-        elaborated = crossprobe.get("elaborated_evidence") or {}
-
-        hierarchy_detail = crossprobe.get("note") or "No hierarchy match."
-        if hierarchy:
-            hierarchy_detail = (
-                f"{crossprobe.get('hierarchy_resolution') or 'unknown'} · "
-                f"{hierarchy.get('design_path') or '-'} · "
-                f"{hierarchy.get('type') or '-'}"
-            )
-        evidence_tree.insert("", "end", values=("Hierarchy", hierarchy_detail))
-
-        source_detail = "No RTL declaration match."
-        if source:
-            location = source.get("file") or "-"
-            if declaration.get("line") is not None:
-                location += f":{declaration['line']}"
-            source_detail = f"{source.get('unit') or '-'} · {location}"
-        evidence_tree.insert("", "end", values=("RTL source", source_detail))
-
-        drivers = connectivity.get("drivers") or []
-        loads = connectivity.get("loads") or []
-        evidence_tree.insert(
-            "",
-            "end",
-            values=("Drivers", f"{len(drivers)} source-structural item(s)"),
-        )
-        evidence_tree.insert(
-            "",
-            "end",
-            values=("Loads", f"{len(loads)} source-structural item(s)"),
-        )
-        elaborated_detail = elaborated.get("status") or "NOT_PRESENT"
-        if elaborated.get("error"):
-            elaborated_detail += f" · {elaborated['error']}"
-        evidence_tree.insert("", "end", values=("Elaboration", elaborated_detail))
+        for evidence_kind, details in build_desktop_crossprobe_evidence_rows(crossprobe):
+            evidence_tree.insert("", "end", values=(evidence_kind, details))
 
         suffix = " (truncated)" if signal["truncated"] else ""
         info_var.set(
