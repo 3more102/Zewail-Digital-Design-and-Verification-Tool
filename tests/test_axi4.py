@@ -1772,3 +1772,217 @@ def test_user_width_metadata_does_not_infer_unspecified_relationship_members():
         "AWUSER": 4,
         "RUSER": 7,
     }
+
+
+def test_validates_explicit_axi4_id_widths():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {
+                "ID_W_WIDTH": 2,
+                "ID_R_WIDTH": 3,
+            },
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": 3,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": 7,
+                    "ARADDR": 0x200,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x55,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 7,
+                    "RDATA": 0x66,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BID": 3,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["id_widths"] == {
+        "ID_R_WIDTH": 3,
+        "ID_W_WIDTH": 2,
+    }
+    assert {tx["id"] for tx in result["transactions"]} == {3, 7}
+
+
+def test_zero_id_width_declares_signals_absent_and_keeps_logical_default_id_zero():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x55,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["id_widths"] == {"ID_W_WIDTH": 0}
+    assert result["transactions"][0]["id"] == 0
+
+
+def test_id_width_zero_rejects_physically_observed_id_signal():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_R_WIDTH": 0},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": 0,
+                    "ARADDR": 0x200,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "ARID"
+    assert violation["expected"] == "signal absent"
+
+
+def test_positive_id_width_requires_active_channel_id_and_checks_value_range():
+    missing = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+    assert any(
+        item["code"] == "missing_id_signal" and item["signal"] == "AWID"
+        for item in missing["violations"]
+    )
+
+    too_wide = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_R_WIDTH": 2},
+            "samples": [{"cycle": 0, "ARID": 4}],
+        }
+    )
+    violation = next(
+        item for item in too_wide["violations"] if item["code"] == "invalid_id_width"
+    )
+    assert violation["signal"] == "ARID"
+    assert violation["expected"] == "unsigned 2-bit value (0..3)"
+
+
+def test_id_width_metadata_rejects_unknown_property_and_out_of_range_width():
+    with pytest.raises(ValueError, match="unsupported AXI4 ID width property"):
+        analyze_axi4_trace(
+            {
+                "id_widths": {"ID_X_WIDTH": 4},
+                "samples": [],
+            }
+        )
+
+    with pytest.raises(ValueError, match="range 0..32"):
+        analyze_axi4_trace(
+            {
+                "id_widths": {"ID_R_WIDTH": 33},
+                "samples": [],
+            }
+        )
+
+
+def test_legacy_axi4_trace_without_id_width_metadata_keeps_missing_ids_compatible():
+    result = analyze_axi4_trace(
+        {
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x55,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["id_widths"] == {}
+    assert result["transactions"][0]["id"] == 0
