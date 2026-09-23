@@ -29,9 +29,9 @@ The desktop provides:
   elaborated instance, while explicitly unsupported complex expressions remain evidence
   rather than inferred connectivity;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
-  hierarchy/source/connectivity cross-probing, including explicit module-port matches and
-  normalized direct pin/VARREF connectivity relationships when elaboration evidence is
-  available;
+  hierarchy/source/connectivity cross-probing, including explicit module-port matches,
+  normalized direct pin/VARREF connectivity relationships, and bounded unsupported
+  selected-port expression evidence when elaboration evidence is available;
 - bounded detailed assertion, formal-property, and UVM-message panes.
 
 Source preview is authorized by the current design index, including explicitly configured
