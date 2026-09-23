@@ -67,6 +67,10 @@ _AXI4_USER_SIGNALS = frozenset({
     "AWUSER", "WUSER", "BUSER", "ARUSER", "RUSER",
 })
 
+_AXI4_ID_SIGNALS = frozenset({
+    "AWID", "BID", "ARID", "RID",
+})
+
 
 def _logic(value: Any, *, name: str) -> bool:
     if isinstance(value, bool):
@@ -350,6 +354,63 @@ def _configured_user_signal_widths(payload: dict[str, Any]) -> dict[str, int]:
     return normalized
 
 
+def _configured_id_signal_widths(payload: dict[str, Any]) -> dict[str, int]:
+    """Normalize explicit AXI4 transaction-ID interface width metadata."""
+    raw = payload.get("id_signal_widths", {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "id_signal_widths must be an object mapping AXI4 ID signal names "
+            "to non-negative bit widths"
+        )
+
+    widths: dict[str, int] = {}
+    for raw_name, raw_width in raw.items():
+        name = str(raw_name).strip().upper()
+        if name not in _AXI4_ID_SIGNALS:
+            raise ValueError(
+                f"unsupported AXI4 ID signal in id_signal_widths: {raw_name!r}"
+            )
+        if name in widths:
+            raise ValueError(
+                f"id_signal_widths contains duplicate signal after normalization: {name}"
+            )
+        if isinstance(raw_width, bool):
+            raise ValueError(
+                f"id_signal_widths[{name}] must be a non-negative integer bit width"
+            )
+        width = _scalar(raw_width)
+        if not isinstance(width, int) or width < 0:
+            raise ValueError(
+                f"id_signal_widths[{name}] must be a non-negative integer bit width"
+            )
+        widths[name] = width
+
+    normalized = {name: widths[name] for name in sorted(widths)}
+
+    if (
+        "AWID" in normalized
+        and "BID" in normalized
+        and normalized["AWID"] != normalized["BID"]
+    ):
+        raise ValueError(
+            "id_signal_widths must use the same write-ID width for AWID and BID "
+            "when both are specified (AXI ID_W_WIDTH)"
+        )
+    if (
+        "ARID" in normalized
+        and "RID" in normalized
+        and normalized["ARID"] != normalized["RID"]
+    ):
+        raise ValueError(
+            "id_signal_widths must use the same read-ID width for ARID and RID "
+            "when both are specified (AXI ID_R_WIDTH)"
+        )
+
+    return normalized
+
+
 def _normalize_sample(
     raw: dict[str, Any],
     index: int,
@@ -414,11 +475,19 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         data_bus_bytes = data_width_bits // 8
 
     user_signal_widths = _configured_user_signal_widths(payload)
+    id_signal_widths = _configured_id_signal_widths(payload)
     master_defaults = _master_default_signals(
         payload,
         raw_samples,
         data_bus_bytes=data_bus_bytes,
     )
+    for signal in ("AWID", "ARID"):
+        width = id_signal_widths.get(signal)
+        if width is not None and width > 0 and signal in master_defaults:
+            raise ValueError(
+                f"{signal} cannot be declared in absent_master_signals when "
+                f"id_signal_widths configures a positive width ({width})"
+            )
     samples = [
         _normalize_sample(
             sample,
@@ -509,6 +578,57 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     "invalid_user_sideband_width",
                     sample,
                     f"{signal} does not fit the configured USER signal width",
+                    channel=channel,
+                    signal=signal,
+                    expected=f"unsigned {width}-bit value (0..{(1 << width) - 1})",
+                    actual=value,
+                )
+
+    def validate_id_signals(sample: dict[str, Any]) -> None:
+        channels = {
+            "AWID": ("AW", "AWVALID"),
+            "BID": ("B", "BVALID"),
+            "ARID": ("AR", "ARVALID"),
+            "RID": ("R", "RVALID"),
+        }
+        for signal, width in id_signal_widths.items():
+            channel, valid_signal = channels[signal]
+            synthetic_default = signal in master_defaults
+            physically_present = signal in sample and not synthetic_default
+
+            if width == 0:
+                if physically_present:
+                    add_violation(
+                        "transaction_id_present_when_width_zero",
+                        sample,
+                        f"{signal} is present although interface metadata declares a 0-bit ID width",
+                        channel=channel,
+                        signal=signal,
+                        expected="signal absent",
+                        actual=sample[signal],
+                    )
+                continue
+
+            if not physically_present:
+                if bool(sample.get(valid_signal, False)):
+                    add_violation(
+                        "transaction_id_missing_for_configured_width",
+                        sample,
+                        f"{signal} is required while {valid_signal} is asserted because "
+                        f"interface metadata configures a {width}-bit ID",
+                        channel=channel,
+                        signal=signal,
+                        expected=f"unsigned {width}-bit transaction ID",
+                        actual=None,
+                    )
+                continue
+
+            value = sample[signal]
+            if not isinstance(value, int) or value < 0 or value >= (1 << width):
+                add_violation(
+                    "invalid_transaction_id_width",
+                    sample,
+                    f"{signal} does not fit the configured AXI4 ID width",
                     channel=channel,
                     signal=signal,
                     expected=f"unsigned {width}-bit value (0..{(1 << width) - 1})",
@@ -1133,6 +1253,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     for sample in samples:
         validate_user_sidebands(sample)
+        validate_id_signals(sample)
         aw_hs = channel_event(sample, "AW")
         w_hs = channel_event(sample, "W")
         b_hs = channel_event(sample, "B")
@@ -1425,10 +1546,11 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_user_widths_write_strobes_master_defaults",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_user_widths_id_widths_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
         "user_signal_widths": user_signal_widths,
+        "id_signal_widths": id_signal_widths,
         "absent_master_signals": sorted(master_defaults),
         "master_signal_defaults": {
             name: master_defaults[name] for name in sorted(master_defaults)
@@ -1461,6 +1583,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning remains implementation-defined; optional user_signal_widths interface metadata enables width/presence validation plus the AXI USER_REQ_WIDTH and RUSER composition relationships without assigning semantics to USER bits.",
+            "Optional id_signal_widths interface metadata validates ID value ranges, zero-width absence, AWID/BID ID_W_WIDTH consistency, and ARID/RID ID_R_WIDTH consistency without inferring missing width metadata.",
             "Topology-dependent AxCACHE reachability, cross-master memory-attribute consistency, the AxREGION downstream-address-decode placement requirement, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled without explicit system topology metadata.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],

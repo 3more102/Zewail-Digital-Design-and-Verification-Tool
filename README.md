@@ -484,7 +484,10 @@ also contains `examples/axi4lite_trace.json` and CI exercises the CLI against it
 `zddv axi4-analyze <trace.json>` extends protocol reconstruction to burst-aware
 AXI4. It tracks AW/AR transaction IDs, AxLEN/AxSIZE/AxBURST, ordered write data
 without WID, BID/RID response correlation, read-data interleaving across
-different IDs, and WLAST/RLAST termination. It also checks WRAP burst geometry
+different IDs, and WLAST/RLAST termination. Optional `id_signal_widths` metadata
+validates AWID/BID against one write-ID width and ARID/RID against one read-ID
+width, treats width zero as explicit signal absence, and never guesses widths from
+missing trace fields. It also checks WRAP burst geometry
 and the requirement that each AXI burst remain inside one 4KB address region.
 
 The analyzer also rejects reserved AXI4 AxCACHE encodings and decodes Bufferable, Modifiable, Read-Allocate, and Write-Allocate attributes into each reconstructed transaction.
@@ -501,10 +504,10 @@ WUSER + BUSER, matching `USER_DATA_WIDTH + USER_RESP_WIDTH`. Partial metadata
 remains partial and does not cause missing widths to be guessed. When the metadata
 is omitted, existing USER transport behavior is unchanged.
 
-`zddv axi4-waveform` records the declared widths of USER signals that are actually
-present in the selected VCD scope and feeds that evidence into the same checks. A
-USER signal missing from the VCD is not automatically treated as a zero-width
-physical interface signal.
+`zddv axi4-waveform` records the declared widths of USER and transaction-ID signals
+that are actually present in the selected VCD scope and feeds that evidence into
+the same checks. A USER or ID signal missing from the VCD is not automatically
+treated as a zero-width physical interface signal.
 
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an

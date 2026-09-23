@@ -252,6 +252,14 @@ relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
 `USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
 members stay unknown rather than being inferred.
 
+Transaction-ID widths use the same evidence rule. Optional `id_signal_widths`
+metadata can describe AWID, BID, ARID, and RID independently when only partial
+interface evidence is available. When both write-channel widths are present,
+AWID and BID must match the AXI `ID_W_WIDTH` relationship; when both read-channel
+widths are present, ARID and RID must match `ID_R_WIDTH`. Width zero is explicit
+signal absence. Missing metadata remains unknown and is never converted into a
+zero-width assumption.
+
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
 ARSIZE/AWSIZE transfers wider than that interface width. For accepted write beats,
@@ -275,10 +283,10 @@ signals; automatic selection succeeds only when exactly one complete AXI4 scope 
 The extractor streams selected VCD identifiers only, preserves optional transaction IDs,
 address sidebands, and USER sidebands when present, requires WDATA and RDATA to use
 the same standard AXI data width, verifies that WSTRB has one bit per data byte,
-derives `data_width_bits`, and records the declared VCD widths for USER signals
-that are actually present in the selected scope. Those observed widths feed the
-same core USER-width consistency checks; an undumped USER signal is not interpreted
-as proof of a zero-width physical signal. Physical waveform timestamps are recorded
+derives `data_width_bits`, and records the declared VCD widths for USER and ID
+signals that are actually present in the selected scope. Those observed widths feed
+the same core USER/ID-width consistency checks; an undumped USER or ID signal is not
+interpreted as proof of a zero-width physical signal. Physical waveform timestamps are recorded
 alongside logical sample cycles. The burst analyzer then propagates those timestamps
 into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
 an input adapter; protocol semantics remain simulator-independent in the AXI4 core.

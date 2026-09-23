@@ -22,6 +22,13 @@ def test_extracts_burst_aware_axi4_trace_from_vcd():
     assert trace["waveform"]["data_width_bits"] == 16
     assert trace["waveform"]["rdata_width_bits"] == 16
     assert trace["waveform"]["wstrb_width"] == 2
+    assert trace["id_signal_widths"] == {
+        "AWID": 2,
+        "BID": 2,
+        "ARID": 2,
+        "RID": 2,
+    }
+    assert trace["waveform"]["id_signal_widths"] == trace["id_signal_widths"]
     assert trace["user_signal_widths"] == {
         "AWUSER": 4,
         "WUSER": 4,
@@ -54,6 +61,12 @@ def test_analyzes_axi4_waveform_with_timestamped_transactions(tmp_path: Path):
     assert result["summary"]["completed_writes"] == 1
     assert result["summary"]["completed_reads"] == 1
     assert result["waveform"]["scope"] == "tb.axi"
+    assert result["id_signal_widths"] == {
+        "ARID": 2,
+        "AWID": 2,
+        "BID": 2,
+        "RID": 2,
+    }
 
     write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
     read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
@@ -166,3 +179,22 @@ def test_axi4_waveform_user_widths_are_checked_against_axi_properties(tmp_path: 
     else:
         raise AssertionError("Expected inconsistent AXI4 USER VCD widths to fail")
 
+
+
+
+def test_axi4_waveform_id_widths_are_checked_against_axi_properties(tmp_path: Path):
+    source = FIXTURE.read_text(encoding="utf-8")
+    source = source.replace(
+        "$var wire 2 p BID [1:0] $end",
+        "$var wire 3 p BID [2:0] $end",
+    )
+    bad = tmp_path / "bad_id_widths.vcd"
+    bad.write_text(source, encoding="utf-8")
+    project = initialize_project(tmp_path / "demo-id-widths")
+
+    try:
+        analyze_axi4_waveform(project, input_path=bad)
+    except ValueError as exc:
+        assert "ID_W_WIDTH" in str(exc)
+    else:
+        raise AssertionError("Expected inconsistent AXI4 ID VCD widths to fail")

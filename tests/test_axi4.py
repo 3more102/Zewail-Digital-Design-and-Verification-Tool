@@ -1772,3 +1772,131 @@ def test_user_width_metadata_does_not_infer_unspecified_relationship_members():
         "AWUSER": 4,
         "RUSER": 7,
     }
+
+
+
+def test_axi4_id_width_metadata_accepts_matching_read_and_write_pairs():
+    result = analyze_axi4_trace(
+        {
+            "id_signal_widths": {
+                "AWID": 2,
+                "BID": 2,
+                "ARID": 3,
+                "RID": 3,
+            },
+            "samples": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["id_signal_widths"] == {
+        "ARID": 3,
+        "AWID": 2,
+        "BID": 2,
+        "RID": 3,
+    }
+
+
+def test_axi4_id_width_metadata_enforces_read_and_write_width_relationships():
+    with pytest.raises(ValueError, match="ID_W_WIDTH"):
+        analyze_axi4_trace(
+            {
+                "id_signal_widths": {"AWID": 2, "BID": 3},
+                "samples": [],
+            }
+        )
+
+    with pytest.raises(ValueError, match="ID_R_WIDTH"):
+        analyze_axi4_trace(
+            {
+                "id_signal_widths": {"ARID": 4, "RID": 5},
+                "samples": [],
+            }
+        )
+
+
+def test_reports_transaction_id_value_outside_configured_width():
+    result = analyze_axi4_trace(
+        {
+            "id_signal_widths": {"AWID": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": 4,
+                    "AWADDR": 0,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "invalid_transaction_id_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "AWID"
+    assert violation["expected"] == "unsigned 2-bit value (0..3)"
+    assert violation["actual"] == 4
+
+
+def test_zero_width_id_metadata_declares_signal_absent():
+    result = analyze_axi4_trace(
+        {
+            "id_signal_widths": {"BID": 0},
+            "samples": [{"cycle": 0, "BID": 0}],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "transaction_id_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "BID"
+    assert violation["expected"] == "signal absent"
+
+
+def test_positive_id_width_requires_id_on_active_channel():
+    result = analyze_axi4_trace(
+        {
+            "id_signal_widths": {"ARID": 2},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARADDR": 0,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "transaction_id_missing_for_configured_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "ARID"
+    assert violation["expected"] == "unsigned 2-bit transaction ID"
+
+
+def test_positive_master_id_width_conflicts_with_explicit_absence():
+    with pytest.raises(ValueError, match="cannot be declared in absent_master_signals"):
+        analyze_axi4_trace(
+            {
+                "id_signal_widths": {"AWID": 1},
+                "absent_master_signals": ["AWID"],
+                "samples": [],
+            }
+        )

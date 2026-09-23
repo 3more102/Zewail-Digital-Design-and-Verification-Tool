@@ -125,6 +125,11 @@ def extract_axi4_trace_from_vcd(
         for name in ("AWUSER", "WUSER", "BUSER", "ARUSER", "RUSER")
         if name in scoped_signals
     }
+    id_signal_widths = {
+        name: int(scoped_signals[name]["width"])
+        for name in ("AWID", "BID", "ARID", "RID")
+        if name in scoped_signals
+    }
 
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
@@ -160,10 +165,12 @@ def extract_axi4_trace_from_vcd(
     waveform["rdata_width_bits"] = rdata_width
     waveform["wstrb_width"] = wstrb_width
     waveform["user_signal_widths"] = dict(user_signal_widths)
+    waveform["id_signal_widths"] = dict(id_signal_widths)
     return {
         "source": "vcd-waveform",
         "data_width_bits": wdata_width,
         "user_signal_widths": user_signal_widths,
+        "id_signal_widths": id_signal_widths,
         "waveform": waveform,
         "samples": normalized_samples,
     }
