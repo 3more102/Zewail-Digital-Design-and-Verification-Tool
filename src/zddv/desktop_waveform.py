@@ -111,6 +111,51 @@ def crossprobe_desktop_waveform_signal(
     return report
 
 
+
+def _desktop_boundary_role_item_is_normalized(
+    item: Any,
+    role: str,
+) -> bool:
+    """Validate one persisted boundary-role item against the core producer contract."""
+    if not isinstance(item, dict):
+        return False
+
+    for key in ("instance_path", "pin", "parent_instance_path", "parent_signal"):
+        value = item.get(key)
+        if not isinstance(value, str) or not value:
+            return False
+
+    query_side = item.get("query_side")
+    if query_side not in {"parent_signal", "child_port"}:
+        return False
+
+    direction = item.get("port_direction")
+    relationship = item.get("relationship")
+    expected_relationship = {
+        "input": "parent_signal_to_child_input",
+        "output": "child_output_to_parent_signal",
+        "inout": "bidirectional_child_port",
+        None: "direct_pin_varref",
+    }.get(direction)
+    if expected_relationship is None or relationship != expected_relationship:
+        return False
+
+    if role == "DRIVER":
+        return (
+            query_side == "parent_signal" and direction in {"output", "inout"}
+        ) or (
+            query_side == "child_port" and direction in {"input", "inout"}
+        )
+    if role == "LOAD":
+        return (
+            query_side == "parent_signal" and direction in {"input", "inout"}
+        ) or (
+            query_side == "child_port" and direction in {"output", "inout"}
+        )
+    if role == "UNCLASSIFIED":
+        return direction is None
+    return False
+
 def desktop_crossprobe_evidence_rows(
     report: dict[str, Any],
     *,
@@ -265,18 +310,21 @@ def desktop_crossprobe_evidence_rows(
                 )
             )
 
-        boundary_role_keys = (
-            "boundary_drivers",
-            "boundary_loads",
-            "boundary_unclassified_bindings",
+        boundary_role_groups = (
+            ("DRIVER", elaborated_connectivity.get("boundary_drivers")),
+            ("LOAD", elaborated_connectivity.get("boundary_loads")),
+            (
+                "UNCLASSIFIED",
+                elaborated_connectivity.get("boundary_unclassified_bindings"),
+            ),
         )
-        boundary_role_values = [
-            elaborated_connectivity.get(key) for key in boundary_role_keys
-        ]
         boundary_roles_normalized = all(
-            isinstance(value, list)
-            and all(isinstance(item, dict) for item in value)
-            for value in boundary_role_values
+            isinstance(items, list)
+            and all(
+                _desktop_boundary_role_item_is_normalized(item, role)
+                for item in items
+            )
+            for role, items in boundary_role_groups
         )
         if boundary_roles_normalized:
             boundary_drivers = list(elaborated_connectivity["boundary_drivers"])
