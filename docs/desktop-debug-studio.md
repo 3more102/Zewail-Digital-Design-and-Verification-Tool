@@ -25,26 +25,35 @@ The desktop provides:
 - a detailed Formal pane for the newest formal snapshot with property kind, status,
   interpretation, depth, and message;
 - a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+  timestamp, log line, and message;
+- a Review Actions pane that can stage proposal JSON under `.zddv/generated` and apply
+  exact reviewed SystemVerilog bytes only after manual SHA-256 confirmation and an
+  explicit reviewed opt-in.
 
 Formal-property and UVM-message database reads are explicitly bounded by the GUI
 limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Refresh and waveform browsing read persisted verification evidence and rebuild
+in-memory views. They do not launch simulations or formal jobs, invoke or transmit
+data to an AI provider, or edit RTL/testbench/project configuration.
+
+The Review Actions pane is the deliberate exception to the otherwise read-only
+desktop. Staging writes only to `.zddv/generated`. Applying calls the existing
+`apply_generated_artifact` core API and is blocked unless the user manually supplies
+the exact 64-character SHA-256 of the reviewed staged bytes and explicitly confirms
+review. The core still refuses changed draft bytes, paths outside the project, writes
+back into `.zddv`, unsupported suffixes, and overwrites of existing source files.
+Applying copies bytes only; it does not compile or execute them.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
 Therefore "display-only" describes verification/project actions rather than a
 guarantee of zero filesystem writes.
 
-## Remaining desktop milestones
+## v1.1 desktop milestone status
 
-Waveform navigation and bounded targeted VCD probing are already integrated through
-the existing core APIs. The remaining desktop milestone is review-gated project
-actions, which must continue to reuse the existing core APIs rather than duplicate
-simulator-specific logic in the GUI.
+Waveform navigation, detailed evidence panes, and review-gated generated-artifact
+actions are integrated through the existing core APIs. Further desktop work can build
+on these panes without weakening their evidence or approval semantics.
