@@ -306,6 +306,11 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
                 "direction": "output",
             },
         ],
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
         "pin_bindings": [
             {
                 "status": "NORMALIZED",
@@ -371,6 +376,22 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+
+    elaborated["port_evidence"] = {
+        "status": "UNAVAILABLE",
+        "source_format": "json",
+        "reason": "direction_contract_not_normalized",
+    }
+    ungated = build_crossprobe(
+        project,
+        "TOP.tb_top.clk",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
+    assert ungated_binding["port_direction"] is None
+    assert ungated_binding["relationship"] == "direct_pin_varref"
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
