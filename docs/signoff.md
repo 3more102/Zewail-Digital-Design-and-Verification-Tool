@@ -102,3 +102,25 @@ does not independently prove that verification is specification-complete.
 
 Install the optional signing support with `pip install 'zddv[signing]'` when the
 base package was installed without development extras.
+
+
+## Deterministic signoff comparison
+
+ZDDV v1.1 adds a structural comparison step for two already-produced signoff bundles:
+
+```bash
+zddv --project my_project signoff-diff \
+  .zddv/signoff/baseline.json \
+  .zddv/signoff/current.json \
+  --output .zddv/signoff/diff.json
+```
+
+Before comparing anything, ZDDV recomputes and verifies each bundle's evidence,
+policy, and signoff SHA-256 provenance. A modified or malformed input fails closed.
+
+The diff reports exact policy keys that changed; added, removed, or modified run IDs;
+coverage/formal/UVM evidence changes; check-state changes; review-state transition; and
+blocking checks added or removed. The report has its own deterministic `diff_sha256`.
+
+The diff is descriptive only. It does not infer that a change is better or worse and
+does not expand the meaning of `READY_FOR_REVIEW`.

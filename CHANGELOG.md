@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Signoff change review
+
+- Add deterministic `signoff-diff` comparison for two validated signoff bundles.
+- Recompute evidence, policy, and signoff SHA-256 values before accepting either input.
+- Report exact policy keys, run-set changes, normalized evidence changes, check changes,
+  review-state transitions, and blocker additions/removals without quality inference.
+- Fingerprint the complete diff artifact with a canonical SHA-256.
+
 ## 1.0.0 — 2026-09-22
 
 ZDDV 1.0.0 marks the first release milestone in which the verification evidence,

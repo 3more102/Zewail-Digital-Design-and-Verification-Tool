@@ -67,6 +67,7 @@ from zddv.reporting import write_junit_report
 from zddv.release import export_verification_release, verify_verification_release
 from zddv.simulator import get_backend
 from zddv.signoff import write_verification_signoff_bundle
+from zddv.signoff_diff import write_verification_signoff_diff
 from zddv.storage import (
     assertion_statistics,
     database_path,
@@ -2792,6 +2793,47 @@ def cmd_signoff(args) -> int:
     return 0 if summary["review_state"] == "READY_FOR_REVIEW" else 1
 
 
+def cmd_signoff_diff(args) -> int:
+    project = load_project(_project_arg(args))
+    result = write_verification_signoff_diff(
+        project,
+        args.baseline,
+        args.current,
+        output=args.output,
+    )
+    summary = result["summary"]
+    runs = result["evidence"]["runs"]
+    print(
+        "SIGNOFF DIFF: "
+        + ("changed=yes" if summary["changed"] else "changed=no")
+    )
+    print(
+        "Review state: "
+        f"{summary['baseline_review_state']} -> {summary['current_review_state']}"
+    )
+    print(
+        "Policy changed: "
+        + ("yes" if result["policy"]["changed"] else "no")
+    )
+    if result["policy"]["changed_keys"]:
+        print("Policy keys: " + ", ".join(result["policy"]["changed_keys"]))
+    print(
+        f"Runs: +{len(runs['added_run_ids'])} "
+        f"-{len(runs['removed_run_ids'])} "
+        f"~{len(runs['changed_run_ids'])}"
+    )
+    print(
+        "Evidence: "
+        f"coverage={'changed' if result['evidence']['coverage']['changed'] else 'same'} "
+        f"formal={'changed' if result['evidence']['formal']['changed'] else 'same'} "
+        f"uvm={'changed' if result['evidence']['uvm']['changed'] else 'same'}"
+    )
+    print(f"Check changes: {len(result['checks']['changes'])}")
+    print(f"Diff SHA-256: {result['provenance']['diff_sha256']}")
+    print(f"Report: {result['path']}")
+    return 0
+
+
 def cmd_release_export(args) -> int:
     project = load_project(_project_arg(args))
     result = export_verification_release(
@@ -4681,6 +4723,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verification signoff bundle JSON path",
     )
     p_signoff.set_defaults(func=cmd_signoff)
+
+    p_signoff_diff = sub.add_parser(
+        "signoff-diff",
+        help="Compare two validated verification signoff bundles deterministically",
+    )
+    p_signoff_diff.add_argument(
+        "baseline",
+        help="Baseline signoff bundle JSON path inside the project",
+    )
+    p_signoff_diff.add_argument(
+        "current",
+        help="Current signoff bundle JSON path inside the project",
+    )
+    p_signoff_diff.add_argument(
+        "--output",
+        default=".zddv/signoff/diff.json",
+        help="Deterministic signoff diff JSON path",
+    )
+    p_signoff_diff.set_defaults(func=cmd_signoff_diff)
 
     p_release_export = sub.add_parser(
         "release-export",

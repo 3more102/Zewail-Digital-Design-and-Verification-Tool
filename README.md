@@ -38,6 +38,7 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Read-only AI provenance-chain auditing across context, provider request/response, validated payload, and optional human review artifacts
 - Deterministic portable AI audit bundles spanning context, raw/validated responses, approved review, and exact reviewed proposals, with relocation-safe SHA-256 verification
 - Deterministic verification signoff bundles with explicit evidence/run/snapshot pinning, conservative READY_FOR_REVIEW semantics, and reproducible Ed25519-signed release archives
+- Deterministic fail-closed signoff-to-signoff change review with policy/evidence/check diffs and canonical diff SHA-256 provenance
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
@@ -175,6 +176,7 @@ zddv --project my_project rerun --status FAIL --status TIMEOUT --limit 20
 zddv --project my_project junit --output .zddv/junit.xml --limit 100
 zddv --project my_project failures --limit 200
 zddv --project my_project signoff --run-id <release-run-id> --coverage-snapshot-id <release-coverage-id> --min-coverage 90
+zddv --project my_project signoff-diff .zddv/signoff/baseline.json .zddv/signoff/current.json
 zddv --project my_project release-export --expected-signoff-sha256 <reviewed-signoff-sha256> --private-key release-private.pem --key-id lab-release-2026
 zddv --project my_project release-verify .zddv/signoff/release.zip --public-key release-public.pem
 zddv --project my_project report --limit 100
