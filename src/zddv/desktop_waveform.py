@@ -218,9 +218,19 @@ def desktop_crossprobe_evidence_rows(
             connectivity_detail += f" · unsupported={len(unsupported_bindings)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
 
-        evidence_items: list[tuple[str, dict[str, Any]]] = [
-            ("normalized", item) for item in parent_bindings + instance_bindings
-        ]
+        evidence_items: list[tuple[str, dict[str, Any]]] = []
+        seen_normalized: set[tuple[str, str, str, str]] = set()
+        for binding in parent_bindings + instance_bindings:
+            identity = (
+                str(binding.get("parent_instance_path") or ""),
+                str(binding.get("parent_signal") or ""),
+                str(binding.get("instance_path") or ""),
+                str(binding.get("pin") or ""),
+            )
+            if identity in seen_normalized:
+                continue
+            seen_normalized.add(identity)
+            evidence_items.append(("normalized", binding))
         evidence_items.extend(
             ("unsupported", item) for item in unsupported_bindings
         )
@@ -330,7 +340,9 @@ def desktop_crossprobe_evidence_rows(
                     )
                 )
 
-    elaborated_source_correlation = report.get("elaborated_source_correlation")
+    elaborated_source_correlation = report.get(
+        "elaborated_source_correlation"
+    )
     trusted_source_correlation = (
         isinstance(elaborated_source_correlation, dict)
         and elaborated_source_correlation.get("analysis_level")
@@ -339,62 +351,79 @@ def desktop_crossprobe_evidence_rows(
         == "source_structural_only"
     )
     if trusted_source_correlation:
-        correlations = [
-            item
-            for item in elaborated_source_correlation.get("correlations", [])
-            if isinstance(item, dict)
-        ]
-        status_counts = {
-            status: sum(
-                1
-                for item in correlations
-                if str(item.get("status") or "UNKNOWN") == status
-            )
-            for status in ("MATCHED", "NOT_FOUND", "AMBIGUOUS", "UNAVAILABLE")
-        }
-        correlation_detail = (
-            "simulator_elaborated_to_source_structural_correlation · "
-            f"correlations={len(correlations)} · "
-            f"matched={status_counts['MATCHED']} · "
-            f"not-found={status_counts['NOT_FOUND']} · "
-            f"ambiguous={status_counts['AMBIGUOUS']} · "
-            f"unavailable={status_counts['UNAVAILABLE']} · "
-            "roles=source_structural_only"
+        raw_correlations = elaborated_source_correlation.get("correlations")
+        correlations_normalized = (
+            isinstance(raw_correlations, list)
+            and all(isinstance(item, dict) for item in raw_correlations)
         )
-        rows.append(("Elaborated/source correlation", correlation_detail))
-
-        matched = [
-            item
-            for item in correlations
-            if item.get("status") == "MATCHED"
-            and isinstance(item.get("source_edge"), dict)
-        ]
-        if len(matched) == 1:
-            item = matched[0]
-            source_edge = item["source_edge"]
-            source_roles = ",".join(
-                str(role)
-                for role in item.get("source_roles", [])
-                if role
-            ) or "-"
-            source_location = str(source_edge.get("file") or "-")
-            if source_edge.get("line") is not None:
-                source_location += f":{source_edge['line']}"
-            rows.append(
-                (
-                    "Correlated source edge",
-                    (
-                        f"{item.get('parent_instance_path') or '-'}."
-                        f"{item.get('parent_signal') or '-'} ↔ "
-                        f"{item.get('instance_path') or '-'}."
-                        f"{item.get('pin') or '-'} · "
-                        f"binding_side={item.get('binding_side') or '-'} · "
-                        f"source={item.get('source_unit') or '-'} · "
-                        f"source_roles={source_roles} · "
-                        f"location={source_location}"
-                    ),
+        if correlations_normalized:
+            correlations = list(raw_correlations)
+            allowed_statuses = {
+                "MATCHED",
+                "NOT_FOUND",
+                "AMBIGUOUS",
+                "UNAVAILABLE",
+            }
+            statuses = [
+                str(item.get("status") or "") for item in correlations
+            ]
+            if all(status in allowed_statuses for status in statuses):
+                status_counts = {
+                    status: statuses.count(status)
+                    for status in sorted(allowed_statuses)
+                }
+                correlation_detail = (
+                    "simulator_elaborated_to_source_structural_correlation · "
+                    f"correlations={len(correlations)} · "
+                    f"matched={status_counts['MATCHED']} · "
+                    f"not-found={status_counts['NOT_FOUND']} · "
+                    f"ambiguous={status_counts['AMBIGUOUS']} · "
+                    f"unavailable={status_counts['UNAVAILABLE']} · "
+                    "roles=source_structural_only"
                 )
-            )
+                rows.append(
+                    ("Elaborated/source correlation", correlation_detail)
+                )
+
+                matched_items = [
+                    item
+                    for item in correlations
+                    if item.get("status") == "MATCHED"
+                ]
+                if len(matched_items) == 1:
+                    item = matched_items[0]
+                    source_edge = item.get("source_edge")
+                    source_roles = item.get("source_roles")
+                    match_basis = item.get("match_basis")
+                    if (
+                        isinstance(source_edge, dict)
+                        and isinstance(source_roles, list)
+                        and all(isinstance(role, str) for role in source_roles)
+                        and isinstance(match_basis, list)
+                        and all(isinstance(basis, str) for basis in match_basis)
+                    ):
+                        source_role_text = ",".join(source_roles) or "-"
+                        match_basis_text = ",".join(match_basis) or "-"
+                        source_location = str(source_edge.get("file") or "-")
+                        if source_edge.get("line") is not None:
+                            source_location += f":{source_edge['line']}"
+                        rows.append(
+                            (
+                                "Correlated source edge",
+                                (
+                                    f"{item.get('parent_instance_path') or '-'}."
+                                    f"{item.get('parent_signal') or '-'} ↔ "
+                                    f"{item.get('instance_path') or '-'}."
+                                    f"{item.get('pin') or '-'} · "
+                                    f"binding_side="
+                                    f"{item.get('binding_side') or '-'} · "
+                                    f"source={item.get('source_unit') or '-'} · "
+                                    f"source_roles={source_role_text} · "
+                                    f"basis={match_basis_text} · "
+                                    f"location={source_location}"
+                                ),
+                            )
+                        )
 
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
