@@ -4,6 +4,10 @@
 
 ### Desktop Debug Studio
 
+- Add exact-SHA-reviewed structured `lint`, `build`, and `run` actions with
+  active-project identity binding and no arbitrary shell-command surface.
+- Keep browsing and refresh display-only while making action execution an explicit,
+  separately confirmed boundary.
 - Add bounded detail panes for normalized assertion events, formal property results,
   and UVM report messages while preserving source, source-level hierarchy, and
   persisted simulator-elaborated hierarchy views.
