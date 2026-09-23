@@ -341,8 +341,10 @@ def desktop_crossprobe_evidence_rows(
         == "source_structural_only"
     ):
         raw_correlations = elaborated_source_correlation.get("correlations")
-        if isinstance(raw_correlations, list) and all(
-            isinstance(item, dict) for item in raw_correlations
+        if (
+            isinstance(raw_correlations, list)
+            and bool(raw_correlations)
+            and all(isinstance(item, dict) for item in raw_correlations)
         ):
             allowed_statuses = {
                 "MATCHED",
@@ -355,10 +357,26 @@ def desktop_crossprobe_evidence_rows(
                 and (
                     item.get("status") != "MATCHED"
                     or (
-                        isinstance(item.get("source_edge"), dict)
+                        item.get("binding_side")
+                        in {"parent_signal", "instance_port"}
+                        and all(
+                            isinstance(item.get(key), str) and bool(item.get(key))
+                            for key in (
+                                "instance_path",
+                                "pin",
+                                "parent_instance_path",
+                                "parent_signal",
+                                "source_unit",
+                            )
+                        )
+                        and isinstance(item.get("source_edge"), dict)
+                        and isinstance(item["source_edge"].get("file"), str)
+                        and bool(item["source_edge"].get("file"))
+                        and isinstance(item["source_edge"].get("line"), int)
+                        and item["source_edge"]["line"] > 0
                         and isinstance(item.get("source_roles"), list)
                         and all(
-                            isinstance(role, str)
+                            isinstance(role, str) and bool(role)
                             for role in item.get("source_roles", [])
                         )
                         and isinstance(item.get("match_basis"), list)
