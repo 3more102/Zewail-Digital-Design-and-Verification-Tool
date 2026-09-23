@@ -435,6 +435,17 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
 
+    source_edge = next(
+        item
+        for item in parent["connectivity"]["loads"]
+        if item["kind"] == "instance_port"
+    )
+    assert source_edge["role"] == "load"
+    assert source_edge["elaborated_child_path"] == "tb_top.dut"
+    assert source_edge["elaborated_pin_resolution"] == "exact"
+    assert source_edge["elaborated_pin_binding"]["pin"] == "clk"
+    assert source_edge["elaborated_pin_binding"]["signal"] == "clk"
+
     child = build_crossprobe(
         project,
         "tb_top.dut.count",
