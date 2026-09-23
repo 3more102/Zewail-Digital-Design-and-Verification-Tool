@@ -638,6 +638,110 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert unsupported_connectivity["boundary_unclassified_bindings"] == []
 
 
+def test_crossprobe_exposes_direct_internal_assignment_connectivity(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "instances": [
+            {
+                "path": "tb_top",
+                "name": "tb_top",
+                "module": "tb_top",
+                "top": True,
+            },
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+            },
+        ],
+        "internal_assignments": [
+            {
+                "status": "NORMALIZED",
+                "module": "counter",
+                "module_elaborated_name": "counter",
+                "assignment_type": "ASSIGNW",
+                "lhs_signal": "count",
+                "rhs_signal": "next_count",
+                "location": {"path": "rtl/counter.sv", "line": 5},
+            },
+            {
+                "status": "NORMALIZED",
+                "module": "counter",
+                "module_elaborated_name": "counter",
+                "assignment_type": "ASSIGN",
+                "lhs_signal": "shadow",
+                "rhs_signal": "count",
+                "location": {"path": "rtl/counter.sv", "line": 6},
+            },
+            {
+                "status": "UNSUPPORTED",
+                "module": "counter",
+                "module_elaborated_name": "counter",
+                "assignment_type": "ASSIGNW",
+                "lhs_expression_type": "VARREF",
+                "rhs_expression_type": "ADD",
+                "referenced_signals": ["count", "enable"],
+                "location": {"path": "rtl/counter.sv", "line": 7},
+            },
+        ],
+        "internal_assignment_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_direct_assign_varref_only",
+            "supported_assignment_types": ["ASSIGN", "ASSIGNW"],
+            "unsupported_expression_count": 1,
+        },
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    internal = result["elaborated_internal_connectivity"]
+    assert internal["status"] == "MATCHED"
+    assert internal["analysis_level"] == (
+        "simulator_elaborated_direct_assignment_varref"
+    )
+    assert internal["evidence_contract"] == (
+        "verilator_module_direct_assign_varref_only"
+    )
+    assert internal["query_instance_path"] == "tb_top.dut"
+    assert internal["query_module"] == "counter"
+    assert internal["query_signal"] == "count"
+    assert internal["completeness"] == "subset_only"
+
+    assert len(internal["direct_assignment_drivers"]) == 1
+    driver = internal["direct_assignment_drivers"][0]
+    assert driver["source_signal"] == "next_count"
+    assert driver["sink_signal"] == "count"
+    assert driver["query_role"] == "sink"
+
+    assert len(internal["direct_assignment_loads"]) == 1
+    load = internal["direct_assignment_loads"][0]
+    assert load["source_signal"] == "count"
+    assert load["sink_signal"] == "shadow"
+    assert load["query_role"] == "source"
+
+    assert len(internal["unsupported_assignments"]) == 1
+    unsupported = internal["unsupported_assignments"][0]
+    assert unsupported["rhs_expression_type"] == "ADD"
+    assert unsupported["referenced_signals"] == ["count", "enable"]
+
+
 def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
     tmp_path: Path,
 ):
