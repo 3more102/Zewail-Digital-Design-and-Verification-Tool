@@ -6,7 +6,7 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import _read_source, build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -325,3 +325,18 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+
+def test_desktop_source_reader_resolves_project_relative_source(tmp_path: Path):
+    project = initialize_project(tmp_path / "source-preview")
+    source = project.root / "rtl" / "preview.sv"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(
+        "module preview;\n  logic value;\nendmodule\n",
+        encoding="utf-8",
+    )
+
+    assert _read_source(project, "rtl/preview.sv") == (
+        "module preview;\n  logic value;\nendmodule\n"
+    )
