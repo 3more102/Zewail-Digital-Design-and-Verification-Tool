@@ -292,6 +292,16 @@ $enddefinitions $end
             + result["connectivity"]["loads"]
         )
     )
+    assert result["connectivity"]["elaborated_port_evidence"]["status"] == "NORMALIZED"
+    boundary_load = next(
+        item
+        for item in result["connectivity"]["loads"]
+        if item["kind"] == "boundary_port"
+    )
+    assert boundary_load["elaborated_port_resolution"] == "matched"
+    assert boundary_load["elaborated_port_direction"] == "output"
+    assert boundary_load["elaborated_port_direction_consistent"] is True
+    assert boundary_load["elaborated_role_consistent"] is True
 
 
 def test_crossprobe_preserves_unavailable_legacy_port_evidence(tmp_path: Path):
