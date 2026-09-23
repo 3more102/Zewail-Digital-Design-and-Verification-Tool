@@ -494,8 +494,17 @@ present and participate in the same VALID/READY payload-stability checks as the
 rest of their channel payload. Their meaning remains implementation-defined, so
 ZDDV never invents USER semantics. A normalized trace can opt into interface-width
 checks with a `user_signal_widths` object keyed by those five signal names. Each
-value is a non-negative bit width; zero declares the signal absent. When the
-metadata is omitted, existing USER transport behavior is unchanged.
+value is a non-negative bit width; zero declares the signal absent. When both request
+widths are supplied, AWUSER and ARUSER must match the AXI `USER_REQ_WIDTH`
+relationship. When WUSER, BUSER, and RUSER widths are all supplied, RUSER must equal
+WUSER + BUSER, matching `USER_DATA_WIDTH + USER_RESP_WIDTH`. Partial metadata
+remains partial and does not cause missing widths to be guessed. When the metadata
+is omitted, existing USER transport behavior is unchanged.
+
+`zddv axi4-waveform` records the declared widths of USER signals that are actually
+present in the selected VCD scope and feeds that evidence into the same checks. A
+USER signal missing from the VCD is not automatically treated as a zero-width
+physical interface signal.
 
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
