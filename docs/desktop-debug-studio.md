@@ -41,8 +41,17 @@ The shared SQLite helpers may initialize or upgrade the local
 Therefore "display-only" describes verification/project actions rather than a
 guarantee of zero filesystem writes.
 
-## Remaining desktop milestones
+## Review-gated project actions
 
-The roadmap still includes waveform navigation/targeted probing and review-gated
-project actions. These should continue to call the existing core APIs rather than
-duplicate simulator-specific logic in the GUI.
+Recorded-waveform navigation and bounded in-memory VCD probing are integrated through
+the existing waveform APIs. The first write-capable desktop action is a historical
+rerun flow: the user selects one persisted run, reviews the exact test/seed/plusargs/
+timeout and declared side effects, then confirms a deterministic SHA-256 fingerprint
+before ZDDV builds or executes anything.
+
+The fingerprint is recomputed immediately before execution. A project/top/simulator
+identity mismatch or changed review payload blocks the action rather than silently
+running stale inputs. Rerun actions do not invoke AI or apply generated artifacts.
+
+Additional project actions should keep the same review-before-effect model and reuse
+the existing core APIs instead of duplicating simulator-specific logic in the GUI.
