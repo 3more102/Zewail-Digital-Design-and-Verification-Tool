@@ -199,6 +199,58 @@ def desktop_crossprobe_evidence_rows(
             connectivity_detail += f" · relationships={','.join(relationships)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
 
+        unique_bindings: list[dict[str, Any]] = []
+        seen_bindings: set[tuple[str, str, str, str]] = set()
+        for binding in parent_bindings + instance_bindings:
+            key = (
+                str(binding.get("parent_instance_path") or ""),
+                str(binding.get("parent_signal") or ""),
+                str(binding.get("instance_path") or ""),
+                str(binding.get("pin") or ""),
+            )
+            if key in seen_bindings:
+                continue
+            seen_bindings.add(key)
+            unique_bindings.append(binding)
+
+        max_binding_rows = 6
+        for binding in unique_bindings[:max_binding_rows]:
+            parent_endpoint = (
+                f"{binding.get('parent_instance_path') or '-'}."
+                f"{binding.get('parent_signal') or '-'}"
+            )
+            child_endpoint = (
+                f"{binding.get('instance_path') or '-'}."
+                f"{binding.get('pin') or '-'}"
+            )
+            relationship = str(
+                binding.get("relationship") or "direct_pin_varref"
+            )
+            if relationship == "parent_signal_to_child_input":
+                endpoints = f"{parent_endpoint} -> {child_endpoint}"
+            elif relationship == "child_output_to_parent_signal":
+                endpoints = f"{child_endpoint} -> {parent_endpoint}"
+            elif relationship == "bidirectional_child_port":
+                endpoints = f"{parent_endpoint} <-> {child_endpoint}"
+            else:
+                endpoints = f"{parent_endpoint} ~ {child_endpoint}"
+            rows.append(
+                (
+                    "Elaborated pin",
+                    f"{endpoints} · direction={binding.get('port_direction') or '-'} "
+                    f"· {relationship}",
+                )
+            )
+
+        if len(unique_bindings) > max_binding_rows:
+            rows.append(
+                (
+                    "Elaborated pin",
+                    f"{len(unique_bindings) - max_binding_rows} additional "
+                    "binding(s) hidden",
+                )
+            )
+
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
         boundary_detail = str(elaborated_boundary.get("status") or "UNKNOWN")
