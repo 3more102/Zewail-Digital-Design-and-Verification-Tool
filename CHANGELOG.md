@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — v1.1 Desktop Debug Studio
+
+- Add the read-only Tk/ttk Debug Studio through `zddv gui`.
+- Reuse persisted ZDDV run history, failure grouping, per-test statistics, assertions,
+  normalized coverage, formal results, and UVM snapshots instead of creating a
+  second verification execution path.
+- Support both explicit point-count coverage snapshots and native percentage-score
+  snapshots in the desktop coverage view.
+- Keep Refresh display-only: it does not launch simulation/formal jobs, invoke AI
+  providers, or apply generated verification artifacts.
+- Keep Tk imports lazy so non-GUI CLI use and headless CI do not require a display.
+
 ## 1.0.0 — 2026-09-22
 
 ZDDV 1.0.0 marks the first release milestone in which the verification evidence,
