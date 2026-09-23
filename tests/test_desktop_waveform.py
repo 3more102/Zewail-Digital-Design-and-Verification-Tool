@@ -242,3 +242,114 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
     )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
+
+def test_desktop_crossprobe_rows_render_bounded_exact_and_unsupported_pin_evidence():
+    duplicate = {
+        "instance_path": "tb_top.u_in",
+        "pin": "clk",
+        "parent_instance_path": "tb_top",
+        "parent_signal": "clk",
+        "port_direction": "input",
+        "relationship": "parent_signal_to_child_input",
+    }
+    report = {
+        "elaborated_connectivity": {
+            "analysis_level": "simulator_elaborated_direct_pin_varref",
+            "parent_signal_bindings": [
+                duplicate,
+                {
+                    "instance_path": "tb_top.u_out",
+                    "pin": "count",
+                    "parent_instance_path": "tb_top",
+                    "parent_signal": "count",
+                    "port_direction": "output",
+                    "relationship": "child_output_to_parent_signal",
+                },
+            ],
+            "instance_port_bindings": [dict(duplicate)],
+            "unsupported_instance_port_bindings": [
+                {
+                    "status": "UNSUPPORTED",
+                    "instance_path": "tb_top.u_expr",
+                    "pin": "ready",
+                    "port_direction": "input",
+                    "expression_type": "AND",
+                }
+            ],
+        },
+    }
+
+    rows = desktop_crossprobe_evidence_rows(report)
+    pin_rows = [detail for kind, detail in rows if kind == "Elaborated pin"]
+
+    assert pin_rows == [
+        "tb_top.clk -> tb_top.u_in.clk · direction=input · "
+        "parent_signal_to_child_input",
+        "tb_top.u_out.count -> tb_top.count · direction=output · "
+        "child_output_to_parent_signal",
+        "tb_top.u_expr.ready · UNSUPPORTED · direction=input · "
+        "expression=AND · no direct VARREF relation",
+    ]
+    summary = next(
+        detail for kind, detail in rows if kind == "Elaborated connectivity"
+    )
+    assert "unsupported=1" in summary
+
+
+def test_desktop_crossprobe_rows_fail_closed_on_unknown_elaborated_contract():
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "future_unverified_contract",
+                "parent_signal_bindings": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert not any(
+        kind in {"Elaborated connectivity", "Elaborated pin"}
+        for kind, _detail in rows
+    )
+
+
+def test_desktop_crossprobe_rows_bound_elaborated_pin_details():
+    bindings = [
+        {
+            "instance_path": f"tb_top.dut{index}",
+            "pin": "clk",
+            "parent_instance_path": "tb_top",
+            "parent_signal": "clk",
+            "port_direction": "input",
+            "relationship": "parent_signal_to_child_input",
+        }
+        for index in range(3)
+    ]
+    rows = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "parent_signal_bindings": bindings,
+                "instance_port_bindings": [],
+                "unsupported_instance_port_bindings": [],
+            }
+        },
+        elaborated_limit=2,
+    )
+
+    pin_rows = [detail for kind, detail in rows if kind == "Elaborated pin"]
+    assert pin_rows == [
+        "tb_top.clk -> tb_top.dut0.clk · direction=input · "
+        "parent_signal_to_child_input",
+        "tb_top.clk -> tb_top.dut1.clk · direction=input · "
+        "parent_signal_to_child_input",
+        "1 additional evidence item(s) not shown",
+    ]
+    with pytest.raises(ValueError, match="row limit must be > 0"):
+        desktop_crossprobe_evidence_rows({}, elaborated_limit=0)
