@@ -385,41 +385,87 @@ def desktop_crossprobe_evidence_rows(
         isinstance(elaborated_internal_connectivity, dict)
         and elaborated_internal_connectivity.get("analysis_level")
         == "simulator_elaborated_module_root_assignw_direct_varref"
+        and elaborated_internal_connectivity.get("evidence_contract")
+        == "verilator_module_root_assignw_direct_varref_only"
         and elaborated_internal_connectivity.get("role_semantics")
         == "direct_continuous_assignment"
         and elaborated_internal_connectivity.get("status")
         in {"NORMALIZED", "PARTIAL"}
     )
     if trusted_internal_connectivity:
-        internal_role_keys = (
-            "drivers",
-            "loads",
-            "unresolved_assignments",
+        internal_status = elaborated_internal_connectivity["status"]
+        query_instance_path = elaborated_internal_connectivity.get(
+            "query_instance_path"
         )
-        internal_role_values = [
-            elaborated_internal_connectivity.get(key)
-            for key in internal_role_keys
-        ]
-        internal_roles_normalized = all(
-            isinstance(value, list)
-            and all(isinstance(item, dict) for item in value)
-            for value in internal_role_values
+        query_module = elaborated_internal_connectivity.get("query_module")
+        internal_drivers = elaborated_internal_connectivity.get("drivers")
+        internal_loads = elaborated_internal_connectivity.get("loads")
+        unresolved_assignments = elaborated_internal_connectivity.get(
+            "unresolved_assignments"
         )
-        if internal_roles_normalized:
-            internal_drivers = list(
-                elaborated_internal_connectivity["drivers"]
+
+        def trusted_internal_edge(item: Any) -> bool:
+            return (
+                isinstance(item, dict)
+                and item.get("kind") == "continuous_assignment"
+                and item.get("assignment_type") == "ASSIGNW"
+                and item.get("instance_path") == query_instance_path
+                and item.get("module") == query_module
+                and isinstance(item.get("source_signal"), str)
+                and bool(item.get("source_signal"))
+                and isinstance(item.get("target_signal"), str)
+                and bool(item.get("target_signal"))
             )
-            internal_loads = list(
-                elaborated_internal_connectivity["loads"]
+
+        def trusted_unresolved_assignment(item: Any) -> bool:
+            if not isinstance(item, dict):
+                return False
+            query_references = item.get("query_references")
+            return (
+                item.get("status") == "UNSUPPORTED"
+                and item.get("assignment_type") == "ASSIGNW"
+                and item.get("instance_path") == query_instance_path
+                and item.get("module") == query_module
+                and isinstance(query_references, list)
+                and bool(query_references)
+                and all(
+                    reference in {"lhs", "rhs"}
+                    for reference in query_references
+                )
             )
-            unresolved_assignments = list(
-                elaborated_internal_connectivity["unresolved_assignments"]
+
+        internal_roles_normalized = (
+            isinstance(query_instance_path, str)
+            and bool(query_instance_path)
+            and isinstance(query_module, str)
+            and bool(query_module)
+            and isinstance(internal_drivers, list)
+            and isinstance(internal_loads, list)
+            and isinstance(unresolved_assignments, list)
+            and all(
+                trusted_internal_edge(item)
+                for item in internal_drivers
             )
+            and all(
+                trusted_internal_edge(item)
+                for item in internal_loads
+            )
+            and all(
+                trusted_unresolved_assignment(item)
+                for item in unresolved_assignments
+            )
+        )
+        status_consistent = (
+            internal_status == "PARTIAL"
+            if unresolved_assignments
+            else internal_status == "NORMALIZED"
+        )
+        if internal_roles_normalized and status_consistent:
             rows.append(
                 (
                     "Elaborated internal connectivity",
                     "simulator_elaborated_module_root_assignw_direct_varref · "
-                    f"status={elaborated_internal_connectivity['status']} · "
+                    f"status={internal_status} · "
                     f"drivers={len(internal_drivers)} · "
                     f"loads={len(internal_loads)} · "
                     f"unresolved={len(unresolved_assignments)}",
@@ -441,18 +487,12 @@ def desktop_crossprobe_evidence_rows(
                     if location.get("line") is not None:
                         location_text += f":{location['line']}"
 
-                instance_path = item.get("instance_path") or "-"
+                instance_path = item["instance_path"]
                 if role == "UNRESOLVED":
-                    query_references = item.get("query_references")
-                    query_sides = (
-                        ",".join(
-                            str(value)
-                            for value in query_references
-                            if value
-                        )
-                        if isinstance(query_references, list)
-                        else "-"
-                    ) or "-"
+                    query_sides = ",".join(
+                        str(value)
+                        for value in item["query_references"]
+                    )
                     rows.append(
                         (
                             "Elaborated internal unresolved",
@@ -465,14 +505,11 @@ def desktop_crossprobe_evidence_rows(
                     )
                     continue
 
-                source_signal = item.get("source_signal") or "-"
-                target_signal = item.get("target_signal") or "-"
                 rows.append(
                     (
                         "Elaborated internal edge",
-                        f"{role} · {instance_path}.{source_signal} -> "
-                        f"{instance_path}.{target_signal} · "
-                        f"{item.get('assignment_type') or 'ASSIGNW'} · "
+                        f"{role} · {instance_path}.{item['source_signal']} -> "
+                        f"{instance_path}.{item['target_signal']} · ASSIGNW · "
                         f"location={location_text}",
                     )
                 )
