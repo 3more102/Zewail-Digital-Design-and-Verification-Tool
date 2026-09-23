@@ -236,6 +236,32 @@ $enddefinitions $end
                 "location": {"path": "rtl/leaf.sv", "line": 3, "column": 18},
             }
         ],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
+        "pin_bindings": [
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.g[0].u_leaf",
+                "instance_module": "leaf",
+                "pin": "count",
+                "parent_instance_path": "tb_top",
+                "signal": "count",
+                "generate_scopes": ["g[0]"],
+            },
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.g[1].u_leaf",
+                "instance_module": "leaf",
+                "pin": "count",
+                "parent_instance_path": "tb_top",
+                "signal": "count",
+                "generate_scopes": ["g[1]"],
+            },
+        ],
         "instances": [
             {
                 "path": "tb_top",
@@ -250,6 +276,14 @@ $enddefinitions $end
                 "module": "leaf",
                 "top": False,
                 "generate_scopes": ["g[0]"],
+                "location": {"path": "tb/tb_top.sv", "line": 5},
+            },
+            {
+                "path": "tb_top.g[1].u_leaf",
+                "name": "u_leaf",
+                "module": "leaf",
+                "top": False,
+                "generate_scopes": ["g[1]"],
                 "location": {"path": "tb/tb_top.sv", "line": 5},
             },
         ],
@@ -275,6 +309,24 @@ $enddefinitions $end
     assert result["elaborated_port"]["signal"] == "count"
     assert result["elaborated_port"]["port"]["direction"] == "output"
     assert result["elaborated_port"]["port"]["direction_field"] == "ioDirection"
+    generated_correlation = result["elaborated_source_correlation"]
+    assert generated_correlation["role_semantics"] == "source_structural_only"
+    assert len(generated_correlation["correlations"]) == 1
+    generated_edge = generated_correlation["correlations"][0]
+    assert generated_edge["status"] == "MATCHED"
+    assert generated_edge["binding_side"] == "instance_port"
+    assert generated_edge["source_unit"] == "tb_top"
+    assert generated_edge["source_roles"] == ["driver"]
+    assert generated_edge["match_basis"] == [
+        "direct_pin_resolves_source_generated_candidate"
+    ]
+    assert generated_edge["source_edge"]["elaborated_child_resolution"] == "ambiguous"
+    assert "tb_top.g[0].u_leaf" in generated_edge["source_edge"][
+        "elaborated_child_candidates"
+    ]
+    assert "tb_top.g[1].u_leaf" in generated_edge["source_edge"][
+        "elaborated_child_candidates"
+    ]
     assert result["source"]["unit"] == "leaf"
     assert result["source"]["file"] == "rtl/leaf.sv"
     assert result["source"]["declaration"]["line"] == 3
@@ -477,6 +529,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert len(parent_correlation["correlations"]) == 1
     parent_edge = parent_correlation["correlations"][0]
     assert parent_edge["status"] == "MATCHED"
+    assert parent_edge["match_basis"] == ["source_edge_exact_child_path"]
     assert parent_edge["binding_side"] == "parent_signal"
     assert parent_edge["source_unit"] == "tb_top"
     assert parent_edge["source_roles"] == ["load"]
@@ -511,6 +564,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert len(child_correlation["correlations"]) == 1
     child_edge = child_correlation["correlations"][0]
     assert child_edge["status"] == "MATCHED"
+    assert child_edge["match_basis"] == ["source_edge_exact_child_path"]
     assert child_edge["binding_side"] == "instance_port"
     assert child_edge["source_unit"] == "tb_top"
     assert child_edge["source_roles"] == ["driver"]
