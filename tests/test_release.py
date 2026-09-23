@@ -185,16 +185,16 @@ def test_release_verification_detects_tampered_signoff(tmp_path: Path):
 
     archive_path = Path(release["path"])
     tampered = tmp_path / "tampered.zip"
-    with zipfile.ZipFile(archive_path, "r") as source, zipfile.ZipFile(tampered, "w") as target:
-        for name in source.namelist():
-            data = source.read(name)
-            if name == "release/signoff.json":
-                payload = json.loads(data)
-                payload["project"] = "tampered"
-                data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
-            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_STORED
-            target.writestr(info, data)
+    with zipfile.ZipFile(archive_path, "r") as source:
+        manifest_bytes = source.read("release/manifest.json")
+        payload = json.loads(source.read("release/signoff.json"))
+    payload["project"] = "tampered"
+    tampered_signoff = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    _write_canonical_release_archive(
+        tampered,
+        manifest_bytes=manifest_bytes,
+        signoff_bytes=tampered_signoff,
+    )
 
     with pytest.raises(ValueError, match="inventory|SHA-256|metadata"):
         verify_verification_release(tampered, public_key=public_key)
