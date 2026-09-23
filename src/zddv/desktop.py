@@ -166,7 +166,7 @@ def build_desktop_snapshot(
     *,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Compose display-only Debug Studio state from persisted ZDDV evidence."""
+    """Compose Debug Studio evidence state plus explicit desktop capability metadata."""
     if limit < 1:
         raise ValueError("limit must be >= 1")
 
@@ -203,10 +203,15 @@ def build_desktop_snapshot(
             "simulator": project.simulator,
         },
         "policy": {
-            "display_only": True,
-            "executes_verification": False,
+            "display_only": False,
+            "evidence_views_display_only": True,
+            "executes_verification": True,
+            "automatic_verification_execution": False,
             "invokes_ai": False,
-            "applies_generated_artifacts": False,
+            "applies_generated_artifacts": True,
+            "automatic_generated_artifact_apply": False,
+            "review_gated_project_actions": True,
+            "review_gated_generated_artifact_apply": True,
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
