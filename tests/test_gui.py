@@ -87,10 +87,14 @@ def test_debug_gui_snapshot_is_deterministic_read_only_evidence_view(tmp_path: P
         },
     )
 
+    design_artifact = project.root / ".zddv" / "design" / "index.json"
+    assert not design_artifact.exists()
+
     first = build_debug_gui_snapshot(project, limit=10)
     second = build_debug_gui_snapshot(project, limit=10)
 
     assert first == second
+    assert not design_artifact.exists()
     assert first["project"]["name"] == "demo"
     assert first["project"]["top"] == "top"
     assert first["stats"]["total"] == 2
@@ -108,6 +112,11 @@ def test_debug_gui_snapshot_is_deterministic_read_only_evidence_view(tmp_path: P
         "instances": 1,
         "duplicate_unit_names": 0,
     }
+    source = first["design"]["files"][0]
+    assert source["path"] == "rtl/design.sv"
+    assert source["lines"] == 6
+    assert source["bytes"] > 0
+    assert len(source["sha256"]) == 64
     assert first["design"]["hierarchy"]["children"][0]["path"] == "top.u_leaf"
     assert first["latest_formal"] is None
     assert first["latest_uvm"] is None
