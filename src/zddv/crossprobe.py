@@ -680,14 +680,33 @@ def _correlate_elaborated_pin_bindings_with_source(
         }
         pin_aliases.add(pin)
 
-        candidates: list[dict[str, Any]] = []
+        candidates: list[tuple[dict[str, Any], str]] = []
         for role_key in ("drivers", "loads"):
             for edge in qualified.get(role_key, []):
                 if edge.get("kind") != "instance_port":
                     continue
-                if edge.get("elaborated_child_resolution") != "exact":
-                    continue
-                if edge.get("elaborated_child_path") != child_path:
+                resolution = edge.get("elaborated_child_resolution")
+                if (
+                    resolution == "exact"
+                    and edge.get("elaborated_child_path") == child_path
+                ):
+                    match_basis = "source_edge_exact_child_path"
+                elif (
+                    resolution == "ambiguous"
+                    and child_path
+                    in {
+                        str(value)
+                        for value in edge.get(
+                            "elaborated_child_candidates",
+                            [],
+                        )
+                        if value
+                    }
+                ):
+                    match_basis = (
+                        "direct_pin_resolves_source_generated_candidate"
+                    )
+                else:
                     continue
                 if str(edge.get("port") or "") not in pin_aliases:
                     continue
@@ -698,7 +717,7 @@ def _correlate_elaborated_pin_bindings_with_source(
                     and edge.get("child_type") != child_module
                 ):
                     continue
-                candidates.append(edge)
+                candidates.append((edge, match_basis))
 
         if not candidates:
             return {
@@ -708,8 +727,11 @@ def _correlate_elaborated_pin_bindings_with_source(
                 "source_unit": parent_unit["name"],
             }
 
-        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
-        for edge in candidates:
+        groups: dict[
+            tuple[Any, ...],
+            list[tuple[dict[str, Any], str]],
+        ] = {}
+        for edge, match_basis in candidates:
             key = (
                 edge.get("file"),
                 edge.get("line"),
@@ -717,9 +739,8 @@ def _correlate_elaborated_pin_bindings_with_source(
                 edge.get("child_type"),
                 edge.get("port"),
                 edge.get("expression"),
-                edge.get("elaborated_child_path"),
             )
-            groups.setdefault(key, []).append(edge)
+            groups.setdefault(key, []).append((edge, match_basis))
 
         if len(groups) != 1:
             return {
@@ -729,7 +750,8 @@ def _correlate_elaborated_pin_bindings_with_source(
                 "candidate_count": len(groups),
             }
 
-        edges = next(iter(groups.values()))
+        grouped_candidates = next(iter(groups.values()))
+        edges = [edge for edge, _ in grouped_candidates]
         source_edge = {
             key: value
             for key, value in edges[0].items()
@@ -739,6 +761,9 @@ def _correlate_elaborated_pin_bindings_with_source(
             **identity,
             "status": "MATCHED",
             "source_unit": parent_unit["name"],
+            "match_basis": sorted(
+                {match_basis for _, match_basis in grouped_candidates}
+            ),
             "source_roles": sorted(
                 {
                     str(edge["role"])
