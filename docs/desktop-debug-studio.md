@@ -77,9 +77,11 @@ direction-to-relationship pairing, and a direction that is semantically valid fo
 DRIVER/LOAD/UNCLASSIFIED bucket. Partial, malformed, or internally inconsistent role
 evidence is suppressed rather than converted into trusted counts or rows. The internal
 continuous-assignment view is rendered only for the core
-`simulator_elaborated_module_root_assignw_direct_varref` analysis level with
-`direct_continuous_assignment` role semantics and complete driver/load/unresolved
-mapping lists; complex-expression records remain unresolved evidence. Elaborated/source
+`simulator_elaborated_module_root_assignw_direct_varref` analysis level with the exact
+`verilator_module_root_assignw_direct_varref_only` evidence contract,
+`direct_continuous_assignment` role semantics, complete query identity, semantically
+normalized driver/load/unresolved items, and status/unresolved consistency.
+Complex-expression records remain unresolved evidence. Elaborated/source
 correlation is rendered only for the core
 `simulator_elaborated_to_source_structural_correlation` contract when
 `role_semantics=source_structural_only`, the correlation list is non-empty and
