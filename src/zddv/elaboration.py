@@ -212,7 +212,17 @@ def _json_cell_pin_bindings(
         if not pin_name:
             continue
 
-        expression = pin.get("exprp")
+        raw_expression = pin.get("exprp")
+        if (
+            isinstance(raw_expression, list)
+            and len(raw_expression) == 1
+            and isinstance(raw_expression[0], dict)
+        ):
+            expression = raw_expression[0]
+        elif isinstance(raw_expression, dict):
+            expression = raw_expression
+        else:
+            expression = None
         expression_type = (
             str(expression.get("type", "")).upper()
             if isinstance(expression, dict)
