@@ -240,3 +240,53 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+def test_desktop_snapshot_indexes_latest_waveform_without_writing_artifact(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "waveform-demo")
+    run_dir = project.root / ".zddv" / "runs" / "wave-run"
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.vcd"
+    waveform.write_text(
+        """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0001 #
+""",
+        encoding="utf-8",
+    )
+
+    run = _run_record("wave-run", "PASS", seed=3)
+    run["waveform"] = str(waveform)
+    record_run(project, run)
+
+    latest_artifact = project.root / ".zddv" / "waveforms" / "latest.json"
+    assert not latest_artifact.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    indexed = snapshot["waveform"]
+
+    assert indexed["status"] == "READY"
+    assert indexed["format"] == "vcd"
+    assert indexed["parse_status"] == "indexed"
+    assert indexed["selected_run"]["run_id"] == "wave-run"
+    assert [signal["path"] for signal in indexed["signals"]] == [
+        "tb_top.clk",
+        "tb_top.dut.count",
+    ]
+    assert indexed["timescale"] == "1ns"
+
+    # Debug Studio indexes in memory; viewing must not emit the normal CLI artifact.
+    assert not latest_artifact.exists()
