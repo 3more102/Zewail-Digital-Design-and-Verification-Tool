@@ -168,8 +168,17 @@ resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
 same source-structural edges with the exact parent instance path. Instance-port
 edges also retain an exact elaborated child path when one candidate is proven;
 multiple generated candidates are reported as ambiguous rather than selecting one.
-This qualification is hierarchy context only: exact elaborated signal/port drivers
-and loads remain a separate enrichment milestone.
+
+When normalized direct CELL-pin-to-VARREF evidence is available, each matching
+elaborated binding is also correlated back to source-structural `instance_port`
+edges for the parent signal. The correlation requires the same child port and
+module plus either the exact elaborated child path or membership in the source
+edge's explicit generated-candidate set. The returned edge records keep their
+original source `role` unchanged; direct pin evidence qualifies boundary identity
+but does not relabel driver/load semantics or claim internal elaborated drivers.
+
+This qualification is hierarchy and boundary-connection context only: exact
+elaborated internal signal drivers and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 
