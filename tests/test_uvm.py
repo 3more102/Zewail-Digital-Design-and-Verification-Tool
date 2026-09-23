@@ -224,6 +224,14 @@ def test_analyze_uvm_log_persists_snapshot_and_messages(tmp_path: Path):
     assert warnings[0]["report_id"] == "WARN"
     assert warnings[0]["message"] == "slow response"
 
+    first_message = list_uvm_report_messages(
+        project,
+        result["snapshot_id"],
+        limit=1,
+    )
+    assert len(first_message) == 1
+    assert first_message[0]["event_index"] == 0
+
 
 def test_uvm_cli_and_history(tmp_path: Path, capsys):
     project = initialize_project(tmp_path / "demo")
