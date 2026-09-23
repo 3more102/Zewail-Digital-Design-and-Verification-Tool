@@ -184,6 +184,13 @@ correlation; missing or multiple source edges stay explicit. Driver/load roles
 attached to this correlation are labeled `source_structural_only` and are not
 promoted to simulator-elaborated semantics.
 
+Separately, when a direct normalized binding also has trusted module-port direction,
+`elaborated_connectivity` classifies that module-boundary relation relative to the
+queried waveform signal as a `boundary_driver`, `boundary_load`, or both for
+`inout`. Missing or ambiguous direction is retained in
+`boundary_unclassified_bindings`, and unsupported expressions are excluded from
+these role lists.
+
 This qualification and correlation are hierarchy/boundary evidence only: exact
 elaborated internal signal drivers and loads remain a separate enrichment milestone.
 
