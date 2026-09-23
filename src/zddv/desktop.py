@@ -74,6 +74,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "NOT_PRESENT"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "NOT_PRESENT"},
         }
 
     try:
@@ -86,6 +88,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
         }
 
     instances = payload.get("instances") if isinstance(payload, dict) else None
@@ -97,6 +101,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
         }
 
     ports = payload.get("ports", [])
@@ -108,6 +114,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
         }
 
     port_evidence = payload.get("port_evidence")
@@ -124,6 +132,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
         }
     elif port_evidence.get("status") == "NORMALIZED" and "ports" not in payload:
         return {
@@ -133,12 +143,65 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
             "instances": [],
             "ports": [],
             "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
         }
 
     # Fail closed: persisted port rows are displayable only when the evidence
     # contract explicitly says they were normalized from the supported schema.
     if port_evidence.get("status") != "NORMALIZED":
         ports = []
+
+    pin_bindings = payload.get("pin_bindings", [])
+    if not isinstance(pin_bindings, list):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy payload pin_bindings must be a list",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
+        }
+
+    pin_binding_evidence = payload.get("pin_binding_evidence")
+    if pin_binding_evidence is None:
+        pin_binding_evidence = {
+            "status": "UNAVAILABLE",
+            "reason": "pin_binding_evidence_metadata_missing",
+        }
+    elif not isinstance(pin_binding_evidence, dict):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "elaborated hierarchy pin_binding_evidence must be an object",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
+        }
+    elif (
+        pin_binding_evidence.get("status") == "NORMALIZED"
+        and "pin_bindings" not in payload
+    ):
+        return {
+            "status": "INVALID",
+            "path": str(path),
+            "error": "normalized pin_binding_evidence requires a pin_bindings list",
+            "instances": [],
+            "ports": [],
+            "port_evidence": {"status": "INVALID"},
+            "pin_bindings": [],
+            "pin_binding_evidence": {"status": "INVALID"},
+        }
+
+    # Direct pin-binding rows can contain both NORMALIZED direct VARREF bindings
+    # and explicitly UNSUPPORTED complex expressions. Expose either only when the
+    # persisted evidence contract itself is normalized.
+    if pin_binding_evidence.get("status") != "NORMALIZED":
+        pin_bindings = []
 
     identity_errors: list[str] = []
     for field, expected in (
@@ -179,6 +242,11 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
                 "status": "STALE",
                 "reason": "elaborated_evidence_identity_mismatch",
             },
+            "pin_bindings": [],
+            "pin_binding_evidence": {
+                "status": "STALE",
+                "reason": "elaborated_evidence_identity_mismatch",
+            },
         }
 
     return {
@@ -194,6 +262,8 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
         "instances": instances,
         "ports": ports,
         "port_evidence": port_evidence,
+        "pin_bindings": pin_bindings,
+        "pin_binding_evidence": pin_binding_evidence,
     }
 
 
@@ -728,10 +798,20 @@ def launch_desktop_gui(
         elaborated = current["elaborated_hierarchy"]
         if elaborated["status"] == "PRESENT":
             ports_by_module: dict[str, list[dict[str, Any]]] = {}
+            port_directions: dict[tuple[str, str], str] = {}
             for port in elaborated.get("ports", []):
                 module_name = str(port.get("module") or "")
+                port_name = str(port.get("name") or "")
                 if module_name:
                     ports_by_module.setdefault(module_name, []).append(port)
+                if module_name and port_name and port.get("direction"):
+                    port_directions[(module_name, port_name)] = str(port["direction"])
+
+            pin_bindings_by_instance: dict[str, list[dict[str, Any]]] = {}
+            for binding in elaborated.get("pin_bindings", []):
+                instance_path = str(binding.get("instance_path") or "")
+                if instance_path:
+                    pin_bindings_by_instance.setdefault(instance_path, []).append(binding)
 
             for row in elaborated["instances"]:
                 location = row.get("location") or {}
@@ -781,6 +861,50 @@ def launch_desktop_gui(
                             else None,
                         )
 
+                instance_path = str(row.get("path") or "")
+                for binding in pin_bindings_by_instance.get(instance_path, []):
+                    pin = str(binding.get("pin") or "-")
+                    parent_path = str(binding.get("parent_instance_path") or "-")
+                    parent_signal = binding.get("signal")
+                    expression_type = str(binding.get("expression_type") or "")
+                    target = (
+                        f"{parent_path}.{parent_signal}"
+                        if parent_signal
+                        else f"{parent_path}.<{expression_type or 'expression'}>"
+                    )
+                    binding_location = (
+                        binding.get("pin_location")
+                        or binding.get("signal_location")
+                        or {}
+                    )
+                    binding_source = "-"
+                    if binding_location.get("path"):
+                        binding_source = str(binding_location["path"])
+                        if binding_location.get("line"):
+                            binding_source += f":{binding_location['line']}"
+
+                    binding_item_id = elaborated_tree.insert(
+                        item_id,
+                        "end",
+                        text=f"{pin} -> {target}",
+                        values=(
+                            binding.get("instance_module") or row.get("module") or "-",
+                            port_directions.get(
+                                (str(row.get("module") or ""), pin),
+                                "-",
+                            ),
+                            binding_source,
+                            binding.get("status") or "UNKNOWN",
+                        ),
+                    )
+                    if binding_location.get("path"):
+                        elaborated_targets[binding_item_id] = (
+                            str(binding_location["path"]),
+                            int(binding_location["line"])
+                            if binding_location.get("line")
+                            else None,
+                        )
+
             port_evidence = elaborated.get("port_evidence") or {}
             if port_evidence.get("status") != "NORMALIZED":
                 elaborated_tree.insert(
@@ -794,6 +918,22 @@ def launch_desktop_gui(
                         or port_evidence.get("source_format")
                         or "-",
                         port_evidence.get("status") or "UNAVAILABLE",
+                    ),
+                )
+
+            pin_binding_evidence = elaborated.get("pin_binding_evidence") or {}
+            if pin_binding_evidence.get("status") != "NORMALIZED":
+                elaborated_tree.insert(
+                    "",
+                    "end",
+                    text="Pin-binding evidence",
+                    values=(
+                        "-",
+                        "-",
+                        pin_binding_evidence.get("reason")
+                        or pin_binding_evidence.get("source_format")
+                        or "-",
+                        pin_binding_evidence.get("status") or "UNAVAILABLE",
                     ),
                 )
         else:
