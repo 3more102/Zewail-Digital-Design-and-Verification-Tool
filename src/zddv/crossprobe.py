@@ -249,6 +249,10 @@ def _design_unit_for_elaborated_instance(
 def _elaborated_port_directions(
     elaborated_index: dict[str, Any],
 ) -> dict[tuple[str, str], str]:
+    evidence = elaborated_index.get("port_evidence")
+    if not isinstance(evidence, dict) or evidence.get("status") != "NORMALIZED":
+        return {}
+
     directions: dict[tuple[str, str], str] = {}
     ambiguous: set[tuple[str, str]] = set()
     for port in elaborated_index.get("ports", []):
