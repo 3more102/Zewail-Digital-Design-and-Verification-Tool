@@ -78,6 +78,7 @@ def test_audit_reports_existing_parsers_and_pending_toggle_schema(tmp_path: Path
     assert result["summary"]["parser_supported_files"] == 3
     assert result["summary"]["evidence_only_files"] == 1
     assert result["summary"]["normalized_points"] >= 4
+    assert result["summary"]["layout_fingerprinted_files"] == 4
     assert result["summary"]["pending_schema_targets"] == [
         "multibit-condition",
         "enumerated-or-unknown-toggle",
@@ -98,6 +99,81 @@ def test_audit_reports_existing_parsers_and_pending_toggle_schema(tmp_path: Path
         "verified-parser-available"
     )
     assert by_name["toggle-details.txt"]["normalization_status"] == "evidence-only"
+
+    xml_layout = by_name["toggle-details.xml"]["layout"]
+    assert xml_layout["kind"] == "xml-structure"
+    assert len(xml_layout["fingerprint_sha256"]) == 64
+    assert "attribute_names" in xml_layout["sample_elements"][-1]
+    assert "attribute_values" not in json.dumps(xml_layout["sample_elements"])
+    assert "pending toggle semantics are inferred" in xml_layout["semantics"]
+
+    text_layout = by_name["multibit-expression.txt"]["layout"]
+    assert text_layout["kind"] == "text-lexical-cues"
+    assert len(text_layout["fingerprint_sha256"]) == 64
+    assert text_layout["structured_rows"] > 0
+    assert "raw values are excluded" in text_layout["semantics"]
+
+
+def test_xml_layout_fingerprint_ignores_values_but_detects_structure(tmp_path: Path):
+    first_dir = tmp_path / "first"
+    changed_value_dir = tmp_path / "changed-value"
+    changed_shape_dir = tmp_path / "changed-shape"
+    for directory in (first_dir, changed_value_dir, changed_shape_dir):
+        directory.mkdir()
+
+    (first_dir / "toggle-details.xml").write_text(TOGGLE_XML, encoding="utf-8")
+    (changed_value_dir / "toggle-details.xml").write_text(
+        TOGGLE_XML.replace('name="IDLE" c="3"', 'name="IDLE" c="4"'),
+        encoding="utf-8",
+    )
+    (changed_shape_dir / "toggle-details.xml").write_text(
+        TOGGLE_XML.replace(
+            '<togenum name="state">',
+            '<togenum name="state" encoding="enum">',
+        ),
+        encoding="utf-8",
+    )
+
+    first = audit_questa_coverage_evidence(first_dir)["files"][0]
+    changed_value = audit_questa_coverage_evidence(changed_value_dir)["files"][0]
+    changed_shape = audit_questa_coverage_evidence(changed_shape_dir)["files"][0]
+
+    assert first["sha256"] != changed_value["sha256"]
+    assert (
+        first["layout"]["fingerprint_sha256"]
+        == changed_value["layout"]["fingerprint_sha256"]
+    )
+    assert (
+        first["layout"]["fingerprint_sha256"]
+        != changed_shape["layout"]["fingerprint_sha256"]
+    )
+
+
+def test_text_layout_fingerprint_ignores_count_value_changes(tmp_path: Path):
+    first_dir = tmp_path / "first-text"
+    changed_dir = tmp_path / "changed-text"
+    first_dir.mkdir()
+    changed_dir.mkdir()
+    (first_dir / "multibit-expression.txt").write_text(
+        MULTIBIT_EXPRESSION,
+        encoding="utf-8",
+    )
+    (changed_dir / "multibit-expression.txt").write_text(
+        MULTIBIT_EXPRESSION.replace(
+            "Row 1: a[i]_0                     1 ***0*** b[i]",
+            "Row 1: a[i]_0                     2 ***0*** b[i]",
+        ),
+        encoding="utf-8",
+    )
+
+    first = audit_questa_coverage_evidence(first_dir)["files"][0]
+    changed = audit_questa_coverage_evidence(changed_dir)["files"][0]
+
+    assert first["sha256"] != changed["sha256"]
+    assert (
+        first["layout"]["fingerprint_sha256"]
+        == changed["layout"]["fingerprint_sha256"]
+    )
 
 
 def test_writer_records_exact_file_hashes(tmp_path: Path):
@@ -147,6 +223,7 @@ def test_cli_audits_default_questa_coverage_directory(tmp_path: Path, capsys):
     assert "QUESTA DETAIL AUDIT:" in terminal
     assert "pending=multibit-condition,enumerated-or-unknown-toggle" in terminal
     assert "togenum=1" in terminal
+    assert "layout=" in terminal
     assert "No pending schema is inferred." in terminal
 
     report = project.root / ".zddv" / "coverage" / "questa-detail-audit.json"
