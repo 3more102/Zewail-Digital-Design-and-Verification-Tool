@@ -99,14 +99,14 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
 
 
 def _read_source(project: ProjectConfig, value: str) -> str:
-    """Read one project-owned source file for display without mutating project state."""
-    root = project.root.resolve()
+    """Read one configured project source file for display without mutating it."""
     path = Path(value)
-    candidate = (path if path.is_absolute() else root / path).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("source path must remain inside the project root") from exc
+    candidate = (path if path.is_absolute() else project.root / path).resolve()
+    allowed = {source.resolve() for source in project.source_files()}
+    if candidate not in allowed:
+        raise ValueError("source preview is restricted to configured project sources")
+    if not candidate.is_file():
+        raise FileNotFoundError(candidate)
     return candidate.read_text(encoding="utf-8", errors="replace")
 
 
