@@ -48,7 +48,8 @@ Current status: deterministic source indexing, source-level hierarchy, VCD wavef
 indexing, targeted VCD value-change probing, source-level structural drivers/loads
 navigation, waveform-to-source cross-probing, assertion-to-waveform correlation, and
 the first protocol transaction reconstruction path (normalized APB traces) are
-implemented. Elaborated connectivity and waveform-driven protocol extraction remain planned.
+implemented. Waveform-driven APB extraction is implemented; simulator-elaborated
+hierarchy/connectivity enrichment remains planned.
 
 - [x] Design hierarchy (source-level).
 - [x] Source indexing.
@@ -193,6 +194,23 @@ uncollected verification objectives passed.
 - [x] CI-friendly signoff command exit status and JSON artifact.
 - [x] Explicit snapshot/run ID pinning for release-candidate manifests.
 - [x] Signed release manifest and reproducible archive export (Ed25519, exact signoff-SHA confirmation, deterministic ZIP).
+
+## v1.1 — Elaborated Debug Evidence
+
+Current status: the first Verilator-backed elaboration adapter is implemented on the
+v1.1 feature branch. It uses Verilator's supported JSON-only parser/elaboration output,
+keeps the raw tree/meta artifacts as evidence, and normalizes module/cell hierarchy,
+generate-scope paths, source locations, and SHA-256 provenance without replacing the
+existing simulator-independent source index.
+
+- [x] Verilator 5.044+ JSON-only elaboration capture with explicit raw tree/meta outputs.
+- [x] Conservative MODULE/CELL normalization from verified Verilator JSON fields.
+- [x] Generated GENBLOCK scope preservation in normalized instance paths.
+- [x] Source-location metadata and raw tree/meta SHA-256 provenance.
+- [x] Explicit rejection of unsupported Verilator versions and unknown JSON roots.
+- [ ] Feed elaborated hierarchy evidence into waveform/source cross-probing.
+- [ ] Add elaborated signal/port connectivity while preserving source-structural evidence.
+- [ ] Add equivalent elaboration adapters only where simulator-native schemas are verified.
 
 ## Long-Term Direction
 
