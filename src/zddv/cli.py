@@ -311,6 +311,7 @@ def cmd_crossprobe(args) -> int:
         run_id=args.run_id,
         input_path=args.input,
         output=args.output,
+        fst_converter=args.fst2vcd,
     )
     signal = result["waveform"]["signal"]
     print(f"CROSSPROBE {result['status']}: {signal['path']}")
@@ -349,6 +350,7 @@ def cmd_assertion_waveform(args) -> int:
         limit=args.limit,
         signal_hint_limit=args.signal_limit,
         output=args.output,
+        fst_converter=args.fst2vcd,
     )
     summary = result["summary"]
     print(
@@ -3100,6 +3102,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=".zddv/debug/crossprobe.json",
         help="Cross-probe JSON report path",
     )
+    p_crossprobe.add_argument(
+        "--fst2vcd",
+        nargs="?",
+        const="fst2vcd",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicitly allow FST-to-VCD conversion for cross-probing; optionally "
+            "provide the fst2vcd executable path"
+        ),
+    )
     p_crossprobe.set_defaults(func=cmd_crossprobe)
 
     p_assertion_waveform = sub.add_parser(
@@ -3140,6 +3153,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default=".zddv/debug/assertion-waveform.json",
         help="JSON correlation report path",
+    )
+    p_assertion_waveform.add_argument(
+        "--fst2vcd",
+        nargs="?",
+        const="fst2vcd",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicitly allow FST-to-VCD conversion while correlating assertion "
+            "events; optionally provide the fst2vcd executable path"
+        ),
     )
     p_assertion_waveform.set_defaults(func=cmd_assertion_waveform)
 
