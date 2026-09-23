@@ -229,30 +229,34 @@ def test_parse_verilator_json_normalizes_direct_cell_pin_varrefs_only(
                                 "name": "a",
                                 "origName": "a",
                                 "loc": "d,2:54,2:60",
-                                "exprp": {
-                                    "type": "VARREF",
-                                    "name": "src",
-                                    "origName": "src",
-                                    "verilogName": "src",
-                                    "loc": "d,2:57,2:59",
-                                },
+                                "exprp": [
+                                    {
+                                        "type": "VARREF",
+                                        "name": "src",
+                                        "origName": "src",
+                                        "verilogName": "src",
+                                        "loc": "d,2:57,2:59",
+                                    }
+                                ],
                             },
                             {
                                 "type": "PIN",
                                 "name": "b",
                                 "origName": "b",
                                 "loc": "d,2:63,2:74",
-                                "exprp": {
-                                    "type": "AND",
-                                    "lhsp": {
-                                        "type": "VARREF",
-                                        "name": "src",
-                                    },
-                                    "rhsp": {
-                                        "type": "VARREF",
-                                        "name": "other",
-                                    },
-                                },
+                                "exprp": [
+                                    {
+                                        "type": "AND",
+                                        "lhsp": {
+                                            "type": "VARREF",
+                                            "name": "src",
+                                        },
+                                        "rhsp": {
+                                            "type": "VARREF",
+                                            "name": "other",
+                                        },
+                                    }
+                                ],
                             },
                         ],
                     }
