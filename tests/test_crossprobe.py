@@ -236,6 +236,32 @@ $enddefinitions $end
                 "location": {"path": "rtl/leaf.sv", "line": 3, "column": 18},
             }
         ],
+        "pin_binding_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
+        "pin_bindings": [
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.g[0].u_leaf",
+                "instance_module": "leaf",
+                "pin": "count",
+                "parent_instance_path": "tb_top",
+                "signal": "count",
+                "generate_scopes": ["g[0]"],
+            },
+            {
+                "status": "NORMALIZED",
+                "instance_path": "tb_top.g[1].u_leaf",
+                "instance_module": "leaf",
+                "pin": "count",
+                "parent_instance_path": "tb_top",
+                "signal": "count",
+                "generate_scopes": ["g[1]"],
+            },
+        ],
         "instances": [
             {
                 "path": "tb_top",
@@ -250,6 +276,14 @@ $enddefinitions $end
                 "module": "leaf",
                 "top": False,
                 "generate_scopes": ["g[0]"],
+                "location": {"path": "tb/tb_top.sv", "line": 5},
+            },
+            {
+                "path": "tb_top.g[1].u_leaf",
+                "name": "u_leaf",
+                "module": "leaf",
+                "top": False,
+                "generate_scopes": ["g[1]"],
                 "location": {"path": "tb/tb_top.sv", "line": 5},
             },
         ],
@@ -275,6 +309,18 @@ $enddefinitions $end
     assert result["elaborated_port"]["signal"] == "count"
     assert result["elaborated_port"]["port"]["direction"] == "output"
     assert result["elaborated_port"]["port"]["direction_field"] == "ioDirection"
+    generated_binding = result["elaborated_connectivity"]["instance_port_bindings"][0]
+    generated_correlation = generated_binding["source_structural_correlation"]
+    assert generated_correlation["status"] == "MATCHED"
+    assert generated_correlation["match_basis"] == [
+        "direct_pin_resolves_source_generated_candidate"
+    ]
+    assert generated_correlation["roles"] == ["driver"]
+    assert generated_correlation["role_semantics"] == "source_structural_unchanged"
+    assert generated_correlation["edges"][0]["elaborated_child_resolution"] == "ambiguous"
+    assert "tb_top.g[0].u_leaf" in generated_correlation["edges"][0][
+        "elaborated_child_candidates"
+    ]
     assert result["source"]["unit"] == "leaf"
     assert result["source"]["file"] == "rtl/leaf.sv"
     assert result["source"]["declaration"]["line"] == 3
@@ -434,6 +480,14 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["parent_signal"] == "clk"
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
+    parent_correlation = child_pin["source_structural_correlation"]
+    assert parent_correlation["status"] == "MATCHED"
+    assert parent_correlation["analysis_level"] == "source_structural_instance_port"
+    assert parent_correlation["match_basis"] == ["source_edge_exact_child_path"]
+    assert parent_correlation["roles"] == ["load"]
+    assert parent_correlation["role_semantics"] == "source_structural_unchanged"
+    assert parent_correlation["edges"][0]["kind"] == "instance_port"
+    assert parent_correlation["edges"][0]["role"] == "load"
 
     child = build_crossprobe(
         project,
@@ -451,6 +505,12 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+    child_correlation = parent_binding["source_structural_correlation"]
+    assert child_correlation["status"] == "MATCHED"
+    assert child_correlation["roles"] == ["driver"]
+    assert child_correlation["role_semantics"] == "source_structural_unchanged"
+    assert child_correlation["edges"][0]["kind"] == "instance_port"
+    assert child_correlation["edges"][0]["role"] == "driver"
 
     elaborated["port_evidence"] = {
         "status": "UNAVAILABLE",
@@ -467,6 +527,8 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    assert ungated_binding["source_structural_correlation"]["status"] == "MATCHED"
+    assert ungated_binding["source_structural_correlation"]["roles"] == ["load"]
 
     elaborated["port_evidence"] = {
         "status": "NORMALIZED",
