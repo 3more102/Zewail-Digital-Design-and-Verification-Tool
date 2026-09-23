@@ -432,6 +432,16 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert child_pin["parent_signal"] == "clk"
     assert child_pin["port_direction"] == "input"
     assert child_pin["relationship"] == "parent_signal_to_child_input"
+    parent_correlation = child_pin["source_structural_correlation"]
+    assert parent_correlation["status"] == "MATCHED"
+    assert parent_correlation["analysis_level"] == "source_structural_instance_port"
+    assert parent_correlation["match_basis"] == ["source_edge_exact_child_path"]
+    assert parent_correlation["roles"] == ["load"]
+    assert parent_correlation["role_semantics"] == "source_structural_unchanged"
+    assert len(parent_correlation["edges"]) == 1
+    assert parent_correlation["edges"][0]["kind"] == "instance_port"
+    assert parent_correlation["edges"][0]["role"] == "load"
+    assert parent_correlation["edges"][0]["elaborated_child_path"] == "tb_top.dut"
 
     child = build_crossprobe(
         project,
@@ -448,6 +458,14 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert parent_binding["parent_signal"] == "count"
     assert parent_binding["port_direction"] == "output"
     assert parent_binding["relationship"] == "child_output_to_parent_signal"
+    child_correlation = parent_binding["source_structural_correlation"]
+    assert child_correlation["status"] == "MATCHED"
+    assert child_correlation["roles"] == ["driver"]
+    assert child_correlation["role_semantics"] == "source_structural_unchanged"
+    assert len(child_correlation["edges"]) == 1
+    assert child_correlation["edges"][0]["kind"] == "instance_port"
+    assert child_correlation["edges"][0]["role"] == "driver"
+    assert child_correlation["edges"][0]["elaborated_child_path"] == "tb_top.dut"
 
     elaborated["port_evidence"] = {
         "status": "UNAVAILABLE",
@@ -464,6 +482,44 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+    assert ungated_binding["source_structural_correlation"]["status"] == "MATCHED"
+    assert ungated_binding["source_structural_correlation"]["roles"] == ["load"]
+
+
+def test_crossprobe_rejects_malformed_normalized_pin_binding_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="normalized pin_binding_evidence requires a pin_bindings list",
+    ):
+        build_crossprobe(
+            project,
+            "TOP.tb_top.clk",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index={
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "instances": [
+                    {
+                        "path": "tb_top",
+                        "name": "tb_top",
+                        "module": "tb_top",
+                        "top": True,
+                    }
+                ],
+                "pin_binding_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_cell_pin_direct_varref_only",
+                },
+            },
+        )
+
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
     project = _project(tmp_path)
