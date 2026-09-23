@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 transaction-ID evidence hardening
+
+- Keep partial or undumped AWID/BID and ARID/RID VCD pairs unknown instead of inferring a zero-width physical interface.
+- Distinguish physically observed ID signals from logical master-interface default values when enforcing explicit zero/nonzero ID-width metadata.
+- Preserve matching-pair width checks and the Arm-defined 0..32 property bounds.
+
 ### Elaborated boundary connectivity
 
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
