@@ -89,9 +89,14 @@ def _validate_signoff_payload(payload: dict[str, Any], *, label: str) -> None:
             raise ValueError(f"{label} provenance mismatch: {field}")
 
 
-def _signoff_ref(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+def _signoff_ref(
+    project: ProjectConfig,
+    path: Path,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    relative_path = path.resolve().relative_to(project.root.resolve()).as_posix()
     return {
-        "path": str(path),
+        "path": relative_path,
         "signoff_sha256": payload["provenance"]["signoff_sha256"],
         "evidence_sha256": payload["provenance"]["evidence_sha256"],
         "policy_sha256": payload["provenance"]["policy_sha256"],
@@ -245,6 +250,7 @@ def _check_diff(
 
 
 def build_verification_signoff_diff(
+    project: ProjectConfig,
     baseline_path: Path,
     baseline: dict[str, Any],
     current_path: Path,
@@ -307,8 +313,8 @@ def build_verification_signoff_diff(
             "ZDDV signoff bundles. It records evidence/policy/check changes and does "
             "not infer that a changed result is better, worse, or specification-complete."
         ),
-        "baseline": _signoff_ref(baseline_path, baseline),
-        "current": _signoff_ref(current_path, current),
+        "baseline": _signoff_ref(project, baseline_path, baseline),
+        "current": _signoff_ref(project, current_path, current),
         "policy": {
             "changed": policy_changed,
             "changed_keys": policy_changed_keys,
@@ -354,6 +360,7 @@ def compare_verification_signoff_bundles(
         label="Current signoff",
     )
     return build_verification_signoff_diff(
+        project,
         baseline_path,
         baseline_payload,
         current_path,
