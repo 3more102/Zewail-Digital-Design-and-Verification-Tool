@@ -126,6 +126,21 @@ def extract_axi4_trace_from_vcd(
         if name in scoped_signals
     }
 
+    id_widths: dict[str, int] = {}
+    for property_name, pair in {
+        "ID_W_WIDTH": ("AWID", "BID"),
+        "ID_R_WIDTH": ("ARID", "RID"),
+    }.items():
+        if all(name in scoped_signals for name in pair):
+            first_width = int(scoped_signals[pair[0]]["width"])
+            second_width = int(scoped_signals[pair[1]]["width"])
+            if first_width != second_width:
+                raise RuntimeError(
+                    f"{pair[0]} and {pair[1]} widths must match {property_name}; "
+                    f"got {pair[0]}={first_width}, {pair[1]}={second_width}"
+                )
+            id_widths[property_name] = first_width
+
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
         available[name]: name
@@ -160,10 +175,12 @@ def extract_axi4_trace_from_vcd(
     waveform["rdata_width_bits"] = rdata_width
     waveform["wstrb_width"] = wstrb_width
     waveform["user_signal_widths"] = dict(user_signal_widths)
+    waveform["id_widths"] = dict(id_widths)
     return {
         "source": "vcd-waveform",
         "data_width_bits": wdata_width,
         "user_signal_widths": user_signal_widths,
+        "id_widths": id_widths,
         "waveform": waveform,
         "samples": normalized_samples,
     }
