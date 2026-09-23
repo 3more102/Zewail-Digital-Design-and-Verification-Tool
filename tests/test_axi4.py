@@ -1939,6 +1939,86 @@ def test_axi4_zero_id_width_requires_absent_id_signals():
     }
 
 
+def test_axi4_zero_id_width_accepts_explicit_master_default_without_physical_id():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x11,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BRESP": "OKAY",
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["transactions"][0]["id"] == 0
+    assert result["master_signal_defaults"]["AWID"] == 0
+
+
+def test_axi4_zero_id_width_rejects_physical_id_even_without_channel_activity():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 0},
+            "samples": [{"cycle": 0, "AWID": 0}],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "id_signal_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "AWID"
+
+
+def test_axi4_positive_id_width_does_not_accept_synthesized_master_default():
+    result = analyze_axi4_trace(
+        {
+            "id_widths": {"ID_W_WIDTH": 2},
+            "absent_master_signals": ["AWID"],
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                }
+            ],
+        }
+    )
+
+    assert any(
+        item["code"] == "missing_transaction_id" and item["signal"] == "AWID"
+        for item in result["violations"]
+    )
+
+
 @pytest.mark.parametrize("width", [-1, 33, True, "bad"])
 def test_axi4_rejects_invalid_id_width_metadata(width):
     with pytest.raises(ValueError, match="0..32"):
