@@ -240,9 +240,7 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
         "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
         "instance-port bindings=1 · relationships=child_output_to_parent_signal"
     )
-    assert not any(
-        kind == "Elaborated boundary roles" for kind, _detail in rows
-    )
+    assert "Elaborated boundary roles" not in rows
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
 
