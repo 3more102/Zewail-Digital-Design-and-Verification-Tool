@@ -130,6 +130,14 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
                 "generate_scopes": [],
             },
         ],
+        elaborated_ports=[
+            {"module": "child", "name": "a", "direction": "input", "direction_field": "ioDirection"},
+        ],
+        port_evidence={"status": "NORMALIZED", "source_format": "json", "contract": "verilator_module_var_io_direction"},
+        elaborated_pin_bindings=[
+            {"instance_path": "top.u_child", "parent_instance_path": "top", "pin": "a", "status": "NORMALIZED", "signal": "mid", "expression_type": "VARREF"},
+        ],
+        pin_binding_evidence={"status": "NORMALIZED", "source_format": "json", "contract": "verilator_cell_pin_direct_varref_only"},
     )
 
     instance_load = next(
@@ -140,6 +148,12 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["instance_path"] == "top"
     assert instance_load["elaborated_child_resolution"] == "exact"
     assert instance_load["elaborated_child_path"] == "top.u_child"
+    assert instance_load["elaborated_port_resolution"] == "matched"
+    assert instance_load["elaborated_port_direction"] == "input"
+    assert instance_load["elaborated_role_consistent"] is True
+    assert instance_load["elaborated_pin_binding_resolution"] == "matched"
+    assert instance_load["elaborated_pin_signal"] == "mid"
+    assert instance_load["elaborated_pin_signal_consistent"] is True
 
 
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
