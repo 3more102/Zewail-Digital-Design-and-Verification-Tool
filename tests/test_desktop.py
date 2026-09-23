@@ -131,3 +131,63 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+def test_desktop_snapshot_indexes_sources_and_hierarchy_without_writing_artifact(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "demo")
+    (project.root / "rtl" / "child.sv").write_text(
+        """module child(
+    input logic a,
+    output logic y
+);
+assign y = a;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (project.root / "tb" / "tb_top.sv").write_text(
+        """module tb_top;
+logic a;
+logic y;
+child dut (
+    .a(a),
+    .y(y)
+);
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = ["tb/*.sv"]
+    project.top = "tb_top"
+
+    index_artifact = project.root / ".zddv" / "design" / "index.json"
+    assert not index_artifact.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    design = snapshot["design"]
+
+    assert design["summary"] == {
+        "files": 2,
+        "units": 2,
+        "instances": 1,
+        "duplicate_unit_names": 0,
+    }
+    assert [row["path"] for row in design["files"]] == [
+        "rtl/child.sv",
+        "tb/tb_top.sv",
+    ]
+    assert design["hierarchy"]["instance"] == "tb_top"
+    assert design["hierarchy"]["resolved"] is True
+    assert len(design["hierarchy"]["children"]) == 1
+    child = design["hierarchy"]["children"][0]
+    assert child["instance"] == "dut"
+    assert child["type"] == "child"
+    assert child["file"] == "rtl/child.sv"
+    assert child["resolved"] is True
+
+    # The desktop view uses the in-memory design index and must not create
+    # the normal CLI design-index artifact merely by viewing the project.
+    assert not index_artifact.exists()
