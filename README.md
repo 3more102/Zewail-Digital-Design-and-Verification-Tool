@@ -148,6 +148,7 @@ zddv --project my_project index
 zddv --project my_project hierarchy
 zddv --project my_project elaborate
 zddv --project my_project hierarchy --elaborated
+zddv --project my_project gui --limit 100
 zddv --project my_project connectivity
 zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
@@ -817,7 +818,8 @@ bundle is review-required before any external use.
 - [x] Review-gated generated assertion/test staging and explicit SHA-confirmed apply
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
-- [ ] Desktop debug GUI
+- [x] Desktop Debug Studio read-only foundation (summary, runs, failure groups, assertions, coverage, formal, and UVM evidence)
+- [ ] Interactive source/hierarchy/waveform panes and explicitly review-gated project actions
 
 ## Design Principles
 
@@ -833,6 +835,7 @@ bundle is review-required before any external use.
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+- [Desktop Debug Studio](docs/desktop-gui.md)
 - [Generated Verification Review Workflow](docs/generated-verification.md)
 - [AI Provenance Chain Audit](docs/ai-chain-audit.md)
 - [AI RCA Context](docs/ai-rca-context.md)
