@@ -86,7 +86,9 @@ burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/
 foundation. Core AXI4 exclusive-access semantics plus address-sideband width and AxREGION 4KB
 consistency checks, reserved AxCACHE encoding validation, B/M plus direction-aware
 Allocate/Other-Allocate memory-class evidence (with legacy RA/WA bit compatibility),
-optional USER-sideband transport evidence with explicit per-signal width/presence metadata, explicit ID_W_WIDTH/ID_R_WIDTH transaction-ID presence and range evidence, data-width-aware AxSIZE/WSTRB byte-lane
+optional USER-sideband transport evidence with explicit per-signal width/presence metadata,
+explicit ID_W_WIDTH/ID_R_WIDTH transaction-ID presence and range evidence, explicit
+ADDR_WIDTH address-range and VCD-width evidence, data-width-aware AxSIZE/WSTRB byte-lane
 validation, and explicit absent-master-signal default normalization are implemented;
 exhaustive optional AXI4 sideband/coherency semantics,
 structural CDC signoff, and specification-complete UCIe checking remain planned.
@@ -104,6 +106,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 USER_REQ_WIDTH/RUSER composition consistency and VCD USER-width evidence capture.
 - [x] AXI4 USER configuration/response-bit guidance as non-failing advisory evidence.
 - [x] AXI4 ID_W_WIDTH/ID_R_WIDTH metadata validation plus complete-pair VCD width evidence for AWID/BID and ARID/RID; omitted/partial declarations remain unknown.
+- [x] AXI4 ADDR_WIDTH metadata/range validation and matching AWADDR/ARADDR VCD width evidence.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
