@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_index,
+    probe_desktop_waveform,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -14,7 +18,13 @@ from zddv.storage import (
 )
 
 
-def _run_record(run_id: str, status: str, *, seed: int) -> dict:
+def _run_record(
+    run_id: str,
+    status: str,
+    *,
+    seed: int,
+    waveform: Path | None = None,
+) -> dict:
     return {
         "run_id": run_id,
         "created_at": f"2026-09-23T06:{seed:02d}:00+00:00",
@@ -29,7 +39,7 @@ def _run_record(run_id: str, status: str, *, seed: int) -> dict:
         "duration_ms": 12.5,
         "run_dir": f".zddv/runs/{run_id}",
         "log": f".zddv/runs/{run_id}/simulation.log",
-        "waveform": None,
+        "waveform": None if waveform is None else str(waveform),
         "coverage": None,
         "timeout_s": 30.0,
         "command": ["sim"],
@@ -191,3 +201,113 @@ endmodule
     # The desktop view uses the in-memory design index and must not create
     # the normal CLI design-index artifact merely by viewing the project.
     assert not index_artifact.exists()
+
+
+
+def test_desktop_waveform_navigation_and_probe_are_read_only(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "wave.vcd"
+    waveform.write_text(
+        """$date
+    2026-09-23
+$end
+$version
+    ZDDV test
+$end
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 8 " data [7:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b00000000 "
+#5
+1!
+b00000001 "
+#10
+0!
+""",
+        encoding="utf-8",
+    )
+    record_run(
+        project,
+        _run_record("run-wave", "PASS", seed=7, waveform=waveform),
+    )
+
+    waveform_dir = project.root / ".zddv" / "waveforms"
+    assert not waveform_dir.exists()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    assert len(snapshot["waveforms"]) == 1
+    artifact = snapshot["waveforms"][0]
+    assert artifact["run_id"] == "run-wave"
+    assert artifact["format"] == "vcd"
+    assert artifact["exists"] is True
+    assert artifact["project_path"] == "wave.vcd"
+    assert artifact["bytes"] == waveform.stat().st_size
+
+    index = build_desktop_waveform_index(project, "run-wave")
+    assert index["format"] == "vcd"
+    assert index["parse_status"] == "indexed"
+    assert index["artifact"]["project_path"] == "wave.vcd"
+    assert len(index["artifact"]["sha256"]) == 64
+    assert index["summary"] == {
+        "scopes": 1,
+        "signals": 2,
+        "unique_value_ids": 2,
+        "declared_bits": 9,
+    }
+    assert [signal["path"] for signal in index["signals"]] == [
+        "top.clk",
+        "top.data",
+    ]
+
+    probe = probe_desktop_waveform(
+        project,
+        "run-wave",
+        "top.data",
+        start_time=0,
+        end_time=10,
+        max_changes=10,
+    )
+    assert probe["run_id"] == "run-wave"
+    assert probe["artifact"]["project_path"] == "wave.vcd"
+    assert probe["summary"] == {
+        "signals": 1,
+        "total_changes": 2,
+        "truncated_signals": 0,
+    }
+    assert probe["signals"][0]["path"] == "top.data"
+    assert probe["signals"][0]["changes"] == [
+        {"time": 0, "value": "00000000"},
+        {"time": 5, "value": "00000001"},
+    ]
+
+    # Desktop navigation uses the pure read APIs and must not materialize
+    # the CLI waveform-index/probe artifacts merely by viewing or probing.
+    assert not waveform_dir.exists()
+
+
+def test_desktop_waveform_probe_rejects_empty_signal(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    waveform = project.root / "wave.vcd"
+    waveform.write_text(
+        """$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+""",
+        encoding="utf-8",
+    )
+    record_run(
+        project,
+        _run_record("run-wave", "PASS", seed=8, waveform=waveform),
+    )
+
+    with pytest.raises(ValueError, match="signal must not be empty"):
+        probe_desktop_waveform(project, "run-wave", "   ")
