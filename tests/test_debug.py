@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import subprocess
 
@@ -273,7 +274,7 @@ def test_assertion_waveform_cli_can_use_explicit_fst_converter(
     assert "tb_top.dut.count" in output
 
     report_path = project.root / ".zddv" / "debug" / "assertion-waveform.json"
-    report = __import__("json").loads(report_path.read_text(encoding="utf-8"))
+    report = json.loads(report_path.read_text(encoding="utf-8"))
     event_waveform = report["events"][0]["waveform"]
     assert event_waveform["format"] == "fst"
     assert event_waveform["parse_status"] == "indexed-via-fst2vcd"
