@@ -665,7 +665,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         )
                     continue
 
-                if sample[_CHANNELS[channel]["valid"]] and signal not in observed:
+                if not sample[_CHANNELS[channel]["valid"]]:
+                    continue
+
+                if signal not in observed:
                     add_violation(
                         "missing_transaction_id",
                         sample,
@@ -677,9 +680,6 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         expected=f"unsigned {width}-bit transaction ID",
                         actual=None,
                     )
-                    continue
-
-                if signal not in observed:
                     continue
 
                 value = sample.get(signal)
