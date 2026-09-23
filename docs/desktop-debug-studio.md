@@ -30,8 +30,9 @@ The desktop provides:
   rather than inferred connectivity;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
   hierarchy/source/connectivity cross-probing, including explicit module-port matches,
-  bounded exact parent-signal/child-pin relationships, and explicit unsupported complex
-  pin-expression evidence when the normalized direct-pin contract is available;
+  bounded exact parent-signal/child-pin relationships, explicit unsupported complex
+  pin-expression evidence, and trusted elaborated-to-source instance-port correlation
+  when the corresponding normalized core contracts are available;
 - bounded detailed assertion, formal-property, and UVM-message panes.
 
 Source preview is authorized by the current design index, including explicitly configured
@@ -70,8 +71,12 @@ evidence contracts are `NORMALIZED`; legacy XML or missing metadata remains expl
 unavailable rather than being inferred. Unsupported complex pin expressions can be shown
 only as unsupported evidence and are never promoted to exact connectivity. Waveform pin
 details are rendered only for the core `simulator_elaborated_direct_pin_varref` contract;
-unknown future contracts are not interpreted by the desktop. The elaborated hierarchy
-browser also caps displayed direct pin-binding rows at the Desktop evidence limit
+unknown future contracts are not interpreted by the desktop. Elaborated/source
+correlation is rendered only for the core
+`simulator_elaborated_to_source_structural_correlation` contract with
+`role_semantics=source_structural_only`; uncertain statuses are summarized but never
+promoted into an exact route. The elaborated hierarchy browser also caps displayed direct
+pin-binding rows at the Desktop evidence limit
 and emits an explicit `TRUNCATED` row with shown/total counts rather than expanding an
 unbounded evidence set in the GUI.
 
