@@ -76,11 +76,10 @@ The Debug Studio core uses a normalized design index at
 
 The source-level index is deliberately separate from simulator elaboration.
 Simulator-resolved evidence is written to `.zddv/design/elaborated.json`.
-The Verilator adapter exports JSON AST data on Verilator 5.044+ and falls back
-to legacy XML on older supported releases. Verilator 5.044 introduced
-`--json-only`; later releases removed the deprecated XML-only path, so the
-version split keeps each supported release on an available native export.
-ZDDV normalizes both forms into
+The Verilator adapter exports JSON AST data on Verilator 5.022+ and falls back
+to legacy XML on older supported releases. Verilator 5.022 introduced
+`--json-only`; Verilator 5.044 was the last release supporting the deprecated
+XML-only path. ZDDV normalizes both forms into
 module records, source locations, and full instance paths while preserving the
 source-index contract for CLI/GUI consumers.
 
