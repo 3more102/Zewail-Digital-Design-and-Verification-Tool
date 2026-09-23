@@ -8,6 +8,7 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
+from zddv import release as release_module
 from zddv.release import export_verification_release, verify_verification_release
 from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import record_run
@@ -104,6 +105,60 @@ def test_release_export_requires_exact_reviewed_signoff_sha(tmp_path: Path):
             private_key=private_key,
             key_id="test-release-key",
         )
+
+
+def test_release_export_rejects_foreign_signoff_identity(tmp_path: Path):
+    source_project = initialize_project(tmp_path / "source")
+    record_run(source_project, _run_record("source-pass"))
+    source_signoff = write_verification_signoff_bundle(source_project)
+
+    target_project = initialize_project(tmp_path / "target")
+    foreign_signoff_path = target_project.root / ".zddv" / "signoff" / "signoff.json"
+    foreign_signoff_path.parent.mkdir(parents=True, exist_ok=True)
+    foreign_signoff_path.write_bytes(release_module._pretty_json_bytes(source_signoff))
+
+    private_key, _ = _write_keypair(tmp_path)
+    with pytest.raises(ValueError, match="identity does not match"):
+        export_verification_release(
+            target_project,
+            expected_signoff_sha256=source_signoff["provenance"]["signoff_sha256"],
+            private_key=private_key,
+            key_id="test-release-key",
+        )
+
+
+def test_release_verification_rejects_signed_manifest_identity_mismatch(
+    tmp_path: Path,
+):
+    source_project = initialize_project(tmp_path / "source")
+    record_run(source_project, _run_record("source-pass"))
+    source_signoff = write_verification_signoff_bundle(source_project)
+
+    manifest_project = initialize_project(tmp_path / "manifest-project")
+    private_key_path, public_key_path = _write_keypair(tmp_path)
+    signing_key = release_module._load_ed25519_private_key(private_key_path)
+    signoff_bytes = release_module._pretty_json_bytes(source_signoff)
+
+    unsigned = release_module._unsigned_manifest(
+        project=manifest_project,
+        signoff=source_signoff,
+        signoff_file_sha256=release_module._sha256_bytes(signoff_bytes),
+        key_id="test-release-key",
+        public_key_sha256=release_module._public_key_sha256(signing_key.public_key()),
+    )
+    manifest = release_module._signed_manifest(unsigned, signing_key)
+    manifest_bytes = release_module._pretty_json_bytes(manifest)
+    archive_bytes = release_module._canonical_release_archive_bytes(
+        {
+            "release/manifest.json": manifest_bytes,
+            "release/signoff.json": signoff_bytes,
+        }
+    )
+    archive_path = tmp_path / "identity-mismatch.zip"
+    archive_path.write_bytes(archive_bytes)
+
+    with pytest.raises(ValueError, match="identity does not match"):
+        verify_verification_release(archive_path, public_key=public_key_path)
 
 
 def test_release_export_rejects_blocked_signoff(tmp_path: Path):
