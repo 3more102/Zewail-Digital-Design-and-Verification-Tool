@@ -142,6 +142,92 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["elaborated_child_path"] == "top.u_child"
 
 
+
+def test_instance_navigation_correlates_only_normalized_direct_pin_evidence(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+    binding = {
+        "status": "NORMALIZED",
+        "instance_path": "top.u_child",
+        "instance_module": "child",
+        "pin": "a",
+        "parent_instance_path": "top",
+        "signal": "mid",
+        "expression_type": "VARREF",
+    }
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[binding],
+        pin_binding_evidence={
+            "status": "NORMALIZED",
+            "contract": "verilator_cell_pin_direct_varref_only",
+        },
+    )
+    edge = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert edge["role"] == "load"
+    assert edge["elaborated_child_path"] == "top.u_child"
+    assert edge["elaborated_pin_resolution"] == "exact"
+    assert edge["elaborated_pin_binding"] == binding
+
+    unavailable = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[binding],
+        pin_binding_evidence={"status": "UNAVAILABLE"},
+    )
+    unavailable_edge = next(
+        item for item in unavailable["loads"] if item["kind"] == "instance_port"
+    )
+    assert unavailable_edge["role"] == "load"
+    assert "elaborated_pin_resolution" not in unavailable_edge
+
+
+def test_instance_navigation_reports_ambiguous_direct_pin_evidence(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+    binding = {
+        "status": "NORMALIZED",
+        "instance_path": "top.u_child",
+        "instance_module": "child",
+        "pin": "a",
+        "parent_instance_path": "top",
+        "signal": "mid",
+    }
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[
+            {**binding, "pin_location": {"line": 20}},
+            {**binding, "pin_location": {"line": 21}},
+        ],
+        pin_binding_evidence={
+            "status": "NORMALIZED",
+            "contract": "verilator_cell_pin_direct_varref_only",
+        },
+    )
+    edge = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert edge["elaborated_pin_resolution"] == "ambiguous"
+    assert len(edge["elaborated_pin_candidates"]) == 2
+
+
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
     project = _connectivity_project(tmp_path)
     index = build_connectivity_index(project)
