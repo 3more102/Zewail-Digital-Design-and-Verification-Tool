@@ -26,9 +26,9 @@ The desktop provides:
 - normalized Verilator JSON module ports displayed beneath matching elaborated instances,
   including direction and source evidence derived only from documented `ioDirection`;
 - recorded-waveform navigation, bounded in-memory VCD probing, and waveform-to-RTL
-  hierarchy/source/connectivity cross-probing, including explicit module-port matches and
-  normalized direct pin/VARREF connectivity relationships when elaboration evidence is
-  available;
+  hierarchy/source/connectivity cross-probing, including explicit module-port matches,
+  normalized direct pin/VARREF connectivity relationships, and exact driver/load roles
+  when both the direct binding and module-port direction are normalized;
 - bounded detailed assertion, formal-property, and UVM-message panes.
 
 Source preview is authorized by the current design index, including explicitly configured
@@ -64,7 +64,11 @@ Refreshing evidence does not launch simulation, elaboration, or formal work, inv
 transmit data to an AI provider, or edit RTL/testbench sources. Stale elaborated evidence
 is reported as `STALE` and is never regenerated implicitly. Module-port direction is
 shown only when the persisted evidence contract is `NORMALIZED`; legacy XML or missing
-port metadata remains explicitly unavailable rather than being inferred.
+port metadata remains explicitly unavailable rather than being inferred. Direct elaborated
+driver/load roles are derived only from normalized direct pin bindings plus normalized
+module-port directions. `inout` remains explicitly bidirectional; missing direction evidence
+and unsupported complex pin expressions are surfaced as unresolved/partial evidence and are
+never promoted to a driver or load by inference.
 
 The only desktop paths that intentionally perform project/tool actions are the explicit
 SHA-confirmed action panes described above. They reuse the existing core APIs rather than
