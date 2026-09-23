@@ -68,9 +68,9 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Simulator-elaborated hierarchy normalized from Verilator JSON/XML parser output
 - VCD waveform scope/signal index with FST artifact metadata by default and explicit opt-in `fst2vcd` scope/signal indexing
 - Targeted VCD signal value probing plus explicit opt-in FST probing through `fst2vcd`, with exact/unique-name resolution, time windows, and bounded change capture
-- Assertion-to-waveform run correlation with conservative signal hints
+- Assertion-to-waveform run correlation with conservative signal hints, including explicit opt-in FST indexing through `fst2vcd`
 - Source-level structural drivers/loads navigation with assignment and instance-port evidence
-- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution
+- Waveform-to-RTL source cross-probing with hierarchy-aware signal resolution for VCD and explicit opt-in FST indexing through `fst2vcd`
 
 ## Quick Start
 
@@ -155,10 +155,14 @@ zddv --project my_project connectivity count --unit counter
 zddv --project my_project waveform-index
 zddv --project my_project waveform-index --run <run-id>
 zddv --project my_project waveform-index --input trace.vcd
+zddv --project my_project waveform-index --input trace.fst --fst2vcd
 zddv --project my_project waveform-probe tb_top.dut.count --start 0 --end 1000
+zddv --project my_project waveform-probe tb_top.dut.count --input trace.fst --fst2vcd
 zddv --project my_project crossprobe tb_top.dut.count
 zddv --project my_project crossprobe tb_top.dut.count --input trace.vcd
+zddv --project my_project crossprobe tb_top.dut.count --input trace.fst --fst2vcd
 zddv --project my_project assertion-waveform --status FAIL
+zddv --project my_project assertion-waveform --status FAIL --fst2vcd
 zddv --project my_project lint
 zddv --project my_project build
 zddv --project my_project formal-bmc --depth 20
