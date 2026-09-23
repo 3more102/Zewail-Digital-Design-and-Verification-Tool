@@ -651,6 +651,30 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         request["exclusive_pair_mismatches"] = mismatches
         if mismatches:
             request["exclusive_pair_status"] = "attributes_mismatch"
+            write_signal = {
+                "address": "AWADDR",
+                "len": "AWLEN",
+                "size": "AWSIZE",
+                "burst": "AWBURST",
+                "region": "AWREGION",
+                "cache": "AWCACHE",
+                "prot": "AWPROT",
+            }
+            for field in mismatches:
+                signal = write_signal[field]
+                add_violation(
+                    "exclusive_attribute_mismatch",
+                    sample,
+                    (
+                        f"{signal} must match the preceding exclusive read "
+                        "for the same exclusive-access sequence"
+                    ),
+                    channel="AW",
+                    transaction_index=request["index"],
+                    signal=signal,
+                    expected=monitor.get(field),
+                    actual=request.get(field),
+                )
             return
 
         if not monitor.get("exclusive_completed", False):
