@@ -375,6 +375,8 @@ def test_desktop_snapshot_rejects_elaboration_after_rtl_revision(tmp_path: Path)
 
     assert evidence["status"] == "STALE"
     assert evidence["instances"] == []
+    assert evidence["ports"] == []
+    assert evidence["port_evidence"]["status"] == "STALE"
     assert evidence["design_fingerprint"] == original_fingerprint
     assert evidence["current_design_fingerprint"] == design_revision_fingerprint(project)
     assert evidence["current_design_fingerprint"] != original_fingerprint
@@ -426,3 +428,104 @@ def test_desktop_source_reader_allows_only_indexed_external_source(tmp_path: Pat
             str(unrelated),
             allowed_paths=allowed,
         )
+
+
+def test_desktop_snapshot_surfaces_normalized_elaborated_ports_without_mutation(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "elaborated-ports")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    elaborated_path = design_dir / "elaborated.json"
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "created_at": "2026-09-23T07:55:00+00:00",
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "simulator_version": "Verilator test",
+                "source_format": "json",
+                "design_fingerprint": design_revision_fingerprint(project),
+                "summary": {"modules": 1, "instances": 1, "ports": 1},
+                "instances": [
+                    {
+                        "path": project.top,
+                        "name": project.top,
+                        "module": project.top,
+                        "top": True,
+                        "location": {"path": "rtl/top.sv", "line": 1},
+                    }
+                ],
+                "ports": [
+                    {
+                        "module": project.top,
+                        "module_elaborated_name": project.top,
+                        "name": "ready",
+                        "elaborated_name": "ready",
+                        "verilog_name": "ready",
+                        "original_name": "ready",
+                        "direction": "output",
+                        "direction_raw": "OUTPUT",
+                        "direction_field": "ioDirection",
+                        "var_type": "PORT",
+                        "location": {"path": "rtl/top.sv", "line": 2, "column": 5},
+                    }
+                ],
+                "port_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_module_var_io_direction",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = elaborated_path.read_bytes()
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    evidence = snapshot["elaborated_hierarchy"]
+    assert evidence["status"] == "PRESENT"
+    assert evidence["port_evidence"] == {
+        "status": "NORMALIZED",
+        "source_format": "json",
+        "contract": "verilator_module_var_io_direction",
+    }
+    assert evidence["ports"][0]["name"] == "ready"
+    assert evidence["ports"][0]["direction"] == "output"
+    assert evidence["ports"][0]["direction_field"] == "ioDirection"
+    assert elaborated_path.read_bytes() == before
+
+
+def test_desktop_snapshot_rejects_normalized_port_evidence_without_ports_list(
+    tmp_path: Path,
+):
+    project = initialize_project(tmp_path / "elaborated-invalid-ports")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    elaborated_path = design_dir / "elaborated.json"
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "design_fingerprint": design_revision_fingerprint(project),
+                "instances": [],
+                "port_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_module_var_io_direction",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = build_desktop_snapshot(project, limit=10)["elaborated_hierarchy"]
+
+    assert evidence["status"] == "INVALID"
+    assert evidence["ports"] == []
+    assert evidence["port_evidence"]["status"] == "INVALID"
+    assert "requires a ports list" in evidence["error"]
