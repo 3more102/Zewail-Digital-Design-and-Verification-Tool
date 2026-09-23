@@ -548,13 +548,14 @@ def _elaborated_pin_connectivity(
             else:
                 directional_unclassified.append(directional)
 
-    directional_key = lambda item: (
-        item["query_side"],
-        item["instance_path"],
-        item["pin"],
-        item["parent_instance_path"],
-        item["parent_signal"],
-    )
+    def directional_key(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return (
+            item["query_side"],
+            item["instance_path"],
+            item["pin"],
+            item["parent_instance_path"],
+            item["parent_signal"],
+        )
     directional_connectivity = {
         "status": (
             "PARTIAL"
