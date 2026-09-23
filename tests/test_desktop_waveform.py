@@ -676,8 +676,8 @@ def test_desktop_crossprobe_rows_surface_only_trusted_source_correlation():
                         "instance_path": "tb_top",
                         "elaborated_child_resolution": "ambiguous",
                         "elaborated_child_candidates": [
-                            "tb_top.genblk1[0].dut",
                             "tb_top.dut",
+                            "tb_top.genblk1[0].dut",
                         ],
                     },
                 }
@@ -707,9 +707,35 @@ def test_desktop_crossprobe_rows_do_not_promote_uncertain_or_untrusted_correlati
                 "analysis_level": "simulator_elaborated_to_source_structural_correlation",
                 "role_semantics": "source_structural_only",
                 "correlations": [
-                    {"status": "AMBIGUOUS"},
-                    {"status": "NOT_FOUND"},
-                    {"status": "UNAVAILABLE"},
+                    {
+                        "status": "AMBIGUOUS",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
+                        "candidate_count": 2,
+                    },
+                    {
+                        "status": "NOT_FOUND",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
+                        "reason": "no_exact_source_instance_port_edge",
+                    },
+                    {
+                        "status": "UNAVAILABLE",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "reason": "parent_elaborated_instance_not_found",
+                    },
                 ],
             }
         }
