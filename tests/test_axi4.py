@@ -1545,3 +1545,185 @@ def test_axi4_region_evidence_keeps_topology_requirement_out_of_flat_trace_verdi
     assert "AxREGION downstream-address-decode placement requirement" in " ".join(
         result["limitations"]
     )
+
+
+def test_validates_explicit_axi4_user_signal_widths_without_assigning_semantics():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {
+                "AWUSER": 4,
+                "WUSER": 2,
+                "BUSER": 3,
+                "ARUSER": 5,
+                "RUSER": 6,
+            },
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWID": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                    "AWUSER": 0xA,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": 2,
+                    "ARADDR": 0x200,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                    "ARUSER": 0x1F,
+                },
+                {
+                    "cycle": 1,
+                    "WVALID": 1,
+                    "WREADY": 1,
+                    "WDATA": 0x55,
+                    "WSTRB": 0xF,
+                    "WLAST": 1,
+                    "WUSER": 0x3,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 2,
+                    "RDATA": 0x66,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                    "RUSER": 0x2A,
+                },
+                {
+                    "cycle": 2,
+                    "BVALID": 1,
+                    "BREADY": 1,
+                    "BID": 1,
+                    "BRESP": "OKAY",
+                    "BUSER": 0x7,
+                },
+            ],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["user_signal_widths"] == {
+        "ARUSER": 5,
+        "AWUSER": 4,
+        "BUSER": 3,
+        "RUSER": 6,
+        "WUSER": 2,
+    }
+    write = next(tx for tx in result["transactions"] if tx["direction"] == "WRITE")
+    read = next(tx for tx in result["transactions"] if tx["direction"] == "READ")
+    assert write["awuser"] == 0xA
+    assert write["wuser"] == [0x3]
+    assert write["buser"] == 0x7
+    assert read["aruser"] == 0x1F
+    assert read["ruser"] == [0x2A]
+
+
+def test_reports_user_sideband_values_that_do_not_fit_configured_width():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {"AWUSER": 4},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "AWVALID": 1,
+                    "AWREADY": 1,
+                    "AWADDR": 0x100,
+                    "AWLEN": 0,
+                    "AWSIZE": 2,
+                    "AWBURST": "INCR",
+                    "AWUSER": 0x10,
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "invalid_user_sideband_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "AWUSER"
+    assert violation["channel"] == "AW"
+    assert violation["expected"] == "unsigned 4-bit value (0..15)"
+    assert violation["actual"] == 0x10
+
+
+def test_reports_non_numeric_user_value_when_width_metadata_is_present():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {"ARUSER": 8},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARADDR": 0x200,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                    "ARUSER": "tag",
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "invalid_user_sideband_width"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "ARUSER"
+    assert violation["actual"] == "tag"
+
+
+def test_zero_width_user_metadata_declares_signal_absent():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {"RUSER": 0},
+            "samples": [
+                {
+                    "cycle": 0,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": 0,
+                    "RDATA": 0,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                    "RUSER": 0,
+                }
+            ],
+        }
+    )
+
+    violation = next(
+        item
+        for item in result["violations"]
+        if item["code"] == "user_sideband_present_when_width_zero"
+    )
+    assert result["status"] == "FAIL"
+    assert violation["signal"] == "RUSER"
+    assert violation["expected"] == "signal absent"
+
+
+def test_user_signal_width_metadata_rejects_unknown_signal_and_negative_width():
+    with pytest.raises(ValueError, match="unsupported AXI4 USER signal"):
+        analyze_axi4_trace(
+            {
+                "user_signal_widths": {"FOOUSER": 4},
+                "samples": [],
+            }
+        )
+
+    with pytest.raises(ValueError, match="non-negative integer bit width"):
+        analyze_axi4_trace(
+            {
+                "user_signal_widths": {"AWUSER": -1},
+                "samples": [],
+            }
+        )
