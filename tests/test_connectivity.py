@@ -130,6 +130,37 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
                 "generate_scopes": [],
             },
         ],
+        elaborated_ports=[
+            {
+                "module": "child",
+                "module_elaborated_name": "child",
+                "name": "a",
+                "direction": "input",
+                "direction_field": "ioDirection",
+                "location": {"path": "rtl/design.sv", "line": 2, "column": 5},
+            },
+        ],
+        port_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+        elaborated_pin_bindings=[
+            {
+                "instance_path": "top.u_child",
+                "parent_instance_path": "top",
+                "pin": "a",
+                "status": "NORMALIZED",
+                "signal": "mid",
+                "expression_type": "VARREF",
+            },
+        ],
+        pin_binding_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 0,
+        },
     )
 
     instance_load = next(
@@ -140,6 +171,156 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["instance_path"] == "top"
     assert instance_load["elaborated_child_resolution"] == "exact"
     assert instance_load["elaborated_child_path"] == "top.u_child"
+    assert instance_load["elaborated_port_resolution"] == "matched"
+    assert instance_load["elaborated_port_direction"] == "input"
+    assert instance_load["elaborated_port_direction_consistent"] is True
+    assert instance_load["elaborated_role_consistent"] is True
+    assert instance_load["elaborated_pin_binding_resolution"] == "matched"
+    assert instance_load["elaborated_pin_signal"] == "mid"
+    assert instance_load["elaborated_pin_signal_consistent"] is True
+    assert instance_load["elaborated_source_expression_is_direct_signal"] is True
+    assert qualified["elaborated_port_evidence"]["status"] == "NORMALIZED"
+    assert (
+        qualified["elaborated_pin_binding_evidence"]["status"]
+        == "NORMALIZED"
+    )
+
+
+def test_elaborated_mismatch_is_reported_without_relabeling_source_role(
+    tmp_path: Path,
+):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="dst")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_ports=[
+            {
+                "module": "child",
+                "name": "y",
+                "direction": "input",
+                "direction_field": "ioDirection",
+            },
+        ],
+        port_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+        elaborated_pin_bindings=[
+            {
+                "instance_path": "top.u_child",
+                "parent_instance_path": "top",
+                "pin": "y",
+                "status": "NORMALIZED",
+                "signal": "mid",
+                "expression_type": "VARREF",
+            },
+        ],
+        pin_binding_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+        },
+    )
+
+    instance_driver = next(
+        item for item in qualified["drivers"] if item["kind"] == "instance_port"
+    )
+    assert instance_driver["role"] == "driver"
+    assert instance_driver["direction"] == "output"
+    assert instance_driver["elaborated_port_direction"] == "input"
+    assert instance_driver["elaborated_port_direction_consistent"] is False
+    assert instance_driver["elaborated_role_consistent"] is False
+    assert instance_driver["elaborated_pin_signal"] == "mid"
+    assert instance_driver["elaborated_pin_signal_consistent"] is False
+
+
+def test_unavailable_elaborated_connectivity_contracts_fail_closed(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_ports=[
+            {"module": "child", "name": "a", "direction": "input"},
+        ],
+        port_evidence={
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_port_schema_not_normalized",
+        },
+        elaborated_pin_bindings=[
+            {
+                "instance_path": "top.u_child",
+                "pin": "a",
+                "status": "NORMALIZED",
+                "signal": "mid",
+            },
+        ],
+        pin_binding_evidence={
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_pin_binding_schema_not_normalized",
+        },
+    )
+
+    instance_load = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert instance_load["elaborated_port_resolution"] == "unavailable"
+    assert instance_load["elaborated_pin_binding_resolution"] == "unavailable"
+    assert "elaborated_port_direction" not in instance_load
+    assert "elaborated_pin_signal" not in instance_load
+
+
+def test_unsupported_elaborated_pin_expression_remains_evidence_only(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {"path": "top", "name": "top", "module": "top"},
+            {"path": "top.u_child", "name": "u_child", "module": "child"},
+        ],
+        elaborated_pin_bindings=[
+            {
+                "instance_path": "top.u_child",
+                "pin": "a",
+                "status": "UNSUPPORTED",
+                "signal": None,
+                "expression_type": "AND",
+            },
+        ],
+        pin_binding_evidence={
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_cell_pin_direct_varref_only",
+            "unsupported_expression_count": 1,
+        },
+    )
+
+    instance_load = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert instance_load["elaborated_pin_binding_resolution"] == "unsupported"
+    assert instance_load["elaborated_pin_binding_unsupported"]["expression_type"] == "AND"
+    assert "elaborated_pin_signal" not in instance_load
 
 
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
