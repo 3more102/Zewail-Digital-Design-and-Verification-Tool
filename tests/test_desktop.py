@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -191,3 +192,55 @@ endmodule
     # The desktop view uses the in-memory design index and must not create
     # the normal CLI design-index artifact merely by viewing the project.
     assert not index_artifact.exists()
+
+
+def test_desktop_snapshot_reads_persisted_elaborated_hierarchy(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    (project.root / "rtl" / "top.sv").write_text(
+        "module top; endmodule\n",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = []
+    project.top = "top"
+
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": "top",
+        "simulator": "verilator",
+        "source_format": "json",
+        "instances": [
+            {
+                "path": "top",
+                "name": "top",
+                "module": "top",
+                "location": {"path": "rtl/top.sv", "line": 1},
+            }
+        ],
+    }
+    (design_dir / "elaborated.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    elaborated = snapshot["elaborated_hierarchy"]
+    assert elaborated["state"] == "PRESENT"
+    assert elaborated["index"]["source_format"] == "json"
+    assert elaborated["index"]["instances"][0]["path"] == "top"
+
+
+def test_desktop_snapshot_flags_invalid_elaborated_hierarchy(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    (design_dir / "elaborated.json").write_text("{not-json", encoding="utf-8")
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    assert snapshot["elaborated_hierarchy"]["state"] == "INVALID"
+    assert snapshot["elaborated_hierarchy"]["index"] is None
