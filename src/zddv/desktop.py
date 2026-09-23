@@ -99,11 +99,18 @@ def _load_persisted_elaborated_hierarchy(project: ProjectConfig) -> dict[str, An
 
 
 def _read_source(project: ProjectConfig, value: str) -> str:
-    """Read one project source file for display without mutating project state."""
-    path = Path(value)
-    if not path.is_absolute():
-        path = project.root / path
-    return path.resolve().read_text(encoding="utf-8", errors="replace")
+    """Read one configured project source file for display without arbitrary-path access."""
+    requested = Path(value)
+    if not requested.is_absolute():
+        requested = project.root / requested
+    requested = requested.resolve()
+
+    configured = {path.resolve() for path in project.source_files()}
+    if requested not in configured:
+        raise ValueError(
+            f"Source is not part of the configured ZDDV project: {value}"
+        )
+    return requested.read_text(encoding="utf-8", errors="replace")
 
 
 def build_desktop_snapshot(
@@ -438,7 +445,7 @@ def launch_desktop_gui(
     def _show_source(path_value: str, line: int | None = None) -> None:
         try:
             text = _read_source(project, path_value)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             source_title_text.set(f"{path_value} · unavailable: {exc}")
             text = ""
             line = None
