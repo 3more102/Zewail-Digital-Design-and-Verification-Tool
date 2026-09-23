@@ -46,8 +46,8 @@ functional coverage snapshots/bins, coverage merge and holes, failure clustering
 
 Current status: deterministic source indexing, source-level hierarchy,
 simulator-resolved elaborated hierarchy, VCD waveform indexing, explicit opt-in
-FST indexing/probing through `fst2vcd`, targeted waveform value-change probing,
-source-level structural drivers/loads navigation,
+FST indexing/probing/cross-probing/assertion correlation through `fst2vcd`,
+targeted waveform value-change probing, source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
 preference and simulator-elaborated instance qualification, documented Verilator
 module-port direction evidence surfaced without unsupported schema inference, and
@@ -60,7 +60,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Source indexing.
 - [x] Waveform index (VCD scopes/signals; FST artifact metadata by default).
 - [x] Explicit opt-in FST scope/signal indexing and bounded probing through `fst2vcd`.
-- [x] Waveform-to-source cross-probing.
+- [x] Waveform-to-source cross-probing (VCD direct; FST through explicit `fst2vcd`).
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted waveform value-change probing (VCD direct; FST through explicit `fst2vcd`, time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
@@ -68,7 +68,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Evidence-gated Verilator JSON module-port normalization from documented `ioDirection` only; legacy XML remains explicitly unavailable.
 - [x] Elaborated module-port direction/source evidence in waveform cross-probing and the Desktop elaborated browser.
 - [x] Simulator-elaborated direct CELL pin-to-VARREF connectivity with explicit unsupported-expression evidence.
-- [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
+- [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints; FST through explicit `fst2vcd`).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).
 
@@ -79,7 +79,7 @@ burst-aware AXI4, async-FIFO CDC invariants, and a public-facts-based UCIe FLIT/
 foundation. Core AXI4 exclusive-access semantics plus address-sideband width and AxREGION 4KB
 consistency checks, reserved AxCACHE encoding validation, B/M plus direction-aware
 Allocate/Other-Allocate memory-class evidence (with legacy RA/WA bit compatibility),
-optional USER-sideband transport evidence, data-width-aware AxSIZE/WSTRB byte-lane
+optional USER-sideband transport evidence with explicit per-signal width/presence metadata, data-width-aware AxSIZE/WSTRB byte-lane
 validation, and explicit absent-master-signal default normalization are implemented;
 exhaustive optional AXI4 sideband/coherency semantics,
 structural CDC signoff, and specification-complete UCIe checking remain planned.
@@ -93,6 +93,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [x] AXI4 reserved AxCACHE encoding validation and B/M/RA/WA raw-bit decoding.
 - [x] AXI4 direction-aware AxCACHE Allocate/Other-Allocate semantics and memory-class evidence.
 - [x] AXI4 AWUSER/WUSER/BUSER/ARUSER/RUSER capture and channel-stability checking.
+- [x] AXI4 explicit USER width/presence validation from `user_signal_widths` interface metadata.
 - [x] AXI4 data-width-aware AxSIZE and WSTRB byte-lane legality checks.
 - [x] AXI4 explicit absent-master-signal defaults for AxID/AxREGION/AxLEN/AxSIZE/AxBURST/AxLOCK/AxCACHE/AxQOS and WSTRB.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
