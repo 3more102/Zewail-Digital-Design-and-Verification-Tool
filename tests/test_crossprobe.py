@@ -369,7 +369,8 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         "ports": [
             {
                 "module": "counter",
-                "name": "clk",
+                "name": "__Vcellinp__clk",
+                "verilog_name": "clk",
                 "direction": "input",
             },
             {
@@ -464,6 +465,40 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     ungated_binding = ungated["elaborated_connectivity"]["parent_signal_bindings"][0]
     assert ungated_binding["port_direction"] is None
     assert ungated_binding["relationship"] == "direct_pin_varref"
+
+def test_crossprobe_rejects_malformed_normalized_pin_binding_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="normalized pin_binding_evidence requires a pin_bindings list",
+    ):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index={
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "instances": [
+                    {
+                        "path": "tb_top.dut",
+                        "name": "dut",
+                        "module": "counter",
+                    }
+                ],
+                "pin_binding_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_cell_pin_direct_varref_only",
+                },
+            },
+        )
+
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
     project = _project(tmp_path)
