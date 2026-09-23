@@ -202,7 +202,9 @@ int main(int argc, char** argv) {{
             project.top,
         ]
 
-        if self._version_tuple(version) >= (5, 22):
+        # --json-only was introduced in Verilator 5.044. Older supported
+        # releases still use the legacy XML export path.
+        if self._version_tuple(version) >= (5, 44):
             ast_path = output_dir / "verilator.tree.json"
             meta_path = output_dir / "verilator.tree.meta.json"
             command.extend(
