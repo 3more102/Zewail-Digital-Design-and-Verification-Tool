@@ -717,6 +717,15 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
         "axi_ordering_rules_take_precedence": True,
     }
     assert tx["region"] == 0x5
+    assert tx["region_attributes"] == {
+        "encoding": 0x5,
+        "is_default": False,
+        "identifier_width_bits": 4,
+        "identifier_capacity": 16,
+        "can_decode_higher_order_address_bits": True,
+        "creates_independent_address_space": False,
+        "downstream_address_decode_requirement_requires_topology": True,
+    }
     assert tx["arcache"] == 0xF
     assert tx["arprot"] == 0x7
     assert tx["arqos"] == 0xA
@@ -782,6 +791,15 @@ def test_preserves_valid_write_address_sidebands():
         "axi_ordering_rules_take_precedence": True,
     }
     assert tx["region"] == 0x7
+    assert tx["region_attributes"] == {
+        "encoding": 0x7,
+        "is_default": False,
+        "identifier_width_bits": 4,
+        "identifier_capacity": 16,
+        "can_decode_higher_order_address_bits": True,
+        "creates_independent_address_space": False,
+        "downstream_address_decode_requirement_requires_topology": True,
+    }
     assert tx["awcache"] == 0x3
     assert tx["awprot"] == 0x2
     assert tx["awqos"] == 0xC
@@ -1373,6 +1391,15 @@ def test_applies_explicit_master_interface_defaults_without_guessing_missing_fie
     assert write["burst"] == "INCR"
     assert write["write_strobes"] == [0xF]
     assert write["region"] == 0
+    assert write["region_attributes"] == {
+        "encoding": 0,
+        "is_default": True,
+        "identifier_width_bits": 4,
+        "identifier_capacity": 16,
+        "can_decode_higher_order_address_bits": True,
+        "creates_independent_address_space": False,
+        "downstream_address_decode_requirement_requires_topology": True,
+    }
     assert write["cache"] == 0
     assert write["qos"] == 0
     assert read["id"] == 0
@@ -1380,6 +1407,8 @@ def test_applies_explicit_master_interface_defaults_without_guessing_missing_fie
     assert read["size"] == 2
     assert read["burst"] == "INCR"
     assert read["region"] == 0
+    assert read["region_attributes"]["is_default"] is True
+    assert read["region_attributes"]["creates_independent_address_space"] is False
     assert read["cache"] == 0
     assert read["qos"] == 0
 
@@ -1478,3 +1507,41 @@ def test_decodes_axi4_qos_default_without_inventing_system_policy():
         "axi_ordering_rules_take_precedence": True,
     }
     assert "system-specific QoS scheduling policy" in " ".join(result["limitations"])
+
+
+
+def test_axi4_region_evidence_keeps_topology_requirement_out_of_flat_trace_verdict():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x800,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARREGION": 3,
+            },
+            {
+                "cycle": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    region = result["transactions"][0]["region_attributes"]
+    assert region["identifier_capacity"] == 16
+    assert region["can_decode_higher_order_address_bits"] is True
+    assert region["creates_independent_address_space"] is False
+    assert region["downstream_address_decode_requirement_requires_topology"] is True
+    assert "AxREGION downstream-address-decode placement requirement" in " ".join(
+        result["limitations"]
+    )

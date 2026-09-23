@@ -179,6 +179,22 @@ def _decode_axi4_qos_attributes(value: Any) -> dict[str, Any] | None:
     }
 
 
+def _decode_axi4_region_attributes(value: Any) -> dict[str, Any] | None:
+    """Decode observable AxREGION evidence without assuming system topology."""
+    scalar = _scalar(value)
+    if not isinstance(scalar, int) or not 0 <= scalar <= 0xF:
+        return None
+    return {
+        "encoding": scalar,
+        "is_default": scalar == 0,
+        "identifier_width_bits": 4,
+        "identifier_capacity": 16,
+        "can_decode_higher_order_address_bits": True,
+        "creates_independent_address_space": False,
+        "downstream_address_decode_requirement_requires_topology": True,
+    }
+
+
 def _decode_response(value: Any) -> tuple[int | None, str]:
     if isinstance(value, str):
         name = value.strip().upper()
@@ -570,6 +586,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         )
         values["prot_attributes"] = _decode_axi4_prot_attributes(values["prot"])
         values["qos_attributes"] = _decode_axi4_qos_attributes(values["qos"])
+        values["region_attributes"] = _decode_axi4_region_attributes(values["region"])
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -770,6 +787,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "prot_attributes": sidebands["prot_attributes"],
             "qos": sidebands["qos"],
             "qos_attributes": sidebands["qos_attributes"],
+            "region_attributes": sidebands["region_attributes"],
             "user": sample.get(f"{prefix}USER"),
         }
 
@@ -1006,6 +1024,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             tx["prot_attributes"] = request["prot_attributes"]
         if request.get("qos_attributes") is not None:
             tx["qos_attributes"] = request["qos_attributes"]
+        if request.get("region_attributes") is not None:
+            tx["region_attributes"] = request["region_attributes"]
         if request.get("user") is not None:
             tx["aruser"] = request["user"]
         r_users = [beat.get("user") for beat in beats]
@@ -1156,6 +1176,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     tx["prot_attributes"] = request["prot_attributes"]
                 if request.get("qos_attributes") is not None:
                     tx["qos_attributes"] = request["qos_attributes"]
+                if request.get("region_attributes") is not None:
+                    tx["region_attributes"] = request["region_attributes"]
                 if request.get("user") is not None:
                     tx["awuser"] = request["user"]
                 w_users = [beat.get("user") for beat in beats]
@@ -1304,7 +1326,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "protocol": "AXI4",
-        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_semantics_user_write_strobes_master_defaults",
+        "analysis_level": "normalized_cycle_trace_burst_exclusive_sideband_qos_region_semantics_user_write_strobes_master_defaults",
         "source": str(payload.get("source", "normalized-trace")),
         "data_width_bits": data_width_bits,
         "absent_master_signals": sorted(master_defaults),
@@ -1334,12 +1356,12 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics and protocol-defined AxQOS recommendation/default evidence are decoded, and AxREGION is checked for 4KB-space consistency.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics and protocol-defined AxQOS recommendation/default evidence are decoded, and AxREGION default/capacity/address-space evidence plus 4KB-space consistency are modeled.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "AXI4 master-interface default values are applied only for signals explicitly declared in absent_master_signals; ordinary missing trace fields are never interpreted as proof that an interface signal is absent.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning and width are implementation-defined, so semantic or width legality is not inferred without explicit interface metadata.",
-            "Topology-dependent AxCACHE reachability and cross-master memory-attribute consistency, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled.",
+            "Topology-dependent AxCACHE reachability, cross-master memory-attribute consistency, the AxREGION downstream-address-decode placement requirement, ACE coherency, AXI5 additions, and system-specific QoS scheduling policy are not modeled without explicit system topology metadata.",
             "VCD waveform extraction samples the configured AXI4 scope on ACLK edges before applying this normalized analyzer.",
         ],
     }
