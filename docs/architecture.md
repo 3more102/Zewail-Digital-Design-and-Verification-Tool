@@ -142,15 +142,15 @@ connectivity, and waveform index paths used as evidence. Results remain
 `PARTIAL` when the waveform scope maps to a design unit but an exact declaration
 cannot be proven.
 
-Cross-probing consumes persisted simulator-elaborated hierarchy when
-`.zddv/design/elaborated.json` is present and its project, top, simulator, and
-design-revision fingerprint match the active project. The fingerprint covers the
+Cross-probing and Debug Studio consume persisted simulator-elaborated
+hierarchy only when `.zddv/design/elaborated.json` matches the active project,
+top, simulator, and design-revision fingerprint. The fingerprint covers the
 configured RTL/testbench source patterns and SHA-256 content of the resolved
 sources, so hierarchy captured before an RTL/config revision is rejected as stale.
 Scope resolution prefers valid simulator-resolved evidence, including
 generated-scope paths, then falls back to the deterministic source hierarchy.
 Invalid or stale persisted elaboration is reported as evidence state and is never
-guessed or regenerated implicitly.
+guessed, displayed as current hierarchy, or regenerated implicitly.
 
 Source declaration and driver/load evidence remain tied to the source design
 index and `analysis_level = "source_structural"`. Exact elaborated signal/port
