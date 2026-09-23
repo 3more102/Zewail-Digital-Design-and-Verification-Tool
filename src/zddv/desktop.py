@@ -7,6 +7,7 @@ from typing import Any
 from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
 from zddv.desktop_actions import attach_desktop_actions_tab
+from zddv.desktop_generated_review import attach_desktop_generated_review_tab
 from zddv.desktop_waveform import attach_desktop_waveform_tab
 from zddv.storage import (
     assertion_statistics,
@@ -255,6 +256,7 @@ def launch_desktop_gui(
     notebook.add(elaborated_tab, text="Elaborated")
     attach_desktop_waveform_tab(notebook, project)
     attach_desktop_actions_tab(notebook, project)
+    attach_desktop_generated_review_tab(notebook, project)
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
     run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
