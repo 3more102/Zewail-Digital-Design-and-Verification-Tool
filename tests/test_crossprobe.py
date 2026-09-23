@@ -481,3 +481,16 @@ def test_crossprobe_cli_supports_explicit_fst2vcd(tmp_path: Path, capsys, monkey
     assert report["waveform"]["format"] == "fst"
     assert report["waveform"]["adapter"]["adapter"] == "fst2vcd"
     assert report["waveform"]["signal"]["path"] == "TOP.tb_top.dut.count"
+
+
+def test_crossprobe_fst_stays_metadata_only_without_explicit_converter(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace-default.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    with pytest.raises(RuntimeError, match="metadata-only"):
+        write_crossprobe_report(
+            project,
+            "tb_top.dut.count",
+            input_path="trace-default.fst",
+        )
