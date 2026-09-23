@@ -584,6 +584,211 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
     assert unsupported_connectivity["boundary_unclassified_bindings"] == []
 
 
+def test_crossprobe_exposes_direct_elaborated_assignw_connectivity(tmp_path: Path):
+    project = initialize_project(tmp_path / "direct-assign")
+    rtl = project.root / "rtl"
+    tb = project.root / "tb"
+    rtl.mkdir(exist_ok=True)
+    tb.mkdir(exist_ok=True)
+    (rtl / "passthrough.sv").write_text(
+        """module passthrough(
+    input logic src,
+    output logic dst,
+    output logic tap
+);
+    assign dst = src;
+    assign tap = dst;
+endmodule
+""",
+        encoding="utf-8",
+    )
+    (tb / "tb_top.sv").write_text(
+        """module tb_top;
+    logic src;
+    logic dst;
+    logic tap;
+    passthrough dut(.src(src), .dst(dst), .tap(tap));
+endmodule
+""",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = ["tb/*.sv"]
+    project.top = "tb_top"
+    save_project(project)
+
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(
+        """$timescale 1ns $end
+$scope module TOP $end
+$scope module tb_top $end
+$scope module dut $end
+$var wire 1 ! src $end
+$var wire 1 " dst $end
+$var wire 1 # tap $end
+$upscope $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+0"
+0#
+""",
+        encoding="utf-8",
+    )
+    waveform = build_waveform_index(waveform_path, project_name=project.name)
+    design = build_design_index(project)
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "instances": [
+            {
+                "path": "tb_top",
+                "name": "tb_top",
+                "module": "tb_top",
+                "top": True,
+            },
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "passthrough",
+                "top": False,
+            },
+        ],
+        "direct_assignment_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_root_assignw_direct_varref_only",
+            "unsupported_assignment_count": 0,
+        },
+        "direct_assignments": [
+            {
+                "status": "NORMALIZED",
+                "module": "passthrough",
+                "assignment_type": "ASSIGNW",
+                "lhs_signal": "dst",
+                "rhs_signal": "src",
+                "lhs_aliases": ["dst"],
+                "rhs_aliases": ["src"],
+                "lhs_varrefs": ["dst"],
+                "rhs_varrefs": ["src"],
+                "location": {"path": "rtl/passthrough.sv", "line": 6},
+            },
+            {
+                "status": "NORMALIZED",
+                "module": "passthrough",
+                "assignment_type": "ASSIGNW",
+                "lhs_signal": "tap",
+                "rhs_signal": "dst",
+                "lhs_aliases": ["tap"],
+                "rhs_aliases": ["dst"],
+                "lhs_varrefs": ["tap"],
+                "rhs_varrefs": ["dst"],
+                "location": {"path": "rtl/passthrough.sv", "line": 7},
+            },
+        ],
+    }
+
+    dst = build_crossprobe(
+        project,
+        "tb_top.dut.dst",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    internal = dst["elaborated_internal_connectivity"]
+    assert internal["status"] == "NORMALIZED"
+    assert internal["analysis_level"] == (
+        "simulator_elaborated_module_root_assignw_direct_varref"
+    )
+    assert internal["role_semantics"] == "direct_continuous_assignment"
+    assert internal["query_instance_path"] == "tb_top.dut"
+    assert internal["query_module"] == "passthrough"
+    assert len(internal["drivers"]) == 1
+    assert internal["drivers"][0]["source_signal"] == "src"
+    assert internal["drivers"][0]["target_signal"] == "dst"
+    assert len(internal["loads"]) == 1
+    assert internal["loads"][0]["source_signal"] == "dst"
+    assert internal["loads"][0]["target_signal"] == "tap"
+    assert internal["unresolved_assignments"] == []
+
+    src = build_crossprobe(
+        project,
+        "tb_top.dut.src",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )
+    src_internal = src["elaborated_internal_connectivity"]
+    assert src_internal["drivers"] == []
+    assert len(src_internal["loads"]) == 1
+    assert src_internal["loads"][0]["target_signal"] == "dst"
+
+    elaborated["direct_assignments"].append(
+        {
+            "status": "UNSUPPORTED",
+            "module": "passthrough",
+            "assignment_type": "ASSIGNW",
+            "lhs_expression_type": "VARREF",
+            "rhs_expression_type": "AND",
+            "lhs_varrefs": ["tap"],
+            "rhs_varrefs": ["dst", "src"],
+            "location": {"path": "rtl/passthrough.sv", "line": 8},
+        }
+    )
+    elaborated["direct_assignment_evidence"]["unsupported_assignment_count"] = 1
+    partial = build_crossprobe(
+        project,
+        "tb_top.dut.dst",
+        waveform,
+        design_index=design,
+        elaborated_index=elaborated,
+    )["elaborated_internal_connectivity"]
+    assert partial["status"] == "PARTIAL"
+    assert len(partial["drivers"]) == 1
+    assert len(partial["loads"]) == 1
+    assert len(partial["unresolved_assignments"]) == 1
+    unresolved = partial["unresolved_assignments"][0]
+    assert unresolved["query_references"] == ["rhs"]
+    assert unresolved["rhs_expression_type"] == "AND"
+
+
+def test_crossprobe_rejects_malformed_normalized_direct_assignment_schema(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "instances": [],
+        "direct_assignment_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_root_assignw_direct_varref_only",
+        },
+        "direct_assignments": {},
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="direct_assignments is not a list",
+    ):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index=elaborated,
+        )
+
+
 def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
     tmp_path: Path,
 ):
