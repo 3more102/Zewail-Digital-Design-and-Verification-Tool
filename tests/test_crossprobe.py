@@ -248,6 +248,7 @@ $enddefinitions $end
                 "instance_path": "tb_top.g[0].u_leaf",
                 "instance_module": "leaf",
                 "pin": "count",
+                "expression_type": "VARREF",
                 "parent_instance_path": "tb_top",
                 "signal": "count",
                 "generate_scopes": ["g[0]"],
@@ -257,6 +258,7 @@ $enddefinitions $end
                 "instance_path": "tb_top.g[1].u_leaf",
                 "instance_module": "leaf",
                 "pin": "count",
+                "expression_type": "VARREF",
                 "parent_instance_path": "tb_top",
                 "signal": "count",
                 "generate_scopes": ["g[1]"],
@@ -454,6 +456,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
                 "instance_path": "tb_top.dut",
                 "instance_module": "counter",
                 "pin": "clk",
+                "expression_type": "VARREF",
                 "parent_instance_path": "tb_top",
                 "signal": "clk",
                 "generate_scopes": [],
@@ -463,6 +466,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
                 "instance_path": "tb_top.dut",
                 "instance_module": "counter",
                 "pin": "count",
+                "expression_type": "VARREF",
                 "parent_instance_path": "tb_top",
                 "signal": "count",
                 "generate_scopes": [],
@@ -1020,6 +1024,140 @@ def test_crossprobe_rejects_malformed_normalized_pin_binding_schema(
             design_index=build_design_index(project),
             elaborated_index=elaborated,
         )
+
+
+def test_crossprobe_rejects_semantically_invalid_trusted_pin_bindings(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+    waveform = build_waveform_index(waveform_path, project_name=project.name)
+    design = build_design_index(project)
+
+    def valid_elaboration() -> dict:
+        return {
+            "schema_version": 1,
+            "project": project.name,
+            "top": project.top,
+            "simulator": project.simulator,
+            "instances": [],
+            "pin_binding_evidence": {
+                "status": "NORMALIZED",
+                "source_format": "json",
+                "contract": "verilator_cell_pin_direct_varref_only",
+                "unsupported_expression_count": 0,
+            },
+            "pin_bindings": [
+                {
+                    "status": "NORMALIZED",
+                    "instance_path": "tb_top.dut",
+                    "instance_module": "counter",
+                    "pin": "clk",
+                    "expression_type": "VARREF",
+                    "parent_instance_path": "tb_top",
+                    "signal": "clk",
+                    "generate_scopes": [],
+                    "pin_location": {"path": "tb/tb_top.sv", "line": 4},
+                    "signal_location": {"path": "tb/tb_top.sv", "line": 4},
+                }
+            ],
+        }
+
+    cases: list[tuple[dict, str]] = []
+
+    wrong_expression = valid_elaboration()
+    wrong_expression["pin_bindings"][0]["expression_type"] = "AND"
+    cases.append((wrong_expression, "expression_type is not VARREF"))
+
+    missing_signal = valid_elaboration()
+    missing_signal["pin_bindings"][0]["signal"] = None
+    cases.append((missing_signal, "signal is not a non-empty string"))
+
+    malformed_scopes = valid_elaboration()
+    malformed_scopes["pin_bindings"][0]["generate_scopes"] = ["g[0]", 1]
+    cases.append((malformed_scopes, "generate_scopes is not a string list"))
+
+    wrong_source_format = valid_elaboration()
+    wrong_source_format["pin_binding_evidence"]["source_format"] = "xml"
+    cases.append(
+        (
+            wrong_source_format,
+            "trusted pin_binding_evidence source_format is not json",
+        )
+    )
+
+    wrong_count = valid_elaboration()
+    wrong_count["pin_binding_evidence"]["unsupported_expression_count"] = 1
+    cases.append(
+        (
+            wrong_count,
+            "unsupported_expression_count does not match pin_bindings",
+        )
+    )
+
+    unsupported_with_signal = valid_elaboration()
+    unsupported_with_signal["pin_bindings"] = [
+        {
+            "status": "UNSUPPORTED",
+            "instance_path": "tb_top.dut",
+            "instance_module": "counter",
+            "pin": "count",
+            "expression_type": "AND",
+            "parent_instance_path": "tb_top",
+            "signal": "count",
+            "generate_scopes": [],
+        }
+    ]
+    unsupported_with_signal["pin_binding_evidence"][
+        "unsupported_expression_count"
+    ] = 1
+    cases.append(
+        (
+            unsupported_with_signal,
+            "signal must be null when UNSUPPORTED",
+        )
+    )
+
+    for elaborated, expected in cases:
+        with pytest.raises(ValueError, match=expected):
+            build_crossprobe(
+                project,
+                "tb_top.dut.count",
+                waveform,
+                design_index=design,
+                elaborated_index=elaborated,
+            )
+
+
+def test_crossprobe_ignores_unknown_future_pin_binding_contract(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index={
+            "schema_version": 1,
+            "project": project.name,
+            "top": project.top,
+            "simulator": project.simulator,
+            "instances": [],
+            "pin_binding_evidence": {
+                "status": "NORMALIZED",
+                "source_format": "future",
+                "contract": "future_pin_binding_contract",
+            },
+            "pin_bindings": [{"future_shape": True}],
+        },
+    )
+
+    assert result["elaborated_connectivity"] is None
 
 
 def test_crossprobe_ignores_stale_persisted_elaboration(tmp_path: Path):
