@@ -1,7 +1,7 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The Desktop Debug Studio uses the same ZDDV project model, persisted verification
+evidence, deterministic design index, and core execution/review APIs as the CLI.
 
 Launch it with:
 
@@ -10,43 +10,54 @@ zddv --project my_project gui
 zddv --project my_project gui --limit 100
 ```
 
-The `--limit` value bounds recent runs and each detailed evidence query.
+The `--limit` value bounds recent runs and detailed evidence/review queries.
 
-## Current views
+## Evidence and debug views
 
-The desktop provides:
+Normal refresh is display-only with respect to verification execution and project-source
+mutation. The desktop provides summary cards, recent runs, normalized failure groups,
+assertion/formal/UVM evidence, deterministic source/hierarchy navigation, persisted
+simulator-elaborated hierarchy, RTL preview, waveform navigation, bounded VCD probing,
+and waveform-to-hierarchy/source/connectivity cross-probing.
 
-- verification summary cards and recent simulation runs;
-- deterministic failure-signature groups;
-- an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
-- read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
-- a detailed Assertions pane with status, assertion name, run, log line, and message;
-- a detailed Formal pane for the newest formal snapshot with property kind, status,
-  interpretation, depth, and message;
-- a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
+Source preview is authorized by the current deterministic design index. Persisted
+simulator-elaborated hierarchy is used only when its project/top/simulator identity and
+design-revision fingerprint match the active RTL/config state; stale evidence is reported
+and not regenerated implicitly.
 
-Formal-property and UVM-message database reads are explicitly bounded by the GUI
-limit. Assertion events already use the existing bounded history query. Persisted
-simulator-elaborated hierarchy is displayed only when its project/top/simulator identity
-and design-revision fingerprint match the active RTL/config state; stale evidence is
-reported as `STALE` and is not regenerated implicitly.
+The snapshot `policy` object is scoped to `snapshot_refresh`. Its legacy
+`display_only=true`, `executes_verification=false`, and
+`applies_generated_artifacts=false` fields describe refresh itself, not every control
+available in the desktop. Capability flags separately report the gated action surfaces.
+
+## Actions
+
+The **Actions** pane exposes existing lint/build/run core operations. Preparing an action
+does not execute it. Execution requires the exact review SHA-256 plus explicit approval.
+Immediately before execution, ZDDV revalidates the live project configuration, matched
+source set and bytes, and reviewed runtime parameters. Any drift invalidates the review.
+
+## Review Actions
+
+The generated-artifact **Review Actions** pane is separate from execution Actions. It
+lists staged assertion/test drafts, re-hashes their exact bytes, and provides a bounded
+preview. Drafts are rejected unless the manifest preserves the review safeguards,
+including `auto_apply=false` and `execution_enabled=false`.
+
+Applying a draft requires an exact typed content SHA-256 and explicit approval, then
+delegates to the existing `apply_generated_artifact` core gate. That gate rejects
+changed bytes, path escapes, writes back into `.zddv`, unsupported suffixes, and
+existing-file overwrite. Apply copies reviewed bytes only; it does not compile or execute
+the generated artifact.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+- Evidence/source/waveform refresh does not launch verification or mutate project sources.
+- **Actions** may execute lint/build/run only after exact review and live-state
+  revalidation.
+- **Review Actions** may stage under `.zddv/generated` and copy exact reviewed
+  `.sv`/`.svh` bytes into a new project path only after SHA confirmation.
+- Neither desktop action path automatically invokes AI.
 
-The shared SQLite helpers may initialize or upgrade the local
-`.zddv/results.db` schema when opened, consistent with existing reporting commands.
-Therefore "display-only" describes verification/project actions rather than a
-guarantee of zero filesystem writes.
-
-## v1.1 desktop milestone status
-
-The planned v1.1 desktop milestones are implemented: evidence browsing, source and
-elaborated hierarchy navigation, bounded waveform probing and cross-probing, detailed
-assertion/formal/UVM views, and SHA-confirmed review-gated project actions.
+Shared SQLite helpers may initialize or upgrade `.zddv/results.db` when opened,
+consistent with existing reporting commands.
