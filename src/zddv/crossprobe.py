@@ -683,12 +683,23 @@ def build_crossprobe(
             navigation = None
         if navigation is not None:
             if elaborated_node is not None and elaborated_index is not None:
+                pin_binding_evidence = elaborated_index.get(
+                    "pin_binding_evidence"
+                )
+                normalized_pin_bindings = (
+                    list(elaborated_index.get("pin_bindings", []))
+                    if isinstance(pin_binding_evidence, dict)
+                    and pin_binding_evidence.get("status") == "NORMALIZED"
+                    and isinstance(elaborated_index.get("pin_bindings"), list)
+                    else None
+                )
                 navigation = qualify_signal_navigation_with_elaboration(
                     navigation,
                     instance_path=str(elaborated_node["path"]),
                     elaborated_instances=list(
                         elaborated_index.get("instances", [])
                     ),
+                    elaborated_pin_bindings=normalized_pin_bindings,
                 )
             connectivity_payload = {
                 "analysis_level": connectivity.get("analysis_level"),
