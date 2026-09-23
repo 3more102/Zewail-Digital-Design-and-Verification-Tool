@@ -16,9 +16,10 @@
 - Extend direct pin-to-source edge correlation to generated instances only when
   the exact elaborated child path is already present in the source edge's
   explicit ambiguous candidate set; preserve source-only driver/load semantics.
-- Harden Desktop rendering of that correlation against the current core producer shape:
-  preserve source instance-port identity, structural driver/load role semantics, and exact
-  `match_basis` provenance; fail closed on malformed, empty, or future-status payloads.
+- Harden Desktop rendering of that correlation against the current core producer shape
+  and analysis envelope; preserve source instance-port identity, structural driver/load
+  role semantics, and exact `match_basis` provenance; fail closed on malformed, empty,
+  mismatched-envelope, or future-status payloads.
 
 ### Elaborated boundary connectivity
 
