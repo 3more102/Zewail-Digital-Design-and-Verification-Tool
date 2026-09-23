@@ -422,3 +422,141 @@ def test_crossprobe_fst_stays_metadata_only_without_explicit_converter(tmp_path:
             "tb_top.dut.count",
             input_path="trace-default.fst",
         )
+
+
+def test_crossprobe_matches_normalized_elaborated_port_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace-port.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "source_format": "json",
+        "instances": [
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "rtl/counter.sv", "line": 1},
+            }
+        ],
+        "ports": [
+            {
+                "module": "counter",
+                "module_elaborated_name": "counter",
+                "name": "count",
+                "elaborated_name": "count",
+                "verilog_name": "count",
+                "original_name": "count",
+                "direction": "output",
+                "direction_raw": "OUTPUT",
+                "direction_field": "ioDirection",
+                "var_type": "PORT",
+                "location": {"path": "rtl/counter.sv", "line": 3, "column": 18},
+            }
+        ],
+        "port_evidence": {
+            "status": "NORMALIZED",
+            "source_format": "json",
+            "contract": "verilator_module_var_io_direction",
+        },
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["status"] == "MATCHED"
+    port = result["elaborated_port"]
+    assert port["status"] == "MATCHED"
+    assert port["instance_path"] == "tb_top.dut"
+    assert port["module"] == "counter"
+    assert port["signal"] == "count"
+    assert port["port"]["direction"] == "output"
+    assert port["port"]["direction_field"] == "ioDirection"
+    assert port["evidence"]["contract"] == "verilator_module_var_io_direction"
+
+
+def test_crossprobe_preserves_unavailable_elaborated_port_evidence(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace-port-unavailable.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    elaborated = {
+        "schema_version": 1,
+        "project": project.name,
+        "top": project.top,
+        "simulator": project.simulator,
+        "source_format": "xml",
+        "instances": [
+            {
+                "path": "tb_top.dut",
+                "name": "dut",
+                "module": "counter",
+                "top": False,
+                "location": {"path": "rtl/counter.sv", "line": 1},
+            }
+        ],
+        "ports": [],
+        "port_evidence": {
+            "status": "UNAVAILABLE",
+            "source_format": "xml",
+            "reason": "legacy_xml_port_schema_not_normalized",
+        },
+    }
+
+    result = build_crossprobe(
+        project,
+        "tb_top.dut.count",
+        build_waveform_index(waveform_path, project_name=project.name),
+        design_index=build_design_index(project),
+        elaborated_index=elaborated,
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["elaborated_port"] == {
+        "status": "UNAVAILABLE",
+        "source_format": "xml",
+        "reason": "legacy_xml_port_schema_not_normalized",
+    }
+
+
+def test_crossprobe_rejects_normalized_port_evidence_without_ports_list(
+    tmp_path: Path,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace-port-invalid.vcd"
+    waveform_path.write_text(VCD, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="normalized port_evidence requires a ports list"):
+        build_crossprobe(
+            project,
+            "tb_top.dut.count",
+            build_waveform_index(waveform_path, project_name=project.name),
+            design_index=build_design_index(project),
+            elaborated_index={
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "instances": [
+                    {
+                        "path": "tb_top.dut",
+                        "name": "dut",
+                        "module": "counter",
+                    }
+                ],
+                "port_evidence": {
+                    "status": "NORMALIZED",
+                    "source_format": "json",
+                    "contract": "verilator_module_var_io_direction",
+                },
+            },
+        )
