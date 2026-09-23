@@ -262,6 +262,22 @@ def export_verification_release(
         raise ValueError("key_id must be non-empty")
 
     _, signoff_payload, signoff_bytes = _load_signoff(project, signoff)
+    signoff_identity = {
+        "project": signoff_payload.get("project"),
+        "simulator": signoff_payload.get("simulator"),
+        "top": signoff_payload.get("top"),
+    }
+    project_identity = {
+        "project": project.name,
+        "simulator": project.simulator,
+        "top": project.top,
+    }
+    if signoff_identity != project_identity:
+        raise ValueError(
+            "Release signoff project/simulator/top identity does not match "
+            "the active project configuration"
+        )
+
     review_state = str(signoff_payload.get("summary", {}).get("review_state", ""))
     if review_state != "READY_FOR_REVIEW":
         raise ValueError(
