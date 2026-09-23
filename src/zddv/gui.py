@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from zddv.config import ProjectConfig
+from zddv.design_index import build_design_index
 from zddv.storage import (
     assertion_statistics,
     list_coverage_score_snapshots,
@@ -98,6 +99,7 @@ def build_debug_gui_snapshot(
     runs = list_run_records(project, limit=limit)
     formal_rows = list_formal_result_snapshots(project, limit=1)
     uvm_rows = list_uvm_log_snapshots(project, limit=1)
+    design = build_design_index(project)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": project.name,
@@ -117,6 +119,7 @@ def build_debug_gui_snapshot(
         "latest_coverage": _latest_coverage(project),
         "latest_formal": formal_rows[0] if formal_rows else None,
         "latest_uvm": uvm_rows[0] if uvm_rows else None,
+        "design": design,
     }
 
 
@@ -188,11 +191,15 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
     failures_tab = ttk.Frame(notebook, padding=8)
     coverage_tab = ttk.Frame(notebook, padding=8)
     tests_tab = ttk.Frame(notebook, padding=8)
+    sources_tab = ttk.Frame(notebook, padding=8)
+    hierarchy_tab = ttk.Frame(notebook, padding=8)
     evidence_tab = ttk.Frame(notebook, padding=8)
     notebook.add(runs_tab, text="Runs")
     notebook.add(failures_tab, text="Failures")
     notebook.add(coverage_tab, text="Coverage")
     notebook.add(tests_tab, text="Per-test")
+    notebook.add(sources_tab, text="Sources")
+    notebook.add(hierarchy_tab, text="Hierarchy")
     notebook.add(evidence_tab, text="Evidence")
 
     def make_tree(parent, columns: tuple[str, ...], headings: tuple[str, ...]):
@@ -234,6 +241,34 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
         evidence_tab,
         ("kind", "status", "details", "identifier"),
         ("Evidence", "Status", "Details", "Snapshot / source"),
+    )
+
+    def make_navigation_tree(parent, columns: tuple[str, ...], headings: tuple[str, ...]):
+        tree = ttk.Treeview(parent, columns=columns, show="tree headings")
+        tree.heading("#0", text="Name")
+        tree.column("#0", width=300, anchor="w")
+        for name, heading in zip(columns, headings):
+            tree.heading(name, text=heading)
+            tree.column(name, width=170, anchor="w")
+        ybar = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+        xbar = ttk.Scrollbar(parent, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        return tree
+
+    sources_tree = make_navigation_tree(
+        sources_tab,
+        ("kind", "location", "details"),
+        ("Kind", "Location", "Evidence"),
+    )
+    hierarchy_tree = make_navigation_tree(
+        hierarchy_tab,
+        ("type", "source", "state"),
+        ("Type", "Source", "State"),
     )
 
     def clear(tree) -> None:
@@ -319,6 +354,64 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
                 ),
             )
 
+        design = snapshot["design"]
+        units_by_file: dict[str, list[dict[str, Any]]] = {}
+        for unit in design["units"]:
+            units_by_file.setdefault(unit["file"], []).append(unit)
+
+        clear(sources_tree)
+        for source in design["files"]:
+            file_id = sources_tree.insert(
+                "",
+                "end",
+                text=source["path"],
+                values=(
+                    "file",
+                    "",
+                    f"{source['lines']} lines · {source['bytes']} bytes · "
+                    f"sha256={source['sha256']}",
+                ),
+                open=True,
+            )
+            for unit in units_by_file.get(source["path"], []):
+                sources_tree.insert(
+                    file_id,
+                    "end",
+                    text=unit["name"],
+                    values=(
+                        unit["kind"],
+                        f"{unit['file']}:{unit['line']}",
+                        f"lines {unit['line']}-{unit['end_line']} · "
+                        f"{len(unit['instances'])} child instances",
+                    ),
+                )
+
+        clear(hierarchy_tree)
+
+        def insert_hierarchy_node(parent: str, node: dict[str, Any]) -> None:
+            if not node.get("resolved", True):
+                state = "UNRESOLVED"
+            elif node.get("recursive"):
+                state = "RECURSIVE"
+            else:
+                state = "RESOLVED"
+
+            source = "—"
+            if node.get("file") is not None and node.get("line") is not None:
+                source = f"{node['file']}:{node['line']}"
+
+            item_id = hierarchy_tree.insert(
+                parent,
+                "end",
+                text=node["instance"],
+                values=(node["type"], source, state),
+                open=True,
+            )
+            for child in node.get("children", []):
+                insert_hierarchy_node(item_id, child)
+
+        insert_hierarchy_node("", design["hierarchy"])
+
         clear(evidence_tree)
         assertions = snapshot["assertions"]
         assertion_status = (
@@ -387,6 +480,8 @@ def launch_debug_gui(project: ProjectConfig, *, limit: int = 100) -> int:
         status_var.set(
             f"Display-only · {snapshot['project_root']} · "
             f"{snapshot['simulator']} · top={snapshot['top']} · "
+            f"{design['summary']['files']} source files · "
+            f"{design['summary']['instances']} instances · "
             f"refreshed {snapshot['generated_at']}"
         )
 
