@@ -15,6 +15,11 @@
 
 ### Desktop Debug Studio
 
+- Derive endpoint-relative driver/load roles for exact normalized direct pin bindings
+  when normalized module-port direction evidence is also available, and expose a bounded
+  directional summary in Desktop waveform cross-probing. This remains separate from
+  source-structural roles; inout, unknown-direction, and unsupported-expression evidence
+  stays explicit/partial rather than inferred.
 - Add bounded detail panes for normalized assertion events, formal property results,
   and UVM report messages while preserving source, source-level hierarchy, and
   persisted simulator-elaborated hierarchy views.
