@@ -75,8 +75,11 @@ The Debug Studio core uses a normalized design index at
 - a recursive hierarchy rooted at the configured project top
 
 The source-level index is deliberately separate from simulator elaboration.
-Later adapters may enrich this model with elaborated hierarchy and tool-specific
-AST evidence without changing the CLI/GUI-facing contract.
+Simulator-resolved evidence is written to `.zddv/design/elaborated.json`.
+The Verilator adapter exports JSON AST data on Verilator 5.022+ and falls back
+to legacy XML on older supported releases. ZDDV normalizes both forms into
+module records, source locations, and full instance paths while preserving the
+source-index contract for CLI/GUI consumers.
 
 ## v0.4 Waveform Index Contract
 
