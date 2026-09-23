@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from pathlib import Path
 import zipfile
@@ -11,6 +13,56 @@ from zddv.config import initialize_project
 from zddv.release import export_verification_release, verify_verification_release
 from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import record_run
+
+
+def _canonical_json_bytes(payload: dict) -> bytes:
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def _resign_manifest(manifest: dict, private_key_path: Path) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+
+    unsigned = json.loads(json.dumps(manifest))
+    unsigned["signature"].pop("value_base64", None)
+    unsigned["signature"].pop("signed_payload_sha256", None)
+    signed_payload = _canonical_json_bytes(unsigned)
+    private_key = serialization.load_pem_private_key(
+        private_key_path.read_bytes(),
+        password=None,
+    )
+    manifest["signature"]["signed_payload_sha256"] = hashlib.sha256(
+        signed_payload
+    ).hexdigest()
+    manifest["signature"]["value_base64"] = base64.b64encode(
+        private_key.sign(signed_payload)
+    ).decode("ascii")
+    return (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write_canonical_release_archive(
+    destination: Path,
+    *,
+    manifest_bytes: bytes,
+    signoff_bytes: bytes,
+) -> None:
+    members = {
+        "release/manifest.json": manifest_bytes,
+        "release/signoff.json": signoff_bytes,
+    }
+    with zipfile.ZipFile(destination, "w") as target:
+        for name in sorted(members):
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.extra = b""
+            info.comment = b""
+            target.writestr(info, members[name])
 
 
 def _run_record(run_id: str, status: str = "PASS") -> dict:
@@ -146,6 +198,61 @@ def test_release_verification_detects_tampered_signoff(tmp_path: Path):
 
     with pytest.raises(ValueError, match="inventory|SHA-256|metadata"):
         verify_verification_release(tampered, public_key=public_key)
+
+
+def test_release_verification_rejects_noncanonical_zip_metadata(tmp_path: Path):
+    project, signoff = _ready_signoff(tmp_path)
+    private_key, public_key = _write_keypair(tmp_path)
+    release = export_verification_release(
+        project,
+        expected_signoff_sha256=signoff["provenance"]["signoff_sha256"],
+        private_key=private_key,
+        key_id="test-release-key",
+    )
+
+    source_path = Path(release["path"])
+    noncanonical = tmp_path / "noncanonical.zip"
+    with zipfile.ZipFile(source_path, "r") as source, zipfile.ZipFile(
+        noncanonical, "w"
+    ) as target:
+        for name in source.namelist():
+            info = zipfile.ZipInfo(name, date_time=(2026, 9, 23, 9, 25, 0))
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            target.writestr(info, source.read(name))
+
+    with pytest.raises(ValueError, match="timestamp is not canonical"):
+        verify_verification_release(noncanonical, public_key=public_key)
+
+
+def test_release_verification_rejects_signed_manifest_identity_mismatch(
+    tmp_path: Path,
+):
+    project, signoff = _ready_signoff(tmp_path)
+    private_key, public_key = _write_keypair(tmp_path)
+    release = export_verification_release(
+        project,
+        expected_signoff_sha256=signoff["provenance"]["signoff_sha256"],
+        private_key=private_key,
+        key_id="test-release-key",
+    )
+
+    source_path = Path(release["path"])
+    mismatched = tmp_path / "identity-mismatch.zip"
+    with zipfile.ZipFile(source_path, "r") as source:
+        manifest = json.loads(source.read("release/manifest.json"))
+        signoff_bytes = source.read("release/signoff.json")
+    manifest["project"] = "different-project"
+    manifest_bytes = _resign_manifest(manifest, private_key)
+    _write_canonical_release_archive(
+        mismatched,
+        manifest_bytes=manifest_bytes,
+        signoff_bytes=signoff_bytes,
+    )
+
+    with pytest.raises(ValueError, match="identity does not match bundled signoff"):
+        verify_verification_release(mismatched, public_key=public_key)
 
 
 def test_release_cli_export_and_verify(tmp_path: Path, capsys):
