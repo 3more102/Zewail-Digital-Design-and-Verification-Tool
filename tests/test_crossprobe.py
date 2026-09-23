@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -369,3 +370,42 @@ def test_crossprobe_rejects_mismatched_explicit_elaboration(tmp_path: Path):
                 "instances": [],
             },
         )
+
+
+def test_crossprobe_cli_supports_explicit_fst2vcd(tmp_path: Path, capsys, monkeypatch):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd" if requested == "fst2vcd" else None,
+    )
+
+    def fake_run(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    rc = main([
+        "--project",
+        str(project.root),
+        "crossprobe",
+        "tb_top.dut.count",
+        "--input",
+        "trace.fst",
+        "--fst2vcd",
+    ])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "CROSSPROBE MATCHED" in output
+    report = json.loads(
+        (project.root / ".zddv" / "debug" / "crossprobe.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["waveform"]["format"] == "fst"
+    assert report["waveform"]["adapter"]["adapter"] == "fst2vcd"
+    assert report["waveform"]["signal"]["path"] == "TOP.tb_top.dut.count"

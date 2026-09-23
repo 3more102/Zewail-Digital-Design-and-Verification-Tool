@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from zddv.assertions import ingest_assertion_log
 from zddv.cli import main
@@ -184,3 +185,66 @@ def test_assertion_waveform_cli(tmp_path: Path, capsys):
     assert "ASSERTION/WAVEFORM: 1 event(s)" in output
     assert "tb_top.dut.count" in output
     assert (project.root / ".zddv" / "debug" / "assertion-waveform.json").is_file()
+
+
+def test_assertion_waveform_cli_supports_explicit_fst2vcd(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+):
+    project = initialize_project(tmp_path / "demo")
+    run_id = "run-fst"
+    run_dir = project.root / ".zddv" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.fst"
+    waveform.write_bytes(b"FST-placeholder")
+    log = run_dir / "simulation.log"
+    log.write_text(
+        "ZDDV_ASSERT counter_sequence FAIL final_count=8\n",
+        encoding="utf-8",
+    )
+    record_run(project, _run_record(run_id, project.root, waveform))
+    ingest_assertion_log(
+        project,
+        run_id=run_id,
+        log_path=log,
+        created_at="2026-09-21T21:00:00+00:00",
+    )
+
+    monkeypatch.setattr(
+        "zddv.fst_adapter.shutil.which",
+        lambda requested: "/usr/bin/fst2vcd" if requested == "fst2vcd" else None,
+    )
+
+    def fake_run(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text(VCD, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("zddv.fst_adapter.subprocess.run", fake_run)
+
+    rc = main([
+        "--project",
+        str(project.root),
+        "assertion-waveform",
+        "--run",
+        run_id,
+        "--status",
+        "FAIL",
+        "--fst2vcd",
+    ])
+
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "1 fully indexed" in output
+    assert "tb_top.dut.count" in output
+    report = write_assertion_waveform_report(
+        project,
+        run_id=run_id,
+        status="FAIL",
+        fst_converter="fst2vcd",
+    )
+    event = report["events"][0]
+    assert event["waveform"]["format"] == "fst"
+    assert event["waveform"]["parse_status"] == "indexed-via-fst2vcd"
+    assert event["waveform"]["adapter"]["adapter"] == "fst2vcd"
+    assert event["waveform"]["signal_hints"][0]["path"] == "tb_top.dut.count"
