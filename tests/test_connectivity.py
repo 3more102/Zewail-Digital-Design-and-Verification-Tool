@@ -130,6 +130,16 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
                 "generate_scopes": [],
             },
         ],
+        elaborated_pin_bindings=[
+            {
+                "status": "NORMALIZED",
+                "instance_path": "top.u_child",
+                "instance_module": "child",
+                "pin": "a",
+                "parent_instance_path": "top",
+                "signal": "mid",
+            },
+        ],
     )
 
     instance_load = next(
@@ -140,6 +150,9 @@ def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path
     assert instance_load["instance_path"] == "top"
     assert instance_load["elaborated_child_resolution"] == "exact"
     assert instance_load["elaborated_child_path"] == "top.u_child"
+    assert instance_load["elaborated_pin_resolution"] == "matched"
+    assert instance_load["elaborated_pin_binding"]["signal"] == "mid"
+    assert instance_load["elaborated_pin_source_consistent"] is True
 
 
 def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
