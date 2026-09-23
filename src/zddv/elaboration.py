@@ -112,11 +112,107 @@ def _json_module_aliases(node: dict[str, Any]) -> set[str]:
     return aliases
 
 
+def _json_direct_pin_connections(
+    cell: dict[str, Any],
+    *,
+    var_by_addr: dict[str, dict[str, Any]],
+    files: dict[str, dict[str, Any]],
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    pinsp = cell.get("pinsp")
+    if not isinstance(pinsp, list):
+        return []
+
+    connections: list[dict[str, Any]] = []
+    for pin in pinsp:
+        if not isinstance(pin, dict) or str(pin.get("type", "")).upper() != "PIN":
+            continue
+        port_name = _json_node_name(pin)
+        if not port_name:
+            continue
+
+        port_pointer = pin.get("modVarp")
+        port_var = (
+            var_by_addr.get(str(port_pointer))
+            if port_pointer is not None
+            else None
+        )
+        direction = None
+        if port_var is not None:
+            raw_direction = (
+                port_var.get("declDirection")
+                or port_var.get("direction")
+            )
+            if raw_direction:
+                candidate = str(raw_direction).upper()
+                if candidate in {"INPUT", "OUTPUT", "INOUT"}:
+                    direction = candidate
+
+        exprp = pin.get("exprp")
+        expression = (
+            exprp[0]
+            if isinstance(exprp, list)
+            and len(exprp) == 1
+            and isinstance(exprp[0], dict)
+            else None
+        )
+        direct_varref = (
+            expression
+            if expression is not None
+            and str(expression.get("type", "")).upper() == "VARREF"
+            else None
+        )
+
+        connections.append(
+            {
+                "port": port_name,
+                "direction": direction,
+                "parent_signal": (
+                    _json_node_name(direct_varref)
+                    if direct_varref is not None
+                    else None
+                ),
+                "access": (
+                    direct_varref.get("access")
+                    if direct_varref is not None
+                    else None
+                ),
+                "direct_varref": direct_varref is not None,
+                "expression_type": (
+                    expression.get("type")
+                    if expression is not None
+                    else None
+                ),
+                "location": _decode_location(
+                    pin.get("loc"),
+                    files,
+                    project_root,
+                ),
+                "expression_location": _decode_location(
+                    direct_varref.get("loc")
+                    if direct_varref is not None
+                    else None,
+                    files,
+                    project_root,
+                ),
+                "port_location": _decode_location(
+                    port_var.get("loc")
+                    if port_var is not None
+                    else None,
+                    files,
+                    project_root,
+                ),
+            }
+        )
+    return connections
+
+
 def _json_direct_cells(
     value: Any,
     *,
     files: dict[str, dict[str, Any]],
     project_root: Path,
+    var_by_addr: dict[str, dict[str, Any]],
     generate_scopes: tuple[str, ...] = (),
     root: bool = True,
 ) -> list[dict[str, Any]]:
@@ -128,6 +224,7 @@ def _json_direct_cells(
                     item,
                     files=files,
                     project_root=project_root,
+                    var_by_addr=var_by_addr,
                     generate_scopes=generate_scopes,
                     root=False,
                 )
@@ -160,6 +257,12 @@ def _json_direct_cells(
                     str(module_pointer) if module_pointer is not None else None
                 ),
                 "generate_scopes": list(generate_scopes),
+                "connections": _json_direct_pin_connections(
+                    value,
+                    var_by_addr=var_by_addr,
+                    files=files,
+                    project_root=project_root,
+                ),
                 "hier": value.get("hier"),
                 "location": _decode_location(
                     value.get("loc"),
@@ -188,6 +291,7 @@ def _json_direct_cells(
                     child,
                     files=files,
                     project_root=project_root,
+                    var_by_addr=var_by_addr,
                     generate_scopes=next_scopes,
                     root=False,
                 )
@@ -207,6 +311,12 @@ def parse_verilator_json(
     metadata = json.loads(Path(meta_path).read_text(encoding="utf-8"))
     files = {str(key): value for key, value in metadata.get("files", {}).items()}
     nodes = list(_walk(ast))
+    var_by_addr = {
+        str(node["addr"]): node
+        for node in nodes
+        if str(node.get("type", "")).upper() == "VAR"
+        and node.get("addr") is not None
+    }
 
     modules: list[dict[str, Any]] = []
     module_by_addr: dict[str, str] = {}
@@ -242,6 +352,7 @@ def parse_verilator_json(
             "top": True,
             "location": top_module["location"] if top_module else None,
             "generate_scopes": [],
+            "connections": [],
         }
     ]
 
@@ -304,6 +415,7 @@ def parse_verilator_json(
                 module_node,
                 files=files,
                 project_root=root,
+                var_by_addr=var_by_addr,
             ):
                 hierarchy = cell.get("hier")
                 if (
@@ -337,6 +449,7 @@ def parse_verilator_json(
                         "top": False,
                         "location": cell.get("location"),
                         "generate_scopes": list(cell.get("generate_scopes", [])),
+                        "connections": list(cell.get("connections", [])),
                     }
                 )
                 if child_node is not None:
@@ -369,6 +482,12 @@ def parse_verilator_json(
                     "top": hierarchy == top,
                     "location": _decode_location(node.get("loc"), files, root),
                     "generate_scopes": [],
+                    "connections": _json_direct_pin_connections(
+                        node,
+                        var_by_addr=var_by_addr,
+                        files=files,
+                        project_root=root,
+                    ),
                 }
             )
 
@@ -502,6 +621,16 @@ def write_elaborated_index(
         "summary": {
             "modules": len(parsed["modules"]),
             "instances": len(parsed["instances"]),
+            "port_connections": sum(
+                len(item.get("connections", []))
+                for item in parsed["instances"]
+            ),
+            "direct_port_connections": sum(
+                1
+                for item in parsed["instances"]
+                for connection in item.get("connections", [])
+                if connection.get("direct_varref")
+            ),
         },
         "tool_log": export["log"],
     }
