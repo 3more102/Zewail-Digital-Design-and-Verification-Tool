@@ -414,7 +414,7 @@ def build_crossprobe(
         selected_kind = None
 
     return {
-        "schema_version": 2,
+        "schema_version": 1,
         "project": project.name,
         "status": status,
         "query": signal_query,
