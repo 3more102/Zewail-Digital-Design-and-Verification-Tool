@@ -506,6 +506,19 @@ present in the selected VCD scope and feeds that evidence into the same checks. 
 USER signal missing from the VCD is not automatically treated as a zero-width
 physical interface signal.
 
+A normalized trace can independently opt into transaction-ID interface checks with
+an `id_widths` object containing `ID_W_WIDTH` and/or `ID_R_WIDTH`. Each property
+accepts 0..32 bits. `ID_W_WIDTH` applies to AWID/BID and `ID_R_WIDTH` to
+ARID/RID; zero declares the associated pair absent, while a positive width requires
+the ID on an active channel and validates that observed values fit. Omitting
+`id_widths` preserves the legacy behavior where missing IDs are interpreted as
+logical ID zero for transaction reconstruction.
+
+`zddv axi4-waveform` records an ID-width property only when both signals in its
+pair are present in the selected VCD scope and have the same declared width.
+A partial or undumped pair stays unknown rather than being interpreted as width
+zero, and mismatched paired widths are rejected.
+
 For exclusive accesses, the analyzer checks the 16-transfer and 128-byte limits,
 power-of-two total byte count, total-size address alignment, completion of an
 observed matching exclusive read before its write starts, matching observable
