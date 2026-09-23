@@ -223,6 +223,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Read-only waveform navigation, bounded targeted probing, and hierarchy/source/connectivity cross-probe integration.
 - [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [x] Review-gated lint/build/run project actions using exact SHA-256 approval, project/source revalidation, and existing core APIs.
+- [x] Review-gated generated-verification draft preview/apply using exact staged-byte SHA-256 and the existing generated-artifact core gate.
 
 ## Long-Term Direction
 
