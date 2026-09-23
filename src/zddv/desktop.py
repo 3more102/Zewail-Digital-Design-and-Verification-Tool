@@ -5,11 +5,14 @@ from typing import Any
 from zddv.config import ProjectConfig
 from zddv.storage import (
     assertion_statistics,
+    list_assertion_events,
     list_coverage_score_snapshots,
     list_coverage_snapshots,
+    list_formal_property_results,
     list_formal_result_snapshots,
     list_run_records,
     list_uvm_log_snapshots,
+    list_uvm_report_messages,
     run_statistics,
 )
 from zddv.triage import group_failure_records
@@ -67,6 +70,27 @@ def build_desktop_snapshot(
     runs = list_run_records(project, limit=limit)
     formal_rows = list_formal_result_snapshots(project, limit=1)
     uvm_rows = list_uvm_log_snapshots(project, limit=1)
+    latest_formal = formal_rows[0] if formal_rows else None
+    latest_uvm = uvm_rows[0] if uvm_rows else None
+
+    formal_properties = (
+        list_formal_property_results(
+            project,
+            str(latest_formal["snapshot_id"]),
+            limit=limit,
+        )
+        if latest_formal is not None
+        else []
+    )
+    uvm_messages = (
+        list_uvm_report_messages(
+            project,
+            str(latest_uvm["snapshot_id"]),
+            limit=limit,
+        )
+        if latest_uvm is not None
+        else []
+    )
 
     return {
         "project": {
@@ -83,11 +107,14 @@ def build_desktop_snapshot(
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
+        "assertion_events": list_assertion_events(project, limit=limit),
         "recent_runs": runs,
         "failure_groups": group_failure_records(runs),
         "latest_coverage": _latest_coverage(project),
-        "latest_formal": formal_rows[0] if formal_rows else None,
-        "latest_uvm": uvm_rows[0] if uvm_rows else None,
+        "latest_formal": latest_formal,
+        "formal_properties": formal_properties,
+        "latest_uvm": latest_uvm,
+        "uvm_messages": uvm_messages,
     }
 
 
@@ -111,8 +138,8 @@ def launch_desktop_gui(
         raise RuntimeError(f"Desktop GUI could not start: {exc}") from exc
 
     window.title(f"ZDDV Debug Studio — {project.name}")
-    window.geometry("1180x760")
-    window.minsize(900, 600)
+    window.geometry("1260x800")
+    window.minsize(960, 620)
 
     container = ttk.Frame(window, padding=12)
     container.pack(fill="both", expand=True)
@@ -146,54 +173,103 @@ def launch_desktop_gui(
     run_tab = ttk.Frame(notebook, padding=8)
     failure_tab = ttk.Frame(notebook, padding=8)
     evidence_tab = ttk.Frame(notebook, padding=8)
+    assertion_tab = ttk.Frame(notebook, padding=8)
+    formal_tab = ttk.Frame(notebook, padding=8)
+    uvm_tab = ttk.Frame(notebook, padding=8)
     notebook.add(run_tab, text="Recent Runs")
     notebook.add(failure_tab, text="Failure Groups")
     notebook.add(evidence_tab, text="Evidence")
+    notebook.add(assertion_tab, text="Assertions")
+    notebook.add(formal_tab, text="Formal")
+    notebook.add(uvm_tab, text="UVM")
 
-    run_columns = ("status", "test", "seed", "duration", "run_id")
-    run_tree = ttk.Treeview(run_tab, columns=run_columns, show="headings")
-    for column, title, width in (
-        ("status", "Status", 90),
-        ("test", "Test", 220),
-        ("seed", "Seed", 90),
-        ("duration", "Time (ms)", 110),
-        ("run_id", "Run ID", 420),
+    def _make_tree(
+        parent,
+        columns: tuple[str, ...],
+        specs: tuple[tuple[str, str, int], ...],
     ):
-        run_tree.heading(column, text=title)
-        run_tree.column(column, width=width, anchor="w")
-    run_tree.pack(fill="both", expand=True)
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        for column, title, width in specs:
+            tree.heading(column, text=title)
+            tree.column(column, width=width, anchor="w")
+        ybar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        xbar = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        return tree
 
-    failure_columns = ("count", "status", "tests", "signature")
-    failure_tree = ttk.Treeview(
+    run_tree = _make_tree(
+        run_tab,
+        ("status", "test", "seed", "duration", "run_id"),
+        (
+            ("status", "Status", 90),
+            ("test", "Test", 220),
+            ("seed", "Seed", 90),
+            ("duration", "Time (ms)", 110),
+            ("run_id", "Run ID", 420),
+        ),
+    )
+    failure_tree = _make_tree(
         failure_tab,
-        columns=failure_columns,
-        show="headings",
+        ("count", "status", "tests", "signature"),
+        (
+            ("count", "Count", 80),
+            ("status", "Status", 120),
+            ("tests", "Tests", 260),
+            ("signature", "Normalized signature", 620),
+        ),
     )
-    for column, title, width in (
-        ("count", "Count", 80),
-        ("status", "Status", 120),
-        ("tests", "Tests", 260),
-        ("signature", "Normalized signature", 520),
-    ):
-        failure_tree.heading(column, text=title)
-        failure_tree.column(column, width=width, anchor="w")
-    failure_tree.pack(fill="both", expand=True)
-
-    evidence_columns = ("kind", "status", "details", "id")
-    evidence_tree = ttk.Treeview(
+    evidence_tree = _make_tree(
         evidence_tab,
-        columns=evidence_columns,
-        show="headings",
+        ("kind", "status", "details", "id"),
+        (
+            ("kind", "Evidence", 150),
+            ("status", "Status", 130),
+            ("details", "Details", 580),
+            ("id", "Snapshot / source", 300),
+        ),
     )
-    for column, title, width in (
-        ("kind", "Evidence", 150),
-        ("status", "Status", 130),
-        ("details", "Details", 500),
-        ("id", "Snapshot / source", 300),
-    ):
-        evidence_tree.heading(column, text=title)
-        evidence_tree.column(column, width=width, anchor="w")
-    evidence_tree.pack(fill="both", expand=True)
+    assertion_tree = _make_tree(
+        assertion_tab,
+        ("status", "name", "run", "line", "message"),
+        (
+            ("status", "Status", 90),
+            ("name", "Assertion", 260),
+            ("run", "Run ID", 280),
+            ("line", "Log line", 90),
+            ("message", "Message", 500),
+        ),
+    )
+    formal_tree = _make_tree(
+        formal_tab,
+        ("status", "kind", "name", "interpretation", "depth", "message"),
+        (
+            ("status", "Status", 90),
+            ("kind", "Kind", 90),
+            ("name", "Property", 260),
+            ("interpretation", "Interpretation", 180),
+            ("depth", "Depth", 90),
+            ("message", "Message", 430),
+        ),
+    )
+    uvm_tree = _make_tree(
+        uvm_tab,
+        ("severity", "report_id", "component", "time", "line", "message"),
+        (
+            ("severity", "Severity", 120),
+            ("report_id", "Report ID", 150),
+            ("component", "Component", 260),
+            ("time", "Time", 110),
+            ("line", "Log line", 90),
+            ("message", "Message", 440),
+        ),
+    )
 
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
@@ -208,8 +284,9 @@ def launch_desktop_gui(
     current: dict[str, Any] = {}
 
     def _clear(tree) -> None:
-        for item in tree.get_children():
-            tree.delete(item)
+        children = tree.get_children()
+        if children:
+            tree.delete(*children)
 
     def refresh() -> None:
         nonlocal current
@@ -310,9 +387,55 @@ def launch_desktop_gui(
                 values=("UVM", uvm["status"], details, uvm["snapshot_id"]),
             )
 
+        _clear(assertion_tree)
+        for event in current["assertion_events"]:
+            assertion_tree.insert(
+                "",
+                "end",
+                values=(
+                    event["status"],
+                    event["assertion_name"],
+                    event["run_id"],
+                    "-" if event["log_line"] is None else event["log_line"],
+                    event["message"] or "",
+                ),
+            )
+
+        _clear(formal_tree)
+        for item in current["formal_properties"]:
+            effective_depth = item["effective_depth"]
+            depth = effective_depth if effective_depth is not None else item["depth"]
+            formal_tree.insert(
+                "",
+                "end",
+                values=(
+                    item["status"],
+                    item["kind"],
+                    item["name"],
+                    item["interpretation"] or "",
+                    "-" if depth is None else depth,
+                    item["message"] or "",
+                ),
+            )
+
+        _clear(uvm_tree)
+        for message in current["uvm_messages"]:
+            uvm_tree.insert(
+                "",
+                "end",
+                values=(
+                    message["severity"],
+                    message["report_id"] or "",
+                    message["component"] or "",
+                    message["time_text"] or "",
+                    message["log_line"],
+                    message["message"] or "",
+                ),
+            )
+
         status_text.set(
             f"{project.simulator} · top={project.top} · "
-            f"showing {len(current['recent_runs'])} runs"
+            f"showing up to {limit} records per detail pane"
         )
 
     ttk.Button(header, text="Refresh", command=refresh).pack(side="right", padx=(0, 12))
