@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### AXI4 ID presence hardening
+
+- Enforce explicit zero-width ID absence from raw normalized-trace signal evidence on every sample, including idle cycles, rather than only during handshakes.
+- Keep injected master-interface defaults separate from physical ID presence evidence.
+- Correct the VCD regression fixture so the fully-undumped AWID/BID case actually removes both declarations.
+
 ### Elaborated boundary connectivity
 
 - Classify direct normalized parent-signal/child-pin bindings as boundary drivers or loads using only normalized module-port direction evidence.
