@@ -228,8 +228,13 @@ Tables A4-3, A4-4, and A4-5.
 Optional AWUSER, WUSER, BUSER, ARUSER, and RUSER values are transported as opaque
 channel payload. When present, they participate in the same VALID/READY stability
 checks as the rest of their channel and are preserved in reconstructed transaction
-evidence. Their width and meaning remain implementation-defined, so ZDDV does not
-invent semantic legality rules for their bit values.
+evidence. Their meaning remains implementation-defined, so ZDDV does not invent
+semantic legality rules for their bit values. Explicit `user_signal_widths`
+metadata can validate individual values and zero-width absence. When enough widths
+are supplied, ZDDV also enforces the Arm IHI 0022 Issue K A13.5 configuration
+relationships: AWUSER and ARUSER share `USER_REQ_WIDTH`, while RUSER is
+`USER_DATA_WIDTH + USER_RESP_WIDTH` (the WUSER and BUSER widths). Missing metadata
+members stay unknown rather than being inferred.
 
 A normalized trace can additionally provide `data_width_bits` using a standard
 AXI data width of 8/16/32/64/128/256/512/1024 bits. When present, ZDDV rejects
@@ -254,10 +259,13 @@ signals; automatic selection succeeds only when exactly one complete AXI4 scope 
 The extractor streams selected VCD identifiers only, preserves optional transaction IDs,
 address sidebands, and USER sidebands when present, requires WDATA and RDATA to use
 the same standard AXI data width, verifies that WSTRB has one bit per data byte,
-derives `data_width_bits`, and records physical waveform timestamps alongside
-logical sample cycles. The burst analyzer then propagates those timestamps into
-violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains an
-input adapter; protocol semantics remain simulator-independent in the AXI4 core.
+derives `data_width_bits`, and records the declared VCD widths for USER signals
+that are actually present in the selected scope. Those observed widths feed the
+same core USER-width consistency checks; an undumped USER signal is not interpreted
+as proof of a zero-width physical signal. Physical waveform timestamps are recorded
+alongside logical sample cycles. The burst analyzer then propagates those timestamps
+into violations and reconstructed AW/W/B/AR/R transaction evidence. VCD parsing remains
+an input adapter; protocol semantics remain simulator-independent in the AXI4 core.
 
 The data-width and WSTRB rules follow Arm AMBA AXI and ACE Protocol Specification
 ARM IHI 0022H, including the data-bus/transfer-size constraint and section A3.4.4
