@@ -827,7 +827,8 @@ bundle is review-required before any external use.
 - [x] Provider-neutral AI RCA context bundle with deterministic evidence SHA-256 and no automatic external transmission
 - [x] Review-gated AI-assisted root-cause analysis with strict evidence references and auditable provenance
 - [x] Desktop Debug Studio read-only foundation (summary, runs, failures, coverage, evidence, sources/hierarchy, and detailed assertion/formal/UVM views)
-- [ ] Interactive source/hierarchy/waveform/UVM panes and review-gated project actions
+- [x] Read-only source/hierarchy, elaborated-hierarchy, waveform probe, and detailed assertion/formal/UVM panes
+- [ ] RTL source preview/cross-navigation and review-gated project actions
 
 ## Design Principles
 
@@ -847,6 +848,7 @@ bundle is review-required before any external use.
 - [AI Provenance Chain Audit](docs/ai-chain-audit.md)
 - [AI RCA Context](docs/ai-rca-context.md)
 - [Desktop Debug Studio](docs/desktop-debug-studio.md)
+- [Desktop Waveform Navigation](docs/desktop-waveform.md)
 
 ## License
 
