@@ -104,9 +104,11 @@ fail-closed default.
 
 `zddv assertion-waveform` joins normalized assertion events to their exact
 simulation run and recorded waveform. VCD-backed runs reuse the waveform index.
-The standalone waveform index/probe paths can opt in to the `fst2vcd` adapter,
-but assertion correlation does not invoke external conversion implicitly, so its
-FST-backed runs remain metadata-only until that flow explicitly adopts the adapter.
+Assertion correlation does not invoke external conversion implicitly. FST-backed
+runs remain metadata-only by default, while an explicit caller-provided `fst2vcd`
+adapter enables the same normalized signal index used by VCD correlation. Converter
+provenance is retained in the correlated waveform evidence and the original FST
+remains the persisted artifact identity.
 
 Correlation is evidence-based: signal hints are emitted only when identifiers in
 the assertion name/message match a waveform signal by exact hierarchical path or
