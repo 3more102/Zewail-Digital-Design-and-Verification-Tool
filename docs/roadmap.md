@@ -48,7 +48,8 @@ Current status: deterministic source indexing, source-level hierarchy,
 simulator-resolved elaborated hierarchy, VCD waveform indexing, targeted VCD
 value-change probing, source-level structural drivers/loads navigation,
 waveform-to-source cross-probing with persisted elaborated/generated hierarchy
-preference, assertion-to-waveform correlation, and the
+preference and simulator-elaborated instance qualification, assertion-to-waveform
+correlation, and the
 first protocol transaction reconstruction path (normalized APB traces) are
 implemented. Exact elaborated drivers/loads remain future enrichment work.
 
@@ -59,6 +60,7 @@ implemented. Exact elaborated drivers/loads remain future enrichment work.
 - [x] Identity-validated persisted elaborated/generated hierarchy in waveform cross-probing.
 - [x] Targeted VCD value-change probing (time-windowed, bounded).
 - [x] Drivers/loads navigation (source-level structural evidence).
+- [x] Cross-probe connectivity instance qualification when valid elaborated hierarchy is available.
 - [x] Assertion-to-waveform correlation (run/artifact link plus exact-name signal hints).
 - [x] Protocol transaction reconstruction (APB normalized-trace foundation).
 - [x] Waveform-driven protocol extraction (APB VCD clock-edge sampling).

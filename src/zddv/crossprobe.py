@@ -6,7 +6,12 @@ import re
 from typing import Any
 
 from zddv.config import ProjectConfig
-from zddv.connectivity import build_connectivity_index, signal_navigation, write_connectivity_index
+from zddv.connectivity import (
+    build_connectivity_index,
+    qualify_signal_navigation_with_elaboration,
+    signal_navigation,
+    write_connectivity_index,
+)
 from zddv.design_index import build_design_index, write_design_index
 from zddv.design_revision import design_revision_fingerprint
 from zddv.waveform import write_waveform_index
@@ -375,6 +380,14 @@ def build_crossprobe(
         except ValueError:
             navigation = None
         if navigation is not None:
+            if elaborated_node is not None and elaborated_index is not None:
+                navigation = qualify_signal_navigation_with_elaboration(
+                    navigation,
+                    instance_path=str(elaborated_node["path"]),
+                    elaborated_instances=list(
+                        elaborated_index.get("instances", [])
+                    ),
+                )
             connectivity_payload = {
                 "analysis_level": connectivity.get("analysis_level"),
                 "unit": navigation["unit"],
@@ -382,6 +395,11 @@ def build_crossprobe(
                 "drivers": navigation["drivers"],
                 "loads": navigation["loads"],
             }
+            if navigation.get("instance_path"):
+                connectivity_payload["instance_path"] = navigation["instance_path"]
+                connectivity_payload["instance_qualification"] = navigation[
+                    "instance_qualification"
+                ]
 
         if declaration is not None:
             status = "MATCHED"

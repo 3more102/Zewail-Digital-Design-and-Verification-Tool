@@ -5,6 +5,7 @@ import pytest
 from zddv.config import initialize_project, save_project
 from zddv.connectivity import (
     build_connectivity_index,
+    qualify_signal_navigation_with_elaboration,
     signal_navigation,
     write_connectivity_index,
 )
@@ -105,6 +106,75 @@ def test_instance_navigation_keeps_port_evidence(tmp_path: Path):
     assert instance_load["expression"] == "mid"
     assert instance_load["file"] == "rtl/design.sv"
     assert instance_load["line"] > 0
+
+
+def test_instance_navigation_can_be_qualified_by_elaborated_scope(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {
+                "path": "top",
+                "name": "top",
+                "module": "top",
+                "generate_scopes": [],
+            },
+            {
+                "path": "top.u_child",
+                "name": "u_child",
+                "module": "child",
+                "generate_scopes": [],
+            },
+        ],
+    )
+
+    instance_load = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert qualified["instance_path"] == "top"
+    assert qualified["instance_qualification"] == "simulator_elaborated_scope"
+    assert instance_load["instance_path"] == "top"
+    assert instance_load["elaborated_child_resolution"] == "exact"
+    assert instance_load["elaborated_child_path"] == "top.u_child"
+
+
+def test_generated_child_qualification_preserves_ambiguity(tmp_path: Path):
+    project = _connectivity_project(tmp_path)
+    index = build_connectivity_index(project)
+    navigation = signal_navigation(index, unit="top", signal="mid")
+
+    qualified = qualify_signal_navigation_with_elaboration(
+        navigation,
+        instance_path="top",
+        elaborated_instances=[
+            {
+                "path": "top.g[0].u_child",
+                "name": "u_child",
+                "module": "child",
+                "generate_scopes": ["g[0]"],
+            },
+            {
+                "path": "top.g[1].u_child",
+                "name": "u_child",
+                "module": "child",
+                "generate_scopes": ["g[1]"],
+            },
+        ],
+    )
+
+    instance_load = next(
+        item for item in qualified["loads"] if item["kind"] == "instance_port"
+    )
+    assert instance_load["elaborated_child_resolution"] == "ambiguous"
+    assert instance_load["elaborated_child_candidates"] == [
+        "top.g[0].u_child",
+        "top.g[1].u_child",
+    ]
+    assert "elaborated_child_path" not in instance_load
 
 
 def test_inout_is_both_driver_and_load(tmp_path: Path):

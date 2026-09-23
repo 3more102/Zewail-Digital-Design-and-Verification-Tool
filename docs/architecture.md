@@ -153,8 +153,13 @@ Invalid or stale persisted elaboration is reported as evidence state and is neve
 guessed or regenerated implicitly.
 
 Source declaration and driver/load evidence remain tied to the source design
-index and `analysis_level = "source_structural"`. Exact elaborated signal/port
-drivers and loads remain a separate enrichment milestone.
+index and `analysis_level = "source_structural"`. When a waveform scope is
+resolved by valid simulator-elaborated hierarchy, cross-probing qualifies those
+same source-structural edges with the exact parent instance path. Instance-port
+edges also retain an exact elaborated child path when one candidate is proven;
+multiple generated candidates are reported as ambiguous rather than selecting one.
+This qualification is hierarchy context only: exact elaborated signal/port drivers
+and loads remain a separate enrichment milestone.
 
 ## v0.5 AXI4-Lite Protocol Analysis Contract
 

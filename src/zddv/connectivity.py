@@ -647,6 +647,82 @@ def signal_navigation(
     }
 
 
+def qualify_signal_navigation_with_elaboration(
+    navigation: dict[str, Any],
+    *,
+    instance_path: str,
+    elaborated_instances: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Attach deterministic elaborated-instance context to source connectivity.
+
+    The driver/load roles remain source-structural evidence.  This helper only
+    qualifies that evidence with an already-resolved elaborated parent instance
+    and, for instance-port edges, exact or ambiguous child-instance candidates.
+    """
+    parent_path = str(instance_path).strip()
+    if not parent_path:
+        raise ValueError("instance_path must not be empty")
+
+    instances = [
+        item
+        for item in elaborated_instances
+        if isinstance(item, dict) and item.get("path")
+    ]
+
+    def child_candidates(entry: dict[str, Any]) -> list[str]:
+        if entry.get("kind") != "instance_port" or not entry.get("instance"):
+            return []
+
+        source_instance = str(entry["instance"])
+        child_type = entry.get("child_type")
+        matches: list[str] = []
+        for candidate in instances:
+            candidate_path = str(candidate.get("path") or "")
+            candidate_name = str(candidate.get("name") or "")
+            candidate_module = candidate.get("module")
+            if candidate_name != source_instance:
+                continue
+            if child_type and candidate_module != child_type:
+                continue
+
+            generate_scopes = [
+                str(scope)
+                for scope in (candidate.get("generate_scopes") or [])
+                if str(scope)
+            ]
+            expected_path = ".".join(
+                [parent_path, *generate_scopes, source_instance]
+            )
+            if candidate_path == expected_path:
+                matches.append(candidate_path)
+        return sorted(set(matches))
+
+    def enrich(entry: dict[str, Any]) -> dict[str, Any]:
+        item = {**entry, "instance_path": parent_path}
+        if entry.get("kind") != "instance_port":
+            return item
+
+        candidates = child_candidates(entry)
+        if len(candidates) == 1:
+            item["elaborated_child_resolution"] = "exact"
+            item["elaborated_child_path"] = candidates[0]
+        elif candidates:
+            item["elaborated_child_resolution"] = "ambiguous"
+            item["elaborated_child_candidates"] = candidates
+        else:
+            item["elaborated_child_resolution"] = "not_found"
+        return item
+
+    return {
+        "unit": navigation["unit"],
+        "signal": navigation["signal"],
+        "instance_path": parent_path,
+        "instance_qualification": "simulator_elaborated_scope",
+        "drivers": [enrich(item) for item in navigation["drivers"]],
+        "loads": [enrich(item) for item in navigation["loads"]],
+    }
+
+
 def write_connectivity_index(
     project: ProjectConfig,
     *,
