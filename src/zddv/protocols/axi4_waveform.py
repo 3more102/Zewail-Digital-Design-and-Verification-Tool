@@ -126,6 +126,41 @@ def extract_axi4_trace_from_vcd(
         if name in scoped_signals
     }
 
+    def id_width_property(
+        property_name: str,
+        request_signal: str,
+        response_signal: str,
+    ) -> int:
+        request_present = request_signal in scoped_signals
+        response_present = response_signal in scoped_signals
+        if request_present != response_present:
+            raise RuntimeError(
+                f"AXI4 {property_name} requires {request_signal} and "
+                f"{response_signal} to be both present or both absent"
+            )
+        if not request_present:
+            return 0
+
+        request_width = int(scoped_signals[request_signal]["width"])
+        response_width = int(scoped_signals[response_signal]["width"])
+        if request_width != response_width:
+            raise RuntimeError(
+                f"AXI4 {property_name} requires matching {request_signal}/"
+                f"{response_signal} widths; got {request_signal}={request_width}, "
+                f"{response_signal}={response_width}"
+            )
+        if not 1 <= request_width <= 32:
+            raise RuntimeError(
+                f"AXI4 {property_name} must be in the range 0..32 bits; "
+                f"got {request_width}"
+            )
+        return request_width
+
+    id_widths = {
+        "ID_W_WIDTH": id_width_property("ID_W_WIDTH", "AWID", "BID"),
+        "ID_R_WIDTH": id_width_property("ID_R_WIDTH", "ARID", "RID"),
+    }
+
     actual_clock = available[clock.upper()]
     actual_to_canonical = {
         available[name]: name
@@ -159,10 +194,12 @@ def extract_axi4_trace_from_vcd(
     waveform["data_width_bits"] = wdata_width
     waveform["rdata_width_bits"] = rdata_width
     waveform["wstrb_width"] = wstrb_width
+    waveform["id_widths"] = dict(id_widths)
     waveform["user_signal_widths"] = dict(user_signal_widths)
     return {
         "source": "vcd-waveform",
         "data_width_bits": wdata_width,
+        "id_widths": id_widths,
         "user_signal_widths": user_signal_widths,
         "waveform": waveform,
         "samples": normalized_samples,
