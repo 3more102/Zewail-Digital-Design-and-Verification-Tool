@@ -204,6 +204,23 @@ uncollected verification objectives passed.
 - [x] Coverage/formal/UVM evidence-change summaries without quality inference.
 - [x] CLI JSON artifact for release/review change inspection.
 
+
+## v1.1 — Desktop Debug Studio
+
+Current status: the desktop view is read-only. It reuses authoritative persisted
+verification evidence and the deterministic in-memory design index; it does not
+execute simulations, mutate project files, invoke AI, or materialize design-index
+artifacts merely by viewing them.
+
+- [x] Tk/ttk desktop shell with verification summary.
+- [x] Recent-run, failure-group, normalized coverage, per-test, and evidence panes.
+- [x] Source-file/unit navigation from configured RTL/testbench sources.
+- [x] Source-level hierarchy navigation with resolved, unresolved, and recursive state.
+- [x] Refresh from shared backend/core models without duplicating verification logic.
+- [ ] Waveform navigation and targeted probe integration.
+- [ ] Assertion/UVM/formal evidence cross-probing.
+- [ ] Review-gated project actions using existing CLI/core APIs.
+
 ## Long-Term Direction
 
 The long-term target is a unified digital design and verification environment rather than a simulator clone: one project model and verification database across simulation, regression, assertions, coverage, protocols, waveform debug, formal, and intelligent triage.
