@@ -6,6 +6,7 @@ import pytest
 
 from zddv.config import initialize_project, save_project
 from zddv.desktop_waveform import (
+    build_desktop_elaborated_evidence_rows,
     build_desktop_waveform_snapshot,
     crossprobe_desktop_waveform_signal,
     probe_desktop_waveform_signal,
@@ -182,3 +183,113 @@ b0001 !
     assert result["elaborated_evidence"]["status"] == "NOT_PRESENT"
     assert not (project.root / ".zddv" / "design" / "connectivity.json").exists()
     assert not (project.root / ".zddv" / "debug" / "crossprobe.json").exists()
+
+
+
+def test_desktop_elaborated_evidence_rows_use_only_core_normalized_contract():
+    rows = build_desktop_elaborated_evidence_rows(
+        {
+            "elaborated_port": {
+                "status": "MATCHED",
+                "module": "counter",
+                "signal": "count",
+                "port": {
+                    "direction": "output",
+                    "location": {"path": "rtl/counter.sv", "line": 3},
+                },
+            },
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "evidence_contract": "verilator_cell_pin_direct_varref_only",
+                "parent_signal_bindings": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "port_direction": "output",
+                        "relationship": "child_output_to_parent_signal",
+                    }
+                ],
+                "instance_port_bindings": [],
+            },
+        }
+    )
+
+    assert rows == [
+        ("Elab port", "counter.count · output · rtl/counter.sv:3"),
+        (
+            "Elab pin",
+            "tb_top.dut.count -> tb_top.count · output · "
+            "child_output_to_parent_signal",
+        ),
+    ]
+
+
+def test_desktop_elaborated_evidence_rows_fail_closed_for_untrusted_connectivity():
+    rows = build_desktop_elaborated_evidence_rows(
+        {
+            "elaborated_port": {
+                "status": "UNAVAILABLE",
+                "reason": "legacy_xml_port_schema_not_normalized",
+            },
+            "elaborated_connectivity": {
+                "analysis_level": "unknown",
+                "parent_signal_bindings": [
+                    {
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "relationship": "child_output_to_parent_signal",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert rows == [
+        (
+            "Elab port",
+            "UNAVAILABLE · legacy_xml_port_schema_not_normalized",
+        )
+    ]
+
+
+def test_desktop_elaborated_evidence_rows_are_bounded():
+    bindings = [
+        {
+            "instance_path": f"tb_top.dut{i}",
+            "pin": "clk",
+            "parent_instance_path": "tb_top",
+            "parent_signal": "clk",
+            "port_direction": "input",
+            "relationship": "parent_signal_to_child_input",
+        }
+        for i in range(3)
+    ]
+
+    rows = build_desktop_elaborated_evidence_rows(
+        {
+            "elaborated_connectivity": {
+                "analysis_level": "simulator_elaborated_direct_pin_varref",
+                "parent_signal_bindings": bindings,
+                "instance_port_bindings": [],
+            }
+        },
+        limit=2,
+    )
+
+    assert rows[:2] == [
+        (
+            "Elab pin",
+            "tb_top.clk -> tb_top.dut0.clk · input · parent_signal_to_child_input",
+        ),
+        (
+            "Elab pin",
+            "tb_top.clk -> tb_top.dut1.clk · input · parent_signal_to_child_input",
+        ),
+    ]
+    assert rows[2] == ("Elab pin", "1 additional normalized binding(s) not shown")
+    with pytest.raises(ValueError, match="limit must be > 0"):
+        build_desktop_elaborated_evidence_rows({}, limit=0)
