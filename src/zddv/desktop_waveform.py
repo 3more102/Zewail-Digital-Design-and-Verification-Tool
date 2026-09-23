@@ -156,6 +156,65 @@ def _desktop_boundary_role_item_is_normalized(
     return False
 
 
+def _desktop_internal_assignment_item_is_normalized(
+    item: Any,
+    role: str,
+    *,
+    instance_path: str,
+    module: str,
+) -> bool:
+    """Validate one core-produced direct ASSIGNW item without deriving new roles."""
+    if not isinstance(item, dict) or role not in {"DRIVER", "LOAD"}:
+        return False
+    if item.get("kind") != "continuous_assignment":
+        return False
+    if item.get("assignment_type") != "ASSIGNW":
+        return False
+    if item.get("instance_path") != instance_path or item.get("module") != module:
+        return False
+    for key in ("source_signal", "target_signal"):
+        value = item.get(key)
+        if not isinstance(value, str) or not value:
+            return False
+    location = item.get("location")
+    return location is None or isinstance(location, dict)
+
+
+def _desktop_unresolved_assignment_item_is_normalized(
+    item: Any,
+    *,
+    instance_path: str,
+    module: str,
+) -> bool:
+    """Validate one unresolved core ASSIGNW evidence row without interpreting it."""
+    if not isinstance(item, dict) or item.get("status") != "UNSUPPORTED":
+        return False
+    if item.get("assignment_type") != "ASSIGNW":
+        return False
+    if item.get("instance_path") != instance_path or item.get("module") != module:
+        return False
+
+    query_references = item.get("query_references")
+    if (
+        not isinstance(query_references, list)
+        or not query_references
+        or any(side not in {"lhs", "rhs"} for side in query_references)
+    ):
+        return False
+    for key in ("lhs_varrefs", "rhs_varrefs"):
+        refs = item.get(key)
+        if not isinstance(refs, list) or any(
+            not isinstance(value, str) or not value for value in refs
+        ):
+            return False
+    for key in ("lhs_expression_type", "rhs_expression_type"):
+        value = item.get(key)
+        if value is not None and (not isinstance(value, str) or not value):
+            return False
+    location = item.get("location")
+    return location is None or isinstance(location, dict)
+
+
 def desktop_crossprobe_evidence_rows(
     report: dict[str, Any],
     *,
@@ -375,6 +434,144 @@ def desktop_crossprobe_evidence_rows(
                     (
                         "Elaborated role",
                         f"{hidden_roles} additional boundary role item(s) not shown",
+                    )
+                )
+
+    elaborated_internal = report.get("elaborated_internal_connectivity")
+    trusted_internal = (
+        isinstance(elaborated_internal, dict)
+        and elaborated_internal.get("analysis_level")
+        == "simulator_elaborated_module_root_assignw_direct_varref"
+        and elaborated_internal.get("evidence_contract")
+        == "verilator_module_root_assignw_direct_varref_only"
+        and elaborated_internal.get("role_semantics")
+        == "direct_continuous_assignment"
+        and elaborated_internal.get("status") in {"NORMALIZED", "PARTIAL"}
+        and isinstance(elaborated_internal.get("query_instance_path"), str)
+        and bool(elaborated_internal.get("query_instance_path"))
+        and isinstance(elaborated_internal.get("query_module"), str)
+        and bool(elaborated_internal.get("query_module"))
+        and isinstance(elaborated_internal.get("query_signal"), str)
+        and bool(elaborated_internal.get("query_signal"))
+    )
+    if trusted_internal:
+        internal_instance = str(elaborated_internal["query_instance_path"])
+        internal_module = str(elaborated_internal["query_module"])
+        internal_drivers = elaborated_internal.get("drivers")
+        internal_loads = elaborated_internal.get("loads")
+        unresolved_assignments = elaborated_internal.get("unresolved_assignments")
+        internal_lists_normalized = (
+            isinstance(internal_drivers, list)
+            and isinstance(internal_loads, list)
+            and isinstance(unresolved_assignments, list)
+            and all(
+                _desktop_internal_assignment_item_is_normalized(
+                    item,
+                    "DRIVER",
+                    instance_path=internal_instance,
+                    module=internal_module,
+                )
+                for item in internal_drivers
+            )
+            and all(
+                _desktop_internal_assignment_item_is_normalized(
+                    item,
+                    "LOAD",
+                    instance_path=internal_instance,
+                    module=internal_module,
+                )
+                for item in internal_loads
+            )
+            and all(
+                _desktop_unresolved_assignment_item_is_normalized(
+                    item,
+                    instance_path=internal_instance,
+                    module=internal_module,
+                )
+                for item in unresolved_assignments
+            )
+            and (
+                (
+                    elaborated_internal.get("status") == "NORMALIZED"
+                    and not unresolved_assignments
+                )
+                or (
+                    elaborated_internal.get("status") == "PARTIAL"
+                    and bool(unresolved_assignments)
+                )
+            )
+        )
+        if internal_lists_normalized:
+            rows.append(
+                (
+                    "Elaborated internal connectivity",
+                    f"{elaborated_internal['status']} · "
+                    f"drivers={len(internal_drivers)} · "
+                    f"loads={len(internal_loads)} · "
+                    f"unresolved={len(unresolved_assignments)} · "
+                    "roles=direct_continuous_assignment",
+                )
+            )
+
+            internal_items: list[tuple[str, dict[str, Any]]] = []
+            internal_items.extend(("DRIVER", item) for item in internal_drivers)
+            internal_items.extend(("LOAD", item) for item in internal_loads)
+            internal_items.extend(
+                ("UNRESOLVED", item) for item in unresolved_assignments
+            )
+            for role, item in internal_items[:elaborated_limit]:
+                location = item.get("location") or {}
+                location_text = str(location.get("path") or "-")
+                if location.get("line") is not None:
+                    location_text += f":{location['line']}"
+
+                if role in {"DRIVER", "LOAD"}:
+                    source = (
+                        f"{item.get('instance_path') or '-'}."
+                        f"{item.get('source_signal') or '-'}"
+                    )
+                    target = (
+                        f"{item.get('instance_path') or '-'}."
+                        f"{item.get('target_signal') or '-'}"
+                    )
+                    detail = (
+                        f"{role} · {source} -> {target} · "
+                        f"ASSIGNW · location={location_text}"
+                    )
+                else:
+                    query_references = ",".join(
+                        str(value)
+                        for value in item.get("query_references", [])
+                        if value
+                    ) or "-"
+                    lhs_refs = ",".join(
+                        str(value)
+                        for value in item.get("lhs_varrefs", [])
+                        if value
+                    ) or "-"
+                    rhs_refs = ",".join(
+                        str(value)
+                        for value in item.get("rhs_varrefs", [])
+                        if value
+                    ) or "-"
+                    detail = (
+                        f"UNRESOLVED · query_references={query_references} · "
+                        f"lhs={item.get('lhs_expression_type') or '-'}[{lhs_refs}] · "
+                        f"rhs={item.get('rhs_expression_type') or '-'}[{rhs_refs}] · "
+                        f"location={location_text}"
+                    )
+                rows.append(("Elaborated internal edge", detail))
+
+            hidden_internal = len(internal_items) - min(
+                len(internal_items),
+                elaborated_limit,
+            )
+            if hidden_internal:
+                rows.append(
+                    (
+                        "Elaborated internal edge",
+                        f"{hidden_internal} additional internal connectivity "
+                        "item(s) not shown",
                     )
                 )
 
