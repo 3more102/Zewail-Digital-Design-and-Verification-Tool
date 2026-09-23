@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Release integrity
+
+- Bind signed release manifests to the bundled signoff's exact project, simulator,
+  and top-level identity during both export and verification.
+- Reject otherwise-valid foreign signoff bundles before release signing.
+
 ### Signoff change review
 
 - Add deterministic `signoff-diff` comparison for two validated signoff bundles.
