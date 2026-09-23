@@ -6,7 +6,11 @@ import pytest
 
 from zddv.cli import main
 from zddv.config import initialize_project
-from zddv.desktop import build_desktop_snapshot
+from zddv.desktop import (
+    build_desktop_snapshot,
+    build_desktop_waveform_snapshot,
+    probe_desktop_waveform_signal,
+)
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -14,7 +18,13 @@ from zddv.storage import (
 )
 
 
-def _run_record(run_id: str, status: str, *, seed: int) -> dict:
+def _run_record(
+    run_id: str,
+    status: str,
+    *,
+    seed: int,
+    waveform: Path | None = None,
+) -> dict:
     return {
         "run_id": run_id,
         "created_at": f"2026-09-23T06:{seed:02d}:00+00:00",
@@ -29,7 +39,7 @@ def _run_record(run_id: str, status: str, *, seed: int) -> dict:
         "duration_ms": 12.5,
         "run_dir": f".zddv/runs/{run_id}",
         "log": f".zddv/runs/{run_id}/simulation.log",
-        "waveform": None,
+        "waveform": str(waveform) if waveform is not None else None,
         "coverage": None,
         "timeout_s": 30.0,
         "command": ["sim"],
@@ -240,3 +250,103 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     }
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
+
+
+VCD = """$timescale 1ns $end
+$scope module tb_top $end
+$var wire 1 ! clk $end
+$scope module dut $end
+$var wire 4 # count [3:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 #
+#5
+1!
+b0001 #
+#10
+0!
+b0010 #
+"""
+
+
+def test_desktop_waveform_navigation_and_probe_are_in_memory(tmp_path: Path):
+    project = initialize_project(tmp_path / "wave-demo")
+    run_dir = project.root / ".zddv" / "runs" / "run-wave"
+    run_dir.mkdir(parents=True)
+    waveform = run_dir / "waveform.vcd"
+    waveform.write_text(VCD, encoding="utf-8")
+    record_run(
+        project,
+        _run_record("run-wave", "PASS", seed=3, waveform=waveform),
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+    assert snapshot["waveform_runs"] == [
+        {
+            "run_id": "run-wave",
+            "created_at": "2026-09-23T06:03:00+00:00",
+            "status": "PASS",
+            "test_name": "smoke",
+            "simulator": "verilator",
+            "waveform_path": str(waveform.resolve()),
+        }
+    ]
+
+    navigation = build_desktop_waveform_snapshot(project, run_id="run-wave")
+    assert navigation["run_id"] == "run-wave"
+    assert navigation["format"] == "vcd"
+    assert navigation["parse_status"] == "indexed"
+    assert navigation["timescale"] == "1ns"
+    assert navigation["artifact"]["project_path"].endswith(
+        ".zddv/runs/run-wave/waveform.vcd"
+    )
+    assert [signal["path"] for signal in navigation["signals"]] == [
+        "tb_top.clk",
+        "tb_top.dut.count",
+    ]
+
+    probe = probe_desktop_waveform_signal(
+        project,
+        "count",
+        run_id="run-wave",
+        start_time=5,
+        end_time=10,
+        max_changes=10,
+    )
+    assert probe["run_id"] == "run-wave"
+    assert probe["summary"] == {
+        "signals": 1,
+        "total_changes": 2,
+        "truncated_signals": 0,
+    }
+    assert probe["signals"][0]["path"] == "tb_top.dut.count"
+    assert probe["signals"][0]["changes"] == [
+        {"time": 5, "value": "0001"},
+        {"time": 10, "value": "0010"},
+    ]
+
+    assert not (project.root / ".zddv" / "waveforms").exists()
+
+
+def test_desktop_snapshot_skips_missing_waveform_artifacts(tmp_path: Path):
+    project = initialize_project(tmp_path / "wave-missing")
+    missing = project.root / ".zddv" / "runs" / "missing" / "waveform.vcd"
+    record_run(
+        project,
+        _run_record("missing-wave", "PASS", seed=4, waveform=missing),
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    assert snapshot["waveform_runs"] == []
+
+
+def test_desktop_waveform_navigation_rejects_missing_evidence(tmp_path: Path):
+    project = initialize_project(tmp_path / "wave-none")
+    record_run(project, _run_record("run-no-wave", "PASS", seed=5))
+
+    with pytest.raises(RuntimeError, match="No run with an existing waveform artifact"):
+        build_desktop_waveform_snapshot(project)
