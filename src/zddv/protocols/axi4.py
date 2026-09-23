@@ -86,17 +86,54 @@ _AXI4_LEGAL_CACHE_ENCODINGS = frozenset({
 })
 
 
-def _decode_axi4_cache_attributes(value: Any) -> dict[str, Any] | None:
+def _axi4_cache_memory_class(value: int) -> str | None:
+    """Return the AXI4 memory-class family observable from one AxCACHE value."""
+    if value == 0x0:
+        return "device_non_bufferable"
+    if value == 0x1:
+        return "device_bufferable"
+    if value == 0x2:
+        return "normal_non_cacheable_non_bufferable"
+    if value == 0x3:
+        return "normal_non_cacheable_bufferable"
+    if value in {0x6, 0xA, 0xE}:
+        return "write_through"
+    if value in {0x7, 0xB, 0xF}:
+        return "write_back"
+    return None
+
+
+def _decode_axi4_cache_attributes(
+    value: Any,
+    *,
+    prefix: str,
+) -> dict[str, Any] | None:
     scalar = _scalar(value)
     if not isinstance(scalar, int) or not 0 <= scalar <= 0xF:
         return None
+    if prefix not in {"AR", "AW"}:
+        raise ValueError("AXI4 cache direction prefix must be AR or AW")
+
+    # AXI4 Issue H, Tables A4-3/A4-4:
+    #   AWCACHE[3] = Allocate,       AWCACHE[2] = Other Allocate
+    #   ARCACHE[2] = Allocate,       ARCACHE[3] = Other Allocate
+    # The legacy read_allocate/write_allocate keys below intentionally retain
+    # their raw bit-position meaning for backward compatibility.
+    allocate_bit = 2 if prefix == "AR" else 3
+    other_allocate_bit = 3 if prefix == "AR" else 2
     return {
         "encoding": scalar,
+        "direction": "read" if prefix == "AR" else "write",
         "bufferable": bool(scalar & 0x1),
         "modifiable": bool(scalar & 0x2),
         "read_allocate": bool(scalar & 0x4),
         "write_allocate": bool(scalar & 0x8),
+        "allocate": bool(scalar & (1 << allocate_bit)),
+        "other_allocate": bool(scalar & (1 << other_allocate_bit)),
+        "allocate_bit": allocate_bit,
+        "other_allocate_bit": other_allocate_bit,
         "cache_lookup_required": bool(scalar & 0xC),
+        "memory_class": _axi4_cache_memory_class(scalar),
         "reserved": scalar not in _AXI4_LEGAL_CACHE_ENCODINGS,
     }
 
@@ -412,7 +449,10 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                     actual=value,
                 )
 
-        values["cache_attributes"] = _decode_axi4_cache_attributes(values["cache"])
+        values["cache_attributes"] = _decode_axi4_cache_attributes(
+            values["cache"],
+            prefix=prefix,
+        )
         values["prot_attributes"] = _decode_axi4_prot_attributes(values["prot"])
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
@@ -1169,7 +1209,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Core AXI4 burst, ID, ordering, handshake, response, and 4KB-boundary rules are modeled.",
             "Core AXI4 exclusive size/alignment, sequence timing, response-class, and observable read/write pairing checks are modeled.",
-            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M/RA/WA and AxPROT privilege/security/access semantics are decoded, and AxREGION is checked for 4KB-space consistency.",
+            "AXI4 address-sideband widths are checked for AxCACHE, AxPROT, AxQOS, and AxREGION; reserved AXI4 AxCACHE encodings are rejected, B/M plus direction-aware Allocate/Other-Allocate and memory-class evidence are decoded while legacy RA/WA bit fields remain available, AxPROT privilege/security/access semantics are decoded, and AxREGION is checked for 4KB-space consistency.",
             "Optional AWUSER/ARUSER/WUSER/RUSER/BUSER values are preserved when observed and participate in channel payload-stability checks under backpressure.",
             "When data_width_bits is known, AxSIZE is bounded by the data-channel width and WSTRB is checked against the legal byte lanes for narrow and unaligned writes.",
             "USER signal meaning and width are implementation-defined, so semantic or width legality is not inferred without explicit interface metadata.",
