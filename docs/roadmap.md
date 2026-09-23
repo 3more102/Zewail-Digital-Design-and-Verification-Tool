@@ -83,6 +83,7 @@ structural CDC signoff, and specification-complete UCIe checking remain planned.
 - [ ] Exhaustive AXI4 optional-sideband/coherency-adjacent semantics.
 - [x] Asynchronous FIFO / CDC-oriented normalized-event invariant checks.
 - [x] UCIe public 68B/256B FLIT trace and link-health foundation.
+- [x] UCIe public-generation metadata with version-aware 32/64 GT/s ceiling checks through UCIe 3.0.
 - [ ] Specification-complete UCIe protocol/PHY conformance checking.
 
 Each pack should support reusable checks, assertions, transaction extraction, coverage goals, and debug summaries.
