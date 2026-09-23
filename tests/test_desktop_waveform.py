@@ -8,6 +8,7 @@ from zddv.config import initialize_project, save_project
 from zddv.desktop_waveform import (
     build_desktop_waveform_snapshot,
     crossprobe_desktop_waveform_signal,
+    desktop_crossprobe_evidence_rows,
     probe_desktop_waveform_signal,
 )
 from zddv.storage import record_run
@@ -182,3 +183,62 @@ b0001 !
     assert result["elaborated_evidence"]["status"] == "NOT_PRESENT"
     assert not (project.root / ".zddv" / "design" / "connectivity.json").exists()
     assert not (project.root / ".zddv" / "debug" / "crossprobe.json").exists()
+
+
+def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inference():
+    report = {
+        "hierarchy_resolution": "simulator_elaborated",
+        "hierarchy": {"design_path": "tb_top.dut", "type": "counter"},
+        "source": {
+            "unit": "counter",
+            "file": "rtl/counter.sv",
+            "declaration": {"line": 3},
+        },
+        "connectivity": {
+            "drivers": [{"kind": "procedural_assignment"}],
+            "loads": [],
+        },
+        "elaborated_evidence": {"status": "PRESENT"},
+        "elaborated_port": {
+            "status": "MATCHED",
+            "signal": "count",
+            "port": {
+                "module": "counter",
+                "name": "count",
+                "direction": "output",
+            },
+        },
+        "elaborated_connectivity": {
+            "analysis_level": "simulator_elaborated_direct_pin_varref",
+            "parent_signal_bindings": [],
+            "instance_port_bindings": [
+                {
+                    "instance_path": "tb_top.dut",
+                    "pin": "count",
+                    "parent_instance_path": "tb_top",
+                    "parent_signal": "count",
+                    "port_direction": "output",
+                    "relationship": "child_output_to_parent_signal",
+                }
+            ],
+        },
+        "elaborated_boundary": {
+            "status": "MATCHED",
+            "flow": "child_to_parent",
+        },
+    }
+
+    rows = dict(desktop_crossprobe_evidence_rows(report))
+
+    assert rows["Hierarchy"] == "simulator_elaborated · tb_top.dut · counter"
+    assert rows["RTL source"] == "counter · rtl/counter.sv:3"
+    assert rows["Drivers"] == "1 source-structural item(s)"
+    assert rows["Loads"] == "0 source-structural item(s)"
+    assert rows["Elaboration"] == "PRESENT"
+    assert rows["Elaborated port"] == "MATCHED · counter.count · direction=output"
+    assert rows["Elaborated connectivity"] == (
+        "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
+        "instance-port bindings=1 · relationships=child_output_to_parent_signal"
+    )
+    assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
+
