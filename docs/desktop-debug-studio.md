@@ -34,7 +34,7 @@ limit. Assertion events already use the existing bounded history query.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence, current project source files for preview,
+Refresh reads persisted verification evidence, configured project source files for preview,
 and rebuilds the in-memory design index. It does not launch simulations or formal jobs,
 invoke or transmit data to an AI provider, stage/apply generated artifacts, or edit RTL,
 testbench sources, or project configuration.
