@@ -32,14 +32,16 @@ external/shared RTL sources. Arbitrary project files are not exposed through the
 
 ## Review-gated project actions
 
-The **Actions** pane supports `lint`, `build`, one `run`, and exact historical
-`rerun` through existing ZDDV core APIs. Preparing an action does not invoke the
-simulator. The review payload binds the project config, matched source paths and bytes,
-action, and runtime parameters to a canonical SHA-256. Historical rerun additionally
-binds the selected persisted run identity, recorded command, test, seed, plusargs,
-timeout, outcome metadata, and evidence paths. Execution requires the exact digest plus
-explicit approval and revalidates the live project and reviewed run evidence immediately
-before running.
+The **Actions** pane supports `lint`, `build`, one `run`, and recorded-input
+historical `rerun` through existing ZDDV core APIs. Preparing an action does not invoke
+the simulator. The review payload binds the project config, matched source paths and
+bytes, action, and runtime parameters to a canonical SHA-256. Historical rerun
+additionally binds the selected persisted run identity, recorded command, test, seed,
+plusargs, timeout, outcome metadata, and evidence paths. Execution requires the exact
+digest plus explicit approval and revalidates the live project and reviewed run evidence
+immediately before running. The current configured simulator backend is rebuilt and the
+reviewed test/seed/plusargs/timeout are replayed exactly; the recorded historical command
+is evidence for review and is not executed verbatim.
 
 ## Generated artifact review
 
