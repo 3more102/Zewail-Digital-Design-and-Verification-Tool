@@ -235,13 +235,18 @@ def test_rerun_review_binds_historical_record(tmp_path: Path):
     proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
 
     assert proposal["parameters"] == {"run_id": "run-fail"}
-    assert proposal["core_api"] == "zddv.rerun.rerun_run_id"
+    assert proposal["core_api"] == "zddv.rerun.rerun_snapshot"
     assert proposal["historical_run"]["run_id"] == "run-fail"
     assert proposal["historical_run"]["recorded_inputs"] == {
         "test_name": "smoke",
         "seed": 7,
         "plusargs": ["+MODE=stress", "+COUNT=4"],
         "timeout_s": 25.0,
+    }
+    assert proposal["historical_run"]["replay_contract"] == {
+        "backend": "current_configured_backend",
+        "recorded_runtime_inputs_exact": True,
+        "recorded_command_replayed_verbatim": False,
     }
     assert len(proposal["review_sha256"]) == 64
 
@@ -255,26 +260,25 @@ def test_execute_rerun_delegates_only_after_sha_approval(
     proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
     calls = []
 
-    def fake_rerun(project_arg, run_id):
-        calls.append((project_arg.root, run_id))
+    def fake_rerun(project_arg, snapshot):
+        calls.append(
+            (
+                project_arg.root,
+                snapshot["run_id"],
+                snapshot["recorded_inputs"]["seed"],
+            )
+        )
         return {
             "status": "PASS",
             "selected": 1,
             "passed": 1,
             "failed": 0,
             "build": {"passed": True, "returncode": 0},
-            "results": [
-                {
-                    "source_run_id": run_id,
-                    "run_id": "rerun-pass",
-                    "status": "PASS",
-                    "returncode": 0,
-                }
-            ],
-            "source": proposal["historical_run"],
+            "results": [],
+            "source": snapshot,
         }
 
-    monkeypatch.setattr("zddv.desktop_actions.rerun_run_id", fake_rerun)
+    monkeypatch.setattr("zddv.desktop_actions.rerun_snapshot", fake_rerun)
 
     with pytest.raises(RuntimeError, match="approval"):
         execute_desktop_action(
@@ -291,7 +295,7 @@ def test_execute_rerun_delegates_only_after_sha_approval(
         approve_reviewed=True,
     )
 
-    assert calls == [(project.root, "run-fail")]
+    assert calls == [(project.root, "run-fail", 7)]
     assert result["action"] == "rerun"
     assert result["status"] == "PASS"
     assert result["review_sha256"] == proposal["review_sha256"]
@@ -306,12 +310,12 @@ def test_execute_rerun_rejects_historical_record_drift(
     proposal = prepare_desktop_action(project, "rerun", run_id="run-fail")
     called = False
 
-    def fake_rerun(_project_arg, _run_id):
+    def fake_rerun(_project_arg, _snapshot):
         nonlocal called
         called = True
         return {"status": "PASS"}
 
-    monkeypatch.setattr("zddv.desktop_actions.rerun_run_id", fake_rerun)
+    monkeypatch.setattr("zddv.desktop_actions.rerun_snapshot", fake_rerun)
     _record_historical_run(project, seed=8)
 
     with pytest.raises(RuntimeError, match="changed after review"):
