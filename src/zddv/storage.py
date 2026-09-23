@@ -1025,6 +1025,7 @@ def list_uvm_report_messages(
     snapshot_id: str,
     *,
     severity: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     if severity is not None and severity not in {
         "UVM_INFO",
@@ -1033,6 +1034,8 @@ def list_uvm_report_messages(
         "UVM_FATAL",
     }:
         raise ValueError(f"Unsupported UVM severity: {severity}")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1")
 
     query = """
         SELECT snapshot_id, event_index, severity, report_id, component,
@@ -1045,6 +1048,9 @@ def list_uvm_report_messages(
         query += " AND severity = ?"
         params.append(severity)
     query += " ORDER BY event_index"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
 
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()
@@ -2011,7 +2017,11 @@ def list_formal_property_results(
     *,
     status: str | None = None,
     interpretation: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1")
+
     query = """
         SELECT snapshot_id, property_index, name, kind, status,
                interpretation, depth, effective_depth, message,
@@ -2027,6 +2037,9 @@ def list_formal_property_results(
         query += " AND interpretation = ?"
         params.append(interpretation.strip().upper())
     query += " ORDER BY property_index"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
 
     with _connect(project) as db:
         rows = db.execute(query, params).fetchall()

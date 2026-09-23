@@ -7,11 +7,14 @@ from zddv.config import ProjectConfig
 from zddv.design_index import build_design_index
 from zddv.storage import (
     assertion_statistics,
+    list_assertion_events,
     list_coverage_score_snapshots,
     list_coverage_snapshots,
+    list_formal_property_results,
     list_formal_result_snapshots,
     list_run_records,
     list_uvm_log_snapshots,
+    list_uvm_report_messages,
     run_statistics,
 )
 from zddv.triage import group_failure_records
@@ -105,6 +108,26 @@ def build_desktop_snapshot(
     runs = list_run_records(project, limit=limit)
     formal_rows = list_formal_result_snapshots(project, limit=1)
     uvm_rows = list_uvm_log_snapshots(project, limit=1)
+    latest_formal = formal_rows[0] if formal_rows else None
+    latest_uvm = uvm_rows[0] if uvm_rows else None
+    formal_properties = (
+        list_formal_property_results(
+            project,
+            str(latest_formal["snapshot_id"]),
+            limit=limit,
+        )
+        if latest_formal is not None
+        else []
+    )
+    uvm_messages = (
+        list_uvm_report_messages(
+            project,
+            str(latest_uvm["snapshot_id"]),
+            limit=limit,
+        )
+        if latest_uvm is not None
+        else []
+    )
     design = build_design_index(project)
 
     return {
@@ -122,11 +145,14 @@ def build_desktop_snapshot(
         },
         "stats": run_statistics(project),
         "assertions": assertion_statistics(project),
+        "assertion_events": list_assertion_events(project, limit=limit),
         "recent_runs": runs,
         "failure_groups": group_failure_records(runs),
         "latest_coverage": _latest_coverage(project),
-        "latest_formal": formal_rows[0] if formal_rows else None,
-        "latest_uvm": uvm_rows[0] if uvm_rows else None,
+        "latest_formal": latest_formal,
+        "formal_properties": formal_properties,
+        "latest_uvm": latest_uvm,
+        "uvm_messages": uvm_messages,
         "design": design,
         "elaborated_hierarchy": _load_persisted_elaborated_hierarchy(project),
     }
@@ -195,6 +221,12 @@ def launch_desktop_gui(
     notebook.add(evidence_tab, text="Evidence")
     notebook.add(sources_tab, text="Sources")
     notebook.add(hierarchy_tab, text="Hierarchy")
+    assertions_tab = ttk.Frame(notebook, padding=8)
+    formal_tab = ttk.Frame(notebook, padding=8)
+    uvm_tab = ttk.Frame(notebook, padding=8)
+    notebook.add(assertions_tab, text="Assertions")
+    notebook.add(formal_tab, text="Formal")
+    notebook.add(uvm_tab, text="UVM")
     notebook.add(elaborated_tab, text="Elaborated")
 
     run_columns = ("status", "test", "seed", "duration", "run_id")
@@ -293,6 +325,47 @@ def launch_desktop_gui(
         elaborated_tree.heading(column, text=title)
         elaborated_tree.column(column, width=width, anchor="w")
     elaborated_tree.pack(fill="both", expand=True)
+
+    assertion_columns = ("status", "name", "run", "line", "message")
+    assertion_tree = ttk.Treeview(assertions_tab, columns=assertion_columns, show="headings")
+    for column, title, width in (
+        ("status", "Status", 90),
+        ("name", "Assertion", 240),
+        ("run", "Run ID", 260),
+        ("line", "Log line", 90),
+        ("message", "Message", 480),
+    ):
+        assertion_tree.heading(column, text=title)
+        assertion_tree.column(column, width=width, anchor="w")
+    assertion_tree.pack(fill="both", expand=True)
+
+    formal_columns = ("status", "kind", "name", "interpretation", "depth", "message")
+    formal_tree = ttk.Treeview(formal_tab, columns=formal_columns, show="headings")
+    for column, title, width in (
+        ("status", "Status", 90),
+        ("kind", "Kind", 90),
+        ("name", "Property", 240),
+        ("interpretation", "Interpretation", 170),
+        ("depth", "Depth", 90),
+        ("message", "Message", 390),
+    ):
+        formal_tree.heading(column, text=title)
+        formal_tree.column(column, width=width, anchor="w")
+    formal_tree.pack(fill="both", expand=True)
+
+    uvm_columns = ("severity", "report_id", "component", "time", "line", "message")
+    uvm_tree = ttk.Treeview(uvm_tab, columns=uvm_columns, show="headings")
+    for column, title, width in (
+        ("severity", "Severity", 120),
+        ("report_id", "Report ID", 140),
+        ("component", "Component", 230),
+        ("time", "Time", 100),
+        ("line", "Log line", 90),
+        ("message", "Message", 400),
+    ):
+        uvm_tree.heading(column, text=title)
+        uvm_tree.column(column, width=width, anchor="w")
+    uvm_tree.pack(fill="both", expand=True)
 
     footer = ttk.Frame(container, padding=(0, 10, 0, 0))
     footer.pack(fill="x")
@@ -438,6 +511,55 @@ def launch_desktop_gui(
                     "-",
                     elaborated.get("error") or elaborated["path"],
                     elaborated["status"],
+                ),
+            )
+
+        _clear(assertion_tree)
+        for event in current["assertion_events"]:
+            assertion_tree.insert(
+                "",
+                "end",
+                values=(
+                    event["status"],
+                    event["assertion_name"],
+                    event["run_id"],
+                    "-" if event["log_line"] is None else event["log_line"],
+                    event["message"] or "",
+                ),
+            )
+
+        _clear(formal_tree)
+        for item in current["formal_properties"]:
+            depth = (
+                item["effective_depth"]
+                if item["effective_depth"] is not None
+                else item["depth"]
+            )
+            formal_tree.insert(
+                "",
+                "end",
+                values=(
+                    item["status"],
+                    item["kind"],
+                    item["name"],
+                    item["interpretation"] or "",
+                    "-" if depth is None else depth,
+                    item["message"] or "",
+                ),
+            )
+
+        _clear(uvm_tree)
+        for message in current["uvm_messages"]:
+            uvm_tree.insert(
+                "",
+                "end",
+                values=(
+                    message["severity"],
+                    message["report_id"] or "",
+                    message["component"] or "",
+                    message["time_text"] or "",
+                    message["log_line"],
+                    message["message"] or "",
                 ),
             )
 

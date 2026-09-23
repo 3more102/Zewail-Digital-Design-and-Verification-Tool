@@ -219,7 +219,7 @@ project files, invoke AI, or infer verification state from the UI.
 - [x] Source/hierarchy navigation panes backed by the deterministic in-memory design index.
 - [x] Persisted simulator-elaborated hierarchy browser without launching elaboration from the GUI.
 - [ ] Waveform navigation and targeted probe integration.
-- [ ] Detailed assertion/UVM/formal evidence panes.
+- [x] Detailed assertion/UVM/formal evidence panes with bounded persisted-evidence queries.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
 
 ## Long-Term Direction
