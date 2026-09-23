@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from zddv.cli import main
-from zddv.config import initialize_project
+from zddv.config import initialize_project, save_project
 from zddv.desktop import build_desktop_snapshot
 from zddv.storage import (
     record_coverage_score_snapshot,
@@ -131,3 +131,65 @@ def test_gui_cli_launches_viewer_with_requested_limit(
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
     assert "GUI CLOSED" in capsys.readouterr().out
+
+
+def test_desktop_snapshot_builds_read_only_source_navigation(tmp_path: Path):
+    project = initialize_project(tmp_path / "design-demo")
+    (project.root / "rtl" / "design.sv").write_text(
+        """
+module leaf;
+endmodule
+
+module child;
+    leaf u_leaf();
+endmodule
+
+module top;
+    child u_child();
+endmodule
+""".lstrip(),
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.top = "top"
+    save_project(project)
+
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    (design_dir / "elaborated.json").write_text(
+        """{
+  "created_at": "2026-09-23T06:40:00+00:00",
+  "simulator": "verilator",
+  "simulator_version": "Verilator test",
+  "source_format": "json",
+  "summary": {"modules": 3, "instances": 3},
+  "instances": [
+    {"path": "top", "name": "top", "module": "top", "top": true, "location": {"path": "rtl/design.sv", "line": 9}},
+    {"path": "top.u_child", "name": "u_child", "module": "child", "top": false, "location": {"path": "rtl/design.sv", "line": 10}}
+  ]
+}""",
+        encoding="utf-8",
+    )
+
+    snapshot = build_desktop_snapshot(project, limit=10)
+
+    design = snapshot["design"]
+    assert design["summary"] == {
+        "files": 1,
+        "units": 3,
+        "instances": 2,
+        "duplicate_unit_names": 0,
+    }
+    assert [row["name"] for row in design["units"]] == ["leaf", "child", "top"]
+    assert [row["path"] for row in design["hierarchy"]] == [
+        "top",
+        "top.u_child",
+        "top.u_child.u_leaf",
+    ]
+    assert design["hierarchy"][1]["file"] == "rtl/design.sv"
+    assert design["elaborated"]["status"] == "PRESENT"
+    assert design["elaborated"]["instances"][1]["path"] == "top.u_child"
+
+    # Building the desktop snapshot must not create or rewrite source-index artifacts.
+    assert not (design_dir / "index.json").exists()
+    assert not (design_dir / "elaborated-hierarchy.txt").exists()
