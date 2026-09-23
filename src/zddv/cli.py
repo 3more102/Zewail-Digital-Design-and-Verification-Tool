@@ -63,6 +63,7 @@ from zddv.regression import run_regression
 from zddv.reporting import write_junit_report
 from zddv.release import export_verification_release, verify_verification_release
 from zddv.simulator import get_backend
+from zddv.simulator.verilator_elaboration import write_verilator_elaboration
 from zddv.signoff import write_verification_signoff_bundle
 from zddv.storage import (
     assertion_statistics,
@@ -158,6 +159,31 @@ def cmd_index(args) -> int:
     if summary["duplicate_unit_names"]:
         print(f"Duplicate unit names: {summary['duplicate_unit_names']}")
     print(f"Index: {result['path']}")
+    return 0
+
+
+def cmd_elaborate(args) -> int:
+    project = load_project(_project_arg(args))
+    if project.simulator.strip().lower() != "verilator":
+        raise RuntimeError(
+            "Elaborated hierarchy currently requires the Verilator backend."
+        )
+    result = write_verilator_elaboration(
+        project,
+        output=args.output,
+        raw_dir=args.raw_dir,
+    )
+    summary = result["summary"]
+    print(
+        f"ELABORATION: {summary['modules']} module(s), "
+        f"{summary['cells']} cell(s), "
+        f"{summary['generated_cells']} generated cell(s)"
+    )
+    print(
+        "Analysis: Verilator JSON elaboration "
+        f"({summary['unresolved_hierarchy_nodes']} unresolved hierarchy node(s))"
+    )
+    print(f"Report: {result['path']}")
     return 0
 
 
@@ -2810,6 +2836,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build the normalized source/design index",
     )
     p_index.set_defaults(func=cmd_index)
+
+    p_elaborate = sub.add_parser(
+        "elaborate",
+        help="Build Verilator JSON-elaborated module/cell hierarchy",
+    )
+    p_elaborate.add_argument(
+        "--output",
+        default=".zddv/design/elaboration.json",
+        help="Normalized elaboration JSON output path",
+    )
+    p_elaborate.add_argument(
+        "--raw-dir",
+        default=".zddv/design/verilator",
+        help="Directory for raw Verilator JSON/meta/log evidence",
+    )
+    p_elaborate.set_defaults(func=cmd_elaborate)
 
     p_hierarchy = sub.add_parser(
         "hierarchy",
