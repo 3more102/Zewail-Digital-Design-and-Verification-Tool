@@ -378,6 +378,130 @@ def desktop_crossprobe_evidence_rows(
                     )
                 )
 
+    elaborated_internal_connectivity = report.get(
+        "elaborated_internal_connectivity"
+    )
+    trusted_internal_connectivity = (
+        isinstance(elaborated_internal_connectivity, dict)
+        and elaborated_internal_connectivity.get("analysis_level")
+        == "simulator_elaborated_module_root_assignw_direct_varref"
+        and elaborated_internal_connectivity.get("evidence_contract")
+        == "verilator_module_root_assignw_direct_varref_only"
+        and elaborated_internal_connectivity.get("role_semantics")
+        == "direct_continuous_assignment"
+    )
+    if trusted_internal_connectivity:
+        internal_status = elaborated_internal_connectivity.get("status")
+        query_instance_path = elaborated_internal_connectivity.get(
+            "query_instance_path"
+        )
+        query_module = elaborated_internal_connectivity.get("query_module")
+        drivers_raw = elaborated_internal_connectivity.get("drivers")
+        loads_raw = elaborated_internal_connectivity.get("loads")
+        unresolved_raw = elaborated_internal_connectivity.get(
+            "unresolved_assignments"
+        )
+
+        def trusted_internal_edge(item: Any) -> bool:
+            return (
+                isinstance(item, dict)
+                and item.get("kind") == "continuous_assignment"
+                and item.get("assignment_type") == "ASSIGNW"
+                and item.get("instance_path") == query_instance_path
+                and item.get("module") == query_module
+                and isinstance(item.get("source_signal"), str)
+                and bool(item.get("source_signal"))
+                and isinstance(item.get("target_signal"), str)
+                and bool(item.get("target_signal"))
+            )
+
+        def trusted_unresolved_assignment(item: Any) -> bool:
+            references = item.get("query_references") if isinstance(item, dict) else None
+            return (
+                isinstance(item, dict)
+                and item.get("status") == "UNSUPPORTED"
+                and item.get("assignment_type") == "ASSIGNW"
+                and item.get("instance_path") == query_instance_path
+                and item.get("module") == query_module
+                and isinstance(references, list)
+                and bool(references)
+                and all(reference in {"lhs", "rhs"} for reference in references)
+            )
+
+        internal_lists_normalized = (
+            isinstance(drivers_raw, list)
+            and isinstance(loads_raw, list)
+            and isinstance(unresolved_raw, list)
+            and all(trusted_internal_edge(item) for item in drivers_raw)
+            and all(trusted_internal_edge(item) for item in loads_raw)
+            and all(
+                trusted_unresolved_assignment(item)
+                for item in unresolved_raw
+            )
+        )
+        status_consistent = (
+            internal_status == "PARTIAL"
+            if unresolved_raw
+            else internal_status == "NORMALIZED"
+        )
+        if internal_lists_normalized and status_consistent:
+            drivers = list(drivers_raw)
+            loads = list(loads_raw)
+            unresolved = list(unresolved_raw)
+            rows.append(
+                (
+                    "Elaborated internal connectivity",
+                    f"{internal_status} · direct_continuous_assignment · "
+                    f"drivers={len(drivers)} · loads={len(loads)} · "
+                    f"unresolved={len(unresolved)}",
+                )
+            )
+
+            internal_items: list[tuple[str, dict[str, Any]]] = []
+            internal_items.extend(("DRIVER", item) for item in drivers)
+            internal_items.extend(("LOAD", item) for item in loads)
+            internal_items.extend(("UNRESOLVED", item) for item in unresolved)
+            for role, item in internal_items[:elaborated_limit]:
+                location = item.get("location") or {}
+                source_location = str(location.get("path") or "-")
+                if location.get("line") is not None:
+                    source_location += f":{location['line']}"
+
+                if role == "UNRESOLVED":
+                    references = ",".join(
+                        str(value)
+                        for value in item.get("query_references", [])
+                    )
+                    detail = (
+                        f"UNRESOLVED · query_refs={references} · "
+                        f"lhs={item.get('lhs_expression_type') or 'unknown'} · "
+                        f"rhs={item.get('rhs_expression_type') or 'unknown'} · "
+                        f"location={source_location}"
+                    )
+                else:
+                    instance_path = str(item["instance_path"])
+                    source_signal = str(item["source_signal"])
+                    target_signal = str(item["target_signal"])
+                    detail = (
+                        f"{role} · {instance_path}.{source_signal} -> "
+                        f"{instance_path}.{target_signal} · "
+                        f"location={source_location}"
+                    )
+                rows.append(("Elaborated internal edge", detail))
+
+            hidden_internal = len(internal_items) - min(
+                len(internal_items),
+                elaborated_limit,
+            )
+            if hidden_internal:
+                rows.append(
+                    (
+                        "Elaborated internal edge",
+                        f"{hidden_internal} additional internal evidence "
+                        "item(s) not shown",
+                    )
+                )
+
     elaborated_source_correlation = report.get("elaborated_source_correlation")
     trusted_source_correlation = (
         isinstance(elaborated_source_correlation, dict)
