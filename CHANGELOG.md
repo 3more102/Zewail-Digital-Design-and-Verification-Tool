@@ -1,0 +1,61 @@
+# Changelog
+
+## 1.0.0 — 2026-09-22
+
+ZDDV 1.0.0 marks the first release milestone in which the verification evidence,
+review workflow, and release artifacts are designed to be reproducible and
+auditable end to end.
+
+### Verification and signoff
+
+- Deterministic verification signoff bundles over persisted simulation, coverage,
+  formal, and UVM evidence.
+- Explicit run and snapshot pinning for release-candidate signoff manifests.
+- Conservative blocking for known simulation/formal/UVM failures, missing required
+  evidence, and optional minimum-coverage thresholds.
+- Canonical evidence, policy, and signoff SHA-256 provenance.
+- Reproducible release ZIP export with fixed archive metadata and exact reviewed
+  signoff-SHA confirmation.
+- Ed25519-signed release manifests with separate trusted-public-key verification.
+
+### AI-assisted review workflow
+
+- Provider-neutral deterministic RCA context bundles.
+- Opt-in provider invocation with external-transmission gating.
+- Offline/manual response import with no provider invocation.
+- Strict response-schema and evidence-reference validation.
+- SHA-confirmed human review before generated proposals can enter the staging flow.
+- Read-only provenance-chain auditing.
+- Portable deterministic audit bundles spanning context, raw response, validated
+  response, approved review, and selected reviewed proposals.
+- Relocation-safe bundle verification based on bundled content and provenance hashes
+  rather than original absolute project paths.
+- Exact validated-payload proposal-index provenance on reviewed proposal exports.
+
+### Verification foundation retained in 1.0
+
+The release continues to include the existing RTL project model, simulation and
+regression orchestration, assertion ingestion, coverage persistence and analysis,
+waveform/debug tooling, APB/AXI/UCIe analysis, UVM normalization and instrumentation,
+formal evidence ingestion, generated-artifact review isolation, and the supported
+simulator adapter foundations documented in the README.
+
+### Trust boundaries
+
+- `READY_FOR_REVIEW` means the selected persisted evidence satisfies the configured
+  ZDDV signoff checks. It is not a claim that uncollected verification objectives
+  passed or that a design is specification-complete.
+- An Ed25519-valid release authenticates the signed manifest under the trusted public
+  key and binds the exact signoff hashes; it does not independently prove design
+  correctness.
+- A VERIFIED portable AI audit bundle proves internal provenance consistency of its
+  bundled artifacts. SHA-256 alone is not an authenticity signature and does not
+  establish that model hypotheses or generated code are correct.
+- Generated verification artifacts remain review-gated and are not automatically
+  staged, applied, compiled, or executed by the AI workflow.
+
+### CI qualification
+
+The v1.0 release branch is required to pass the unit-test matrix on Python 3.11,
+3.12, and 3.13, build a wheel matching package metadata, and pass the Verilator
+integration workflow before merge.

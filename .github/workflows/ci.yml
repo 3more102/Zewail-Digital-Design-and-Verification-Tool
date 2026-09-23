@@ -25,6 +25,19 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
+      - name: Build wheel
+        run: |
+          python -m pip wheel . --no-deps --wheel-dir /tmp/zddv-wheel
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          wheels = sorted(Path("/tmp/zddv-wheel").glob("zddv-*.whl"))
+          assert len(wheels) == 1, wheels
+          assert wheels[0].name.startswith(f"zddv-{version}-"), wheels[0].name
+          PY
+
   verilator-integration:
     runs-on: ubuntu-latest
 

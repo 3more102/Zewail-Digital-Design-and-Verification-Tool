@@ -4,7 +4,7 @@
 
 ZDDV is an open digital design and verification environment for RTL development, simulation orchestration, regression, coverage, waveform artifacts, assertion, protocol, UVM, formal, and future AI-assisted verification workflows.
 
-> Status: **v0.9 AI-Assisted Debug Foundation — deterministic evidence bundles, opt-in provider adapters, strict response/evidence validation, SHA-confirmed human review, read-only provenance-chain auditing, plus the existing multi-simulator/UVM/formal/coverage foundation**
+> Status: **v1.0 — reproducible verification signoff with exact evidence pinning and Ed25519-signed release archives, plus a review-gated AI workflow with portable provenance audit bundles**
 
 ## What Works Today
 
@@ -35,6 +35,8 @@ ZDDV is an open digital design and verification environment for RTL development,
 - Provider-neutral AI-assisted RCA context bundles with deterministic evidence hashing, explicit uncertainty rules, and no automatic external transmission or model invocation
 - Opt-in model-provider invocation with strict response-schema/evidence-reference validation, SHA-confirmed human review, and no automatic code staging or execution
 - Read-only AI provenance-chain auditing across context, provider request/response, validated payload, and optional human review artifacts
+- Deterministic portable AI audit bundles spanning context, raw/validated responses, approved review, and exact reviewed proposals, with relocation-safe SHA-256 verification
+- Deterministic verification signoff bundles with explicit evidence/run/snapshot pinning, conservative READY_FOR_REVIEW semantics, and reproducible Ed25519-signed release archives
 - Normalized assertion result database keyed by simulation run
 - Simulator-independent UVM report-log normalization with test-name discovery, severity summaries, source/report metadata, SQLite persistence, run correlation, and history CLI
 - UVM phase/objection lifecycle normalization from standard `+UVM_PHASE_TRACE` / `+UVM_OBJECTION_TRACE` report evidence, plus conservative `sequencer@@sequence` report-context evidence, persisted in SQLite
