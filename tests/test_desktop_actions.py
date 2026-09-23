@@ -322,7 +322,7 @@ def test_execute_rerun_rejects_historical_record_drift(
         called = True
         return {"status": "PASS"}
 
-    monkeypatch.setattr("zddv.desktop_actions.rerun_run_id", fake_rerun)
+    monkeypatch.setattr("zddv.desktop_actions.rerun_snapshot", fake_rerun)
     _record_historical_run(project, seed=8)
 
     with pytest.raises(RuntimeError, match="changed after review"):
