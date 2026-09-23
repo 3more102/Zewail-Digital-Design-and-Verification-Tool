@@ -232,6 +232,8 @@ def _desktop_source_correlation_item_is_normalized(item: Any) -> bool:
     match_basis = item.get("match_basis")
     if not isinstance(match_basis, list) or not match_basis:
         return False
+    if not all(isinstance(value, str) and value for value in match_basis):
+        return False
     if match_basis != sorted(set(match_basis)):
         return False
 
@@ -248,8 +250,8 @@ def _desktop_source_correlation_item_is_normalized(item: Any) -> bool:
             match_basis == ["direct_pin_resolves_source_generated_candidate"]
             and isinstance(candidates, list)
             and bool(candidates)
-            and candidates == sorted(set(candidates))
             and all(isinstance(value, str) and value for value in candidates)
+            and candidates == sorted(set(candidates))
             and child_path in candidates
         )
     return False
