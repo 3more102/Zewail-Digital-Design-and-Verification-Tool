@@ -616,6 +616,7 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         "generate_scopes": [],
         "pin_location": {"path": "tb/tb_top.sv", "line": 6, "column": 9},
     }
+    elaborated["pin_binding_evidence"]["unsupported_expression_count"] = 1
     unsupported = build_crossprobe(
         project,
         "tb_top.dut.count",
