@@ -681,11 +681,17 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
     assert tx["cache"] == 0xF
     assert tx["cache_attributes"] == {
         "encoding": 0xF,
+        "direction": "read",
         "bufferable": True,
         "modifiable": True,
         "read_allocate": True,
         "write_allocate": True,
+        "allocate": True,
+        "other_allocate": True,
+        "allocate_bit": 2,
+        "other_allocate_bit": 3,
         "cache_lookup_required": True,
+        "memory_class": "write_back",
         "reserved": False,
     }
     assert tx["prot"] == 0x7
@@ -860,6 +866,125 @@ def test_accepts_axi4_legacy_compatible_cache_encodings():
     assert attrs["modifiable"] is True
     assert attrs["read_allocate"] is True
     assert attrs["reserved"] is False
+
+def test_decodes_axi4_cache_allocate_bits_by_channel_direction():
+    result = analyze_axi4_trace(
+        {"samples": [
+            {
+                "cycle": 0,
+                "AWVALID": 1,
+                "AWREADY": 1,
+                "AWID": 1,
+                "AWADDR": 0x100,
+                "AWLEN": 0,
+                "AWSIZE": 2,
+                "AWBURST": "INCR",
+                "AWCACHE": 0x6,
+                "ARVALID": 1,
+                "ARREADY": 1,
+                "ARID": 2,
+                "ARADDR": 0x200,
+                "ARLEN": 0,
+                "ARSIZE": 2,
+                "ARBURST": "INCR",
+                "ARCACHE": 0x6,
+            },
+            {
+                "cycle": 1,
+                "WVALID": 1,
+                "WREADY": 1,
+                "WDATA": 0x11,
+                "WSTRB": 0xF,
+                "WLAST": 1,
+                "RVALID": 1,
+                "RREADY": 1,
+                "RID": 2,
+                "RDATA": 0x22,
+                "RRESP": "OKAY",
+                "RLAST": 1,
+            },
+            {
+                "cycle": 2,
+                "BVALID": 1,
+                "BREADY": 1,
+                "BID": 1,
+                "BRESP": "OKAY",
+            },
+        ]}
+    )
+
+    assert result["status"] == "PASS"
+    write_tx = next(
+        tx for tx in result["transactions"] if tx["direction"] == "WRITE"
+    )
+    read_tx = next(
+        tx for tx in result["transactions"] if tx["direction"] == "READ"
+    )
+
+    write_cache = write_tx["cache_attributes"]
+    assert write_cache["encoding"] == 0x6
+    assert write_cache["direction"] == "write"
+    assert write_cache["allocate"] is False
+    assert write_cache["other_allocate"] is True
+    assert write_cache["allocate_bit"] == 3
+    assert write_cache["other_allocate_bit"] == 2
+    assert write_cache["memory_class"] == "write_through"
+    assert write_cache["read_allocate"] is True
+    assert write_cache["write_allocate"] is False
+
+    read_cache = read_tx["cache_attributes"]
+    assert read_cache["encoding"] == 0x6
+    assert read_cache["direction"] == "read"
+    assert read_cache["allocate"] is True
+    assert read_cache["other_allocate"] is False
+    assert read_cache["allocate_bit"] == 2
+    assert read_cache["other_allocate_bit"] == 3
+    assert read_cache["memory_class"] == "write_through"
+    assert read_cache["read_allocate"] is True
+    assert read_cache["write_allocate"] is False
+
+
+def test_decodes_axi4_cache_memory_classes_without_inventing_topology():
+    cases = {
+        0x0: "device_non_bufferable",
+        0x1: "device_bufferable",
+        0x2: "normal_non_cacheable_non_bufferable",
+        0x3: "normal_non_cacheable_bufferable",
+        0xA: "write_through",
+        0xB: "write_back",
+        0xE: "write_through",
+        0xF: "write_back",
+    }
+    for encoding, memory_class in cases.items():
+        result = analyze_axi4_trace(
+            {"samples": [
+                {
+                    "cycle": 0,
+                    "ARVALID": 1,
+                    "ARREADY": 1,
+                    "ARID": encoding,
+                    "ARADDR": 0x400 + encoding * 0x10,
+                    "ARLEN": 0,
+                    "ARSIZE": 2,
+                    "ARBURST": "INCR",
+                    "ARCACHE": encoding,
+                },
+                {
+                    "cycle": 1,
+                    "RVALID": 1,
+                    "RREADY": 1,
+                    "RID": encoding,
+                    "RDATA": 0x55,
+                    "RRESP": "OKAY",
+                    "RLAST": 1,
+                },
+            ]}
+        )
+        assert result["status"] == "PASS"
+        attrs = result["transactions"][0]["cache_attributes"]
+        assert attrs["memory_class"] == memory_class
+        assert attrs["reserved"] is False
+
 
 def test_preserves_optional_axi4_user_sidebands_without_interpreting_them():
     result = analyze_axi4_trace(
