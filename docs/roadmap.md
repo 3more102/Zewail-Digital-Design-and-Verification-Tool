@@ -111,6 +111,7 @@ Phase/objection lifecycle normalization, explicit sequence report-context eviden
 - [x] Questa documented multibit-expression FEC input-term-bit normalization and coverage-hole reporting.
 - [x] Questa FSM state/transition item-level normalization and coverage-hole reporting.
 - [x] Questa by-instance binary/extended toggle transition item-level normalization from native XML.
+- [x] Questa evidence-preserving detail-schema audit with exact artifact SHA-256 fingerprints, existing-parser point counts, and explicit enumerated/unknown toggle-tag inventory without inferred semantics.
 - [ ] Questa multibit-condition and enumerated/unknown toggle item-level normalization pending verified native schemas.
 - [x] VCS execution adapter foundation (build/run, seed/test/plusargs, VCD, assertions, run-linked UVM).
 - [x] VCS native per-run coverage database capture.
