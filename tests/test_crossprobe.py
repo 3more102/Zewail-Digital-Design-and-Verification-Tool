@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -369,3 +370,56 @@ def test_crossprobe_rejects_mismatched_explicit_elaboration(tmp_path: Path):
                 "instances": [],
             },
         )
+
+
+def test_crossprobe_fst_stays_metadata_only_without_explicit_adapter(tmp_path: Path):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    with pytest.raises(RuntimeError, match="signal-indexed waveform"):
+        write_crossprobe_report(
+            project,
+            "tb_top.dut.count",
+            input_path="trace.fst",
+        )
+
+
+def test_crossprobe_fst_uses_explicit_adapter_and_preserves_provenance(
+    tmp_path: Path,
+    monkeypatch,
+):
+    project = _project(tmp_path)
+    waveform_path = project.root / "trace.fst"
+    waveform_path.write_bytes(b"FST-placeholder")
+
+    @contextmanager
+    def fake_converted_fst_vcd(path, *, executable, timeout_s):
+        converted = tmp_path / "converted-crossprobe.vcd"
+        converted.write_text(VCD, encoding="utf-8")
+        yield converted, {
+            "adapter": "fst2vcd",
+            "executable": str(executable),
+            "returncode": 0,
+            "temporary_vcd": True,
+            "security_policy": "test adapter",
+        }
+
+    monkeypatch.setattr(
+        "zddv.waveform.converted_fst_vcd",
+        fake_converted_fst_vcd,
+    )
+
+    result = write_crossprobe_report(
+        project,
+        "tb_top.dut.count",
+        input_path="trace.fst",
+        fst_converter="fake-fst2vcd",
+    )
+
+    assert result["status"] == "MATCHED"
+    assert result["waveform"]["format"] == "fst"
+    assert result["waveform"]["parse_status"] == "indexed-via-fst2vcd"
+    assert result["waveform"]["adapter"]["adapter"] == "fst2vcd"
+    assert result["waveform"]["adapter"]["executable"] == "fake-fst2vcd"
+    assert result["waveform"]["signal"]["path"] == "TOP.tb_top.dut.count"
