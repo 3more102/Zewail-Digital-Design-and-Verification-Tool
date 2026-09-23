@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Elaborated internal connectivity
+
+- Normalize only Verilator JSON `ASSIGN`/`ASSIGNW` edges whose lhs and rhs are
+  both direct `VARREF` nodes, retaining exact source locations and module identity.
+- Project those module-level direct edges onto an exact matched elaborated instance
+  during waveform cross-probing, exposing direct-assignment drivers and loads.
+- Preserve complex assignment expressions as explicit unsupported evidence and mark
+  the result `subset_only`; this does not claim complete simulator-resolved internal
+  driver/load connectivity.
+
 ### Elaborated debug correlation
 
 - Extend direct pin-to-source edge correlation to generated instances only when
