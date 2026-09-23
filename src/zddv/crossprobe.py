@@ -240,6 +240,23 @@ def _elaborated_identity_errors(
         and not isinstance(ports, list)
     ):
         errors.append("normalized port_evidence requires a ports list")
+
+    pin_bindings = index.get("pin_bindings")
+    if pin_bindings is not None and not isinstance(pin_bindings, list):
+        errors.append("pin_bindings is not a list")
+
+    pin_binding_evidence = index.get("pin_binding_evidence")
+    if pin_binding_evidence is not None and not isinstance(
+        pin_binding_evidence,
+        dict,
+    ):
+        errors.append("pin_binding_evidence is not an object")
+    elif (
+        isinstance(pin_binding_evidence, dict)
+        and pin_binding_evidence.get("status") == "NORMALIZED"
+        and not isinstance(pin_bindings, list)
+    ):
+        errors.append("normalized pin_binding_evidence requires a pin_bindings list")
     return errors
 
 
@@ -395,15 +412,49 @@ def _elaborated_pin_connectivity(
     port_directions = _elaborated_port_directions(elaborated_index)
     parent_signal_bindings: list[dict[str, Any]] = []
     instance_port_bindings: list[dict[str, Any]] = []
+    unsupported_instance_port_bindings: list[dict[str, Any]] = []
 
     for binding in elaborated_index.get("pin_bindings", []):
-        if not isinstance(binding, dict) or binding.get("status") != "NORMALIZED":
+        if not isinstance(binding, dict):
             continue
         child_path = binding.get("instance_path")
         parent_path = binding.get("parent_instance_path")
         pin = binding.get("pin")
-        parent_signal = binding.get("signal")
         child_module = binding.get("instance_module")
+
+        if binding.get("status") != "NORMALIZED":
+            if (
+                binding.get("status") == "UNSUPPORTED"
+                and child_path
+                and pin
+                and str(child_path) == instance_path
+                and str(pin) == signal_name
+            ):
+                direction = port_directions.get((str(child_module), str(pin)))
+                unsupported_instance_port_bindings.append(
+                    {
+                        "status": "UNSUPPORTED",
+                        "instance_path": str(child_path),
+                        "instance_module": (
+                            str(child_module)
+                            if child_module is not None
+                            else None
+                        ),
+                        "pin": str(pin),
+                        "parent_instance_path": (
+                            str(parent_path) if parent_path is not None else None
+                        ),
+                        "port_direction": direction,
+                        "expression_type": binding.get("expression_type"),
+                        "generate_scopes": list(
+                            binding.get("generate_scopes", [])
+                        ),
+                        "pin_location": binding.get("pin_location"),
+                    }
+                )
+            continue
+
+        parent_signal = binding.get("signal")
         if not child_path or not parent_path or not pin or not parent_signal:
             continue
 
@@ -428,7 +479,11 @@ def _elaborated_pin_connectivity(
         if str(child_path) == instance_path and str(pin) == signal_name:
             instance_port_bindings.append(normalized)
 
-    if not parent_signal_bindings and not instance_port_bindings:
+    if (
+        not parent_signal_bindings
+        and not instance_port_bindings
+        and not unsupported_instance_port_bindings
+    ):
         return None
 
     return {
@@ -448,6 +503,14 @@ def _elaborated_pin_connectivity(
             key=lambda item: (
                 item["parent_instance_path"],
                 item["parent_signal"],
+            ),
+        ),
+        "unsupported_instance_port_bindings": sorted(
+            unsupported_instance_port_bindings,
+            key=lambda item: (
+                item["instance_path"],
+                item["pin"],
+                str(item.get("expression_type") or ""),
             ),
         ),
     }
