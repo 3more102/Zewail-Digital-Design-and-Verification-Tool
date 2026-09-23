@@ -1772,3 +1772,68 @@ def test_user_width_metadata_does_not_infer_unspecified_relationship_members():
         "AWUSER": 4,
         "RUSER": 7,
     }
+    evidence = result["user_width_property_evidence"]
+    assert evidence["USER_REQ_WIDTH"]["value_bits"] == 4
+    assert evidence["USER_REQ_WIDTH"]["evidence_signals"] == ["AWUSER"]
+    assert evidence["USER_DATA_WIDTH"]["value_bits"] is None
+    assert evidence["USER_RESP_WIDTH"]["value_bits"] is None
+    assert evidence["RUSER"]["value_bits"] == 7
+    assert evidence["RUSER"]["composition_confirmed"] is None
+
+
+def test_axi_user_width_maxima_are_reported_as_guidance_not_protocol_failures():
+    result = analyze_axi4_trace(
+        {
+            "data_width_bits": 32,
+            "user_signal_widths": {
+                "AWUSER": 129,
+                "ARUSER": 129,
+                "WUSER": 20,
+                "BUSER": 17,
+                "RUSER": 37,
+            },
+            "samples": [],
+        }
+    )
+
+    assert result["status"] == "PASS"
+    assert result["summary"]["violations"] == 0
+    evidence = result["user_width_property_evidence"]
+
+    request = evidence["USER_REQ_WIDTH"]
+    assert request["value_bits"] == 129
+    assert request["guidance_max_bits"] == 128
+    assert request["guidance_only"] is True
+    assert request["guidance_exceeded"] is True
+
+    data = evidence["USER_DATA_WIDTH"]
+    assert data["value_bits"] == 20
+    assert data["guidance_max_bits"] == 16
+    assert data["guidance_exceeded"] is True
+
+    response = evidence["USER_RESP_WIDTH"]
+    assert response["value_bits"] == 17
+    assert response["guidance_max_bits"] == 16
+    assert response["guidance_exceeded"] is True
+
+    ruser = evidence["RUSER"]
+    assert ruser["value_bits"] == 37
+    assert ruser["expected_from_components_bits"] == 37
+    assert ruser["composition_confirmed"] is True
+
+
+def test_axi_user_data_width_guidance_is_unknown_without_data_bus_width():
+    result = analyze_axi4_trace(
+        {
+            "user_signal_widths": {
+                "WUSER": 12,
+            },
+            "samples": [],
+        }
+    )
+
+    data = result["user_width_property_evidence"]["USER_DATA_WIDTH"]
+    assert result["status"] == "PASS"
+    assert data["value_bits"] == 12
+    assert data["guidance_max_bits"] is None
+    assert data["guidance_exceeded"] is None
