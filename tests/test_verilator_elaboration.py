@@ -220,6 +220,32 @@ def test_writer_uses_supported_json_only_contract(tmp_path: Path, monkeypatch):
     assert Path(result["artifacts"]["meta"]).exists()
 
 
+def test_writer_rejects_verilator_before_json_only_support(tmp_path: Path, monkeypatch):
+    project = initialize_project(tmp_path / "demo")
+    (project.root / "rtl" / "design.sv").write_text(
+        "module top; endmodule\\n",
+        encoding="utf-8",
+    )
+    project.rtl = ["rtl/*.sv"]
+    project.tb = []
+    project.top = "top"
+    save_project(project)
+
+    monkeypatch.setattr(
+        verilator_elaboration,
+        "_verilator_tool",
+        lambda: "/tools/verilator",
+    )
+    monkeypatch.setattr(
+        verilator_elaboration,
+        "_verilator_version",
+        lambda tool: "Verilator 5.020",
+    )
+
+    with pytest.raises(RuntimeError, match="5.044 or newer"):
+        write_verilator_elaboration(project)
+
+
 def test_writer_rejects_output_outside_project(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     (project.root / "rtl" / "design.sv").write_text(
