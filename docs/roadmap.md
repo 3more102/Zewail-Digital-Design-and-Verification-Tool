@@ -208,15 +208,19 @@ uncollected verification objectives passed.
 ## v1.1 — Desktop Debug Studio
 
 Current status: the first desktop foundation is read-only and reuses the authoritative
-ZDDV verification database. It intentionally does not execute simulations, mutate
-project files, invoke AI, or infer verification state from the UI.
+ZDDV verification database. Source indexing is computed in memory, while simulator-
+elaborated hierarchy is displayed only from already-persisted evidence. It intentionally
+does not execute simulations, write design indexes, invoke AI, apply generated artifacts,
+or infer verification state from the UI.
 
 - [x] Tk/ttk desktop shell with verification summary.
 - [x] Recent-run browser backed by persisted run records.
 - [x] Failure-group browser backed by normalized failure signatures.
 - [x] Latest normalized coverage, assertion, formal, and UVM evidence overview.
 - [x] Refresh from the shared backend without duplicating verification logic.
-- [ ] Source/hierarchy navigation panes.
+- [x] Source browser with read-only RTL preview and design-unit navigation.
+- [x] Source-level hierarchy navigation with RTL cross-navigation.
+- [x] Read-only navigation of already-persisted simulator-elaborated hierarchy evidence.
 - [ ] Waveform navigation and targeted probe integration.
 - [ ] Detailed assertion/UVM/formal evidence panes.
 - [ ] Review-gated project actions using the existing CLI/core APIs.
