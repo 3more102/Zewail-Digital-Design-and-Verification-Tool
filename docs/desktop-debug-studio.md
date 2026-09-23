@@ -28,7 +28,10 @@ The desktop provides:
   timestamp, log line, and message.
 
 Formal-property and UVM-message database reads are explicitly bounded by the GUI
-limit. Assertion events already use the existing bounded history query.
+limit. Assertion events already use the existing bounded history query. Persisted
+simulator-elaborated hierarchy is displayed only when its project/top/simulator identity
+and design-revision fingerprint match the active RTL/config state; stale evidence is
+reported as `STALE` and is not regenerated implicitly.
 
 ## Trust boundary
 
@@ -42,9 +45,8 @@ The shared SQLite helpers may initialize or upgrade the local
 Therefore "display-only" describes verification/project actions rather than a
 guarantee of zero filesystem writes.
 
-## Remaining desktop milestones
+## v1.1 desktop milestone status
 
-Waveform navigation and bounded targeted VCD probing are already integrated through
-the existing core APIs. The remaining desktop milestone is review-gated project
-actions, which must continue to reuse the existing core APIs rather than duplicate
-simulator-specific logic in the GUI.
+The planned v1.1 desktop milestones are implemented: evidence browsing, source and
+elaborated hierarchy navigation, bounded waveform probing and cross-probing, detailed
+assertion/formal/UVM views, and SHA-confirmed review-gated project actions.
