@@ -3,268 +3,194 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import shlex
-from typing import Any
+from typing import Any, Mapping
 
 from zddv.config import ProjectConfig
-from zddv.lint import lint_project
-from zddv.simulator import get_backend
+from zddv.generated_artifacts import apply_generated_artifact
 
 
-_ACTIONS = {"lint", "build", "run"}
+_APPROVAL_PHRASE = "APPLY REVIEWED"
 
 
-def _sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _canonical_sha256(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return _sha256_bytes(encoded)
-
-
-def _project_path(project: ProjectConfig, path: Path) -> str:
+def _inside_project(project: ProjectConfig, value: str | Path) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = project.root / path
+    path = path.resolve()
+    root = project.root.resolve()
     try:
-        return path.resolve().relative_to(project.root.resolve()).as_posix()
-    except ValueError:
-        return str(path.resolve())
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Path must remain inside the project root: {path}") from exc
+    return path
 
 
-def _source_manifest(project: ProjectConfig) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for path in project.source_files():
-        resolved = path.resolve()
-        rows.append(
+def _load_manifest(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Generated draft manifest is not readable JSON: {path}") from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"Generated draft manifest root must be an object: {path}")
+    return dict(payload)
+
+
+def _draft_summary(project: ProjectConfig, manifest_path: Path) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "manifest_path": str(manifest_path.resolve()),
+        "draft_id": manifest_path.parent.name,
+        "status": "INVALID",
+        "kind": None,
+        "name": None,
+        "suggested_target_path": None,
+        "content_path": None,
+        "content_sha256": None,
+        "actual_sha256": None,
+        "integrity": "INVALID",
+        "review_required": False,
+        "auto_apply": None,
+        "execution_enabled": None,
+        "applied": False,
+        "eligible": False,
+        "error": None,
+    }
+
+    try:
+        manifest = _load_manifest(manifest_path)
+        summary.update(
             {
-                "path": _project_path(project, resolved),
-                "bytes": resolved.stat().st_size,
-                "sha256": _sha256_bytes(resolved.read_bytes()),
+                "draft_id": str(manifest.get("draft_id") or manifest_path.parent.name),
+                "status": str(manifest.get("status") or "INVALID"),
+                "kind": manifest.get("kind"),
+                "name": manifest.get("name"),
+                "suggested_target_path": manifest.get("suggested_target_path"),
+                "content_sha256": manifest.get("content_sha256"),
+                "review_required": manifest.get("review_required") is True,
+                "auto_apply": manifest.get("auto_apply"),
+                "execution_enabled": manifest.get("execution_enabled"),
             }
         )
-    rows.sort(key=lambda item: str(item["path"]))
-    return rows
 
+        content_value = manifest.get("content_path")
+        if not isinstance(content_value, str) or not content_value:
+            raise ValueError("manifest is missing content_path")
+        content_path = _inside_project(project, content_value)
+        if content_path.parent.resolve() != manifest_path.parent.resolve():
+            raise ValueError("manifest content_path does not stay inside its draft directory")
+        if not content_path.is_file():
+            summary["integrity"] = "MISSING"
+            summary["content_path"] = str(content_path)
+        else:
+            actual_sha256 = _sha256_file(content_path)
+            summary["content_path"] = str(content_path)
+            summary["actual_sha256"] = actual_sha256
+            summary["integrity"] = (
+                "MATCH"
+                if actual_sha256 == str(manifest.get("content_sha256") or "").lower()
+                else "MISMATCH"
+            )
 
-def _config_fingerprint(project: ProjectConfig) -> dict[str, Any]:
-    path = project.config_path.resolve()
-    if not path.is_file():
-        return {
-            "path": _project_path(project, path),
-            "present": False,
-            "sha256": None,
-        }
-    return {
-        "path": _project_path(project, path),
-        "present": True,
-        "sha256": _sha256_bytes(path.read_bytes()),
-    }
+        draft_id = str(summary["draft_id"])
+        applied_record = (
+            project.root / ".zddv" / "generated" / "applied" / f"{draft_id}.json"
+        ).resolve()
+        summary["applied"] = applied_record.is_file()
+        if summary["applied"]:
+            summary["status"] = "APPLIED"
 
-
-def prepare_desktop_action(
-    project: ProjectConfig,
-    action: str,
-    *,
-    test_name: str | None = None,
-    seed: int | None = None,
-    plusargs: list[str] | None = None,
-    timeout_s: float | None = None,
-) -> dict[str, Any]:
-    """Create a deterministic review payload without invoking a simulator."""
-    normalized = action.strip().lower()
-    if normalized not in _ACTIONS:
-        raise ValueError(f"Unsupported desktop action: {action}")
-
-    if normalized == "lint" and project.simulator != "verilator":
-        raise RuntimeError("Desktop lint is currently implemented with Verilator only.")
-
-    clean_plusargs = [str(item) for item in (plusargs or [])]
-    if timeout_s is not None and timeout_s <= 0:
-        raise ValueError("timeout_s must be > 0")
-    if seed is not None and not isinstance(seed, int):
-        raise ValueError("seed must be an integer or None")
-
-    if normalized != "run" and (
-        test_name is not None
-        or seed is not None
-        or clean_plusargs
-        or timeout_s is not None
-    ):
-        raise ValueError("Run parameters are only valid for the run action.")
-
-    parameters: dict[str, Any]
-    if normalized == "run":
-        parameters = {
-            "test_name": test_name,
-            "seed": seed,
-            "plusargs": clean_plusargs,
-            "timeout_s": timeout_s,
-        }
-    else:
-        parameters = {}
-
-    effects = {
-        "lint": [
-            "Invokes Verilator lint.",
-            "May create or replace .zddv/lint evidence artifacts.",
-        ],
-        "build": [
-            f"Invokes the configured {project.simulator} build backend.",
-            "May create or replace simulator build artifacts.",
-        ],
-        "run": [
-            f"Invokes the configured {project.simulator} run backend.",
-            "Creates a persisted run record and may create log, waveform, and coverage artifacts.",
-        ],
-    }[normalized]
-
-    core_api = {
-        "lint": "zddv.lint.lint_project",
-        "build": "zddv.simulator.get_backend(...).build",
-        "run": "zddv.simulator.get_backend(...).run",
-    }[normalized]
-
-    payload = {
-        "schema_version": 1,
-        "action": normalized,
-        "project": {
-            "name": project.name,
-            "root": str(project.root.resolve()),
-            "top": project.top,
-            "simulator": project.simulator,
-            "config": _config_fingerprint(project),
-            "sources": _source_manifest(project),
-        },
-        "parameters": parameters,
-        "core_api": core_api,
-        "effects": effects,
-        "review_policy": {
-            "requires_exact_sha256": True,
-            "requires_explicit_approval": True,
-            "revalidates_project_before_execution": True,
-        },
-    }
-    return {**payload, "review_sha256": _canonical_sha256(payload)}
-
-
-def _validated_current_proposal(
-    project: ProjectConfig,
-    proposal: dict[str, Any],
-    *,
-    expected_sha256: str,
-    approve_reviewed: bool,
-) -> dict[str, Any]:
-    if not approve_reviewed:
-        raise RuntimeError("Explicit reviewed-action approval is required.")
-
-    reviewed_sha = str(proposal.get("review_sha256") or "")
-    if not reviewed_sha:
-        raise RuntimeError("Action proposal is missing review_sha256.")
-    if expected_sha256 != reviewed_sha:
-        raise RuntimeError("Expected SHA-256 does not match the reviewed action proposal.")
-
-    canonical = {
-        key: value
-        for key, value in proposal.items()
-        if key != "review_sha256"
-    }
-    if _canonical_sha256(canonical) != reviewed_sha:
-        raise RuntimeError("Action proposal content does not match its review SHA-256.")
-
-    action = str(proposal.get("action") or "")
-    parameters = proposal.get("parameters")
-    if not isinstance(parameters, dict):
-        raise RuntimeError("Action proposal parameters are invalid.")
-
-    current = prepare_desktop_action(
-        project,
-        action,
-        test_name=parameters.get("test_name"),
-        seed=parameters.get("seed"),
-        plusargs=parameters.get("plusargs"),
-        timeout_s=parameters.get("timeout_s"),
-    )
-    if current["review_sha256"] != reviewed_sha:
-        raise RuntimeError(
-            "Project configuration, sources, or action parameters changed after review; "
-            "prepare and review the action again."
+        summary["eligible"] = bool(
+            summary["status"] == "DRAFT"
+            and summary["review_required"]
+            and summary["auto_apply"] is False
+            and summary["execution_enabled"] is False
+            and summary["integrity"] == "MATCH"
+            and not summary["applied"]
         )
-    return current
+    except (OSError, ValueError) as exc:
+        summary["error"] = str(exc)
+
+    return summary
 
 
-def execute_desktop_action(
+def list_desktop_generated_drafts(project: ProjectConfig) -> list[dict[str, Any]]:
+    """List staged generated verification drafts without mutating project state."""
+    root = (project.root / ".zddv" / "generated" / "drafts").resolve()
+    if not root.is_dir():
+        return []
+
+    return [
+        _draft_summary(project, manifest)
+        for manifest in sorted(root.glob("*/manifest.json"))
+        if manifest.is_file()
+    ]
+
+
+def read_desktop_generated_draft(
     project: ProjectConfig,
-    proposal: dict[str, Any],
-    *,
-    expected_sha256: str,
-    approve_reviewed: bool,
+    manifest_path: str | Path,
 ) -> dict[str, Any]:
-    """Execute one previously reviewed action through existing ZDDV core APIs."""
-    reviewed = _validated_current_proposal(
-        project,
-        proposal,
-        expected_sha256=expected_sha256.strip(),
-        approve_reviewed=approve_reviewed,
+    """Return exact staged text plus integrity metadata for operator review."""
+    target = _inside_project(project, manifest_path)
+    summaries = list_desktop_generated_drafts(project)
+    summary = next(
+        (
+            item
+            for item in summaries
+            if Path(str(item["manifest_path"])).resolve() == target
+        ),
+        None,
     )
-    action = reviewed["action"]
-    parameters = reviewed["parameters"]
+    if summary is None:
+        raise RuntimeError(f"Generated draft manifest is not registered: {target}")
+    if summary["integrity"] != "MATCH" or not summary["content_path"]:
+        raise RuntimeError(
+            "Generated draft content is missing, invalid, or no longer matches its staged SHA-256"
+        )
 
-    if action == "lint":
-        result = lint_project(project)
-        return {
-            "action": action,
-            "review_sha256": reviewed["review_sha256"],
-            "status": result["status"],
-            "returncode": result["returncode"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "log": result["log"],
-            "summary": result["summary"],
-        }
-
-    backend = get_backend(project.simulator)
-    if action == "build":
-        result = backend.build(project)
-        return {
-            "action": action,
-            "review_sha256": reviewed["review_sha256"],
-            "status": "PASS" if result.passed else "FAIL",
-            "returncode": result.returncode,
-            "log": str(result.log_path),
-            "executable": str(result.executable) if result.executable else None,
-            "artifact": str(result.artifact) if result.artifact else None,
-        }
-
-    result = backend.run(
-        project,
-        test_name=parameters["test_name"],
-        seed=parameters["seed"],
-        plusargs=parameters["plusargs"],
-        timeout_s=parameters["timeout_s"],
-    )
+    content_path = Path(str(summary["content_path"]))
     return {
-        "action": action,
-        "review_sha256": reviewed["review_sha256"],
-        "status": result.status,
-        "returncode": result.returncode,
-        "run_id": result.run_id,
-        "test_name": result.test_name,
-        "seed": result.seed,
-        "log": str(result.log_path),
-        "waveform": str(result.waveform_path) if result.waveform_path else None,
-        "coverage": str(result.coverage_path) if result.coverage_path else None,
+        **summary,
+        "content": content_path.read_text(encoding="utf-8", errors="replace"),
     }
 
 
-def attach_desktop_actions_tab(
-    notebook: Any,
+def apply_desktop_generated_draft(
     project: ProjectConfig,
-) -> None:
-    """Attach a SHA-confirmed project-action pane to the desktop notebook."""
+    manifest_path: str | Path,
+    *,
+    reviewed_sha256: str,
+    approval_phrase: str,
+    destination: str | Path | None = None,
+) -> dict[str, Any]:
+    """Apply one reviewed draft only after a GUI-specific explicit confirmation."""
+    if approval_phrase.strip() != _APPROVAL_PHRASE:
+        raise RuntimeError(
+            f"Desktop apply requires typing the exact approval phrase: {_APPROVAL_PHRASE}"
+        )
+
+    reviewed = read_desktop_generated_draft(project, manifest_path)
+    if not reviewed["eligible"]:
+        raise RuntimeError("Generated draft is not eligible for reviewed application")
+
+    return apply_generated_artifact(
+        project,
+        reviewed["manifest_path"],
+        destination=destination,
+        expected_sha256=reviewed_sha256,
+        approve_reviewed=True,
+    )
+
+
+def attach_desktop_action_tab(notebook: Any, project: ProjectConfig) -> None:
+    """Attach a review-gated generated-artifact action tab to the Debug Studio."""
     try:
         import tkinter as tk
         from tkinter import ttk
@@ -274,128 +200,163 @@ def attach_desktop_actions_tab(
         ) from exc
 
     tab = ttk.Frame(notebook, padding=8)
-    notebook.add(tab, text="Actions")
+    notebook.add(tab, text="Project Actions")
 
-    state: dict[str, Any] = {"proposal": None}
-
-    form = ttk.LabelFrame(tab, text="Prepare action for review", padding=8)
-    form.pack(fill="x")
-
-    action_var = tk.StringVar(value="lint")
-    test_var = tk.StringVar(value="")
-    seed_var = tk.StringVar(value="")
-    plusargs_var = tk.StringVar(value="")
-    timeout_var = tk.StringVar(value="")
-
-    ttk.Label(form, text="Action").grid(row=0, column=0, sticky="w")
-    ttk.Combobox(
-        form,
-        textvariable=action_var,
-        values=("lint", "build", "run"),
-        state="readonly",
-        width=10,
-    ).grid(row=0, column=1, sticky="w", padx=(4, 14))
-    ttk.Label(form, text="Test").grid(row=0, column=2, sticky="w")
-    ttk.Entry(form, textvariable=test_var, width=18).grid(
-        row=0, column=3, sticky="w", padx=(4, 14)
-    )
-    ttk.Label(form, text="Seed").grid(row=0, column=4, sticky="w")
-    ttk.Entry(form, textvariable=seed_var, width=10).grid(
-        row=0, column=5, sticky="w", padx=(4, 14)
-    )
-    ttk.Label(form, text="Timeout").grid(row=0, column=6, sticky="w")
-    ttk.Entry(form, textvariable=timeout_var, width=10).grid(
-        row=0, column=7, sticky="w", padx=(4, 0)
-    )
-
-    ttk.Label(form, text="Plusargs").grid(row=1, column=0, sticky="w", pady=(8, 0))
-    ttk.Entry(form, textvariable=plusargs_var, width=68).grid(
-        row=1, column=1, columnspan=7, sticky="ew", padx=(4, 0), pady=(8, 0)
-    )
-    form.columnconfigure(7, weight=1)
-
-    review_status = tk.StringVar(
-        value="Prepare an action. No simulator action runs during review preparation."
-    )
-    ttk.Label(tab, textvariable=review_status, anchor="w").pack(fill="x", pady=(8, 4))
-
-    review_text = tk.Text(tab, height=15, wrap="none", state="disabled", font="TkFixedFont")
-    review_text.pack(fill="both", expand=True)
-
-    confirm = ttk.LabelFrame(tab, text="Execute reviewed action", padding=8)
-    confirm.pack(fill="x", pady=(8, 0))
-    confirm_sha = tk.StringVar(value="")
-    approved = tk.BooleanVar(value=False)
-    ttk.Label(confirm, text="Exact review SHA-256").pack(side="left")
-    ttk.Entry(confirm, textvariable=confirm_sha, width=68).pack(
-        side="left", padx=(6, 10), fill="x", expand=True
-    )
-    ttk.Checkbutton(
-        confirm,
-        text="I reviewed this exact action and approve execution",
-        variable=approved,
-    ).pack(side="left", padx=(0, 10))
-
-    def _show(payload: dict[str, Any]) -> None:
-        review_text.configure(state="normal")
-        review_text.delete("1.0", "end")
-        review_text.insert("1.0", json.dumps(payload, indent=2, sort_keys=True, default=str))
-        review_text.configure(state="disabled")
-
-    def _run_parameters() -> dict[str, Any]:
-        seed_text = seed_var.get().strip()
-        timeout_text = timeout_var.get().strip()
-        return {
-            "test_name": test_var.get().strip() or None,
-            "seed": int(seed_text) if seed_text else None,
-            "plusargs": shlex.split(plusargs_var.get()) if plusargs_var.get().strip() else [],
-            "timeout_s": float(timeout_text) if timeout_text else None,
-        }
-
-    def prepare() -> None:
-        try:
-            params = _run_parameters() if action_var.get() == "run" else {}
-            proposal = prepare_desktop_action(project, action_var.get(), **params)
-        except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            state["proposal"] = None
-            review_status.set(f"Prepare error: {exc}")
-            return
-
-        state["proposal"] = proposal
-        confirm_sha.set("")
-        approved.set(False)
-        _show(proposal)
-        review_status.set(
-            "Prepared only; nothing executed. Review SHA-256: "
-            + proposal["review_sha256"]
+    status_var = tk.StringVar(
+        value=(
+            "Review-gated action only: select a staged assertion/test. "
+            "Nothing is compiled or executed."
         )
+    )
+    ttk.Label(tab, textvariable=status_var, anchor="w").pack(fill="x", pady=(0, 6))
 
-    def execute() -> None:
-        proposal = state.get("proposal")
-        if proposal is None:
-            review_status.set("Prepare and review an action before execution.")
-            return
-        try:
-            result = execute_desktop_action(
-                project,
-                proposal,
-                expected_sha256=confirm_sha.get().strip(),
-                approve_reviewed=bool(approved.get()),
+    draft_tree = ttk.Treeview(
+        tab,
+        columns=("status", "kind", "name", "integrity", "target"),
+        show="tree headings",
+        height=6,
+        selectmode="browse",
+    )
+    draft_tree.heading("#0", text="Draft ID")
+    draft_tree.column("#0", width=190, anchor="w")
+    for column, title, width in (
+        ("status", "Status", 90),
+        ("kind", "Kind", 90),
+        ("name", "Name", 220),
+        ("integrity", "SHA integrity", 110),
+        ("target", "Suggested target", 360),
+    ):
+        draft_tree.heading(column, text=title)
+        draft_tree.column(column, width=width, anchor="w")
+    draft_tree.pack(fill="x", pady=(0, 8))
+
+    sha_display = tk.StringVar(value="Staged SHA-256: -")
+    ttk.Label(tab, textvariable=sha_display, anchor="w").pack(fill="x", pady=(0, 4))
+
+    preview = tk.Text(tab, wrap="none", height=12)
+    preview.pack(fill="both", expand=True)
+    preview.configure(state="disabled")
+
+    controls = ttk.Frame(tab, padding=(0, 8, 0, 0))
+    controls.pack(fill="x")
+
+    reviewed_sha = tk.StringVar(value="")
+    destination_var = tk.StringVar(value="")
+    approval_var = tk.StringVar(value="")
+
+    ttk.Label(controls, text="Reviewed SHA-256").grid(row=0, column=0, sticky="w")
+    ttk.Entry(controls, textvariable=reviewed_sha, width=70).grid(
+        row=0, column=1, sticky="ew", padx=(6, 10)
+    )
+    ttk.Label(controls, text="Destination (optional)").grid(row=1, column=0, sticky="w")
+    ttk.Entry(controls, textvariable=destination_var, width=70).grid(
+        row=1, column=1, sticky="ew", padx=(6, 10)
+    )
+    ttk.Label(controls, text=f"Type {_APPROVAL_PHRASE}").grid(
+        row=2, column=0, sticky="w"
+    )
+    ttk.Entry(controls, textvariable=approval_var, width=28).grid(
+        row=2, column=1, sticky="w", padx=(6, 10)
+    )
+    controls.columnconfigure(1, weight=1)
+
+    state: dict[str, Any] = {"manifests": {}}
+
+    def clear_preview() -> None:
+        preview.configure(state="normal")
+        preview.delete("1.0", "end")
+        preview.configure(state="disabled")
+
+    def refresh_drafts() -> None:
+        children = draft_tree.get_children()
+        if children:
+            draft_tree.delete(*children)
+        state["manifests"] = {}
+        clear_preview()
+        sha_display.set("Staged SHA-256: -")
+        drafts = list_desktop_generated_drafts(project)
+        for draft in drafts:
+            item = draft_tree.insert(
+                "",
+                "end",
+                text=draft["draft_id"],
+                values=(
+                    draft["status"],
+                    draft["kind"] or "-",
+                    draft["name"] or "-",
+                    draft["integrity"],
+                    draft["suggested_target_path"] or "-",
+                ),
             )
-        except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            review_status.set(f"Execution blocked/error: {exc}")
+            state["manifests"][item] = draft["manifest_path"]
+        status_var.set(
+            f"{len(drafts)} staged generated draft(s). "
+            "Application still requires exact reviewed SHA plus explicit approval phrase."
+        )
+
+    def select_draft(_event=None) -> None:
+        selection = draft_tree.selection()
+        if not selection:
+            return
+        manifest = state["manifests"].get(selection[0])
+        if not manifest:
+            return
+        try:
+            draft = read_desktop_generated_draft(project, manifest)
+        except (OSError, RuntimeError, ValueError) as exc:
+            clear_preview()
+            sha_display.set("Staged SHA-256: unavailable")
+            status_var.set(f"Draft cannot be reviewed: {exc}")
             return
 
-        _show({"reviewed_action": proposal, "execution_result": result})
-        review_status.set(
-            f"{result['action'].upper()} {result['status']} · "
-            f"review_sha256={result['review_sha256']}"
+        preview.configure(state="normal")
+        preview.delete("1.0", "end")
+        preview.insert("1.0", draft["content"])
+        preview.configure(state="disabled")
+        sha_display.set(f"Staged SHA-256: {draft['actual_sha256']}")
+        status_var.set(
+            f"{draft['draft_id']} · integrity={draft['integrity']} · "
+            f"eligible={'yes' if draft['eligible'] else 'no'}"
         )
-        state["proposal"] = None
-        confirm_sha.set("")
-        approved.set(False)
 
-    ttk.Button(form, text="Prepare for review", command=prepare).grid(
-        row=1, column=7, sticky="e", pady=(8, 0)
+    def apply_selected() -> None:
+        selection = draft_tree.selection()
+        if not selection:
+            status_var.set("Select one staged draft before applying.")
+            return
+        manifest = state["manifests"].get(selection[0])
+        if not manifest:
+            status_var.set("Selected draft is unavailable.")
+            return
+
+        destination = destination_var.get().strip() or None
+        try:
+            result = apply_desktop_generated_draft(
+                project,
+                manifest,
+                reviewed_sha256=reviewed_sha.get().strip(),
+                approval_phrase=approval_var.get(),
+                destination=destination,
+            )
+        except (FileNotFoundError, FileExistsError, OSError, RuntimeError, ValueError) as exc:
+            status_var.set(f"Apply refused: {exc}")
+            return
+
+        reviewed_sha.set("")
+        approval_var.set("")
+        destination_var.set("")
+        refresh_drafts()
+        status_var.set(
+            f"APPLIED {result['draft_id']} -> {result['destination']} · "
+            "execution remains disabled."
+        )
+
+    draft_tree.bind("<<TreeviewSelect>>", select_draft)
+    ttk.Button(controls, text="Apply reviewed draft", command=apply_selected).grid(
+        row=2, column=2, sticky="e"
     )
-    ttk.Button(confirm, text="Execute", command=execute).pack(side="right")
+    ttk.Button(controls, text="Refresh drafts", command=refresh_drafts).grid(
+        row=0, column=2, sticky="e"
+    )
+
+    refresh_drafts()

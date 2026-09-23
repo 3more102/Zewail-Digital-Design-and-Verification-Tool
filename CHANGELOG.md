@@ -4,6 +4,10 @@
 
 ### Desktop Debug Studio
 
+- Add a Project Actions tab that previews isolated generated assertion/test drafts,
+  reports staged-byte SHA-256 integrity, and applies only through the existing
+  `apply_generated_artifact` core guard after the operator supplies the exact reviewed
+  SHA-256 and types `APPLY REVIEWED`. The action does not compile or execute code.
 - Add bounded detail panes for normalized assertion events, formal property results,
   and UVM report messages while preserving source, source-level hierarchy, and
   persisted simulator-elaborated hierarchy views.

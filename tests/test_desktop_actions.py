@@ -1,201 +1,136 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from zddv.config import initialize_project, save_project
+from zddv.config import initialize_project
 from zddv.desktop_actions import (
-    execute_desktop_action,
-    prepare_desktop_action,
+    apply_desktop_generated_draft,
+    list_desktop_generated_drafts,
+    read_desktop_generated_draft,
 )
+from zddv.generated_artifacts import stage_generated_artifact
 
 
-def _project(tmp_path: Path):
+def _proposal(project, *, target: str = "reviewed_generated/p_ready.sv") -> Path:
+    path = project.root / "proposal.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "assertion",
+                "language": "systemverilog",
+                "name": "p_ready",
+                "target_path": target,
+                "source": "desktop-action-test",
+                "evidence": {"reason": "explicit operator review"},
+                "content": (
+                    "module reviewed_assertion(input logic clk, ready);\n"
+                    "  p_ready: assert property (@(posedge clk) ready);\n"
+                    "endmodule\n"
+                ),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_desktop_generated_draft_listing_and_preview_are_read_only(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
-    source = project.root / "rtl" / "top.sv"
-    source.write_text(
-        """module top;
-logic count;
-always_comb count = 1'b0;
-endmodule
-""",
-        encoding="utf-8",
-    )
-    project.rtl = ["rtl/*.sv"]
-    project.top = "top"
-    project.simulator = "verilator"
-    save_project(project)
-    return project, source
+    staged = stage_generated_artifact(project, _proposal(project))
+    destination = project.root / "reviewed_generated" / "p_ready.sv"
+    assert not destination.exists()
+
+    rows = list_desktop_generated_drafts(project)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["draft_id"] == staged["draft_id"]
+    assert row["status"] == "DRAFT"
+    assert row["integrity"] == "MATCH"
+    assert row["actual_sha256"] == staged["content_sha256"]
+    assert row["eligible"] is True
+    assert row["applied"] is False
+
+    reviewed = read_desktop_generated_draft(project, staged["manifest_path"])
+    assert reviewed["content_sha256"] == staged["content_sha256"]
+    assert "p_ready: assert property" in reviewed["content"]
+    assert not destination.exists()
 
 
-def _lint_result(project):
-    return {
-        "status": "PASS",
-        "returncode": 0,
-        "errors": 0,
-        "warnings": 0,
-        "log": str(project.root / ".zddv" / "lint" / "lint.log"),
-        "summary": str(project.root / ".zddv" / "lint" / "lint.json"),
-    }
+def test_desktop_apply_requires_phrase_and_exact_reviewed_sha(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    staged = stage_generated_artifact(project, _proposal(project))
+    destination = project.root / "reviewed_generated" / "p_ready.sv"
 
-
-def test_prepare_desktop_action_is_review_only_and_source_bound(tmp_path: Path):
-    project, source = _project(tmp_path)
-
-    first = prepare_desktop_action(project, "lint")
-    second = prepare_desktop_action(project, "lint")
-
-    assert first == second
-    assert first["action"] == "lint"
-    assert first["core_api"] == "zddv.lint.lint_project"
-    assert len(first["review_sha256"]) == 64
-    assert first["review_policy"] == {
-        "requires_exact_sha256": True,
-        "requires_explicit_approval": True,
-        "revalidates_project_before_execution": True,
-    }
-    assert first["project"]["sources"][0]["path"] == "rtl/top.sv"
-    assert len(first["project"]["sources"][0]["sha256"]) == 64
-    assert first["project"]["sources"][0]["bytes"] == source.stat().st_size
-    assert not (project.root / ".zddv" / "lint").exists()
-
-
-def test_execute_desktop_action_requires_exact_sha_and_explicit_approval(
-    tmp_path: Path,
-    monkeypatch,
-):
-    project, _ = _project(tmp_path)
-    proposal = prepare_desktop_action(project, "lint")
-    calls = []
-
-    def fake_lint(project_arg):
-        calls.append(project_arg.root)
-        return _lint_result(project_arg)
-
-    monkeypatch.setattr("zddv.desktop_actions.lint_project", fake_lint)
-
-    with pytest.raises(RuntimeError, match="approval"):
-        execute_desktop_action(
+    with pytest.raises(RuntimeError, match="APPLY REVIEWED"):
+        apply_desktop_generated_draft(
             project,
-            proposal,
-            expected_sha256=proposal["review_sha256"],
-            approve_reviewed=False,
+            staged["manifest_path"],
+            reviewed_sha256=staged["content_sha256"],
+            approval_phrase="APPLY",
         )
+    assert not destination.exists()
 
-    with pytest.raises(RuntimeError, match="Expected SHA-256"):
-        execute_desktop_action(
+    with pytest.raises(RuntimeError, match="does not match"):
+        apply_desktop_generated_draft(
             project,
-            proposal,
-            expected_sha256="0" * 64,
-            approve_reviewed=True,
+            staged["manifest_path"],
+            reviewed_sha256="0" * 64,
+            approval_phrase="APPLY REVIEWED",
         )
+    assert not destination.exists()
 
-    result = execute_desktop_action(
+    result = apply_desktop_generated_draft(
         project,
-        proposal,
-        expected_sha256=proposal["review_sha256"],
-        approve_reviewed=True,
+        staged["manifest_path"],
+        reviewed_sha256=staged["content_sha256"],
+        approval_phrase="APPLY REVIEWED",
     )
 
-    assert calls == [project.root]
-    assert result["action"] == "lint"
-    assert result["status"] == "PASS"
-    assert result["review_sha256"] == proposal["review_sha256"]
+    assert result["status"] == "APPLIED"
+    assert result["approved"] is True
+    assert result["execution_enabled"] is False
+    assert destination.is_file()
+
+    rows = list_desktop_generated_drafts(project)
+    assert rows[0]["status"] == "APPLIED"
+    assert rows[0]["eligible"] is False
+    assert rows[0]["applied"] is True
 
 
-def test_execute_desktop_action_rejects_source_drift_after_review(
-    tmp_path: Path,
-    monkeypatch,
-):
-    project, source = _project(tmp_path)
-    proposal = prepare_desktop_action(project, "lint")
-    called = False
-
-    def fake_lint(_project_arg):
-        nonlocal called
-        called = True
-        return _lint_result(_project_arg)
-
-    monkeypatch.setattr("zddv.desktop_actions.lint_project", fake_lint)
-    source.write_text(
-        """module top;
-logic count;
-always_comb count = 1'b1;
-endmodule
-""",
+def test_desktop_review_refuses_tampered_staged_content(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    staged = stage_generated_artifact(project, _proposal(project))
+    Path(staged["content_path"]).write_text(
+        "module tampered; endmodule\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="changed after review"):
-        execute_desktop_action(
+    rows = list_desktop_generated_drafts(project)
+    assert rows[0]["integrity"] == "MISMATCH"
+    assert rows[0]["eligible"] is False
+
+    with pytest.raises(RuntimeError, match="no longer matches"):
+        read_desktop_generated_draft(project, staged["manifest_path"])
+
+    with pytest.raises(RuntimeError, match="no longer matches"):
+        apply_desktop_generated_draft(
             project,
-            proposal,
-            expected_sha256=proposal["review_sha256"],
-            approve_reviewed=True,
+            staged["manifest_path"],
+            reviewed_sha256=staged["content_sha256"],
+            approval_phrase="APPLY REVIEWED",
         )
 
-    assert called is False
 
+def test_desktop_review_refuses_manifest_outside_registered_drafts(tmp_path: Path):
+    project = initialize_project(tmp_path / "demo")
+    fake = project.root / "fake-manifest.json"
+    fake.write_text("{}\n", encoding="utf-8")
 
-def test_execute_desktop_action_rejects_tampered_review_payload(
-    tmp_path: Path,
-    monkeypatch,
-):
-    project, _ = _project(tmp_path)
-    proposal = prepare_desktop_action(project, "lint")
-    proposal["effects"] = ["tampered"]
-    called = False
-
-    def fake_lint(_project_arg):
-        nonlocal called
-        called = True
-        return _lint_result(_project_arg)
-
-    monkeypatch.setattr("zddv.desktop_actions.lint_project", fake_lint)
-
-    with pytest.raises(RuntimeError, match="does not match its review SHA-256"):
-        execute_desktop_action(
-            project,
-            proposal,
-            expected_sha256=proposal["review_sha256"],
-            approve_reviewed=True,
-        )
-
-    assert called is False
-
-
-def test_run_review_hash_binds_runtime_parameters(tmp_path: Path):
-    project, _ = _project(tmp_path)
-
-    base = prepare_desktop_action(
-        project,
-        "run",
-        test_name="smoke",
-        seed=42,
-        plusargs=["+MODE=stress", "+COUNT=4"],
-        timeout_s=30.0,
-    )
-    changed = prepare_desktop_action(
-        project,
-        "run",
-        test_name="smoke",
-        seed=43,
-        plusargs=["+MODE=stress", "+COUNT=4"],
-        timeout_s=30.0,
-    )
-
-    assert base["parameters"] == {
-        "test_name": "smoke",
-        "seed": 42,
-        "plusargs": ["+MODE=stress", "+COUNT=4"],
-        "timeout_s": 30.0,
-    }
-    assert base["review_sha256"] != changed["review_sha256"]
-
-
-def test_non_run_action_rejects_hidden_runtime_parameters(tmp_path: Path):
-    project, _ = _project(tmp_path)
-
-    with pytest.raises(ValueError, match="only valid for the run action"):
-        prepare_desktop_action(project, "build", seed=7)
+    with pytest.raises(RuntimeError, match="not registered"):
+        read_desktop_generated_draft(project, fake)

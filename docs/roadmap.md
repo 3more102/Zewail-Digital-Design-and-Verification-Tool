@@ -209,9 +209,11 @@ uncollected verification objectives passed.
 
 ## v1.1 — Desktop Debug Studio
 
-Current status: the first desktop foundation is read-only and reuses the authoritative
-ZDDV verification database. It intentionally does not execute simulations, mutate
-project files, invoke AI, or infer verification state from the UI.
+Current status: normal desktop browsing/refresh is read-only and reuses the authoritative
+ZDDV verification database. It does not execute simulations, invoke AI, or infer
+verification state from the UI. The Project Actions tab exposes one explicit opt-in
+mutation: applying an already-staged generated assertion/test only after exact SHA-256
+confirmation and the `APPLY REVIEWED` approval phrase.
 
 - [x] Tk/ttk desktop shell with verification summary.
 - [x] Recent-run browser backed by persisted run records.

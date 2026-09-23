@@ -70,6 +70,25 @@ refused when:
 Successful apply copies the exact reviewed bytes and records provenance under
 `.zddv/generated/applied/`. It still does not compile or execute the artifact.
 
+## Desktop reviewed apply
+
+The Debug Studio **Project Actions** tab exposes only the apply half of this existing
+workflow. It lists manifests under `.zddv/generated/drafts/`, previews the exact staged
+SystemVerilog text, recomputes the staged-file SHA-256, and reports whether it still
+matches the manifest.
+
+Applying from the desktop requires all of the following:
+
+- the draft must still satisfy the staging safeguards and SHA integrity check;
+- the operator must type/paste the exact reviewed SHA-256 into the confirmation field;
+- the operator must type the exact phrase `APPLY REVIEWED`;
+- the existing `apply_generated_artifact()` core API must accept the manifest,
+  destination, approval flag, and SHA.
+
+The desktop never sets an automatic approval from merely selecting or previewing a draft.
+A successful apply still has `execution_enabled=false`; it copies reviewed bytes into
+the project source tree and records provenance but does not compile or run them.
+
 ## Evidence boundary
 
 This workflow is a governance/safety boundary for generated verification code, not a
