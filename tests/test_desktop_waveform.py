@@ -884,6 +884,45 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
         }
     )
 
+    malformed_provenance_type = desktop_crossprobe_evidence_rows(
+        {
+            "elaborated_source_correlation": {
+                "analysis_level": (
+                    "simulator_elaborated_to_source_structural_correlation"
+                ),
+                "role_semantics": "source_structural_only",
+                "correlations": [
+                    {
+                        "status": "MATCHED",
+                        "binding_side": "instance_port",
+                        "instance_path": "tb_top.dut",
+                        "pin": "count",
+                        "parent_instance_path": "tb_top",
+                        "parent_signal": "count",
+                        "source_unit": "tb_top",
+                        "source_roles": ["driver"],
+                        "match_basis": [{}],
+                        "source_edge": {
+                            "kind": "instance_port",
+                            "unit": "tb_top",
+                            "signal": "count",
+                            "file": "tb/tb_top.sv",
+                            "line": 4,
+                            "instance": "dut",
+                            "child_type": "counter",
+                            "port": "count",
+                            "direction": "output",
+                            "expression": "count",
+                            "instance_path": "tb_top",
+                            "elaborated_child_resolution": "ambiguous",
+                            "elaborated_child_candidates": ["tb_top.dut"],
+                        },
+                    }
+                ],
+            }
+        }
+    )
+
     empty = desktop_crossprobe_evidence_rows(
         {
             "elaborated_source_correlation": {
@@ -907,7 +946,14 @@ def test_desktop_crossprobe_rows_fail_closed_on_malformed_current_source_correla
         }
     )
 
-    for rows in (malformed, wrong_role, wrong_provenance, empty, unknown_status):
+    for rows in (
+        malformed,
+        wrong_role,
+        wrong_provenance,
+        malformed_provenance_type,
+        empty,
+        unknown_status,
+    ):
         assert not any(
             kind in {
                 "Elaborated/source correlation",
