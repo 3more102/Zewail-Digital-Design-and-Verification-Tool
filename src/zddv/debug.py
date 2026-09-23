@@ -16,6 +16,8 @@ _HINT_RE = re.compile(
     r"(?![A-Za-z0-9_$])"
 )
 
+_SIGNAL_INDEXED_PARSE_STATUSES = {"indexed", "indexed-via-fst2vcd"}
+
 
 def _signal_hints(
     event: dict[str, Any],
@@ -80,6 +82,8 @@ def correlate_assertions(
     assertion_name: str | None = None,
     limit: int = 100,
     signal_hint_limit: int = 20,
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     events = list_assertion_events(
         project,
@@ -131,6 +135,8 @@ def correlate_assertions(
                         project,
                         run_id=event_run_id,
                         output=output,
+                        fst_converter=fst_converter,
+                        fst_converter_timeout_s=fst_converter_timeout_s,
                     )
                 else:
                     waveform_cache[event_run_id] = None
@@ -138,7 +144,7 @@ def correlate_assertions(
             waveform = waveform_cache[event_run_id]
             if waveform is not None:
                 with_waveform += 1
-                if waveform["parse_status"] == "indexed":
+                if waveform["parse_status"] in _SIGNAL_INDEXED_PARSE_STATUSES:
                     fully_indexed += 1
                 hints = _signal_hints(
                     event,
@@ -159,6 +165,8 @@ def correlate_assertions(
                     "scope_count": waveform["summary"]["scopes"],
                     "signal_hints": hints,
                 }
+                if waveform.get("adapter"):
+                    waveform_summary["adapter"] = waveform["adapter"]
                 if waveform.get("note"):
                     waveform_summary["note"] = waveform["note"]
 
@@ -206,6 +214,8 @@ def write_assertion_waveform_report(
     limit: int = 100,
     signal_hint_limit: int = 20,
     output: str | Path = ".zddv/debug/assertion-waveform.json",
+    fst_converter: str | Path | None = None,
+    fst_converter_timeout_s: float = 120.0,
 ) -> dict[str, Any]:
     report = correlate_assertions(
         project,
@@ -214,6 +224,8 @@ def write_assertion_waveform_report(
         assertion_name=assertion_name,
         limit=limit,
         signal_hint_limit=signal_hint_limit,
+        fst_converter=fst_converter,
+        fst_converter_timeout_s=fst_converter_timeout_s,
     )
 
     destination = Path(output)
