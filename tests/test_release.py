@@ -166,6 +166,10 @@ def test_release_verification_detects_tampered_signoff(tmp_path: Path):
                 data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.extra = b""
+            info.comment = b""
             target.writestr(info, data)
 
     with pytest.raises(ValueError, match="inventory|SHA-256|metadata"):
