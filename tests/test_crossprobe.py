@@ -369,7 +369,8 @@ def test_crossprobe_exposes_direct_elaborated_pin_connectivity(tmp_path: Path):
         "ports": [
             {
                 "module": "counter",
-                "name": "clk",
+                "name": "__Vcellinp__clk",
+                "verilog_name": "clk",
                 "direction": "input",
             },
             {
