@@ -10,6 +10,12 @@ The tab reuses the same `build_waveform_index` and `probe_vcd_signals` core APIs
 
 When cross-probe returns the trusted `simulator_elaborated_direct_pin_varref` contract, the desktop also renders the core-provided module-boundary driver, load, and unclassified role buckets. Role rows preserve the reported `query_side`, parent/child endpoint, and port direction, are bounded by the existing elaborated-evidence limit, and are not recomputed in the GUI. Unknown future connectivity contracts remain uninterpreted.
 
+When cross-probe returns the trusted `simulator_elaborated_module_root_assignw_direct_varref`
+contract, the desktop renders the core-provided direct continuous-assignment drivers, loads,
+and unresolved complex `ASSIGNW` evidence as a separate elaborated-internal layer. The GUI
+validates the exact contract and item shape, bounds the displayed rows, and does not derive
+new driver/load roles or promote unresolved expressions to connectivity.
+
 When normalized elaborated evidence exists, the cross-probe pane keeps source-structural
 drivers/loads separate from simulator-elaborated evidence. It surfaces the core
 `simulator_elaborated_to_source_structural_correlation` contract only when role semantics
