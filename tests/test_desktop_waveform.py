@@ -240,5 +240,44 @@ def test_desktop_crossprobe_rows_surface_elaborated_connectivity_without_inferen
         "simulator_elaborated_direct_pin_varref · parent-signal bindings=0 · "
         "instance-port bindings=1 · relationships=child_output_to_parent_signal"
     )
+    assert rows["Elaborated pin"] == (
+        "tb_top.dut.count -> tb_top.count · direction=output · "
+        "child_output_to_parent_signal"
+    )
     assert rows["Elaborated boundary"] == "MATCHED · flow=child_to_parent"
 
+
+
+def test_desktop_crossprobe_rows_bound_and_deduplicate_elaborated_pin_endpoints():
+    bindings = [
+        {
+            "instance_path": f"tb_top.u{index}",
+            "pin": "req",
+            "parent_instance_path": "tb_top",
+            "parent_signal": f"req_{index}",
+            "port_direction": "input",
+            "relationship": "parent_signal_to_child_input",
+        }
+        for index in range(8)
+    ]
+    report = {
+        "elaborated_connectivity": {
+            "analysis_level": "simulator_elaborated_direct_pin_varref",
+            "parent_signal_bindings": bindings,
+            "instance_port_bindings": [dict(bindings[0])],
+        },
+    }
+
+    rows = desktop_crossprobe_evidence_rows(report)
+    pin_rows = [details for kind, details in rows if kind == "Elaborated pin"]
+
+    assert len(pin_rows) == 7
+    assert pin_rows[0] == (
+        "tb_top.req_0 -> tb_top.u0.req · direction=input · "
+        "parent_signal_to_child_input"
+    )
+    assert pin_rows[5] == (
+        "tb_top.req_5 -> tb_top.u5.req · direction=input · "
+        "parent_signal_to_child_input"
+    )
+    assert pin_rows[6] == "2 additional binding(s) hidden"
