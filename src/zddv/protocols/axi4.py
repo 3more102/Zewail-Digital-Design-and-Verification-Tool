@@ -101,6 +101,19 @@ def _decode_axi4_cache_attributes(value: Any) -> dict[str, Any] | None:
     }
 
 
+def _decode_axi4_protection_attributes(value: Any) -> dict[str, Any] | None:
+    scalar = _scalar(value)
+    if not isinstance(scalar, int) or not 0 <= scalar <= 0x7:
+        return None
+    return {
+        "encoding": scalar,
+        "privilege": "privileged" if scalar & 0x1 else "unprivileged",
+        "security": "non_secure" if scalar & 0x2 else "secure",
+        "access": "instruction" if scalar & 0x4 else "data",
+        "instruction_hint": bool(scalar & 0x4),
+    }
+
+
 def _decode_response(value: Any) -> tuple[int | None, str]:
     if isinstance(value, str):
         name = value.strip().upper()
@@ -397,6 +410,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
         values["cache_attributes"] = _decode_axi4_cache_attributes(values["cache"])
+        values["prot_attributes"] = _decode_axi4_protection_attributes(values["prot"])
         region = values["region"]
         if valid_addr and isinstance(region, int) and 0 <= region <= 0xF:
             page_base = addr & ~0xFFF
@@ -594,6 +608,7 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
             "cache": sidebands["cache"],
             "cache_attributes": sidebands["cache_attributes"],
             "prot": sidebands["prot"],
+            "prot_attributes": sidebands["prot_attributes"],
             "qos": sidebands["qos"],
             "user": sample.get(f"{prefix}USER"),
         }
@@ -827,6 +842,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                 tx[f"ar{key}"] = request[key]
         if request.get("cache_attributes") is not None:
             tx["cache_attributes"] = request["cache_attributes"]
+        if request.get("prot_attributes") is not None:
+            tx["prot_attributes"] = request["prot_attributes"]
         if request.get("user") is not None:
             tx["aruser"] = request["user"]
         r_users = [beat.get("user") for beat in beats]
@@ -973,6 +990,8 @@ def analyze_axi4_trace(payload: dict[str, Any]) -> dict[str, Any]:
                         tx[f"aw{key}"] = request[key]
                 if request.get("cache_attributes") is not None:
                     tx["cache_attributes"] = request["cache_attributes"]
+                if request.get("prot_attributes") is not None:
+                    tx["prot_attributes"] = request["prot_attributes"]
                 if request.get("user") is not None:
                     tx["awuser"] = request["user"]
                 w_users = [beat.get("user") for beat in beats]
