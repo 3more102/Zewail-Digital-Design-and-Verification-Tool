@@ -326,7 +326,28 @@ def _configured_user_signal_widths(payload: dict[str, Any]) -> dict[str, int]:
             )
         widths[name] = width
 
-    return {name: widths[name] for name in sorted(widths)}
+    normalized = {name: widths[name] for name in sorted(widths)}
+
+    request_widths = {
+        normalized[name]
+        for name in ("AWUSER", "ARUSER")
+        if name in normalized
+    }
+    if len(request_widths) > 1:
+        raise ValueError(
+            "user_signal_widths must use the same request width for AWUSER and ARUSER "
+            "when both are specified (AXI USER_REQ_WIDTH)"
+        )
+
+    if all(name in normalized for name in ("WUSER", "BUSER", "RUSER")):
+        expected_ruser_width = normalized["WUSER"] + normalized["BUSER"]
+        if normalized["RUSER"] != expected_ruser_width:
+            raise ValueError(
+                "user_signal_widths RUSER must equal WUSER + BUSER when all three "
+                "are specified (AXI USER_DATA_WIDTH + USER_RESP_WIDTH)"
+            )
+
+    return normalized
 
 
 def _normalize_sample(
