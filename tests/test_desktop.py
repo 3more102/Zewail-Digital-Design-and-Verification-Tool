@@ -126,8 +126,8 @@ def test_desktop_cli_launches_viewer_with_requested_limit(
 
     monkeypatch.setattr("zddv.cli.launch_desktop_gui", fake_launch)
 
-    rc = main(["--project", str(project.root), "desktop", "--limit", "7"])
+    rc = main(["--project", str(project.root), "gui", "--limit", "7"])
 
     assert rc == 0
     assert captured == {"root": project.root, "limit": 7}
-    assert "DESKTOP CLOSED" in capsys.readouterr().out
+    assert "GUI CLOSED" in capsys.readouterr().out
