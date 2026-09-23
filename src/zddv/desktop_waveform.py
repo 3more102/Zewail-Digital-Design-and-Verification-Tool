@@ -199,6 +199,43 @@ def desktop_crossprobe_evidence_rows(
             connectivity_detail += f" · relationships={','.join(relationships)}"
         rows.append(("Elaborated connectivity", connectivity_detail))
 
+        directional = elaborated_connectivity.get("directional_connectivity")
+        if isinstance(directional, dict):
+            drivers = [
+                item
+                for item in directional.get("drivers", [])
+                if isinstance(item, dict)
+            ]
+            loads = [
+                item
+                for item in directional.get("loads", [])
+                if isinstance(item, dict)
+            ]
+            bidirectional = [
+                item
+                for item in directional.get("bidirectional", [])
+                if isinstance(item, dict)
+            ]
+            unclassified = [
+                item
+                for item in directional.get("unclassified_bindings", [])
+                if isinstance(item, dict)
+            ]
+            unresolved = len(unclassified) + int(
+                directional.get("unsupported_binding_count") or 0
+            )
+            rows.append(
+                (
+                    "Elaborated direction",
+                    (
+                        f"{directional.get('status') or 'UNKNOWN'} · "
+                        f"drivers={len(drivers)} · loads={len(loads)} · "
+                        f"bidirectional={len(bidirectional)} · "
+                        f"unresolved={unresolved}"
+                    ),
+                )
+            )
+
     elaborated_boundary = report.get("elaborated_boundary")
     if isinstance(elaborated_boundary, dict):
         boundary_detail = str(elaborated_boundary.get("status") or "UNKNOWN")
