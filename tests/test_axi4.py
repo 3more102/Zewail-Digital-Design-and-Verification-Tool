@@ -689,6 +689,16 @@ def test_accepts_valid_address_sidebands_and_preserves_qos():
         "reserved": False,
     }
     assert tx["prot"] == 0x7
+    assert tx["prot_attributes"] == {
+        "encoding": 0x7,
+        "privileged": True,
+        "non_secure": True,
+        "instruction": True,
+        "privilege_class": "privileged",
+        "security_class": "non-secure",
+        "access_class": "instruction",
+        "access_is_hint": True,
+    }
     assert tx["qos"] == 0xA
     assert tx["region"] == 0x5
     assert tx["arcache"] == 0xF
@@ -736,6 +746,16 @@ def test_preserves_valid_write_address_sidebands():
     tx = result["transactions"][0]
     assert tx["cache"] == 0x3
     assert tx["prot"] == 0x2
+    assert tx["prot_attributes"] == {
+        "encoding": 0x2,
+        "privileged": False,
+        "non_secure": True,
+        "instruction": False,
+        "privilege_class": "unprivileged",
+        "security_class": "non-secure",
+        "access_class": "data",
+        "access_is_hint": True,
+    }
     assert tx["qos"] == 0xC
     assert tx["region"] == 0x7
     assert tx["awcache"] == 0x3
