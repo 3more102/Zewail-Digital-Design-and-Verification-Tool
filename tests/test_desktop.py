@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from zddv.cli import main
 from zddv.config import initialize_project
 from zddv.desktop import _read_source, build_desktop_snapshot
+from zddv.design_revision import design_revision_fingerprint
 from zddv.storage import (
     record_coverage_score_snapshot,
     record_coverage_snapshot,
@@ -286,29 +288,34 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     design_dir.mkdir(parents=True, exist_ok=True)
     elaborated_path = design_dir / "elaborated.json"
     elaborated_path.write_text(
-        """{
-  "created_at": "2026-09-23T06:45:00+00:00",
-  "simulator": "verilator",
-  "simulator_version": "Verilator test",
-  "source_format": "json",
-  "summary": {"modules": 2, "instances": 2},
-  "instances": [
-    {
-      "path": "tb_top",
-      "name": "tb_top",
-      "module": "tb_top",
-      "top": true,
-      "location": {"path": "tb/tb_top.sv", "line": 1}
-    },
-    {
-      "path": "tb_top.dut",
-      "name": "dut",
-      "module": "dut",
-      "top": false,
-      "location": {"path": "rtl/dut.sv", "line": 12}
-    }
-  ]
-}""",
+        json.dumps(
+            {
+                "created_at": "2026-09-23T06:45:00+00:00",
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "simulator_version": "Verilator test",
+                "source_format": "json",
+                "design_fingerprint": design_revision_fingerprint(project),
+                "summary": {"modules": 2, "instances": 2},
+                "instances": [
+                    {
+                        "path": "tb_top",
+                        "name": "tb_top",
+                        "module": "tb_top",
+                        "top": True,
+                        "location": {"path": "tb/tb_top.sv", "line": 1},
+                    },
+                    {
+                        "path": "tb_top.dut",
+                        "name": "dut",
+                        "module": "dut",
+                        "top": False,
+                        "location": {"path": "rtl/dut.sv", "line": 12},
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     before = elaborated_path.read_bytes()
@@ -318,6 +325,7 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     evidence = snapshot["elaborated_hierarchy"]
     assert evidence["status"] == "PRESENT"
     assert evidence["simulator"] == "verilator"
+    assert evidence["design_fingerprint"] == design_revision_fingerprint(project)
     assert evidence["instances"][1]["path"] == "tb_top.dut"
     assert evidence["instances"][1]["location"] == {
         "path": "rtl/dut.sv",
@@ -326,6 +334,49 @@ def test_desktop_snapshot_reads_persisted_elaborated_hierarchy_without_mutation(
     assert elaborated_path.read_bytes() == before
     assert not (design_dir / "elaborated-hierarchy.txt").exists()
 
+
+def test_desktop_marks_elaborated_hierarchy_stale_after_rtl_change(tmp_path: Path):
+    project = initialize_project(tmp_path / "elaborated-stale")
+    source = project.root / "rtl" / "tb_top.sv"
+    source.write_text("module tb_top; endmodule\n", encoding="utf-8")
+    project.rtl = ["rtl/*.sv"]
+
+    design_dir = project.root / ".zddv" / "design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    elaborated_path = design_dir / "elaborated.json"
+    original_fingerprint = design_revision_fingerprint(project)
+    elaborated_path.write_text(
+        json.dumps(
+            {
+                "project": project.name,
+                "top": project.top,
+                "simulator": project.simulator,
+                "design_fingerprint": original_fingerprint,
+                "instances": [
+                    {
+                        "path": project.top,
+                        "name": project.top,
+                        "module": project.top,
+                        "top": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    source.write_text(
+        "module tb_top; logic changed; endmodule\n",
+        encoding="utf-8",
+    )
+
+    evidence = build_desktop_snapshot(project, limit=10)["elaborated_hierarchy"]
+
+    assert evidence["status"] == "STALE"
+    assert evidence["instances"] == []
+    assert evidence["design_fingerprint"] == original_fingerprint
+    assert evidence["current_design_fingerprint"] == design_revision_fingerprint(project)
+    assert "design_fingerprint" in evidence["error"]
 
 
 def test_desktop_source_reader_resolves_project_relative_source(tmp_path: Path):
