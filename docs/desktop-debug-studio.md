@@ -1,7 +1,7 @@
 # Desktop Debug Studio
 
-The v1.1 desktop Debug Studio is a display-only view over the same persisted ZDDV
-verification evidence and deterministic design index used by the CLI.
+The v1.1+ desktop Debug Studio uses the same ZDDV verification evidence, deterministic
+design index, waveform/cross-probe engines, and reviewed core actions as the CLI.
 
 Launch it with:
 
@@ -10,41 +10,39 @@ zddv --project my_project gui
 zddv --project my_project gui --limit 100
 ```
 
-The `--limit` value bounds recent runs and each detailed evidence query.
+The `--limit` value bounds recent runs and detailed persisted-evidence queries.
 
 ## Current views
 
 The desktop provides:
 
-- verification summary cards and recent simulation runs;
-- deterministic failure-signature groups;
-- an evidence overview for assertions, normalized coverage, formal, and UVM;
-- deterministic source-file and source-level hierarchy navigation;
-- read-only navigation of recorded waveform signals with bounded in-memory VCD probing;
-- a detailed Assertions pane with status, assertion name, run, log line, and message;
-- a detailed Formal pane for the newest formal snapshot with property kind, status,
-  interpretation, depth, and message;
-- a detailed UVM pane for the newest UVM snapshot with severity, report ID, component,
-  timestamp, log line, and message.
-
-Formal-property and UVM-message database reads are explicitly bounded by the GUI
-limit. Assertion events already use the existing bounded history query.
+- verification summary cards, recent simulation runs, and failure-signature groups;
+- assertion, coverage, formal, and UVM evidence views;
+- source/hierarchy navigation with read-only RTL preview authorized by the current design index;
+- persisted elaborated hierarchy that is rejected when its design-revision fingerprint is stale;
+- recorded-waveform navigation, bounded VCD probing, and hierarchy/source/connectivity cross-probing;
+- detailed Assertions, Formal, and UVM panes;
+- an `Actions` pane for SHA-confirmed lint/build/run operations through existing core APIs;
+- a `Generated Review` pane for exact-byte review and SHA-confirmed apply of already staged generated verification drafts.
 
 ## Trust boundary
 
-Refresh reads persisted verification evidence and rebuilds the in-memory design
-index. It does not launch simulations or formal jobs, invoke or transmit data to an
-AI provider, stage/apply generated artifacts, or edit RTL, testbench sources, or
-project configuration.
+Browsing, refresh, source preview, and waveform/cross-probe operations do not launch
+simulation/formal work or invoke AI. Source preview is restricted to paths authorized
+by the current deterministic design index.
+
+The `Actions` pane is an explicit execution boundary. Preparing an action is
+review-only. Execution requires the exact review SHA-256 plus explicit approval, and
+ZDDV revalidates project configuration, matched source paths/bytes, and runtime
+parameters immediately before calling the existing lint/build/run core API.
+
+The `Generated Review` pane is a separate source-mutation boundary. It only lists
+staged generated-verification drafts under `.zddv/generated/drafts`, re-hashes the
+exact staged bytes, and delegates apply to the existing `apply_generated_artifact`
+core gate. Apply requires explicit reviewed-content approval and the exact content
+SHA-256. The core still blocks tampered drafts, project-root escape, writes into
+`.zddv`, unsupported targets, and overwriting existing files. Applying a draft does
+not compile, simulate, or enable execution of the generated code.
 
 The shared SQLite helpers may initialize or upgrade the local
 `.zddv/results.db` schema when opened, consistent with existing reporting commands.
-Therefore "display-only" describes verification/project actions rather than a
-guarantee of zero filesystem writes.
-
-## Remaining desktop milestones
-
-Waveform navigation and bounded targeted VCD probing are already integrated through
-the existing core APIs. The remaining desktop milestone is review-gated project
-actions, which must continue to reuse the existing core APIs rather than duplicate
-simulator-specific logic in the GUI.
