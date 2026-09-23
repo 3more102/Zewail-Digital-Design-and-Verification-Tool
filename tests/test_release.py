@@ -155,6 +155,29 @@ def test_release_export_requires_exact_reviewed_signoff_sha(tmp_path: Path):
         )
 
 
+def test_release_export_rejects_foreign_signoff_identity(tmp_path: Path):
+    source_project = initialize_project(tmp_path / "source")
+    record_run(source_project, _run_record("source-pass"))
+    source_signoff = write_verification_signoff_bundle(source_project)
+    source_signoff_path = Path(source_signoff["path"])
+
+    target_project = initialize_project(tmp_path / "target")
+    foreign_signoff_path = (
+        target_project.root / ".zddv" / "signoff" / "signoff.json"
+    )
+    foreign_signoff_path.parent.mkdir(parents=True, exist_ok=True)
+    foreign_signoff_path.write_bytes(source_signoff_path.read_bytes())
+
+    private_key, _ = _write_keypair(tmp_path)
+    with pytest.raises(ValueError, match="identity does not match"):
+        export_verification_release(
+            target_project,
+            expected_signoff_sha256=source_signoff["provenance"]["signoff_sha256"],
+            private_key=private_key,
+            key_id="test-release-key",
+        )
+
+
 def test_release_export_rejects_blocked_signoff(tmp_path: Path):
     project = initialize_project(tmp_path / "demo")
     record_run(project, _run_record("run-fail", status="FAIL"))
